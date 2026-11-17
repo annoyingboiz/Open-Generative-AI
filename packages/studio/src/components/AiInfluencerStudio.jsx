@@ -547,7 +547,7 @@ export default function AiInfluencerStudio({
                         alt={opt.label}
                         loading="lazy"
                         className="w-full h-full object-cover"
-                        onError={(e) => { e.target.onerror = null; e.target.src = `${CDN}/character_type_human.webp`; }}
+                        onError={(e) => { if (e.currentTarget.dataset.fallback) return; e.currentTarget.dataset.fallback = '1'; e.currentTarget.src = `${CDN}/character_type_human.webp`; }} /* DZ: React ignores onerror=null, so guard against an endless error loop */
                       />
                       {/* Label overlay */}
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-4 pb-1 px-1">

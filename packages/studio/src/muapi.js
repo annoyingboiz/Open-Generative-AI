@@ -14,7 +14,7 @@ import { getGroupedVideoConfiguration } from './groupedVideoModels.js';
 // under /api/* re-issue the call server-side) so api.muapi.ai CORS is bypassed.
 // SSR (no window) and Electron's file:// renderer call the upstream directly.
 const BASE_URL = (typeof window !== 'undefined' && window.location?.protocol?.startsWith('http'))
-    ? '/api'
+    ? '' // DZ: the gateway serves /api/v1/* itself (upstream: '/api', a Next.js proxy to Muapi)
     : 'https://api.muapi.ai';
 const PROXY_WF_BASE = '/api/workflow';
 const FILE_UPLOAD_TIMEOUT_MS = 300_000;

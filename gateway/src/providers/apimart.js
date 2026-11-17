@@ -87,11 +87,13 @@ export const apimart = {
     if (!bucket) throw new Error(`APIMart: cannot upload ${mime}`);
     // Streamed from disk, not read into memory.
     const form = await fileForm('file', path, mime, name || `file.${mime.split('/')[1]}`);
-    const response = await providerFetch(`${API}/v1/uploads/${bucket}?retention_days=7`, {
+    const response = await providerFetch(`${API}/v1/uploads/${bucket}?retention_days=3`, {
       proxy, method: 'POST', headers: auth(apiKey), body: form, timeoutMs: 10 * 60_000,
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.url) throw new Error(`APIMart upload failed: HTTP ${response.status} ${data?.error?.message || ''}`);
-    return { url: data.url, expiresAt: data.expires_at ? data.expires_at * 1000 : Date.now() + 6 * 86_400_000 };
+    // 3 days is the free tier (7+ days is billed and needs "pay-as-you-go uploads").
+    // Re-upload a few hours before expiry so a running job never gets a dead link.
+    return { url: data.url, expiresAt: (data.expires_at ? data.expires_at * 1000 : Date.now() + 3 * 86_400_000) - 6 * 3_600_000 };
   },
 };

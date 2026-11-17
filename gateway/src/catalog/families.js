@@ -44,7 +44,9 @@ export function atlasParts(modelId) {
   const [vendor, base, modePart = ''] = modelId.split('/');
   // "text-to-image-ultra" → mode "text-to-image", variant "ultra"
   const m = /^(text-to-image|image-to-image|text-to-video|image-to-video|reference-to-video|video-to-video|start-end-frame-to-video|video-edit|image-edit|edit)(?:-(.+))?$/.exec(modePart);
-  return { vendor, base: base || vendor, mode: m ? m[1] : modePart, variant: m ? m[2] || '' : '' };
+  // An unknown last segment is a separate tool of that model ("layer-decomposition",
+  // "upscale"…): it becomes a variant, so it gets its own family and id.
+  return { vendor, base: base || vendor, mode: m ? m[1] : modePart, variant: m ? m[2] || '' : modePart };
 }
 
 export function familyFor(providerId, modelId) {

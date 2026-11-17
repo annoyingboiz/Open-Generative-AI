@@ -87,3 +87,15 @@ test('recommended families come first, in admin order, provider order kept', () 
   assert.deepEqual(lists.t2v.map((m) => [m.dzFamily, m.dzProvider, m.dzRecommended]),
     [['dz-kling-4', 'apimart', 1], ['dz-kling-4', 'atlas', 1], [veo.model.dzFamily, 'apimart', undefined]]);
 });
+
+test('an Atlas tool segment (layer-decomposition) is its own family, ids stay unique', () => {
+  assert.equal(familyFor('atlas', 'bytedance/seedream-v5.0-pro/layer-decomposition'), 'seedream-5-pro-layer-decomposition');
+  assert.equal(familyFor('atlas', 'bytedance/seedream-v5.0-pro/text-to-image'), 'seedream-5-pro');
+  const schema = { components: { schemas: { Input: { required: ['prompt'], properties: { prompt: { type: 'string' }, image: { type: 'string' } } } } } };
+  const a = buildAtlasVariant({ ...atlasEntry, model: 'bytedance/seedream-v5.0-pro/edit', categories: ['IMAGE-TO-IMAGE'] }, schema);
+  const b = buildAtlasVariant({ ...atlasEntry, model: 'bytedance/seedream-v5.0-pro/layer-decomposition', categories: ['IMAGE-TO-IMAGE'] }, schema);
+  const lists = buildStudioLists([a, b]);
+  const ids = lists.i2i.map((m) => m.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.notEqual(a.model.dzFamily, b.model.dzFamily);
+});

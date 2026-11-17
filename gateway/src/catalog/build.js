@@ -233,9 +233,15 @@ export function buildStudioLists(variants, { recommended = [] } = {}) {
       familyNames.set(v.family, { name: v.model.dzFamilyName, provider: v.provider });
     }
   }
+  const seenIds = new Set();
   for (const group of byFamilyMode.values()) {
     group.sort((a, b) => sortKey(b) - sortKey(a));
     for (const v of group) {
+      // Ids must be unique: the studio looks models up by id.
+      let id = v.model.id;
+      for (let n = 2; seenIds.has(id); n += 1) id = `${v.model.id}-${n}`;
+      v.model.id = id;
+      seenIds.add(id);
       const familyName = familyNames.get(v.family)?.name || v.model.dzFamilyName;
       v.model.dzFamilyName = familyName;
       v.model.name = [familyName, v.model.dzProviderName, v.model.dzPrice?.label, v.model.dzBasic ? 'basic' : ''].filter(Boolean).join(' · ');

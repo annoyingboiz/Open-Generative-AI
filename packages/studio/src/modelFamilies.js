@@ -719,6 +719,12 @@ function pickerContractKey(model) {
 }
 
 function pickerIdentity(model, aliases, aliasTargets) {
+  // DZ: one picker row per family + provider, so text-to-image and edit (or
+  // text- and image-to-video) of the same provider model are one choice and
+  // adding a reference switches mode instead of needing a separate "… Image" row.
+  if (model.dzFamily) {
+    return { key: `dz:${model.dzFamily}:${model.dzProvider || ""}:${model.dzBasic ? "basic" : ""}`, profile: null };
+  }
   const alias = aliases[model.id] || (aliasTargets.has(model.id) ? model.id : null);
   if (alias) {
     const profile = aliasProfile(model.id, alias);

@@ -3426,7 +3426,7 @@ export default function VideoStudio({
             </PromptControls>
 
             {/* DZ: price for our account before generating */}
-            <DzPrice apiKey={apiKey} build={dzBuildRequest} className="hidden sm:inline mr-2 self-center" />
+            <DzPrice apiKey={apiKey} build={dzBuildRequest} className="mr-2 self-center" />
             {/* Generate button */}
             <PromptAction
               onClick={handleGenerate}

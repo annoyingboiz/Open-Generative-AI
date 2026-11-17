@@ -6,9 +6,14 @@ import { now } from './db.js';
 
 const ACTIVE = ['submitted', 'processing', 'downloading'];
 const POLL_MS = { image: 2500, video: 5000, audio: 4000 };
-// How long we wait for a provider. Long on purpose: provider queues can take
-// tens of minutes, and Atlas itself ends (and refunds) jobs that run too long.
-const TIMEOUT_MS = { image: 3 * 3_600_000, video: 6 * 3_600_000, audio: 3 * 3_600_000 };
+// No time limit: we poll until the provider says done or failed (queues can
+// take tens of minutes; Atlas ends and refunds jobs that run too long itself).
+// After an hour we poll once a minute. A job fails only after many errors in
+// a row (e.g. the provider no longer knows the task).
+const SLOW_POLL_AFTER_MS = 3_600_000;
+const SLOW_POLL_MS = 60_000;
+const MAX_POLL_ERRORS = 40;
+const SETTLE_DELAYS_MS = [5_000, 20_000, 60_000, 180_000, 900_000];
 const TRASH_KEEP_MS = 7 * 86_400_000;
 const LOCAL_MEDIA_RE = /^(?:https?:\/\/[^/]+)?\/media\/(u|g)\/([A-Za-z0-9_-]+)(?:\.[a-z0-9]+)?(?:\/(\d+)(?:\.[a-z0-9]+)?)?(?:[?#].*)?$/i;
 
@@ -18,16 +23,19 @@ export class GenerationError extends Error {
 
 const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an hour of retries
 
-export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = [5_000, 20_000, 60_000, 180_000] }) {
+export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS }) {
   const q = {
     insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, next_poll_at, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, 0, ?, ?)`),
-    setCost: db.prepare('UPDATE generations SET cost_usd = ?, cost_source = ?, updated_at = ? WHERE id = ?'),
     setSubmitted: db.prepare("UPDATE generations SET provider_task_id = ?, status = 'submitted', next_poll_at = ?, updated_at = ? WHERE id = ?"),
     setFailed: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
-    setPolled: db.prepare('UPDATE generations SET status = ?, next_poll_at = ?, updated_at = ? WHERE id = ?'),
+    setPolled: db.prepare('UPDATE generations SET status = ?, next_poll_at = ?, poll_errors = 0, updated_at = ? WHERE id = ?'),
     setDownloading: db.prepare("UPDATE generations SET status = 'downloading', provider_outputs_json = ?, cost_usd = COALESCE(?, cost_usd), cost_source = CASE WHEN ? IS NOT NULL THEN 'provider' ELSE cost_source END, updated_at = ? WHERE id = ?"),
-    setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
+    setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, settle_next_at = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
+    settleDue: db.prepare('SELECT * FROM generations WHERE settle_next_at IS NOT NULL AND settle_next_at <= ? ORDER BY settle_next_at LIMIT 10'),
+    settleLater: db.prepare('UPDATE generations SET settle_attempts = settle_attempts + 1, settle_next_at = ? WHERE id = ?'),
+    settleDone: db.prepare('UPDATE generations SET cost_usd = COALESCE(?, cost_usd), cost_source = COALESCE(?, cost_source), settle_next_at = NULL, updated_at = ? WHERE id = ?'),
+    pollError: db.prepare('UPDATE generations SET poll_errors = poll_errors + 1, next_poll_at = ?, updated_at = ? WHERE id = ?'),
     byId: db.prepare('SELECT * FROM generations WHERE id = ?'),
     due: db.prepare(`SELECT * FROM generations WHERE status IN ('submitted','processing','downloading') AND next_poll_at <= ? ORDER BY next_poll_at LIMIT 10`),
     history: db.prepare(`SELECT * FROM generations WHERE user_id = ? AND deleted_at IS NULL AND created_at < ? ORDER BY created_at DESC LIMIT ?`),
@@ -133,33 +141,28 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       const file = await storage.downloadResult({ userId: row.user_id, generationId: row.id, index: i, url: providerOutputs[i], proxy: cfg.proxy });
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
-    q.setCompleted.run(JSON.stringify(saved), now(), now(), row.id);
-    settling.add(settleCost(row).catch((error) => log?.warn(`cost ${row.id}: ${error.message}`)));
+    q.setCompleted.run(JSON.stringify(saved), now() + settleDelaysMs[0], now(), now(), row.id);
   }
 
-  // The real charge of a finished job: APIMart reports it per task (its log
-  // is written a few seconds later); Atlas's pre-submit quote is exact.
-  const settling = new Set(); // pending cost lookups (tests wait for them)
-  async function settleCost(row) {
+  // The real charge of a finished job, settled by the worker (survives
+  // restarts): APIMart reports it per task in its request log (written a few
+  // seconds later); for Atlas the quote taken before submitting is used.
+  async function settle(row) {
     const provider = providerById(row.provider);
     if (provider?.actualCost && row.provider_task_id) {
-      for (const delay of settleDelaysMs) {
-        await new Promise((resolve) => { const t = setTimeout(resolve, delay); t.unref?.(); });
-        const usd = await provider.actualCost(providers.resolve(row.provider), row.provider_task_id).catch(() => null);
-        if (Number.isFinite(usd)) { q.setCost.run(usd, 'provider', now(), row.id); return; }
-      }
+      const usd = await provider.actualCost(providers.resolve(row.provider), row.provider_task_id).catch(() => null);
+      if (Number.isFinite(usd)) { q.settleDone.run(usd, 'provider', now(), row.id); return; }
+      if (row.settle_attempts + 1 < settleDelaysMs.length) { q.settleLater.run(now() + settleDelaysMs[row.settle_attempts + 1], row.id); return; }
     }
-    const fresh = q.byId.get(row.id);
-    if (fresh && fresh.cost_usd == null && fresh.est_source === 'quote' && Number.isFinite(fresh.est_cost_usd)) {
-      q.setCost.run(fresh.est_cost_usd, 'quote', now(), row.id);
-    }
+    const fromQuote = row.cost_usd == null && ['quote', 'quote~'].includes(row.est_source) && Number.isFinite(row.est_cost_usd);
+    q.settleDone.run(fromQuote ? row.est_cost_usd : null, fromQuote ? row.est_source : null, now(), row.id);
   }
 
   async function step(row) {
     const kind = row.kind;
     const age = Date.now() - row.created_at;
-    if (row.status === 'downloading' ? age > (TIMEOUT_MS[kind] || TIMEOUT_MS.video) + DOWNLOAD_DEADLINE_MS : age > (TIMEOUT_MS[kind] || TIMEOUT_MS.video)) {
-      q.setFailed.run(row.status === 'downloading' ? 'Could not download the result file.' : 'Timed out waiting for the provider.', now(), now(), row.id);
+    if (row.status === 'downloading' && age > DOWNLOAD_DEADLINE_MS && row.poll_errors >= MAX_POLL_ERRORS) {
+      q.setFailed.run('Could not download the result file.', now(), now(), row.id);
       return;
     }
     if (row.status === 'downloading') {
@@ -177,7 +180,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     } else if (res.state === 'failed') {
       q.setFailed.run(String(res.error || 'Generation failed').slice(0, 1000), now(), now(), row.id);
     } else {
-      q.setPolled.run('processing', now() + (POLL_MS[kind] || 3000), now(), row.id);
+      const wait = age > SLOW_POLL_AFTER_MS ? SLOW_POLL_MS : (POLL_MS[kind] || 3000);
+      q.setPolled.run('processing', now() + wait, now(), row.id);
     }
   }
 
@@ -192,9 +196,16 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
           await step(row);
         } catch (error) {
           log?.warn(`generation ${row.id}: ${error.message}`);
-          // Retry later; give up via the timeout above.
-          q.setPolled.run(row.status === 'downloading' ? 'downloading' : row.status, now() + 15_000, now(), row.id);
+          // Retry later; many errors in a row mean the job is lost.
+          if (row.poll_errors + 1 >= MAX_POLL_ERRORS) {
+            q.setFailed.run(row.status === 'downloading' ? 'Could not download the result file.' : `Lost contact with the provider: ${error.message}`.slice(0, 1000), now(), now(), row.id);
+          } else {
+            q.pollError.run(now() + 15_000, now(), row.id);
+          }
         }
+      }
+      for (const row of q.settleDue.all(now())) {
+        try { await settle(row); } catch (error) { log?.warn(`cost ${row.id}: ${error.message}`); q.settleLater.run(now() + 60_000, row.id); }
       }
     } finally {
       running = false;
@@ -272,7 +283,6 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     saveUpload, submit, result, history, trash, mediaFile,
-    settled: () => Promise.all([...settling]),
     start() {
       if (!timer) {
         timer = setInterval(tick, 2000);

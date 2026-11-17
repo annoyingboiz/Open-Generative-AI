@@ -21,8 +21,29 @@ function forQuote(value, key = '') {
   return value;
 }
 
+// Reference videos/audio can change the price (Atlas bills their duration),
+// so a quote with them is only an estimate and is not cached.
+function hasTimedMedia(value, key = '') {
+  if (Array.isArray(value)) return value.some((v) => hasTimedMedia(v, key));
+  if (value && typeof value === 'object') return Object.entries(value).some(([k, v]) => hasTimedMedia(v, k));
+  return typeof value === 'string' && /video|audio/i.test(key) && value.length > 0;
+}
+
+// Pricing APIs have their own limits (APIMart: 60/min per key): stay under.
+const PROVIDER_PER_MINUTE = 50;
+
 export function createQuoter({ providers, log }) {
   const cache = new Map(); // key -> { at, value }
+  const inflight = new Map(); // key -> Promise
+  const calls = new Map(); // providerId -> [timestamps]
+  const allowCall = (providerId) => {
+    const t = Date.now();
+    const recent = (calls.get(providerId) || []).filter((x) => t - x < 60_000);
+    if (recent.length >= PROVIDER_PER_MINUTE) { calls.set(providerId, recent); return false; }
+    recent.push(t);
+    calls.set(providerId, recent);
+    return true;
+  };
 
   function cacheKey(providerId, modelId, body) {
     const { prompt, negative_prompt: _n, ...rest } = body || {};
@@ -40,20 +61,31 @@ export function createQuoter({ providers, log }) {
     const cfg = providers.resolve(providerId);
     if (!provider?.quote || !cfg.enabled || !cfg.apiKey) return fallback();
 
+    const timed = hasTimedMedia(providerBody);
     const key = cacheKey(providerId, modelId, providerBody);
-    const hit = cache.get(key);
+    const hit = !timed && cache.get(key);
     if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
-    try {
-      const got = await provider.quote(cfg, { model: modelId, body: forQuote(providerBody) });
-      if (!got) return fallback();
-      const value = { ...got, source: 'quote' }; // only provider quotes are cached
-      cache.set(key, { at: Date.now(), value });
-      if (cache.size > MAX_ENTRIES) cache.delete(cache.keys().next().value);
-      return value;
-    } catch (error) {
-      log?.warn(`quote ${providerId}/${modelId}: ${error.message}`);
-      return fallback();
-    }
+    if (inflight.has(key)) return inflight.get(key);
+    if (!allowCall(providerId)) return fallback();
+    const job = (async () => {
+      try {
+        const got = await provider.quote(cfg, { model: modelId, body: forQuote(providerBody) });
+        if (!got) return fallback();
+        const value = { ...got, exact: got.exact && !timed, source: 'quote' };
+        if (!timed) { // only provider quotes without timed media are cached
+          cache.set(key, { at: Date.now(), value });
+          if (cache.size > MAX_ENTRIES) cache.delete(cache.keys().next().value);
+        }
+        return value;
+      } catch (error) {
+        log?.warn(`quote ${providerId}/${modelId}: ${error.message}`);
+        return fallback();
+      } finally {
+        inflight.delete(key);
+      }
+    })();
+    inflight.set(key, job);
+    return job;
   }
 
   return { quote };

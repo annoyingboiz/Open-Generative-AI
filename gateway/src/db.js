@@ -76,6 +76,13 @@ const MIGRATIONS = [
   ALTER TABLE generations ADD COLUMN cost_source TEXT;
   ALTER TABLE generations ADD COLUMN est_source TEXT;
   `,
+  // 4: cost settlement survives restarts; polls fail only on repeated errors.
+  `
+  ALTER TABLE generations ADD COLUMN settle_attempts INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE generations ADD COLUMN settle_next_at INTEGER;
+  ALTER TABLE generations ADD COLUMN poll_errors INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX generations_settle ON generations(settle_next_at) WHERE settle_next_at IS NOT NULL;
+  `,
 ];
 
 export function openDatabase(dataDir) {

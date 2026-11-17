@@ -227,7 +227,7 @@ export default function DzShell() {
 
       {/* Notifications: dark cards, bottom-right */}
       {(runningTabs.length > 0 || notifications.length > 0) && (
-        <div aria-live="polite" className="fixed bottom-5 right-5 z-[200] flex w-[320px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none">
+        <div aria-live="polite" className="fixed top-16 right-3 md:top-auto md:bottom-5 md:right-5 z-[200] flex w-[320px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none">
           {runningTabs.map((tabId) => (
             <div key={tabId} role="status" className="pointer-events-auto flex items-center gap-3 rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md px-3.5 py-3 text-[13px] shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
               <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#22d3ee]/25 border-t-[#22d3ee]" />

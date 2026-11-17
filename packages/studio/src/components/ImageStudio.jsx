@@ -1895,7 +1895,7 @@ export default function ImageStudio({
             </PromptControls>
 
             {/* DZ: price for our account before generating */}
-            <DzPrice apiKey={apiKey} build={dzBuildRequest} count={batchSize} className="hidden sm:inline mr-2 self-center" />
+            <DzPrice apiKey={apiKey} build={dzBuildRequest} count={batchSize} className="mr-2 self-center" />
             {/* Generate button */}
             <PromptAction
               onClick={handleGenerate}

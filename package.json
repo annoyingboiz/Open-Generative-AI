@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/dz-check-clean.mjs && next build",
     "start": "next start",
     "lint": "next lint",
     "check:clean": "node scripts/dz-check-clean.mjs"

@@ -49,7 +49,7 @@ before(async () => {
 
   app = await buildApp({
     host: '127.0.0.1', port: 0, studioUrl: 'http://127.0.0.1:9', dataDir, appSecret: 'test', sessionDays: 30, logLevel: 'error',
-    startWorkers: false, testAllowLocalDownloads: true, testSettleDelaysMs: [0],
+    startWorkers: false, testAllowLocalDownloads: true,
     providerEnv: { apimart: { apiKey: 'sk-test', proxy: '' }, atlas: { apiKey: '', proxy: '' } },
   }, { logger: false });
   await app.ready();
@@ -116,7 +116,8 @@ test('server polls, downloads the result, and serves it to the owner only', asyn
   const body = res.json();
   assert.equal(body.status, 'completed', JSON.stringify(body));
   assert.equal(body.cost, 0.02);
-  await app.ctx.generations.settled();
+  app.ctx.db.prepare('UPDATE generations SET settle_next_at = 0 WHERE settle_next_at IS NOT NULL').run();
+  await app.ctx.generations.tick();
   res = await app.inject({ url: `/api/v1/predictions/${genId}/result`, headers: { cookie: adminCookie } });
   assert.equal(res.json().cost, 0.031, 'actual charge from the provider replaces the task cost');
   assert.equal(res.json().cost_final, true);

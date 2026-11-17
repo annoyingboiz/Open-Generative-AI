@@ -51,19 +51,25 @@ export const apimart = {
   async quote({ apiKey, proxy }, { model, body }) {
     const spec = {};
     if (body.resolution) spec.resolution = body.resolution;
+    if (body.size) spec.size = body.size;
     if (body.quality) spec.quality = body.quality;
     if (Number.isFinite(Number(body.duration))) spec.duration = Math.round(Number(body.duration));
     if (Number.isFinite(Number(body.n)) && Number(body.n) > 1) spec.n = Math.round(Number(body.n));
     const ask = async (params) => providerJson(`${API}/v1/pricing/model?${new URLSearchParams({ model, ...params })}`, { proxy, headers: auth(apiKey), timeoutMs: 15_000 });
+    // A spec field the price list doesn't know (e.g. "2K" on a model priced
+    // only for 4K, or a size that doesn't change the price) means the default
+    // applies: drop it and ask again.
     let data;
-    try {
-      data = await ask(spec);
-    } catch (error) {
-      // An unsupported tier (e.g. "2K" on a model priced only for 4K) means
-      // the default tier applies: ask again without it.
-      if (!(error instanceof ProviderHttpError) || error.status !== 400 || !spec.resolution) throw error;
-      delete spec.resolution;
-      data = await ask(spec);
+    for (;;) {
+      try {
+        data = await ask(spec);
+        break;
+      } catch (error) {
+        const field = ['size', 'resolution', 'quality'].find((f) => spec[f] !== undefined && new RegExp(`\\b${f}\\b`, 'i').test(error.message))
+          || ['size', 'resolution', 'quality'].find((f) => spec[f] !== undefined);
+        if (!(error instanceof ProviderHttpError) || error.status !== 400 || !field) throw error;
+        delete spec[field];
+      }
     }
     const usd = Number(data?.total_usd ?? data?.unit_price_usd);
     if (!Number.isFinite(usd)) return null;

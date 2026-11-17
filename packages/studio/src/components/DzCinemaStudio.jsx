@@ -1546,7 +1546,7 @@ export default function DzCinemaStudio({
                 build={buildRequest}
                 provider={providerOf(model)}
                 fallback={priceOf(model)}
-                className="hidden sm:inline mr-2"
+                className="mr-2"
               />
             )}
             {/* Generate Button */}

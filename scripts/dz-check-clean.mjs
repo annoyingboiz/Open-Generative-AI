@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const DEFAULT_DIRS = ['README.md', 'docs', 'deploy', '.env.example', 'app', 'components', 'packages/studio/src', 'gateway/src', 'public', 'docker-compose.yml', 'Dockerfile', 'next.config.mjs', 'package.json'];
+const DEFAULT_DIRS = ['README.md', 'docs', 'deploy', '.env.example', 'app', 'components', 'packages/studio/src', 'gateway/src', 'public', 'docker-compose.yml', 'Dockerfile', 'next.config.mjs', 'package.json', 'jsconfig.json', 'tailwind.config.js'];
 const PATTERN = /muapi|d3adwkbyhxyrtq\.cloudfront\.net|vadoo/i;
 const TEXT = /\.(m?js|jsx|json|css|html|txt|md|ya?ml|svg|map)$|Dockerfile$|\.env\.example$/i;
 

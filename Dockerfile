@@ -13,7 +13,6 @@ RUN npm ci --no-audit --no-fund
 # Build. The clean check fails the build if any trace of the old upstream
 # service (hosts, CDN links) is found in the source or in the built bundle.
 FROM deps AS builder
-RUN node scripts/dz-check-clean.mjs
 RUN npm run build
 RUN node scripts/dz-check-clean.mjs .next/static .next/server
 

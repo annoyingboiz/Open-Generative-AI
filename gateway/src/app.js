@@ -399,7 +399,13 @@ export async function buildApp(config, { logger = true } = {}) {
   }
 
   // Price before generating: { usd, exact, source } — shown next to Generate.
+  const quoteThrottle = new Map(); // userId -> [timestamps]
   app.post('/dz/api/quote', async (req, reply) => {
+    const t = Date.now();
+    const recent = (quoteThrottle.get(req.user.id) || []).filter((x) => t - x < 60_000);
+    if (recent.length >= 40) return reply.code(429).send({ error: 'Too many price checks, slow down.' });
+    recent.push(t);
+    quoteThrottle.set(req.user.id, recent);
     const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([a-z0-9]+))?$/i.exec(String(req.body?.endpoint || ''));
     if (!m) return reply.code(400).send({ error: 'Bad endpoint' });
     const [, providerId, modelId, mode] = m;
@@ -431,7 +437,7 @@ export async function buildApp(config, { logger = true } = {}) {
         endpoint: key,
         kind: variant?.kind || null,
         estCostUsd: price?.usd ?? null,
-        estSource: price ? (price.exact ? 'quote' : 'estimate') : null,
+        estSource: !price ? null : price.source === 'quote' ? (price.exact ? 'quote' : 'quote~') : 'estimate',
       });
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }

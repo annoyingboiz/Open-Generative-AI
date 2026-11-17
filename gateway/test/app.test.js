@@ -26,7 +26,7 @@ before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-'));
   app = await buildApp({
     host: '127.0.0.1', port: 0, studioUrl: `http://127.0.0.1:${upstream.address().port}`,
-    dataDir, appSecret: '', sessionDays: 30, logLevel: 'error',
+    dataDir, appSecret: '', sessionDays: 30, logLevel: 'error', startWorkers: false,
     providerEnv: { apimart: { apiKey: '', proxy: '' }, atlas: { apiKey: 'env-key-1234', proxy: '' } },
   }, { logger: false });
 });
@@ -78,11 +78,11 @@ test('signed-in user reaches the studio; cookies and keys are not forwarded', as
   assert.equal(body.sawKey, false);
 });
 
-test('muapi routes are disabled, generation is not yet wired', async () => {
+test('muapi routes are disabled; models without a provider are refused', async () => {
   let res = await app.inject({ url: '/api/workflow/get-workflow-defs', headers: { cookie: adminCookie } });
   assert.equal(res.statusCode, 410);
   res = await app.inject({ url: '/api/v1/nano-banana-pro', method: 'POST', payload: {}, headers: { cookie: adminCookie } });
-  assert.equal(res.statusCode, 503);
+  assert.equal(res.statusCode, 404);
 });
 
 test('login flow and wrong password', async () => {

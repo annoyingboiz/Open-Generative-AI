@@ -32,6 +32,44 @@ const MIGRATIONS = [
     updated_at INTEGER NOT NULL
   );
   `,
+  // 2 — uploads (reference files) and generations (server-side history)
+  `
+  CREATE TABLE uploads (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    original_name TEXT,
+    provider_refs TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX uploads_user ON uploads(user_id, created_at DESC);
+  CREATE TABLE generations (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_model TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    provider_task_id TEXT,
+    status TEXT NOT NULL,
+    prompt TEXT,
+    params_json TEXT NOT NULL DEFAULT '{}',
+    error TEXT,
+    cost_usd REAL,
+    est_cost_usd REAL,
+    provider_outputs_json TEXT NOT NULL DEFAULT '[]',
+    outputs_json TEXT NOT NULL DEFAULT '[]',
+    next_poll_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    deleted_at INTEGER
+  );
+  CREATE INDEX generations_user ON generations(user_id, created_at DESC);
+  CREATE INDEX generations_active ON generations(status, next_poll_at);
+  `,
 ];
 
 export function openDatabase(dataDir) {

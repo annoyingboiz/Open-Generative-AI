@@ -6,12 +6,16 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
 import httpProxy from '@fastify/http-proxy';
+import multipart from '@fastify/multipart';
 import { openDatabase } from './db.js';
 import { loadMasterKey } from './crypto.js';
 import { createAuth, createLoginThrottle, publicUser, SESSION_COOKIE, UserError } from './auth.js';
 import { PROVIDERS, providerById, createProviderSettings, fetchBalances } from './providers/index.js';
 import { validateProxyUrl } from './providers/http.js';
-import { loginPage, setupPage, settingsPage } from './pages.js';
+import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
+import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
+import { createCatalog } from './catalog/index.js';
+import { createGenerations, GenerationError } from './generations.js';
 
 const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico']);
 
@@ -27,9 +31,13 @@ export async function buildApp(config, { logger = true } = {}) {
     trustProxy: true,
     bodyLimit: 50 * 1024 * 1024,
   });
-  app.decorate('ctx', { db, auth, providers, config });
+  const storage = createStorage(config.dataDir);
+  const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log });
+  const generations = createGenerations({ db, storage, providers, catalog, log: app.log });
+  app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);
   await app.register(formbody);
+  await app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024, files: 1 } });
 
   const isHttps = (req) => req.protocol === 'https';
   const setSessionCookie = (req, reply, token) => reply.setCookie(SESSION_COOKIE, token, {
@@ -169,6 +177,37 @@ export async function buildApp(config, { logger = true } = {}) {
     });
   });
 
+  const TEST_MODELS = {
+    apimart: { model: 'z-image-turbo', body: (prompt) => ({ prompt, size: '1:1' }) },
+    atlas: { model: 'black-forest-labs/flux-schnell', body: (prompt) => ({ prompt, size: '1024*1024' }) },
+  };
+  app.post('/dz/settings/test-generation', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const t = TEST_MODELS[req.body?.provider];
+    if (!t) return reply.code(400).send({ error: 'Unknown provider' });
+    try {
+      if (!catalog.model(req.body.provider, t.model)) await catalog.refreshAll({ force: true });
+      const { id } = await generations.submit(req.user, {
+        providerId: req.body.provider, modelId: t.model, endpoint: `p/${req.body.provider}/${t.model}`,
+        body: t.body(String(req.body.prompt || 'A red paper boat on a calm lake').slice(0, 500)),
+      });
+      return reply.redirect(`/dz/settings/test-generation/${id}`);
+    } catch (error) {
+      if (error instanceof GenerationError) return renderSettings(req, reply, { error: error.message, code: error.status });
+      throw error;
+    }
+  });
+  app.get('/dz/settings/test-generation/:id', async (req, reply) => {
+    try {
+      const result = generations.result(req.user, req.params.id);
+      const row = db.prepare('SELECT provider, provider_model FROM generations WHERE id = ?').get(req.params.id);
+      return html(reply, testResultPage({ result, provider: row.provider, model: row.provider_model }));
+    } catch (error) {
+      if (error instanceof GenerationError) return reply.code(error.status).send({ error: error.message });
+      throw error;
+    }
+  });
+
   const parseLimit = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : Math.max(0, Number(v)));
 
   app.post('/dz/settings/users', async (req, reply) => {
@@ -216,10 +255,69 @@ export async function buildApp(config, { logger = true } = {}) {
     app.all(`${prefix}/*`, muapiDisabled);
   }
   app.get('/api/v1/account/balance', async () => ({ balance: null }));
-  // Generation goes through the provider layer (step 3). Until then: a clear error.
-  app.all('/api/v1/*', async (req, reply) => reply.code(503).send({
-    detail: 'Generation through APIMart / Atlas is not wired yet (next build step).',
+
+  const sendGenError = (reply, error) => {
+    if (error instanceof GenerationError) return reply.code(error.status).send({ detail: error.message, error: error.message });
+    throw error;
+  };
+
+  // Reference files (images, videos, audio) for generation.
+  app.post('/api/v1/upload_file', async (req, reply) => {
+    const file = await req.file();
+    if (!file) return reply.code(400).send({ detail: 'No file' });
+    if (!isAllowedUploadMime(file.mimetype)) {
+      file.file.resume();
+      return reply.code(400).send({ detail: `File type ${file.mimetype} is not allowed` });
+    }
+    const saved = await generations.saveUpload(req.user, { stream: file.file, mime: file.mimetype, filename: file.filename });
+    if (file.file.truncated) return reply.code(413).send({ detail: 'File is too large (max 500 MB)' });
+    return { url: saved.url, file_url: saved.url, id: saved.id };
+  });
+
+  // Submit: /api/v1/p/<provider>/<provider model id>
+  app.post('/api/v1/p/:provider/*', async (req, reply) => {
+    try {
+      const { id } = await generations.submit(req.user, {
+        providerId: req.params.provider,
+        modelId: req.params['*'],
+        body: req.body,
+        endpoint: `p/${req.params.provider}/${req.params['*']}`,
+      });
+      return { request_id: id, id, status: 'processing' };
+    } catch (error) { return sendGenError(reply, error); }
+  });
+
+  app.get('/api/v1/predictions/:id/result', async (req, reply) => {
+    try { return generations.result(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
+  });
+  app.delete('/api/v1/predictions/:id/media', async (req, reply) => {
+    try { return generations.trash(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
+  });
+  app.get('/api/v1/history', async (req) => generations.history(req.user, req.query));
+
+  // Models from the studio's built-in (Muapi) catalog have no provider yet.
+  app.all('/api/v1/*', async (req, reply) => reply.code(404).send({
+    detail: 'This model is not available from your providers. Pick a model from APIMart or Atlas.',
   }));
+
+  // ── Files: only the owner (or an admin) can open them ───────────────────
+  app.get('/media/u/:file', async (req, reply) => {
+    const f = generations.mediaFile(req.user, 'u', req.params.file.split('.')[0]);
+    if (!f) return reply.code(404).send({ error: 'Not found' });
+    return sendFile(req, reply, f.path, f.mime, { download: req.query.download === '1' });
+  });
+  app.get('/media/g/:id/:file', async (req, reply) => {
+    const f = generations.mediaFile(req.user, 'g', req.params.id, req.params.file.split('.')[0]);
+    if (!f) return reply.code(404).send({ error: 'Not found' });
+    return sendFile(req, reply, f.path, f.mime, { download: req.query.download === '1' });
+  });
+
+  // ── Catalog refresh: on start, daily, and on demand (admin) ─────────────
+  app.post('/dz/api/catalog/refresh', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    await catalog.refreshAll({ force: true });
+    return { ok: true, apimart: catalog.models('apimart').length, atlas: catalog.models('atlas').length };
+  });
 
   // ── Everything else → studio ────────────────────────────────────────────
   await app.register(httpProxy, {
@@ -235,7 +333,13 @@ export async function buildApp(config, { logger = true } = {}) {
     },
   });
 
-  app.addHook('onClose', async () => db.close());
+  app.addHook('onReady', async () => {
+    if (config.startWorkers === false) return;
+    generations.start();
+    catalog.refreshAll().catch(() => {});
+    setInterval(() => catalog.refreshAll().catch(() => {}), 3_600_000).unref();
+  });
+  app.addHook('onClose', async () => { generations.stop(); db.close(); });
   return app;
 }
 

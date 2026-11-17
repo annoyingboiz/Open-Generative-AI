@@ -104,6 +104,15 @@ export function settingsPage({ user, providers = [], balances = [], users = [], 
 <h2 style="margin:28px 0 12px">Providers</h2>
 <p class="muted" style="margin-top:-6px">Keys are stored encrypted on this server and never sent to the browser.</p>
 ${providerSections}
+<h2 style="margin:28px 0 12px">Test generation</h2>
+<form class="section" method="post" action="/dz/settings/test-generation">
+  <p class="muted" style="margin-top:0">One cheap picture to check that a provider works end to end: request → server waits → file saved on this server. Costs real money (about $0.01).</p>
+  <label>Prompt</label><input name="prompt" value="A red paper boat on a calm lake at sunrise, photo">
+  <div class="row" style="margin-top:14px">
+    <button class="btn" name="provider" value="apimart" type="submit">APIMart · Z-Image Turbo (~$0.01)</button>
+    <button class="btn" name="provider" value="atlas" type="submit">Atlas · FLUX.1 schnell (~$0.003)</button>
+  </div>
+</form>
 <h2 style="margin:28px 0 12px">Accounts</h2>
 <div class="section">
   <table><thead><tr><th>Person</th><th colspan="4">Role · monthly limit (USD) · status · password reset</th></tr></thead><tbody>${userRows}</tbody></table>
@@ -131,4 +140,14 @@ ${flash(error, notice)}
 </form></div>
 ${adminBlocks}
 </div>`);
+}
+
+export function testResultPage({ result, provider, model }) {
+  const done = result.status === 'completed' || result.status === 'failed';
+  const body = result.status === 'completed'
+    ? `<div class="msg ok">Done. The file is stored on this server.</div><img src="${esc(result.url)}" style="max-width:100%;border-radius:12px;border:1px solid var(--line)"><p class="muted mono" style="font-size:12px">${esc(result.url)}${result.cost != null ? ` · cost $${esc(result.cost)}` : ''}</p>`
+    : result.status === 'failed'
+      ? `<div class="msg err">Failed: ${esc(result.error)}</div>`
+      : '<p>Waiting for the provider… this page refreshes itself.</p>';
+  return layout('Test generation', `${done ? '' : '<meta http-equiv="refresh" content="3">'}<div class="wide"><div class="top"><h1>Test generation · ${esc(provider)} · <span class="mono">${esc(model)}</span></h1><a class="btn" href="/dz/settings">← Settings</a></div>${body}</div>`);
 }

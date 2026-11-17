@@ -253,37 +253,41 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
   const [factor, setFactor] = useState(saved.factor || spec?.factor?.default || 2);
   const [values, setValues] = useState(saved.values || {}); // per model id
   const [busy, setBusy] = useState(0);
+  const [advanced, setAdvanced] = useState(Boolean(saved.advanced));
   // The drawer can close while a job runs: the job and its callbacks go on,
   // only this panel's own state is no longer touched.
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
-  useEffect(() => { save({ groupId, modelByGroup, factor, values }); }, [groupId, modelByGroup, factor, values]);
+  useEffect(() => { save({ groupId, modelByGroup, factor, values, advanced }); }, [groupId, modelByGroup, factor, values, advanced]);
 
   const modelValues = (model && values[model.id]) || {};
   const setValue = (key, v) => setValues((prev) => ({ ...prev, [model.id]: { ...(prev[model.id] || {}), [key]: v } }));
   const fields = useMemo(() => (model ? [...model.fields, ...(spec?.common || [])] : []), [model, spec]);
+  // Hidden settings keep their values but are not sent: Advanced off = the model's defaults.
   const valueOf = useCallback((key) => {
     const f = fields.find((x) => x.key === key);
     const v = modelValues[key];
     return v === undefined || v === null || v === "" ? f?.default : v;
   }, [fields, modelValues]);
-  const changed = Object.values(modelValues).some((v) => v !== undefined) || factor !== (spec?.factor?.default || 2);
-  const reset = () => {
-    setValues((prev) => ({ ...prev, [model.id]: {} }));
-    setFactor(spec?.factor?.default || 2);
-  };
+  const changed = Boolean(model?.fields.some((f) => modelValues[f.key] !== undefined && modelValues[f.key] !== null));
+  const reset = () => setValues((prev) => {
+    const kept = { ...(prev[model.id] || {}) };
+    for (const f of model.fields) delete kept[f.key];
+    return { ...prev, [model.id]: kept };
+  });
 
   const body = useMemo(() => {
     if (!model || !imageUrl) return null;
     const b = { image_url: imageUrl, model: model.id, upscale_factor: factor };
     for (const f of fields) {
       if (!fieldApplies(f, valueOf)) continue;
+      if (!advanced && model.fields.includes(f)) continue;
       const v = valueOf(f.key);
       if (v !== undefined && v !== null && v !== "") b[f.key] = v;
     }
     return b;
-  }, [model, imageUrl, factor, fields, valueOf]);
+  }, [model, imageUrl, factor, fields, valueOf, advanced]);
 
   const canRun = Boolean(body && dzIsOwnImage(imageUrl));
   const { price, loading } = useDzQuote(apiKey, () => (canRun ? [dzUpscale, { endpoint: group.endpoint, ...body }] : null));
@@ -351,17 +355,43 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
           {factor === 1 && <p className="mt-1.5 text-[12px] text-white/40">1× keeps the size and only enhances the image.</p>}
         </div>
 
-        {/* Settings of this model */}
-        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 pb-1 pt-2">
-          <div className="flex items-center justify-between py-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-white/40">Settings · {model.id}</span>
-            <button type="button" onClick={reset} disabled={!changed} className="rounded-md px-2 py-0.5 text-[12px] font-semibold text-white/55 hover:bg-white/5 hover:text-white disabled:cursor-default disabled:opacity-30" title="Back to the model's defaults">Reset</button>
+        {/* Settings everyone needs (output format) */}
+        {(spec.common || []).map((f) => (
+          <Field key={f.key} field={f} value={modelValues[f.key]} onChange={(v) => setValue(f.key, v)} />
+        ))}
+
+        {/* Advanced: only for models that have settings of their own, like
+            Higgsfield. Settings that don't apply right now (face settings while
+            face enhancement is off) are hidden, not greyed out. */}
+        {model.fields.length > 0 && (
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3">
+            <div className="flex items-center justify-between gap-3 py-2.5">
+              <span className="text-[13px] font-semibold text-white/85">Advanced settings</span>
+              <span className="flex items-center gap-2">
+                {advanced && changed && (
+                  <button type="button" onClick={reset} className="rounded-md px-2 py-0.5 text-[12px] font-semibold text-white/55 hover:bg-white/5 hover:text-white" title="Back to the model's defaults">Reset</button>
+                )}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={advanced}
+                  aria-label="Advanced settings"
+                  onClick={() => setAdvanced((v) => !v)}
+                  className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors ${advanced ? "bg-[#22d3ee]" : "bg-white/15"}`}
+                >
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${advanced ? "left-[18px]" : "left-0.5"}`} />
+                </button>
+              </span>
+            </div>
+            {advanced && (
+              <div className="border-t border-white/[0.06] pb-1">
+                {model.fields.filter((f) => fieldApplies(f, valueOf)).map((f) => (
+                  <Field key={f.key} field={f} value={modelValues[f.key]} onChange={(v) => setValue(f.key, v)} />
+                ))}
+              </div>
+            )}
           </div>
-          {model.fields.length === 0 && <p className="py-2 text-[12px] text-white/45">This model picks its own settings.</p>}
-          {fields.map((f) => (
-            <Field key={f.key} field={f} value={modelValues[f.key]} onChange={(v) => setValue(f.key, v)} disabled={!fieldApplies(f, valueOf)} />
-          ))}
-        </div>
+        )}
       </div>
 
       {/* Price and run */}

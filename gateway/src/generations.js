@@ -23,7 +23,7 @@ export class GenerationError extends Error {
 
 const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an hour of retries
 
-export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS }) {
+export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS, onProviderRejected = null }) {
   const q = {
     insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, studio, meta_json, next_poll_at, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
@@ -132,6 +132,10 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       q.setSubmitted.run(taskId, now() + (POLL_MS[model.kind] || 3000), now(), id);
     } catch (error) {
       q.setFailed.run(error.message.slice(0, 1000), now(), now(), id);
+      // The provider refused what we built from its spec: report it (Settings → Provider changes).
+      if ([400, 422].includes(error.status)) {
+        try { onProviderRejected?.({ provider: providerId, endpoint, model: modelId, status: error.status, message: error.message }); } catch { /* reporting is best effort */ }
+      }
       throw error instanceof GenerationError ? error : new GenerationError(`${provider.name}: ${error.message}`, 502);
     }
     return { id };

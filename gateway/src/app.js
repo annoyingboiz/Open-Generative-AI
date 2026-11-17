@@ -21,6 +21,7 @@ import { validateProxyUrl } from './providers/http.js';
 import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
 import { createCatalog, DEFAULT_RECOMMENDED } from './catalog/index.js';
+import { createChanges } from './catalog/changes.js';
 import { createGenerations, GenerationError } from './generations.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
@@ -55,9 +56,20 @@ export async function buildApp(config, { logger = true } = {}) {
     },
   };
   const getRecommended = () => appSettings.get('recommended', DEFAULT_RECOMMENDED);
-  const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended });
+  const changes = createChanges({ dir: path.join(config.dataDir, 'catalog'), log: app.log, notify: (added) => notifyChanges(added) });
+  async function notifyChanges(added) {
+    const { botToken, chatId } = config.telegram || {};
+    if (!botToken || !chatId || !added.length) return;
+    const review = added.filter((e) => e.status === 'review').length;
+    const lines = added.slice(0, 12).map((e) => `• ${e.provider} · ${e.name || e.model || e.endpoint || ''} — ${e.type}${e.param ? ` ${e.param}` : ''}${e.detail ? `: ${String(e.detail).slice(0, 80)}` : ''}`);
+    const text = [`Director: ${added.length} provider change(s)${review ? `, ${review} need review` : ''}`, ...lines, added.length > 12 ? `…and ${added.length - 12} more` : '', config.publicUrl ? `${config.publicUrl}/dz/settings#changes` : ''].filter(Boolean).join('\n');
+    try {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }), signal: AbortSignal.timeout(10_000) });
+    } catch (error) { app.log.warn(`telegram: ${error.message}`); }
+  }
+  const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended, changes });
   const quoter = createQuoter({ providers, log: app.log });
-  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, maxActiveJobsPerUser: config.maxActiveJobsPerUser, ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
+  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, maxActiveJobsPerUser: config.maxActiveJobsPerUser, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);
   await app.register(formbody);
@@ -208,7 +220,7 @@ export async function buildApp(config, { logger = true } = {}) {
   });
 
   // ── Settings ────────────────────────────────────────────────────────────
-  const NOTICES = { welcome: 'Admin created. Add provider keys below.', saved: 'Saved.', password: 'Password changed.', user: 'Account saved.', recommended: 'Recommended models saved. Reload the studio to see them.' };
+  const NOTICES = { welcome: 'Admin created. Add provider keys below.', saved: 'Saved.', password: 'Password changed.', user: 'Account saved.', recommended: 'Recommended models saved. Reload the studio to see them.', changes: 'Provider changes updated.', checked: 'Check started. It takes a minute or two — reload this page to see new changes.' };
 
   async function renderSettings(req, reply, { error, notice, code = 200 } = {}) {
     const isAdmin = req.user.role === 'admin';
@@ -219,16 +231,47 @@ export async function buildApp(config, { logger = true } = {}) {
       users: isAdmin ? auth.listUsers() : [],
       recommended: isAdmin ? getRecommended() : [],
       families: isAdmin ? catalog.families() : [],
+      changes: isAdmin ? { entries: changes.list({ limit: 150 }), summary: changes.summary(), telegram: Boolean(config.telegram?.botToken && config.telegram?.chatId) } : null,
       error,
       notice: notice ?? NOTICES[req.query?.notice],
     }), code);
   }
+  const renderSettingsSeen = async (req, reply, opts) => {
+    const out = await renderSettings(req, reply, opts);
+    if (req.user.role === 'admin') changes.markSeen(); // the admin has seen the list
+    return out;
+  };
   const requireAdmin = (req, reply) => {
     if (req.user.role !== 'admin') { reply.code(403).send({ error: 'Admin only' }); return false; }
     return true;
   };
 
-  app.get('/dz/settings', (req, reply) => renderSettings(req, reply));
+  app.get('/dz/settings', (req, reply) => renderSettingsSeen(req, reply));
+
+  // ── Provider changes (admin) ────────────────────────────────────────────
+  app.get('/dz/api/changes/summary', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    if (req.user.role !== 'admin') return { review: 0, unseen: 0 };
+    return changes.summary();
+  });
+  app.post('/dz/settings/changes/check', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    // Takes a minute or two (every schema and docs page) — runs in the background.
+    catalog.refreshAll({ force: true, docs: true }).catch((error) => app.log.warn(`changes check: ${error.message}`));
+    return reply.redirect('/dz/settings?notice=checked#changes');
+  });
+  app.post('/dz/settings/changes/:action', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const { model, id } = req.body || {};
+    const action = req.params.action;
+    let ok = false;
+    if (action === 'apply') { ok = changes.applyPending(String(model || '')); if (ok) catalog.requestRebuild(); }
+    else if (action === 'dismiss') ok = changes.dismissPending(String(model || ''));
+    else if (action === 'close') ok = changes.close(String(id || ''));
+    else return reply.code(400).send({ error: 'Unknown action' });
+    if (!ok) return renderSettings(req, reply, { error: 'Nothing to change — the list may be out of date. Reload the page.', code: 409 });
+    return reply.redirect('/dz/settings?notice=changes#changes');
+  });
 
   app.post('/dz/settings/password', async (req, reply) => {
     const { currentPassword, newPassword } = req.body || {};

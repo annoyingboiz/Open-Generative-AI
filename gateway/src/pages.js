@@ -67,7 +67,7 @@ function balanceCell(b) {
   return `<span class="pill err" title="${esc(b.error)}">error</span> <span class="muted">${esc(b.error)}</span>`;
 }
 
-export function settingsPage({ user, providers = [], balances = [], users = [], recommended = [], families = [], error, notice }) {
+export function settingsPage({ user, providers = [], balances = [], users = [], recommended = [], families = [], changes = null, error, notice }) {
   const isAdmin = user.role === 'admin';
   const balanceById = Object.fromEntries(balances.map((b) => [b.id, b]));
 
@@ -108,6 +108,8 @@ export function settingsPage({ user, providers = [], balances = [], users = [], 
 <h2 style="margin:28px 0 12px">Providers</h2>
 <p class="muted" style="margin-top:-6px">Keys are stored encrypted on this server and never sent to the browser.</p>
 ${providerSections}
+<h2 style="margin:28px 0 12px" id="changes">Provider changes</h2>
+${changes ? changesSection(changes) : ''}
 <h2 style="margin:28px 0 12px" id="recommended">Recommended models</h2>
 ${recommendedSection(recommended, families)}
 <h2 style="margin:28px 0 12px">Test generation</h2>
@@ -146,6 +148,52 @@ ${flash(error, notice)}
 </form></div>
 ${adminBlocks}
 </div>`);
+}
+
+const CHANGE_LABEL = {
+  'model-added': 'New model', 'model-removed': 'Model removed', 'model-missing': 'Not in the docs',
+  'param-added': 'New setting', 'param-removed': 'Setting removed', 'param-changed': 'Setting changed',
+  'values-added': 'New values', 'values-removed': 'Values removed', 'range-changed': 'Range changed',
+  'limit-changed': 'File limit changed', 'default-changed': 'Default changed', 'price-changed': 'Price changed',
+  'mode-added': 'New mode', 'mode-removed': 'Mode removed', 'rename-changed': 'Field names changed',
+  rejected: 'Request refused', 'check-skipped': 'Check skipped',
+};
+const STATUS_LABEL = { applied: 'live', review: 'needs review', info: 'info', resolved: 'resolved', replaced: 'replaced', dismissed: 'kept old', closed: 'closed' };
+const STATUS_COLOR = { applied: 'var(--ok, #4ade80)', review: '#fbbf24', info: 'var(--muted, #888)' };
+
+function changesSection({ entries, summary, telegram }) {
+  const when = (t) => new Date(t).toISOString().slice(0, 16).replace('T', ' ');
+  const form = (action, field, value, label, cls = '') => `<form method="post" action="/dz/settings/changes/${action}" style="display:inline"><input type="hidden" name="${field}" value="${esc(value)}"><button class="btn small ${cls}" type="submit">${label}</button></form>`;
+  const shownModels = new Set();
+  const rows = entries.map((e) => {
+    let actions = '';
+    if (e.status === 'review' && e.source === 'docs' && e.model && !shownModels.has(e.model)) {
+      shownModels.add(e.model);
+      actions = `${form('apply', 'model', e.model, 'Use the docs version', 'primary')} ${form('dismiss', 'model', e.model, 'Keep current')}`;
+    } else if (e.status === 'review' && e.source !== 'docs') {
+      actions = form('close', 'id', e.id, 'Done');
+    }
+    const what = [e.mode, e.param].filter(Boolean).join(' · ');
+    return `<tr${e.seen ? '' : ' style="background:rgba(34,211,238,.06)"'}>
+  <td class="muted mono" style="white-space:nowrap">${esc(when(e.at))}</td>
+  <td>${esc(e.provider)}<div class="muted" style="font-size:16px">${esc(e.source)}</div></td>
+  <td><b>${esc(e.name || e.model || e.endpoint || '')}</b>${what ? `<div class="muted mono" style="font-size:16px">${esc(what)}</div>` : ''}</td>
+  <td>${esc(CHANGE_LABEL[e.type] || e.type)}<div class="muted" style="font-size:16px;max-width:420px;overflow-wrap:anywhere">${esc(String(e.detail || '').slice(0, 300))}</div></td>
+  <td style="white-space:nowrap;color:${STATUS_COLOR[e.status] || 'inherit'}">${esc(STATUS_LABEL[e.status] || e.status)}</td>
+  <td style="text-align:right;white-space:nowrap">${actions}</td>
+</tr>`;
+  }).join('');
+  const last = summary.lastCheck ? when(summary.lastCheck) : 'not yet';
+  return `<div class="section">
+  <p class="muted" style="margin-top:0">Checked every day. <b>Atlas</b> publishes machine-readable schemas: new settings appear in the studio by themselves, and this list says what changed. <b>APIMart</b> settings come from its docs: new values or wider limits are applied by themselves, anything else waits for you here. Requests a provider refuses are listed too — usually a sign its spec changed.</p>
+  <div class="row" style="margin-bottom:12px">
+    <span><b>${summary.review}</b> need review · APIMart docs last checked: ${esc(last)}${telegram ? ' · Telegram alerts on' : ' · Telegram alerts off (set DZ_TELEGRAM_BOT_TOKEN and DZ_TELEGRAM_CHAT_ID)'}</span>
+    <span style="flex:1"></span>
+    <form method="post" action="/dz/settings/changes/check"><button class="btn small" type="submit">Check now</button></form>
+  </div>
+  <div style="max-height:520px;overflow:auto"><table><thead><tr><th>When (UTC)</th><th>Provider</th><th>Model</th><th>Change</th><th>Status</th><th></th></tr></thead>
+  <tbody>${rows || '<tr><td colspan="6" class="muted">No changes yet. The first check only remembers how things are now.</td></tr>'}</tbody></table></div>
+</div>`;
 }
 
 function recommendedSection(recommended, families) {

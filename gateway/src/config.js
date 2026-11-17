@@ -26,4 +26,7 @@ export const config = {
   maxUploadBytes: Number(env.MAX_UPLOAD_MB || 300) * 1024 * 1024,
   userUploadQuotaBytes: Number(env.USER_UPLOAD_QUOTA_GB || 10) * 1024 ** 3,
   maxActiveJobsPerUser: Number(env.MAX_ACTIVE_JOBS_PER_USER || 8),
+  // Optional: provider-change alerts to Telegram (Settings → Provider changes).
+  telegram: { botToken: env.DZ_TELEGRAM_BOT_TOKEN || '', chatId: env.DZ_TELEGRAM_CHAT_ID || '' },
+  publicUrl: env.PUBLIC_URL || '',
 };

@@ -15,6 +15,7 @@ import { byteLimit } from '../storage.js';
 import { PROVIDERS, providerById } from '../providers/index.js';
 import { FAL_UPSCALE } from '../providers/fal-tools.js';
 import { buildAtlasVariant, buildApimartVariants, buildStudioLists, apimartPrice, STUDIO_MODES } from './build.js';
+import { fetchApimartDocs, buildApimartOverrides } from './apimart-docs.js';
 
 const require = createRequire(import.meta.url);
 const APIMART_OVERRIDES = require('./apimart-overrides.json');
@@ -44,7 +45,7 @@ function writeJsonAtomic(file, data) {
   fs.renameSync(`${file}.tmp`, file);
 }
 
-export function createCatalog({ dataDir, providers, log, getRecommended = () => DEFAULT_RECOMMENDED }) {
+export function createCatalog({ dataDir, providers, log, getRecommended = () => DEFAULT_RECOMMENDED, changes = null, fetchDocs = fetchApimartDocs }) {
   const dir = path.join(dataDir, 'catalog');
   const schemaDir = path.join(dir, 'atlas-schemas');
   fs.mkdirSync(schemaDir, { recursive: true });
@@ -81,9 +82,11 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     }
     if (raw.apimart && enabled('apimart')) {
       const prices = readJson(fileOf('apimart-prices.json'), {});
+      // Specs from the bundled docs file, updated by the daily docs check.
+      const overrides = { ...APIMART_OVERRIDES, ...(changes?.liveOverrides() || {}) };
       for (const model of raw.apimart.list) {
         if (!['image', 'video'].includes(model.category)) continue;
-        variants.push(...buildApimartVariants(model, APIMART_OVERRIDES[model.id], apimartPrice(prices[model.id])));
+        variants.push(...buildApimartVariants(model, overrides[model.id], apimartPrice(prices[model.id])));
       }
     }
     const lists = buildStudioLists(variants, { recommended: getRecommended() || [] });
@@ -139,15 +142,44 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     }
   }
 
-  async function refreshAll({ force = false } = {}) {
+  async function refreshAll({ force = false, docs = false } = {}) {
     if (refreshing) return refreshing;
     refreshing = (async () => {
+      const ok = [];
       for (const p of PROVIDERS) {
-        try { await refreshProvider(p.id, { force }); } catch (error) { log?.warn(`catalog: ${p.id} refresh failed — ${error.message}`); }
+        try { await refreshProvider(p.id, { force }); ok.push(p.id); } catch (error) { log?.warn(`catalog: ${p.id} refresh failed — ${error.message}`); }
       }
+      await checkApimartDocs({ force: docs });
       rebuild();
+      // What changed since the last check, per provider that answered.
+      if (changes) {
+        for (const id of ok) {
+          if (!isEnabled(id) || !raw[id]) continue;
+          try {
+            const own = [...built.variants.values()].filter((v) => v.provider === id);
+            changes.catalogChecked(id, own, { params: id !== 'apimart' }); // APIMart params: see the docs check
+          } catch (error) { log?.warn(`changes: ${id} — ${error.message}`); }
+        }
+      }
     })().finally(() => { refreshing = null; });
     return refreshing;
+  }
+
+  const isEnabled = (id) => providers.resolve(id).enabled && Boolean(providers.resolve(id).apiKey);
+
+  // APIMart's parameters come from its docs: re-read them once a day.
+  async function checkApimartDocs({ force = false } = {}) {
+    if (!changes || !isEnabled('apimart')) return;
+    if (!force && Date.now() - changes.lastDocsCheck() < DAY) return;
+    try {
+      const cfg = providers.resolve('apimart');
+      const { docs, total, failed } = await fetchDocs({ fetchFn: (url) => providerFetch(url, { proxy: cfg.proxy, timeoutMs: 20_000, redirect: 'error' }) });
+      changes.apimartDocsChecked(buildApimartOverrides(docs), APIMART_OVERRIDES, { total, failed });
+      changes.setLastDocsCheck(Date.now());
+      log?.info(`changes: APIMart docs checked — ${docs.length}/${total} pages`);
+    } catch (error) {
+      log?.warn(`changes: APIMart docs check failed — ${error.message}`);
+    }
   }
 
   // Model cover images from Atlas, cached on disk (see /dz/thumb).

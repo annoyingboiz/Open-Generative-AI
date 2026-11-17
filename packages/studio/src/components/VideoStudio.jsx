@@ -144,7 +144,7 @@ function ReferenceMediaLabel({ label, required = false }) {
   if (!label) return null;
   return (
     <span
-      className={`flex min-h-6 max-w-[88px] items-start justify-center text-balance text-center text-base font-semibold leading-3 ${
+      className={`flex min-h-6 max-w-[88px] items-start justify-center text-balance text-center text-base font-semibold leading-5 ${
         required ? "text-white/60" : "text-white/45"
       }`}
     >
@@ -190,7 +190,7 @@ function ReferencePreview({
           aria-label={`${copy.media.removePrefix} ${actionLabel}`}
           title={`${copy.media.removePrefix} ${actionLabel}`}
           onClick={() => onRemove(index)}
-          className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 hover:bg-black rounded-full flex items-center justify-center text-white/85 hover:text-white text-base border border-white/5"
+          className="absolute top-0.5 right-0.5 w-6 h-6 bg-black/60 hover:bg-black rounded-full flex items-center justify-center text-white/85 hover:text-white text-base border border-white/5"
         >
           ×
         </button>

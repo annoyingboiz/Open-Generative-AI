@@ -236,10 +236,10 @@ export default function DzShell() {
             <span className="text-lg font-bold tracking-tight hidden sm:block">Director</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <ThemeToggle />
           {balance ? (
-            <div className="hidden items-center gap-1.5 md:flex" aria-label="Provider balances">
+            <div className="hidden min-w-0 items-center gap-1.5 xl:flex" aria-label="Provider balances">
               {balance.map((b) => (
                 <span key={b.id} title={b.hint} className={`flex items-center gap-2 rounded-full border px-3 py-1 text-base ${b.low ? 'border-amber-400/40 text-amber-300' : 'border-border text-foreground/90'}`}>
                   <span className="text-muted-foreground">{b.name}</span>
@@ -248,9 +248,9 @@ export default function DzShell() {
               ))}
             </div>
           ) : null}
-          <span className="flex items-center gap-2 rounded-full border border-border px-3 py-1 text-base text-foreground/90">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            {user.displayName}
+          <span className="flex min-w-0 max-w-[180px] items-center gap-2 rounded-full border border-border px-3 py-1 text-base text-foreground/90" title={balance ? balance.map((b) => `${b.name} ${b.text}`).join(' · ') : user.displayName}>
+            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+            <span className="truncate">{user.displayName}</span>
           </span>
           <a href="/dz/settings" className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-base font-semibold text-foreground/90 hover:bg-accent">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 7 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 1.17 14H1a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 2.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 7 4.6 1.65 1.65 0 0 0 8 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.17l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.15.67.4.88.72.21.32.33.7.32 1.08V11a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>

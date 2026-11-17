@@ -1649,7 +1649,7 @@ export default function ImageStudio({
                       setUploadedImageUrls(next);
                       if (next.length === 0) handleUploadClear();
                     }}
-                    className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 hover:bg-black rounded-full flex items-center justify-center text-white/85 hover:text-white text-base border border-white/5"
+                    className="absolute top-0.5 right-0.5 w-6 h-6 bg-black/60 hover:bg-black rounded-full flex items-center justify-center text-white/85 hover:text-white text-base border border-white/5"
                   >
                     ×
                   </button>

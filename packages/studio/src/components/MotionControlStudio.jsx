@@ -290,7 +290,7 @@ function CharacterImagesMediaButton({
         {images.length > 0 && (
           <div className="w-full h-full relative rounded-full overflow-hidden">
             <img src={images[images.length - 1].url} alt="" className="w-full h-full object-cover" />
-            <div className="absolute bottom-0 inset-x-0 bg-black/75 text-base font-black text-[#22d3ee] text-center leading-3">
+            <div className="absolute bottom-0 inset-x-0 bg-black/75 text-base font-black text-[#22d3ee] text-center leading-6">
               {images.length}
             </div>
           </div>

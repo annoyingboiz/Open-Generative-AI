@@ -787,10 +787,11 @@ function buildModelPickerEntries(catalog, modes, aliases) {
         // DZ: two rows of one family + provider — say what the second one does.
         const endpoint = String(dzModel.endpoint || "");
         const modes = Object.keys(entry.variantsByMode);
+        const only = modes.length === 1 ? modes[0] : null;
         const label = /reference/i.test(endpoint) ? "References"
-          : modes.includes("v2v") ? "Video edit"
-          : modes.length === 1 && modes[0] === "i2v" ? "Image → Video"
-          : modes.length === 1 && modes[0] === "i2i" ? "Edit"
+          : only === "v2v" ? "Video edit"
+          : only === "i2v" ? "Image → Video"
+          : only === "i2i" ? "Edit"
           : "";
         if (label) entry.name = `${entry.name} · ${label}`;
       } else if (duplicateName) {

@@ -329,7 +329,7 @@ function HoverPill({ label, img, onClick }) {
       <button
         type="button"
         onClick={onClick}
-        className="h-[22px] px-2 rounded-md bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.10] text-base font-medium text-gray-200 whitespace-nowrap transition-all cursor-pointer"
+        className="h-8 px-2.5 rounded-md bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.10] text-base font-medium text-gray-200 whitespace-nowrap transition-all cursor-pointer"
       >
         {label}
       </button>
@@ -684,7 +684,7 @@ export default function AiInfluencerStudio({
                 <button
                   type="button"
                   onClick={() => setShowAllTags((v) => !v)}
-                  className="h-[22px] px-2 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-base text-gray-500 hover:text-gray-300 whitespace-nowrap transition-all"
+                  className="h-8 px-2.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-base text-gray-500 hover:text-gray-300 whitespace-nowrap transition-all"
                 >
                   {showAllTags ? copy.tags.hide : copy.tags.showMore}
                 </button>

@@ -95,7 +95,7 @@ export function createGenerations({ db, storage, providers, catalog, log }) {
     if (!model) throw new GenerationError(`${provider.name} has no model "${modelId}" (catalog may need a refresh).`, 404);
     if (user.monthly_limit_usd != null) {
       const spent = q.spentThisMonth.get(user.id, monthStart()).usd;
-      if (spent + (estCostUsd || 0) > user.monthly_limit_usd) {
+      if (spent >= user.monthly_limit_usd || spent + (estCostUsd || 0) > user.monthly_limit_usd) {
         throw new GenerationError(`Monthly limit reached ($${spent.toFixed(2)} of $${user.monthly_limit_usd}). Ask the admin to raise it.`, 402);
       }
     }

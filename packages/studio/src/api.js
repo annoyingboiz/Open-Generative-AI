@@ -422,6 +422,13 @@ export function uploadFile(apiKey, file, onProgress) {
     });
 }
 
+// DZ: any catalog endpoint (p/<provider>/<model>?m=…) with a ready body —
+// used by the Create studio, whose body comes from the model's own spec.
+export async function dzGenerate(apiKey, { endpoint, onRequestId, ...params }) {
+    if (!/^p\/[a-z0-9-]+\//.test(String(endpoint || ''))) throw new Error('Unknown model endpoint');
+    return submitAndPoll(endpoint, params, apiKey, onRequestId);
+}
+
 // DZ: Topaz upscaling on fal.ai. `endpoint` is a tool endpoint from the
 // catalog (e.g. topaz/upscale/image/precision); the rest goes to the model.
 export async function dzUpscale(apiKey, { endpoint, onRequestId, ...params }) {

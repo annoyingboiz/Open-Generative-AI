@@ -272,7 +272,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   //   studio=cinema|image|video|upscale (comma list; "other" = no studio)
   //   kind=image|video|audio   liked=1   trash=1 (only deleted)   status=processing|completed|failed
   // Each user sees only their own items — there is no shared history.
-  const STUDIOS = new Set(['cinema', 'image', 'video', 'upscale']);
+  const STUDIOS = new Set(['create', 'cinema', 'image', 'video', 'upscale']);
   const KINDS = new Set(['image', 'video', 'audio']);
   function history(user, { cursor, limit = 50, studio, kind, liked, trash: inTrash, status } = {}) {
     const where = ['user_id = ?', 'purged_at IS NULL'];

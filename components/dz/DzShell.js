@@ -5,11 +5,16 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback } from 'react';
-import { ImageStudio, VideoStudio, DzCinemaStudio, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button } from 'studio';
+import { ImageStudio, VideoStudio, DzCinemaStudio, DzCreateStudio, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
 const ICONS = {
+  create: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" /><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" />
+    </svg>
+  ),
   image: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
@@ -40,14 +45,16 @@ const ICONS = {
 };
 
 export const DZ_TABS = [
-  { id: 'cinema', label: 'Cinema' },
-  { id: 'image', label: 'Image' },
-  { id: 'video', label: 'Video' },
+  { id: 'create', label: 'Create' },
   { id: 'upscale', label: 'Upscale' },
+  // The old studios stay until Create has been checked, then they go.
+  { id: 'cinema', label: 'Cinema (old)', divider: true },
+  { id: 'image', label: 'Image (old)' },
+  { id: 'video', label: 'Video (old)' },
   { id: 'library', label: 'Library', divider: true },
 ];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
-const DEFAULT_TAB = 'cinema';
+const DEFAULT_TAB = 'create';
 const labelOf = (tabId) => DZ_TABS.find((t) => t.id === tabId)?.label || tabId;
 const tabFromPath = (path) => {
   const id = String(path || '').split('/').filter(Boolean)[1];
@@ -279,7 +286,7 @@ export default function DzShell() {
                   title={isCollapsed ? tab.label : undefined}
                   className={`relative flex items-center rounded-xl text-base font-semibold transition-colors
                     ${isCollapsed ? 'h-11 w-11 justify-center mx-auto' : 'px-3 py-2.5 gap-3'}
-                    ${active ? 'bg-primary/12 text-primary border border-primary/25' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60 border border-transparent'}`}
+                    ${active ? 'bg-primary/15 text-primary border border-primary/25' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60 border border-transparent'}`}
                 >
                   {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#22d3ee]" />}
                   <span className="flex-shrink-0">{ICONS[tab.id]}</span>
@@ -294,6 +301,9 @@ export default function DzShell() {
 
         {/* Studios stay mounted, so running generations survive switching tabs */}
         <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]" onContextMenu={onContextMenu}>
+          <div className={activeTab === 'create' ? 'h-full w-full' : 'hidden'}>
+            <DzCreateStudio {...studioProps} {...callbacks('create')} droppedFiles={activeTab === 'create' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+          </div>
           <div className={activeTab === 'cinema' ? 'h-full w-full' : 'hidden'}>
             <DzCinemaStudio {...studioProps} {...callbacks('cinema')} />
           </div>

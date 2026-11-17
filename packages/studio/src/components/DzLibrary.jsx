@@ -18,7 +18,7 @@ const VIEWS = [
   { id: "uploads", label: "Uploads", uploads: true },
   { id: "trash", label: "Trash", filter: { trash: true } },
 ];
-const STUDIO_LABEL = { cinema: "Cinema", image: "Image", video: "Video", upscale: "Upscale" };
+const STUDIO_LABEL = { create: "Create", cinema: "Cinema", image: "Image", video: "Video", upscale: "Upscale" };
 
 async function download(url, name) {
   try {

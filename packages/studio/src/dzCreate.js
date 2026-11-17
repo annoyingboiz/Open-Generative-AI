@@ -78,9 +78,24 @@ export function paramsOf(model) {
 
 // How the prompt refers to attached references, from the provider's own text.
 export function refSyntaxOf(model) {
+  // An explicit hint from the catalog (provider overrides) wins over the text.
+  const hint = model.dzRefSyntax;
   const d = String(model.inputs?.prompt?.description || "");
-  if (/@image_N|@image_\d/.test(d)) return { image: (n) => `@image_${n}`, video: (n) => `@video_${n}`, audio: (n) => `@audio_${n}` };
-  if (/@Image\d|@Image1/.test(d)) return { image: (n) => `@Image${n}`, video: (n) => `@Video${n}`, audio: (n) => `@Audio${n}` };
+  if (hint === "image_N" || /@image_N|@image_\d/.test(d)) return { image: (n) => `@image_${n}`, video: (n) => `@video_${n}`, audio: (n) => `@audio_${n}` };
+  if (hint === "ImageN" || /@Image(\d|N)/.test(d)) return { image: (n) => `@Image${n}`, video: (n) => `@Video${n}`, audio: (n) => `@Audio${n}` };
+  if (hint === "imageN" || /@image(\d|N)\b/.test(d)) return { image: (n) => `@image${n}`, video: (n) => `@video${n}`, audio: (n) => `@audio${n}` };
+  return null;
+}
+
+// Same model at another provider: its docs usually spell out the @-syntax
+// (it belongs to the model, the provider passes the prompt through).
+export function refSyntaxFor(model) {
+  const own = refSyntaxOf(model);
+  if (own || !model?.dzFamily) return own;
+  const lists = (typeof window !== "undefined" && window.__DZ_CATALOG__?.lists) || {};
+  for (const list of Object.values(lists)) {
+    for (const m of list || []) if (m?.dzFamily === model.dzFamily && m !== model) { const s = refSyntaxOf(m); if (s) return s; }
+  }
   return null;
 }
 
@@ -161,14 +176,14 @@ export function missingFor(variant, attached) {
 }
 
 // Request body for the chosen endpoint.
-export function buildBody(variant, { prompt, values, attached }) {
+export function buildBody(variant, { prompt, values, attached, noDefault = [] }) {
   const body = {};
   if (variant.model.hasPrompt !== false && prompt) body.prompt = prompt;
   const { main, advanced } = paramsOf(variant.model);
   for (const p of [...main, ...advanced]) {
     const v = values[p.key];
     if (v !== undefined && v !== null && v !== "") body[p.key] = coerce(p, v);
-    else if (p.default !== undefined && p.default !== null && p.default !== "") body[p.key] = p.default;
+    else if (!noDefault.includes(p.key) && p.default !== undefined && p.default !== null && p.default !== "") body[p.key] = p.default;
   }
   for (const [role, m] of Object.entries(variant.media)) {
     const files = (attached[role] || []).map((f) => f.url).filter(Boolean);

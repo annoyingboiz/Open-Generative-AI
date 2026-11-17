@@ -1028,12 +1028,16 @@ export default function DrawModal({
       if (!variant) throw new Error(`${selectedEntry.familyName} can't edit an image here.`);
       const prompt = promptText.trim() || "Edit the image based on the drawing overlay";
       const aspect = aspectRatio === "Auto" ? undefined : aspectRatio;
+      // A chosen ratio is sent when the model has it. "Auto" means: let the model
+      // follow the source image — its own auto/adaptive value, or no ratio at all.
       const values = {};
-      for (const key of ["aspect_ratio", "ratio"]) {
-        const enumValues = variant.model.inputs?.[key]?.enum;
-        if (aspect && enumValues?.includes(aspect)) values[key] = aspect;
+      for (const key of ["aspect_ratio", "ratio", "size"]) {
+        const enumValues = (variant.model.inputs?.[key]?.enum || []).map(String);
+        if (!enumValues.length) continue;
+        if (aspect && enumValues.includes(aspect)) values[key] = aspect;
+        else if (!aspect) { const auto = enumValues.find((x) => /^(auto|adaptive)$/i.test(x)); if (auto) values[key] = auto; }
       }
-      const body = buildBody(variant, { prompt, values, attached });
+      const body = buildBody(variant, { prompt, values, attached, noDefault: aspect ? [] : ["aspect_ratio", "ratio", "size"] });
       const modelName = `${selectedEntry.familyName} · ${selectedEntry.providerName}`;
       const results = await Promise.all(
         Array.from({ length: batchSize }).map(() =>

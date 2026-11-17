@@ -13,7 +13,7 @@ import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
 import {
-  createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxOf, composePrompt,
+  createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   ROLE_INFO, CAMERA, LENS, FOCAL, APERTURE, CAMERA_ASSETS, CAMERA_MOVES, DEFAULT_CAMERA,
 } from "../dzCreate.js";
 import {
@@ -24,7 +24,24 @@ import {
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 
 const STORE = "dz_create_v1";
-const load = () => { try { return JSON.parse(localStorage.getItem(STORE) || "{}") || {}; } catch { return {}; } };
+const isObj = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+const isScalar = (x) => ["string", "number", "boolean"].includes(typeof x);
+const cleanValues = (v) => (isObj(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => isScalar(x))) : {});
+const cleanFiles = (list) => (Array.isArray(list) ? list.filter((f) => isObj(f) && typeof f.url === "string" && f.url).map((f) => ({ url: f.url, name: typeof f.name === "string" ? f.name : "" })) : []);
+// Restored state is untrusted (old versions, hand edits): keep only well-formed parts.
+function normalizeSaved(raw) {
+  const s = isObj(raw) ? raw : {};
+  const out = {};
+  if (s.kind === "image" || s.kind === "video") out.kind = s.kind;
+  if (isObj(s.modelByKind)) out.modelByKind = Object.fromEntries(Object.entries(s.modelByKind).filter(([, v]) => typeof v === "string"));
+  if (isObj(s.valuesByKind)) out.valuesByKind = { image: cleanValues(s.valuesByKind.image), video: cleanValues(s.valuesByKind.video) };
+  if (typeof s.prompt === "string") out.prompt = s.prompt;
+  if (isObj(s.camera)) out.camera = Object.fromEntries(Object.entries(s.camera).filter(([, v]) => isScalar(v)));
+  if (typeof s.move === "string") out.move = s.move;
+  if (isObj(s.attached)) out.attached = Object.fromEntries(Object.entries(s.attached).filter(([role]) => ROLE_INFO[role]).map(([role, list]) => [role, cleanFiles(list)]));
+  return out;
+}
+const load = () => { try { return normalizeSaved(JSON.parse(localStorage.getItem(STORE) || "{}")); } catch { return {}; } };
 const fmtUsd = (usd) => `$${usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
 const ACCEPT = { image: "image/png,image/jpeg,image/webp", video: "video/mp4,video/quicktime,video/webm", audio: "audio/mpeg,audio/wav,audio/mp4,audio/x-m4a" };
 
@@ -288,6 +305,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const [move, setMove] = useState(saved.move || "");
   const [attached, setAttached] = useState(saved.attached || {});
   const [uploadingRole, setUploadingRole] = useState(null);
+  const [uploads, setUploads] = useState(0); // files still uploading — Generate waits for them
   const [busy, setBusy] = useState(0);
   const [drawOpen, setDrawOpen] = useState(false);
   const promptRef = useRef(null);
@@ -297,7 +315,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   useEffect(() => { setCatalogReady(true); }, []);
   const entries = useMemo(() => (catalogReady ? createEntries(kind) : []), [kind, catalogReady]);
   const entry = entries.find((e) => e.key === modelByKind[kind]) || entries[0] || null;
-  const values = valuesByKind[kind] || {};
+  const storedValues = valuesByKind[kind] || {};
 
   useEffect(() => {
     try { localStorage.setItem(STORE, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached })); } catch { /* optional */ }
@@ -309,11 +327,13 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const unusedCount = Object.entries(attached).filter(([role]) => !slotRoles.has(role)).reduce((n, [, f]) => n + (f?.length || 0), 0);
   const variant = entry ? chooseVariant(entry, used) : null;
   const params = variant ? paramsOf(variant.model) : { main: [], advanced: [] };
-  const syntax = variant ? refSyntaxOf(variant.model) : null;
+  // Only values this endpoint accepts (attaching files can switch the endpoint).
+  const values = variant ? keepValues(storedValues, variant) : storedValues;
+  const syntax = variant ? refSyntaxFor(variant.model) : null;
   const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, used);
   const finalPrompt = composePrompt(prompt, { kind, camera, move });
   const needsPrompt = variant?.model.promptRequired;
-  const canRun = Boolean(variant && !missing && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(used).length));
+  const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(used).length));
   const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values, attached: used }) : null;
   const { price, loading: priceLoading } = useDzQuote(apiKey, () => (body ? [dzGenerate, { endpoint: variant.model.endpoint, ...body }] : null));
 
@@ -335,6 +355,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     const list = files.filter((f) => f.type.startsWith(`${info.kind}/`)).slice(0, Math.max(0, room));
     if (!list.length) { onGenerationError?.(`Choose ${info.kind} files for “${info.label}”.`); return; }
     setUploadingRole(role);
+    setUploads((n) => n + 1);
     try {
       for (const f of list) {
         const url = await uploadFile(apiKey, f);
@@ -343,7 +364,8 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     } catch (e) {
       onGenerationError?.(String(e?.message || e));
     } finally {
-      setUploadingRole(null);
+      setUploads((n) => n - 1);
+      setUploadingRole((r) => (r === role ? null : r));
     }
   }, [apiKey, attached, entry, onGenerationError]);
 
@@ -402,8 +424,13 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
 
   const applyResult = (item, how) => {
     if (how === "animate") {
+      // The start frame if the chosen video model has one, else a reference.
+      const videoEntries = createEntries("video");
+      const ve = videoEntries.find((e) => e.key === modelByKind.video) || videoEntries[0];
+      const has = (r) => ve?.slots.some((sl) => sl.role === r);
+      const role = has("first") ? "first" : has("reference") ? "reference" : "first";
       setKind("video");
-      setAttached((prev) => ({ ...prev, first: [{ url: item.url, name: "result" }] }));
+      setAttached((prev) => ({ ...prev, [role]: role === "first" ? [{ url: item.url, name: "result" }] : [...(prev[role] || []), { url: item.url, name: "result" }] }));
       return;
     }
     setAttached((prev) => ({ ...prev, reference: [...(prev.reference || []), { url: item.url, name: "result" }] }));
@@ -412,11 +439,11 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     const m = item.meta || {};
     if (m.kind) setKind(m.kind);
     if (m.entryKey) setModelByKind((prev) => ({ ...prev, [m.kind || kind]: m.entryKey }));
-    if (m.values) setValuesByKind((prev) => ({ ...prev, [m.kind || kind]: m.values }));
+    if (m.values) setValuesByKind((prev) => ({ ...prev, [m.kind || kind]: cleanValues(m.values) }));
     if (typeof m.prompt === "string") setPrompt(m.prompt);
     if (m.camera) setCamera({ ...DEFAULT_CAMERA, ...m.camera });
     setMove(m.move || "");
-    if (m.attached) setAttached(m.attached);
+    if (isObj(m.attached)) setAttached(normalizeSaved({ attached: m.attached }).attached || {});
   };
 
   const refChips = [];

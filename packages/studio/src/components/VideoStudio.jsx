@@ -3007,7 +3007,7 @@ export default function VideoStudio({
                 {openDropdown === "model" && (
                   <PromptPopover
                     onClick={(e) => e.stopPropagation()}
-                    className="w-[calc(100vw-2rem)] md:w-[480px] max-w-md md:max-w-none max-h-[70vh]"
+                    className="w-[calc(100vw-2rem)] md:w-[580px] max-w-md md:max-w-none max-h-[70vh]"
                     fitViewport={Boolean(groupedConfiguration)}
                     solid={Boolean(groupedConfiguration)}
                   >

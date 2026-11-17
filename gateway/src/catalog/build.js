@@ -122,7 +122,8 @@ export function buildAtlasVariant(entry, schemaDoc) {
     // Logos from Atlas (organization avatar, model logo), also via /dz/thumb.
     // buildStudioLists shares them with the same family/vendor on other providers.
     logos: {
-      vendor: entry.avatar ? `/dz/thumb?u=${encodeURIComponent(entry.avatar)}` : null,
+      // Atlas's organization avatars often 404; the model logo is the brand mark.
+      vendor: (entry.logo || entry.avatar) ? `/dz/thumb?u=${encodeURIComponent(entry.logo || entry.avatar)}` : null,
       model: (entry.logo || entry.avatar) ? `/dz/thumb?u=${encodeURIComponent(entry.logo || entry.avatar)}` : null,
     },
     server: { rename: toProvider, allowed, fixed: {}, price },
@@ -248,11 +249,17 @@ export function buildStudioLists(variants, { recommended = [] } = {}) {
   // Logos: Atlas has them, APIMart doesn't — a model gets its family's logo,
   // or its vendor's, from whichever provider has one.
   const familyLogo = new Map();
-  const vendorLogo = new Map();
+  const vendorCounts = new Map(); // vendor -> Map(logo -> count)
   for (const v of variants) {
     if (v.logos?.model && !familyLogo.has(v.family)) familyLogo.set(v.family, v.logos.model);
-    if (v.logos?.vendor && !vendorLogo.has(v.model.provider)) vendorLogo.set(v.model.provider, v.logos.vendor);
+    if (v.logos?.vendor) {
+      if (!vendorCounts.has(v.model.provider)) vendorCounts.set(v.model.provider, new Map());
+      const counts = vendorCounts.get(v.model.provider);
+      counts.set(v.logos.vendor, (counts.get(v.logos.vendor) || 0) + 1);
+    }
   }
+  // The vendor's logo is the one most of its models use (its brand mark).
+  const vendorLogo = new Map([...vendorCounts].map(([vendor, counts]) => [vendor, [...counts].sort((a, b) => b[1] - a[1])[0][0]]));
   const seenIds = new Set();
   for (const group of byFamilyMode.values()) {
     group.sort((a, b) => sortKey(b) - sortKey(a));

@@ -184,11 +184,10 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     refreshAll,
     rebuild,
     // Rebuild after a settings change. While a refresh runs it rebuilds at the
-    // end anyway (with the new settings), so we wait for it instead of
-    // publishing a half-refreshed catalog.
-    async requestRebuild() {
-      if (refreshing) return refreshing;
-      rebuild();
+    // end anyway (reading the new settings), so we leave it to that instead of
+    // publishing a half-refreshed catalog — and don't make the request wait.
+    requestRebuild() {
+      if (!refreshing) rebuild();
     },
     // Model kind lookup for direct calls (/api/v1/p/<provider>/<model>).
     model(providerId, modelId) {

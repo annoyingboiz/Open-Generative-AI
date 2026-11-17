@@ -276,7 +276,7 @@ export async function buildApp(config, { logger = true } = {}) {
       return reply.code(400).send({ error: 'Unknown action' });
     }
     appSettings.set('recommended', list);
-    await catalog.requestRebuild();
+    catalog.requestRebuild();
     return reply.redirect('/dz/settings?notice=recommended#recommended');
   });
 

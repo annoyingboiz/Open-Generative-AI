@@ -10,8 +10,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { generateImage, generateI2I, uploadFile } from "../muapi.js";
 import { imageModelCatalog } from "../modelFamilies.js";
 import { getModelMediaCapabilities, buildReferenceParams } from "../modelCapabilities.js";
-import { createModelParameterValues } from "../modelParameters.js";
-import { getAspectRatioOptions, T2I_DIMENSION_RATIOS, I2I_DIMENSION_RATIOS } from "../imageSizing.js";
+import { createModelParameterValues, getSupplementalModelInputs } from "../modelParameters.js";
+import { getAspectRatioOptions, getImageSizeCapability, T2I_DIMENSION_RATIOS, I2I_DIMENSION_RATIOS } from "../imageSizing.js";
 import { dzRecommendedEntries } from "../dzCatalog.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
 import MobileGenerationActions, {
@@ -166,17 +166,27 @@ function cinemaEntries() {
   return { recommended, all: [...recommended, ...usable.filter((e) => !recommended.includes(e))] };
 }
 
-// Cinema sends prompt, size, resolution, references and the model's own
-// defaults. A model with a required field that has no default can't be driven
-// from here, so such variants are left out.
-const CINEMA_FIELDS = new Set(["prompt", "aspect_ratio", "size", "width", "height", "resolution"]);
+// Cinema sends: prompt, aspect ratio (or width/height), resolution, quality,
+// the references (edit models only) and the model's other inputs at their
+// defaults. A variant with a required field outside that set can't be driven
+// from here, so it is left out.
 function cinemaCanDrive(variant) {
   const model = variant?.model;
   if (!model) return false;
-  const imageFields = new Set(["image_url", "images_list", "image_urls", "last_image", "last_image_url", "end_image_url", model.imageField, model.lastImageField].filter(Boolean));
-  return (model.required || []).every((name) =>
-    CINEMA_FIELDS.has(name) || imageFields.has(name) || model.inputs?.[name]?.field === "image" ||
-    (model.inputs?.[name]?.default !== undefined && model.inputs?.[name]?.default !== ""));
+  const supplemental = new Set(getSupplementalModelInputs(model).map((i) => i.key));
+  const imageField = getModelMediaCapabilities(model).image.field;
+  const sizeType = getImageSizeCapability(model).type;
+  return (model.required || []).every((name) => {
+    if (name === "prompt" || name === "resolution" || name === "quality") return true;
+    if (name === "aspect_ratio") return sizeType === "aspect_ratio";
+    if (name === "width" || name === "height") return sizeType === "dimensions";
+    if (name === imageField) return variant.mode === "i2i";
+    if (supplemental.has(name)) {
+      const value = model.inputs?.[name]?.default;
+      return value !== undefined && value !== "";
+    }
+    return false;
+  });
 }
 
 // The variant to call: edit (i2i) when there are references, else text-to-image.
@@ -872,6 +882,7 @@ export default function DzCinemaStudio({
         prompt: finalPrompt,
         aspect_ratio: effectiveAspect || undefined,
         resolution: effectiveResolution || undefined,
+        quality: model.inputs?.quality ? (model.inputs.quality.default ?? enumOf(model, "quality")[0]) : undefined,
       };
       const res = variant.mode === "i2i" && refs.length
         ? await generateI2I(apiKey, { ...params, ...buildReferenceParams(model, { imageUrls: refs }) })

@@ -23,10 +23,15 @@ export class GenerationError extends Error {
 
 const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an hour of retries
 
-export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS, onProviderRejected = null }) {
+export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS, onProviderRejected = null, projects = null }) {
+  // Personal items: only the author. Project items: every member of the project.
+  const isMember = (userId, projectId) => Boolean(projectId && projects?.isMember(userId, projectId));
+  const canSee = (user, row) => Boolean(row && (row.user_id === user.id || isMember(user.id, row.project_id)));
   const q = {
-    insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, studio, meta_json, next_poll_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
+    insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, studio, meta_json, project_id, folder_id, next_poll_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
+    move: db.prepare('UPDATE generations SET project_id = ?, folder_id = ?, updated_at = ? WHERE id = ?'),
+    author: db.prepare('SELECT display_name FROM users WHERE id = ?'),
     setSubmitted: db.prepare("UPDATE generations SET provider_task_id = ?, status = 'submitted', next_poll_at = ?, updated_at = ? WHERE id = ?"),
     setFailed: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     setPolled: db.prepare('UPDATE generations SET status = ?, next_poll_at = ?, poll_errors = 0, updated_at = ? WHERE id = ?'),
@@ -38,9 +43,9 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     pollError: db.prepare('UPDATE generations SET poll_errors = poll_errors + 1, next_poll_at = ?, updated_at = ? WHERE id = ?'),
     byId: db.prepare('SELECT * FROM generations WHERE id = ?'),
     due: db.prepare(`SELECT * FROM generations WHERE status IN ('submitted','processing','downloading') AND next_poll_at <= ? ORDER BY next_poll_at LIMIT 10`),
-    trash: db.prepare('UPDATE generations SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'),
-    restore: db.prepare('UPDATE generations SET deleted_at = NULL WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL AND purged_at IS NULL'),
-    like: db.prepare('UPDATE generations SET liked_at = ? WHERE id = ? AND user_id = ?'),
+    trash: db.prepare('UPDATE generations SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL'),
+    restore: db.prepare('UPDATE generations SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL AND purged_at IS NULL'),
+    like: db.prepare('UPDATE generations SET liked_at = ? WHERE id = ?'),
     expired: db.prepare('SELECT * FROM generations WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < ?'),
     tombstone: db.prepare("UPDATE generations SET purged_at = ?, outputs_json = '[]', provider_outputs_json = '[]', updated_at = ? WHERE id = ?"),
     staleSubmitting: db.prepare("UPDATE generations SET status = 'failed', error = 'Interrupted while sending to the provider. Try again.', updated_at = ?, completed_at = ? WHERE status = 'submitting' AND created_at < ?"),
@@ -50,17 +55,18 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     upload: db.prepare('SELECT * FROM uploads WHERE id = ?'),
     uploadBytes: db.prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM uploads WHERE user_id = ?'),
     activeJobs: db.prepare("SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('submitting','submitted','processing','downloading')"),
-    insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, project_id, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
     listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
+    listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
   };
   const outputRefCache = new Map(); // `${provider}:${genId}/${n}` -> { url, expiresAt }
 
   // ── Uploads ─────────────────────────────────────────────────────────────
-  async function saveUpload(user, { stream, mime, filename, truncated = () => false }) {
+  async function saveUpload(user, { stream, mime, filename, truncated = () => false, projectId = null, folderId = null }) {
     const saved = await storage.saveUpload(user.id, stream, mime);
     if (truncated()) { storage.remove(saved.path); return null; }
-    q.insertUpload.run(saved.id, user.id, saved.path, mime, saved.bytes, filename || null, now());
+    q.insertUpload.run(saved.id, user.id, saved.path, mime, saved.bytes, filename || null, projectId, folderId, now());
     const ext = saved.path.split('.').pop();
     return { id: saved.id, url: `/media/u/${saved.id}.${ext}` };
   }
@@ -79,7 +85,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const provider = providerById(providerId);
     if (m[1].toLowerCase() === 'u') {
       const up = q.upload.get(m[2]);
-      if (!up || up.user_id !== user.id) throw new GenerationError('Reference file not found.', 404);
+      if (!canSee(user, up)) throw new GenerationError('Reference file not found.', 404);
       const refs = JSON.parse(up.provider_refs || '{}');
       const cached = refs[providerId];
       if (cached && cached.expiresAt > Date.now() + 3_600_000) return cached.url;
@@ -91,7 +97,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const gen = q.byId.get(m[2]);
     const index = Number(m[3] || 0);
     const output = gen && JSON.parse(gen.outputs_json || '[]')[index];
-    if (!output || gen.user_id !== user.id) throw new GenerationError('Reference file not found.', 404);
+    if (!output || !canSee(user, gen)) throw new GenerationError('Reference file not found.', 404);
     const key = `${providerId}:${gen.id}/${index}`;
     const cached = outputRefCache.get(key);
     if (cached && cached.expiresAt > Date.now() + 3_600_000) return cached.url;
@@ -106,7 +112,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   }
 
-  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, estSource = null, kind = null, studio = null, meta = null }) {
+  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, estSource = null, kind = null, studio = null, meta = null, projectId = null, folderId = null }) {
     const provider = providerById(providerId);
     if (!provider) throw new GenerationError(`Unknown provider: ${providerId}`, 404);
     const cfg = providers.resolve(providerId);
@@ -125,7 +131,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const { onRequestId: _ignored, ...clean } = body || {};
     const id = newId('gen');
     const t = now();
-    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 4000), JSON.stringify(clean), estCostUsd, estSource, studio, meta == null ? null : JSON.stringify(meta), t, t);
+    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 4000), JSON.stringify(clean), estCostUsd, estSource, studio, meta == null ? null : JSON.stringify(meta), projectId, folderId, t, t);
     try {
       const resolved = await resolveMedia(user, providerId, cfg, clean);
       const { taskId } = await provider.submit(cfg, { kind: model.kind, model: modelId, body: resolved });
@@ -235,7 +241,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   function result(user, id) {
     const row = q.byId.get(id);
-    if (!row || row.user_id !== user.id) throw new GenerationError('Not found', 404);
+    if (!canSee(user, row)) throw new GenerationError('Not found', 404);
     if (row.status === 'completed') {
       const outputs = outputUrls(row);
       return { request_id: row.id, id: row.id, status: 'completed', outputs, url: outputs[0], cost: row.cost_usd ?? row.est_cost_usd, cost_final: row.cost_usd != null };
@@ -244,7 +250,12 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     return { request_id: row.id, id: row.id, status: 'processing' };
   }
 
-  function historyItem(row) {
+  const authorNames = new Map();
+  const authorName = (id) => {
+    if (!authorNames.has(id)) authorNames.set(id, q.author.get(id)?.display_name || '');
+    return authorNames.get(id);
+  };
+  function historyItem(row, user) {
     const outputs = outputUrls(row);
     let meta = null;
     try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
@@ -269,6 +280,10 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       error: row.error,
       created_at: row.created_at,
       timestamp: new Date(row.created_at).toISOString(),
+      project_id: row.project_id || null,
+      folder_id: row.folder_id || null,
+      mine: user ? row.user_id === user.id : true,
+      author: user && row.user_id !== user.id ? authorName(row.user_id) : undefined,
     };
   }
 
@@ -278,9 +293,25 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   // Each user sees only their own items — there is no shared history.
   const STUDIOS = new Set(['create', 'cinema', 'image', 'video', 'upscale']);
   const KINDS = new Set(['image', 'video', 'audio']);
-  function history(user, { cursor, limit = 50, studio, kind, liked, trash: inTrash, status } = {}) {
-    const where = ['user_id = ?', 'purged_at IS NULL'];
-    const args = [user.id];
+  //   project=<id> (that project; folder=<id>|root narrows it) · project=none (personal only)
+  //   no project → the user's Library: their own items plus their projects' items.
+  function history(user, { cursor, limit = 50, studio, kind, liked, trash: inTrash, status, project, folder } = {}) {
+    const where = ['purged_at IS NULL'];
+    const args = [];
+    if (project === 'none') {
+      where.push('user_id = ? AND project_id IS NULL');
+      args.push(user.id);
+    } else if (project) {
+      const p = projects?.get(user, project).project; // 404 if not a member
+      where.push('project_id = ?');
+      args.push(p.id);
+      if (folder === 'root') where.push('folder_id IS NULL');
+      else if (folder) { where.push('folder_id = ?'); args.push(String(folder)); }
+    } else {
+      const ids = projects ? projects.memberProjectIds(user.id) : [];
+      where.push(ids.length ? `(user_id = ? OR project_id IN (${ids.map(() => '?').join(',')}))` : 'user_id = ?');
+      args.push(user.id, ...ids);
+    }
     where.push(inTrash === '1' || inTrash === true ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL');
     if (studio) {
       const list = [...new Set(String(studio).split(',').map((x) => x.trim()).filter(Boolean))].slice(0, 8);
@@ -298,31 +329,54 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     args.push(Number(cursor) || Number.MAX_SAFE_INTEGER);
     const rows = db.prepare(`SELECT * FROM generations WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`)
       .all(...args, Math.min(Math.max(Math.trunc(Number(limit)) || 50, 1), 200));
-    return { items: rows.map(historyItem), next_cursor: rows.length ? String(rows[rows.length - 1].created_at) : null };
+    return { items: rows.map((r) => historyItem(r, user)), next_cursor: rows.length ? String(rows[rows.length - 1].created_at) : null };
   }
 
-  function owned(user, id) {
+  // Visible: the author or a member of its project.
+  function visible(user, id) {
     const row = q.byId.get(id);
-    if (!row || row.user_id !== user.id || row.purged_at != null) throw new GenerationError('Not found', 404);
+    if (!canSee(user, row) || row.purged_at != null) throw new GenerationError('Not found', 404);
+    return row;
+  }
+  // The author, or the owner of the project it is in.
+  function editable(user, id) {
+    const row = visible(user, id);
+    if (row.user_id !== user.id && projects?.roleIn(user.id, row.project_id) !== 'owner') {
+      throw new GenerationError('Only the author or the project owner can do this.', 403);
+    }
+    return row;
+  }
+  function owned(user, id) {
+    const row = visible(user, id);
+    if (row.user_id !== user.id) throw new GenerationError('Only the author can do this.', 403);
     return row;
   }
 
   function trash(user, id) {
-    const info = q.trash.run(now(), id, user.id);
-    if (!info.changes) throw new GenerationError('Not found', 404);
+    editable(user, id);
+    if (!q.trash.run(now(), id).changes) throw new GenerationError('Not found', 404);
     return { ok: true };
   }
 
   function restore(user, id) {
-    const info = q.restore.run(id, user.id);
-    if (!info.changes) throw new GenerationError('Not found', 404);
+    editable(user, id);
+    if (!q.restore.run(id).changes) throw new GenerationError('Not found', 404);
     return { ok: true };
   }
 
   function like(user, id, liked) {
-    owned(user, id);
-    q.like.run(liked ? now() : null, id, user.id);
+    visible(user, id);
+    q.like.run(liked ? now() : null, id);
     return { ok: true, liked: Boolean(liked) };
+  }
+
+  // Move to a project (and folder), or back to personal. The author decides,
+  // and must be a member of the target project.
+  function move(user, id, { project = null, folder = null } = {}) {
+    const row = owned(user, id);
+    const { projectId, folderId } = projects ? projects.target(user, project || null, folder || null) : { projectId: null, folderId: null };
+    q.move.run(projectId, folderId, now(), row.id);
+    return { ok: true, project_id: projectId, folder_id: folderId };
   }
 
   // Delete for good — only from the trash, and files go with it.
@@ -339,19 +393,24 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   function mediaFile(user, kind, id, index) {
     if (kind === 'u') {
       const up = q.upload.get(id);
-      if (!up || up.user_id !== user.id) return null;
+      if (!canSee(user, up)) return null;
       return { path: up.path, mime: up.mime };
     }
     const row = q.byId.get(id);
-    if (!row || row.user_id !== user.id) return null;
+    if (!canSee(user, row)) return null;
     const o = JSON.parse(row.outputs_json || '[]')[Number(index) || 0];
     return o ? { path: o.path, mime: o.mime || mimeForExt(o.ext) } : null;
   }
 
   // The user's own uploaded files (newest first), e.g. to pick one to upscale.
-  function uploads(user, { kind = 'image', cursor, limit = 60 } = {}) {
+  // In a project: the project's uploads (every member's). Otherwise: the user's own.
+  function uploads(user, { kind = 'image', cursor, limit = 60, project } = {}) {
     const like = ['image', 'video', 'audio'].includes(kind) ? `${kind}/%` : '%';
-    const rows = q.listUploads.all(user.id, like, Number(cursor) || Number.MAX_SAFE_INTEGER, Math.min(Math.max(Math.trunc(Number(limit)) || 60, 1), 200));
+    const n = Math.min(Math.max(Math.trunc(Number(limit)) || 60, 1), 200);
+    const before = Number(cursor) || Number.MAX_SAFE_INTEGER;
+    const rows = project && project !== 'none'
+      ? q.listProjectUploads.all(projects.get(user, project).project.id, like, before, n)
+      : q.listUploads.all(user.id, like, before, n);
     return {
       items: rows.map((r) => ({ id: r.id, url: `/media/u/${r.id}.${r.path.split('.').pop()}`, mime: r.mime, name: r.original_name, created_at: r.created_at })),
       next_cursor: rows.length ? String(rows[rows.length - 1].created_at) : null,
@@ -366,7 +425,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
-    saveUpload, uploads, submit, result, history, trash, restore, like, purge, mediaFile, mediaFileForUrl,
+    saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, mediaFile, mediaFileForUrl,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

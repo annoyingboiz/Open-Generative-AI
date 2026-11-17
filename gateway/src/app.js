@@ -23,6 +23,7 @@ import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
 import { createCatalog, DEFAULT_RECOMMENDED } from './catalog/index.js';
 import { createChanges } from './catalog/changes.js';
 import { createGenerations, GenerationError } from './generations.js';
+import { createProjects, ProjectError } from './projects.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
@@ -71,7 +72,8 @@ export async function buildApp(config, { logger = true } = {}) {
   }
   const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended, changes });
   const quoter = createQuoter({ providers, log: app.log });
-  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, maxActiveJobsPerUser: config.maxActiveJobsPerUser, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
+  const projects = createProjects({ db });
+  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);
   await app.register(formbody);
@@ -421,9 +423,11 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/api/v1/account/balance', async () => ({ balance: null }));
 
   const sendGenError = (reply, error) => {
-    if (error instanceof GenerationError) return reply.code(error.status).send({ detail: error.message, error: error.message });
+    if (error instanceof GenerationError || error instanceof ProjectError) return reply.code(error.status).send({ detail: error.message, error: error.message });
     throw error;
   };
+  // Where new work goes: ?project=&folder= (or _dz.project/_dz.folder) → checked ids.
+  const contextOf = (user, project, folder) => projects.target(user, project ? String(project) : null, folder ? String(folder) : null);
 
   // Reference files (images, videos, audio) for generation.
   app.post('/api/v1/upload_file', async (req, reply) => {
@@ -437,7 +441,9 @@ export async function buildApp(config, { logger = true } = {}) {
       file.file.resume();
       return reply.code(413).send({ detail: 'Upload quota reached. Delete old references or ask the admin.' });
     }
-    const saved = await generations.saveUpload(req.user, { stream: file.file, mime: file.mimetype, filename: file.filename, truncated: () => file.file.truncated });
+    let ctx;
+    try { ctx = contextOf(req.user, req.query.project, req.query.folder); } catch (error) { file.file.resume(); return sendGenError(reply, error); }
+    const saved = await generations.saveUpload(req.user, { stream: file.file, mime: file.mimetype, filename: file.filename, truncated: () => file.file.truncated, ...ctx });
     if (!saved) return reply.code(413).send({ detail: 'File is too large (max 500 MB)' });
     return { url: saved.url, file_url: saved.url, id: saved.id };
   });
@@ -510,6 +516,7 @@ export async function buildApp(config, { logger = true } = {}) {
       const studio = ['create', 'cinema', 'image', 'video', 'upscale'].includes(dz?.studio) ? dz.studio : null;
       const metaText = dz?.meta && typeof dz.meta === 'object' ? JSON.stringify(dz.meta) : null;
       const meta = metaText && metaText.length <= 16_384 ? dz.meta : null;
+      const { projectId, folderId } = contextOf(req.user, dz?.project, dz?.folder);
       const body = providerBodyFor(resolved, providerId, modelId, requestBody);
       if (resolved.tool && !generations.mediaFileForUrl(req.user, body.image_url)) {
         return reply.code(400).send({ detail: 'Choose an image to upscale.' });
@@ -533,6 +540,8 @@ export async function buildApp(config, { logger = true } = {}) {
         estSource: !price ? null : price.source === 'quote' ? (price.exact ? 'quote' : 'quote~') : 'estimate',
         studio: studio || (resolved.tool ? 'upscale' : null),
         meta,
+        projectId,
+        folderId,
       });
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }
@@ -560,7 +569,12 @@ export async function buildApp(config, { logger = true } = {}) {
   app.delete('/api/v1/predictions/:id/media', async (req, reply) => {
     try { return generations.trash(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
   });
-  app.get('/api/v1/history', async (req) => generations.history(req.user, req.query));
+  app.get('/api/v1/history', async (req, reply) => {
+    try { return generations.history(req.user, req.query); } catch (error) { return sendGenError(reply, error); }
+  });
+  app.post('/api/v1/predictions/:id/move', async (req, reply) => {
+    try { return generations.move(req.user, req.params.id, { project: req.body?.project || null, folder: req.body?.folder || null }); } catch (error) { return sendGenError(reply, error); }
+  });
   app.post('/api/v1/predictions/:id/like', async (req, reply) => {
     try { return generations.like(req.user, req.params.id, req.body?.liked !== false); } catch (error) { return sendGenError(reply, error); }
   });
@@ -570,7 +584,27 @@ export async function buildApp(config, { logger = true } = {}) {
   app.delete('/api/v1/predictions/:id', async (req, reply) => {
     try { return generations.purge(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
   });
-  app.get('/api/v1/uploads', async (req) => generations.uploads(req.user, req.query));
+  app.get('/api/v1/uploads', async (req, reply) => {
+    try { return generations.uploads(req.user, req.query); } catch (error) { return sendGenError(reply, error); }
+  });
+
+  // ── Projects ────────────────────────────────────────────────────────────
+  const projectRoute = (fn) => async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    try { return await fn(req, reply); } catch (error) { return sendGenError(reply, error); }
+  };
+  app.get('/dz/api/projects', projectRoute((req) => ({ projects: projects.list(req.user), colors: projects.colors })));
+  app.post('/dz/api/projects', projectRoute((req) => projects.create(req.user, req.body || {})));
+  app.get('/dz/api/projects/:id', projectRoute((req) => projects.details(req.user, req.params.id)));
+  app.patch('/dz/api/projects/:id', projectRoute((req) => projects.update(req.user, req.params.id, req.body || {})));
+  app.post('/dz/api/projects/:id/touch', projectRoute((req) => projects.touch(req.user, req.params.id)));
+  app.post('/dz/api/projects/:id/members', projectRoute((req) => projects.addMember(req.user, req.params.id, req.body?.username)));
+  app.delete('/dz/api/projects/:id/members/:userId', projectRoute((req) => projects.removeMember(req.user, req.params.id, req.params.userId)));
+  app.post('/dz/api/projects/:id/folders', projectRoute((req) => projects.createFolder(req.user, req.params.id, req.body || {})));
+  app.patch('/dz/api/folders/:id', projectRoute((req) => projects.updateFolder(req.user, req.params.id, req.body || {})));
+  app.delete('/dz/api/folders/:id', projectRoute((req) => projects.deleteFolder(req.user, req.params.id)));
+  // Names to add people to a project (signed-in users only; no roles, no limits).
+  app.get('/dz/api/users', projectRoute(() => ({ users: projects.users() })));
   // Tools that depend on a provider key (e.g. Upscale on fal.ai), for the
   // studio to notice a key added after the page was loaded.
   app.get('/dz/api/tools', async (req, reply) => reply.header('cache-control', 'private, no-store').send({ tools: catalog.tools() }));

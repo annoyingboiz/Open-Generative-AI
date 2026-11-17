@@ -1,3 +1,4 @@
+import { dzContextParams } from './dzContext.js'; // DZ
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getRecastModelById, getLipSyncModelById, getAudioModelById, getMotionControlModelById } from './models.js';
 import {
     buildVideoToolPayload,
@@ -98,7 +99,8 @@ async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-        body: JSON.stringify(dz ? { ...payload, _dz: dz } : payload)
+        // DZ: which project/folder this goes to (the current context).
+        body: JSON.stringify({ ...payload, _dz: { ...(dz || {}), ...dzContextParams() } })
     });
     if (!response.ok) {
         const errText = await response.text();
@@ -367,7 +369,8 @@ export async function generateAudio(apiKey, params) {
 
 export function uploadFile(apiKey, file, onProgress) {
     return new Promise((resolve, reject) => {
-        const url = `${BASE_URL}/api/v1/upload_file`;
+        const ctx = new URLSearchParams(Object.entries(dzContextParams()).filter(([, v]) => v));
+        const url = `${BASE_URL}/api/v1/upload_file${ctx.toString() ? `?${ctx}` : ''}`;
         const formData = new FormData();
         formData.append('file', file);
 

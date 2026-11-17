@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dzUpscale, uploadFile } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
+import { useDzContext } from "../dzContext.js";
 import { Button, buttonVariants, Segmented, OptionSelect, Slider, Switch, Textarea, InfoTip, Tip, SectionLabel, Spinner, cn } from "../ui/index.js";
 
 const STORE_KEY = "dz_upscale_settings";
@@ -357,18 +358,21 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
   const sourceRef = useRef(source);
   sourceRef.current = source;
 
+  // In a project: its images; in Library: everything the user can see.
+  const ctx = useDzContext();
+  const scopeQuery = ctx.project ? `&project=${encodeURIComponent(ctx.project.id)}` : "";
   const loadHistory = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/history?limit=120");
+      const res = await fetch(`/api/v1/history?limit=120${scopeQuery}`);
       if (!res.ok) return;
       const data = await res.json();
       setRecent((data.items || []).filter((i) => i.status === "completed" && i.kind === "image" && i.url));
     } catch { /* shown as empty */ }
     try {
-      const res = await fetch("/api/v1/uploads?kind=image&limit=120");
+      const res = await fetch(`/api/v1/uploads?kind=image&limit=120${scopeQuery}`);
       if (res.ok) setUploads((await res.json()).items || []);
     } catch { /* shown as empty */ }
-  }, []);
+  }, [scopeQuery]);
   useEffect(() => { loadHistory(); }, [loadHistory]);
   // `initial` is a new object on every "Open in Upscale tab", even for the same image.
   useEffect(() => { if (initial?.url) { setSource(initial.url); setResult(null); setPicker(false); } }, [initial]);

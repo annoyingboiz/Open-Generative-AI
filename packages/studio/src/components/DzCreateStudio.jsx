@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dzGenerate, dzWithMeta, uploadFile } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { useDzHistory } from "../dzLibrary.js";
+import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
@@ -302,13 +303,14 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash }) {
           {item.meta && <Icon title="Reuse settings" onClick={() => onReuse(item)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" /></svg></Icon>}
           {canUpscale && <Icon title="Upscale" onClick={() => dzOpenUpscale(item.url)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg></Icon>}
           <Icon title="Download" onClick={() => download(item.url)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg></Icon>
+          {item.mine !== false && <Icon title="Move to…" onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: item }))}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14l3 3 3-3" /></svg></Icon>}
           <Icon title="Move to trash" danger onClick={() => onTrash(item.id)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg></Icon>
         </div>
       )}
       <div className="space-y-1 px-3 py-2.5">
         {item.prompt && <p className="line-clamp-2 leading-snug text-foreground/85" title={item.prompt}>{item.meta?.prompt || item.prompt}</p>}
         <div className="flex items-center gap-2 text-muted-foreground">
-          <span className="truncate">{item.meta?.modelName || ""}</span>
+          <span className="truncate">{item.author ? `${item.author} · ` : ""}{item.meta?.modelName || ""}</span>
           {Number.isFinite(item.cost_usd) && <span className="ml-auto shrink-0 tabular-nums">{fmtUsd(item.cost_usd)}</span>}
         </div>
       </div>
@@ -373,7 +375,9 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     setValuesByKind((prev) => ({ ...prev, [kind]: keepValues(prev[kind] || {}, nextVariant) }));
   };
 
-  const history = useDzHistory({ studio: mode });
+  // The current context: a project (and folder), or personal work only.
+  const ctx = useDzContext();
+  const history = useDzHistory({ studio: mode, ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
 
   const addFiles = useCallback(async (role, files) => {
     const info = ROLE_INFO[role];

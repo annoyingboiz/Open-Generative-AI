@@ -17,3 +17,5 @@ export { default as LayersStudio } from './components/LayersStudio';
 export { default as MotionControlStudio } from './components/MotionControlStudio';
 export * from './api';
 export * from './ui/index.js'; // DZ UI kit
+export { DzProjectsPage, ProjectSwitcher, FolderPath, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, folderTree } from './components/DzProjects'; // DZ
+export { dzSetContext, dzGetContext, useDzContext, dzContextScope } from './dzContext'; // DZ

@@ -4,6 +4,7 @@
 //   All · Images · Videos · Upscaled · Liked · Uploads · Trash
 // Trash keeps items 7 days; "Delete forever" removes the files at once.
 import { useEffect, useState } from "react";
+import { useDzContext } from "../dzContext.js";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec } from "../dzCatalog.js";
@@ -128,17 +129,18 @@ function Grid({ children }) {
   return <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{children}</div>;
 }
 
-function Uploads({ onOpen }) {
+function Uploads({ onOpen, project }) {
   const [items, setItems] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    const load = () => dzLibrary.uploads({ limit: 200 }).then((d) => { if (!cancelled) setItems(d.items || []); }).catch(() => { if (!cancelled) setItems((v) => v || []); });
+    setItems(null);
+    const load = () => dzLibrary.uploads({ limit: 200, project: project || undefined }).then((d) => { if (!cancelled) setItems(d.items || []); }).catch(() => { if (!cancelled) setItems((v) => v || []); });
     load();
     const on = (e) => { if (!e?.detail || e.detail.status === "upload") load(); };
     window.addEventListener("dz:history", on);
     window.addEventListener("focus", on);
     return () => { cancelled = true; window.removeEventListener("dz:history", on); window.removeEventListener("focus", on); };
-  }, []);
+  }, [project]);
   if (!items) return <p className="py-16 text-center text-base text-muted-foreground">Loading…</p>;
   if (!items.length) return <p className="py-16 text-center text-base text-muted-foreground">Nothing uploaded yet. Files you add as references show up here.</p>;
   return (
@@ -157,7 +159,11 @@ export default function DzLibrary({ onGenerationError }) {
   const view = VIEWS.find((v) => v.id === viewId) || VIEWS[0];
   useEffect(() => { try { localStorage.setItem("dz_library_view", view.id); } catch { /* optional */ } }, [view.id]);
   const [open, setOpen] = useState(null);
-  const lib = useDzHistory(view.filter || {}, { limit: 60 });
+  // In a project: its work (current folder, if one is picked). In Library:
+  // everything the user can see — their own and their projects'.
+  const ctx = useDzContext();
+  const scope = ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : {};
+  const lib = useDzHistory({ ...(view.filter || {}), ...scope }, { limit: 60 });
   const report = (e) => onGenerationError?.(String(e?.message || e));
   const canUpscale = Boolean(dzUpscaleSpec());
 
@@ -185,6 +191,11 @@ export default function DzLibrary({ onGenerationError }) {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
           </IconButton>
         )}
+        {item.mine !== false && (
+          <IconButton title="Move to…" onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: item }))}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14l3 3 3-3" /></svg>
+          </IconButton>
+        )}
         <IconButton title="Move to trash" danger onClick={() => lib.trash(item.id).catch(report)}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
         </IconButton>
@@ -204,12 +215,15 @@ export default function DzLibrary({ onGenerationError }) {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-shrink-0 flex-wrap items-center gap-x-6 gap-y-3 border-b border-border px-4 py-4 md:px-6">
-        <h1 className="text-2xl font-bold text-foreground">Library</h1>
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
+          {ctx.project && <span className="h-3 w-3 rounded-full" style={{ background: ctx.project.color }} />}
+          {ctx.project ? ctx.project.name : "Library"}
+        </h1>
         <ScrollTabs className="min-w-0 max-w-full" value={view.id} onChange={setViewId} aria-label="Library view" items={VIEWS.map((v) => ({ value: v.id, label: v.label }))} />
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-5 md:px-6">
         {view.uploads ? (
-          <Uploads onOpen={setOpen} />
+          <Uploads onOpen={setOpen} project={ctx.project?.id} />
         ) : !lib.loaded ? (
           <p className="py-16 text-center text-base text-muted-foreground">Loading…</p>
         ) : lib.items.length === 0 ? (

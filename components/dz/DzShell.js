@@ -5,7 +5,8 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback } from 'react';
-import { DzCinemaStudio, DzCreateStudio, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button } from 'studio';
+import { DzCinemaStudio, DzCreateStudio, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
+  DzProjectsPage, ProjectSwitcher, FolderPath, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
@@ -37,6 +38,9 @@ const ICONS = {
       <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
+  projects: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+  ),
   upscale: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
@@ -53,14 +57,20 @@ export const DZ_TABS = [
   // The old Cinema stays for now.
   { id: 'cinema', label: 'Cinema (old)', divider: true },
   { id: 'library', label: 'Library', divider: true },
+  { id: 'projects', label: 'Projects' },
 ];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
 const DEFAULT_TAB = 'create';
 const labelOf = (tabId) => DZ_TABS.find((t) => t.id === tabId)?.label || tabId;
-const tabFromPath = (path) => {
-  const id = String(path || '').split('/').filter(Boolean)[1];
-  return TAB_IDS.has(id) ? id : DEFAULT_TAB;
+// /studio/<tab> — Library (personal);  /p/<project slug>/<tab> — inside a project.
+const parsePath = (path) => {
+  const parts = String(path || '').split('/').filter(Boolean);
+  if (parts[0] === 'p' && parts[1]) return { slug: decodeURIComponent(parts[1]), tab: TAB_IDS.has(parts[2]) ? parts[2] : DEFAULT_TAB };
+  return { slug: null, tab: TAB_IDS.has(parts[1]) ? parts[1] : DEFAULT_TAB };
 };
+const tabFromPath = (path) => parsePath(path).tab;
+const pathFor = (project, tab) => (project ? `/p/${encodeURIComponent(project.slug)}/${tab}` : `/studio/${tab}`);
+const folderKey = (projectId) => `dz_folder_${projectId}`;
 
 const NOTIFICATION_TTL = 12_000;
 const MAX_NOTIFICATIONS = 3;
@@ -79,15 +89,90 @@ export default function DzShell() {
   const [upscaleDrawer, setUpscaleDrawer] = useState(null); // { url, result }
   const [upscaleTabPick, setUpscaleTabPick] = useState(null); // { url } — a new object each time
   const [imageMenu, setImageMenu] = useState(null); // { x, y, url }
+  // Projects: the list, the open one (with its folders) and the folder for new work.
+  const [projects, setProjects] = useState([]);
+  const [colors, setColors] = useState([]);
+  const [project, setProject] = useState(null); // { id, slug, name, color, role, archived }
+  const [folders, setFolders] = useState([]);
+  const [folder, setFolder] = useState(null);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [moveItem, setMoveItem] = useState(null);
 
   // Session check (the gateway already required sign-in) and initial tab.
   useEffect(() => {
     setActiveTab(tabFromPath(window.location.pathname));
     try { setCollapsed(localStorage.getItem('dz_sidebar_collapsed') === '1'); } catch { /* storage is optional */ }
     dzFetchMe().then((u) => u && setUser(u)).catch((err) => console.error(err));
-    const onPop = () => setActiveTab(tabFromPath(window.location.pathname));
+    const onPop = () => { setActiveTab(tabFromPath(window.location.pathname)); loadProjectFromPath(); };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Projects ──────────────────────────────────────────────────────────
+  const reloadProjects = useCallback(() => dzProjectsApi.list().then((r) => { setProjects(r.projects || []); setColors(r.colors || []); }).catch(() => {}), []);
+  const applyProject = useCallback((details) => {
+    if (!details) { setProject(null); setFolders([]); setFolder(null); return; }
+    const p = details.project;
+    setProject(p);
+    setFolders(details.folders || []);
+    let f = null;
+    try { f = localStorage.getItem(folderKey(p.id)); } catch { /* optional */ }
+    setFolder((details.folders || []).some((x) => x.id === f) ? f : null);
+  }, []);
+  const loadProjectFromPath = useCallback(async () => {
+    const { slug, tab } = parsePath(window.location.pathname);
+    if (!slug) { applyProject(null); return; }
+    try {
+      const details = await dzProjectsApi.details(slug);
+      applyProject(details);
+      dzProjectsApi.touch(details.project.id).catch(() => {});
+    } catch {
+      applyProject(null);
+      window.history.replaceState(null, '', pathFor(null, tab));
+      push({ type: 'error', tabId: tab, message: 'That project was not found, or you are not in it. Back in your Library.' });
+    }
+  }, [applyProject]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!user) return;
+    reloadProjects();
+    loadProjectFromPath();
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Everyone reads where new work goes from here (uploads, generations, history).
+  useEffect(() => { dzSetContext({ project, folder }); }, [project, folder]);
+  const pickFolder = (id) => {
+    setFolder(id);
+    try { if (project) { if (id) localStorage.setItem(folderKey(project.id), id); else localStorage.removeItem(folderKey(project.id)); } } catch { /* optional */ }
+  };
+  const openProject = async (p, tab = activeTab) => {
+    setActiveTab(tab);
+    if (!p) {
+      applyProject(null);
+      window.history.pushState(null, '', pathFor(null, tab));
+      return;
+    }
+    try {
+      const details = await dzProjectsApi.details(p.id);
+      applyProject(details);
+      window.history.pushState(null, '', pathFor(details.project, tab));
+      dzProjectsApi.touch(details.project.id).then(reloadProjects).catch(() => {});
+    } catch (e) { push({ type: 'error', tabId: tab, message: e.message }); }
+  };
+  const refreshProject = async () => {
+    reloadProjects();
+    if (!project) return;
+    try {
+      const details = await dzProjectsApi.details(project.id);
+      setProject(details.project);
+      setFolders(details.folders || []);
+      if (folder && !(details.folders || []).some((x) => x.id === folder)) pickFolder(null);
+      // A rename can change nothing in the slug; the URL keeps working.
+    } catch { openProject(null); }
+  };
+  useEffect(() => {
+    const onMove = (e) => { if (e.detail?.id) setMoveItem(e.detail); };
+    window.addEventListener('dz:move', onMove);
+    return () => window.removeEventListener('dz:move', onMove);
   }, []);
 
   useEffect(() => {
@@ -126,10 +211,10 @@ export default function DzShell() {
 
   const openTab = useCallback((tabId) => {
     if (!TAB_IDS.has(tabId)) return;
-    window.history.pushState(null, '', `/studio/${tabId}`);
+    window.history.pushState(null, '', pathFor(project, tabId));
     setActiveTab(tabId);
     setMobileOpen(false);
-  }, []);
+  }, [project]);
 
   // Animate in the Image tab → open the Video tab (it picks the picture up itself).
   useEffect(() => {
@@ -258,7 +343,12 @@ export default function DzShell() {
             <div className="w-8 h-8 bg-[#22d3ee] rounded-lg flex items-center justify-center shadow-lg shadow-[#22d3ee]/20">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M16 10l6-3v10l-6-3" /></svg>
             </div>
-            <span className="text-lg font-bold tracking-tight hidden sm:block">Director</span>
+            <span className="text-lg font-bold tracking-tight hidden lg:block">Director</span>
+          </div>
+          {/* Where you are: Library or a project (and the folder new work goes to) */}
+          <div className="flex min-w-0 items-center gap-1">
+            <ProjectSwitcher ctx={{ project, folder }} projects={projects} onOpen={openProject} onNew={() => setNewProjectOpen(true)} onAll={() => openProject(null, 'projects')} />
+            <FolderPath ctx={{ project, folder }} folders={folders} onFolder={pickFolder} onNewFolder={() => setNewFolderOpen(true)} />
           </div>
         </div>
         <div className="flex min-w-0 items-center gap-3">
@@ -286,6 +376,8 @@ export default function DzShell() {
           </a>
         </div>
       </header>
+      {/* The project's color under the header: you always see you're inside it */}
+      {project && <div className="h-[3px] w-full flex-shrink-0" style={{ background: project.color }} aria-hidden="true" />}
 
       <div className="flex-1 min-h-0 flex relative overflow-hidden">
         {mobileOpen && <div className="fixed inset-0 bg-black/70 z-40 md:hidden" onClick={() => setMobileOpen(false)} />}
@@ -301,17 +393,17 @@ export default function DzShell() {
                 {tab.divider && <div className="mx-2 my-2 border-t border-white/[0.06]" />}
                 <a
                   key={tab.id}
-                  href={`/studio/${tab.id}`}
+                  href={pathFor(project, tab.id)}
                   onClick={(e) => { if (e.button === 0 && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openTab(tab.id); } }}
                   aria-current={active ? 'page' : undefined}
-                  title={isCollapsed ? tab.label : undefined}
+                  title={isCollapsed ? (tab.id === 'projects' && project ? 'Project settings' : tab.label) : undefined}
                   className={`relative flex items-center rounded-xl text-base font-semibold transition-colors
                     ${isCollapsed ? 'h-11 w-11 justify-center mx-auto' : 'px-3 py-2.5 gap-3'}
                     ${active ? 'bg-primary/15 text-primary border border-primary/25' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60 border border-transparent'}`}
                 >
                   {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#22d3ee]" />}
                   <span className="flex-shrink-0">{ICONS[tab.id]}</span>
-                  {!isCollapsed && <span className="truncate">{tab.label}</span>}
+                  {!isCollapsed && <span className="truncate">{tab.id === 'projects' && project ? 'Project settings' : tab.id === 'library' && project ? 'Project work' : tab.label}</span>}
                   {running[tab.id] > 0 && <span className={`${isCollapsed ? 'absolute top-1.5 right-1.5' : 'ml-auto'} h-2 w-2 rounded-full bg-[#22d3ee] animate-pulse`} />}
                 </a>
                 </div>
@@ -324,6 +416,12 @@ export default function DzShell() {
         <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]" onContextMenu={onContextMenu}>
           <div className={activeTab === 'create' ? 'h-full w-full' : 'hidden'}>
             <DzCreateStudio {...studioProps} {...callbacks('create')} droppedFiles={activeTab === 'create' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+          </div>
+          <div className={activeTab === 'projects' ? 'h-full w-full' : 'hidden'}>
+            {activeTab === 'projects' && (
+              <DzProjectsPage ctx={{ project, folder }} projects={projects} colors={colors} userId={user.id} onOpen={(p) => openProject(p, p ? 'create' : 'projects')} onNew={() => setNewProjectOpen(true)} onChanged={refreshProject}
+                onError={(message) => push({ type: 'error', tabId: 'projects', message })} />
+            )}
           </div>
           <div className={activeTab === 'cinema' ? 'h-full w-full' : 'hidden'}>
             <DzCinemaStudio {...studioProps} {...callbacks('cinema')} />
@@ -422,6 +520,11 @@ export default function DzShell() {
           ))}
         </div>
       )}
+      <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} colors={colors} onCreated={(p) => { reloadProjects(); openProject(p); }} />
+      <NameDialog open={newFolderOpen} onOpenChange={setNewFolderOpen} title={folder ? `New folder in “${folders.find((f) => f.id === folder)?.name || ''}”` : 'New folder'}
+        description="New work goes into it." placeholder="Folder name" submitLabel="Create"
+        onSubmit={async (name) => { const r = await dzProjectsApi.createFolder(project.id, name, folder); setFolders(r.folders || []); pickFolder(r.folder.id); }} />
+      <MoveDialog item={moveItem} onOpenChange={(o) => { if (!o) setMoveItem(null); }} projects={projects} />
       <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.16,1,.3,1)}@keyframes dzToastIn{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}.dz-sheet{animation:dzDrawerIn 240ms cubic-bezier(.16,1,.3,1)}@keyframes dzDrawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>
     </div>
   );

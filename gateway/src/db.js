@@ -103,6 +103,41 @@ const MIGRATIONS = [
   `
   ALTER TABLE generations ADD COLUMN purged_at INTEGER;
   `,
+  // 7: projects — a shared working context (members) with nested folders.
+  // workspace_id is reserved: one workspace for now.
+  `
+  CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    workspace_id INTEGER NOT NULL DEFAULT 1,
+    owner_id INTEGER NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    color TEXT NOT NULL,
+    archived_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE project_members (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
+    added_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    PRIMARY KEY (project_id, user_id)
+  );
+  CREATE INDEX project_members_user ON project_members(user_id, last_used_at DESC);
+  CREATE TABLE folders (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    parent_id TEXT REFERENCES folders(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX folders_project ON folders(project_id, parent_id);
+  CREATE INDEX generations_project ON generations(project_id, created_at DESC) WHERE project_id IS NOT NULL;
+  CREATE INDEX uploads_project ON uploads(project_id, created_at DESC) WHERE project_id IS NOT NULL;
+  `,
 ];
 
 export function openDatabase(dataDir) {

@@ -1,0 +1,207 @@
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { buildApp } from '../src/app.js';
+import { apimart } from '../src/providers/apimart.js';
+import { slugBase } from '../src/projects.js';
+
+const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex');
+let files;
+let app;
+let dataDir;
+const cookies = {};
+const original = { submit: apimart.submit, poll: apimart.poll, upload: apimart.upload, quote: apimart.quote, actualCost: apimart.actualCost };
+
+const cookieOf = (res) => {
+  const raw = res.headers['set-cookie'];
+  return (Array.isArray(raw) ? raw[0] : raw).split(';')[0];
+};
+const as = (who, method, url, payload) => app.inject({ method, url, headers: { cookie: cookies[who] }, ...(payload !== undefined ? { payload } : {}) });
+
+function multipart(filename, mime, data) {
+  const boundary = '----dz' + Date.now();
+  const head = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`);
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return { payload: Buffer.concat([head, data, tail]), headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } };
+}
+
+before(async () => {
+  files = http.createServer((req, res) => { res.setHeader('content-type', 'image/png'); res.end(PNG); });
+  await new Promise((r) => files.listen(0, '127.0.0.1', r));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-prj-'));
+  fs.mkdirSync(path.join(dataDir, 'catalog'), { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'catalog', 'apimart-models.json'), JSON.stringify({
+    fetchedAt: Date.now(), list: [{ id: 'test-image', category: 'image', capability_tags: ['Text to Image'] }],
+  }));
+  apimart.submit = async () => ({ taskId: 'task_1' });
+  apimart.poll = async () => ({ state: 'processing' });
+  apimart.quote = async () => null;
+  apimart.upload = async () => ({ url: 'https://cdn.apimart.example/ref.png', expiresAt: Date.now() + 86_400_000 });
+
+  app = await buildApp({
+    host: '127.0.0.1', port: 0, studioUrl: 'http://127.0.0.1:9', dataDir, appSecret: 'test', sessionDays: 30, logLevel: 'error',
+    startWorkers: false, testAllowLocalDownloads: true,
+    providerEnv: { apimart: { apiKey: 'sk-test', proxy: '' }, atlas: { apiKey: '', proxy: '' } },
+  }, { logger: false });
+  await app.ready();
+  const setupCode = fs.readFileSync(path.join(dataDir, 'setup-code'), 'utf8').trim();
+  let res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'admin', displayName: 'Admin', password: 'admin-pass-1', setupCode } });
+  cookies.admin = cookieOf(res);
+  for (const u of ['wife', 'kid']) {
+    await as('admin', 'POST', '/dz/settings/users', { username: u, displayName: u, password: `${u}-pass-123` });
+    res = await app.inject({ method: 'POST', url: '/login', payload: { username: u, password: `${u}-pass-123` } });
+    cookies[u] = cookieOf(res);
+  }
+});
+
+after(async () => {
+  Object.assign(apimart, original);
+  await app.close();
+  files.close();
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+const generate = (who, dz = {}) => as(who, 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'a cat', _dz: { studio: 'create', ...dz } });
+
+let project;
+let folder;
+let projGen;
+let personalGen;
+
+test('slugs: Cyrillic names become readable Latin', () => {
+  assert.equal(slugBase('Свадьба Ани'), 'svadba-ani');
+  assert.equal(slugBase('!!!'), 'project');
+});
+
+test('create a project; the owner is its first member; others do not see it', async () => {
+  let res = await as('admin', 'POST', '/dz/api/projects', { name: 'Family Trip' });
+  assert.equal(res.statusCode, 200, res.body);
+  project = res.json().project;
+  assert.equal(project.slug, 'family-trip');
+  assert.equal(project.role, 'owner');
+  assert.match(project.color, /^#[0-9a-f]{6}$/);
+  res = await as('wife', 'GET', `/dz/api/projects/${project.id}`);
+  assert.equal(res.statusCode, 404);
+  res = await as('wife', 'GET', '/dz/api/projects');
+  assert.deepEqual(res.json().projects, []);
+  // A second project with the same name gets its own slug.
+  res = await as('admin', 'POST', '/dz/api/projects', { name: 'Family Trip' });
+  assert.notEqual(res.json().project.slug, 'family-trip');
+});
+
+test('folders nest; a folder cannot go inside itself', async () => {
+  let res = await as('admin', 'POST', `/dz/api/projects/${project.id}/folders`, { name: 'Locations' });
+  assert.equal(res.statusCode, 200, res.body);
+  folder = res.json().folder;
+  res = await as('admin', 'POST', `/dz/api/projects/${project.id}/folders`, { name: 'Beach', parent: folder.id });
+  const child = res.json().folder;
+  res = await as('admin', 'PATCH', `/dz/api/folders/${folder.id}`, { parent: child.id });
+  assert.equal(res.statusCode, 409);
+  res = await as('wife', 'POST', `/dz/api/projects/${project.id}/folders`, { name: 'Nope' });
+  assert.equal(res.statusCode, 404);
+});
+
+test('generate into a project folder and into personal', async () => {
+  let res = await generate('admin', { project: project.slug, folder: folder.id });
+  assert.equal(res.statusCode, 200, res.body);
+  projGen = res.json().id;
+  res = await generate('admin');
+  personalGen = res.json().id;
+  // Someone who is not a member can't put work into the project.
+  res = await generate('wife', { project: project.id });
+  assert.equal(res.statusCode, 404);
+  // A folder from another project is refused.
+  res = await generate('admin', { project: project.id, folder: 'fld_nope' });
+  assert.equal(res.statusCode, 404);
+
+  res = await as('admin', 'GET', `/api/v1/history?project=${project.id}`);
+  assert.deepEqual(res.json().items.map((i) => i.id), [projGen]);
+  assert.equal(res.json().items[0].folder_id, folder.id);
+  res = await as('admin', 'GET', `/api/v1/history?project=${project.id}&folder=root`);
+  assert.equal(res.json().items.length, 0);
+  res = await as('admin', 'GET', '/api/v1/history?project=none');
+  assert.deepEqual(res.json().items.map((i) => i.id), [personalGen]);
+  res = await as('admin', 'GET', '/api/v1/history');
+  assert.equal(res.json().items.length, 2);
+});
+
+test('members see the project and its work, never personal history', async () => {
+  let res = await as('admin', 'POST', `/dz/api/projects/${project.id}/members`, { username: 'wife' });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(res.json().members.map((m) => m.username).sort(), ['admin', 'wife']);
+  res = await as('wife', 'GET', '/dz/api/projects');
+  assert.equal(res.json().projects[0].id, project.id);
+  assert.equal(res.json().projects[0].role, 'member');
+
+  res = await as('wife', 'GET', '/api/v1/history');
+  assert.deepEqual(res.json().items.map((i) => i.id), [projGen]);
+  assert.equal(res.json().items[0].mine, false);
+  assert.equal(res.json().items[0].author, 'Admin');
+  res = await as('wife', 'GET', `/api/v1/predictions/${personalGen}/result`);
+  assert.equal(res.statusCode, 404);
+  res = await as('kid', 'GET', `/api/v1/predictions/${projGen}/result`);
+  assert.equal(res.statusCode, 404);
+  // Members can like project work, but only the author or the owner can trash it.
+  res = await as('wife', 'POST', `/api/v1/predictions/${projGen}/like`, { liked: true });
+  assert.equal(res.statusCode, 200);
+  res = await as('wife', 'DELETE', `/api/v1/predictions/${projGen}/media`);
+  assert.equal(res.statusCode, 403);
+  // Members can't manage the project.
+  res = await as('wife', 'PATCH', `/dz/api/projects/${project.id}`, { name: 'Mine now' });
+  assert.equal(res.statusCode, 403);
+  res = await as('wife', 'POST', `/dz/api/projects/${project.id}/members`, { username: 'kid' });
+  assert.equal(res.statusCode, 403);
+});
+
+test('uploads in a project are shared with its members', async () => {
+  const mp = multipart('ref.png', 'image/png', PNG);
+  let res = await app.inject({ method: 'POST', url: `/api/v1/upload_file?project=${project.id}`, headers: { cookie: cookies.admin, ...mp.headers }, payload: mp.payload });
+  assert.equal(res.statusCode, 200, res.body);
+  const url = res.json().url;
+  res = await as('wife', 'GET', url);
+  assert.equal(res.statusCode, 200);
+  res = await as('kid', 'GET', url);
+  assert.equal(res.statusCode, 404);
+  res = await as('wife', 'GET', `/api/v1/uploads?project=${project.id}`);
+  assert.equal(res.json().items.length, 1);
+  // A member can use it as a reference in the project.
+  res = await as('wife', 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'x', image_urls: [url], _dz: { project: project.id } });
+  assert.notEqual(res.statusCode, 404, res.body);
+});
+
+test('move to another place: author only, and only into own projects', async () => {
+  let res = await as('wife', 'POST', `/api/v1/predictions/${projGen}/move`, { project: null });
+  assert.equal(res.statusCode, 403);
+  res = await as('admin', 'POST', `/api/v1/predictions/${personalGen}/move`, { project: project.id, folder: folder.id });
+  assert.equal(res.statusCode, 200, res.body);
+  res = await as('wife', 'GET', `/api/v1/history?project=${project.id}&folder=${folder.id}`);
+  assert.equal(res.json().items.length, 2);
+  res = await as('admin', 'POST', `/api/v1/predictions/${personalGen}/move`, { project: null });
+  assert.equal(res.json().project_id, null);
+});
+
+test('deleting a folder keeps its work (moves up); archive stops new work', async () => {
+  let res = await as('admin', 'DELETE', `/dz/api/folders/${folder.id}`);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.ok(!res.json().folders.some((f) => f.id === folder.id));
+  res = await as('admin', 'GET', `/api/v1/history?project=${project.id}&folder=root`);
+  assert.ok(res.json().items.some((i) => i.id === projGen), 'work from the deleted folder is now at the project root');
+  res = await as('admin', 'PATCH', `/dz/api/projects/${project.id}`, { archived: true });
+  assert.equal(res.json().project.archived, true);
+  res = await generate('admin', { project: project.id });
+  assert.equal(res.statusCode, 409);
+});
+
+test('a member can leave; the owner cannot', async () => {
+  const wife = (await as('admin', 'GET', `/dz/api/projects/${project.id}`)).json().members.find((m) => m.username === 'wife');
+  let res = await as('wife', 'DELETE', `/dz/api/projects/${project.id}/members/${wife.id}`);
+  assert.equal(res.json().left, true);
+  res = await as('wife', 'GET', `/api/v1/predictions/${projGen}/result`);
+  assert.equal(res.statusCode, 404);
+  const admin = (await as('admin', 'GET', `/dz/api/projects/${project.id}`)).json().members.find((m) => m.username === 'admin');
+  res = await as('admin', 'DELETE', `/dz/api/projects/${project.id}/members/${admin.id}`);
+  assert.equal(res.statusCode, 409);
+});

@@ -185,6 +185,8 @@ export default function DzShell() {
   if (!user) return <div className="h-screen bg-[#030303]" />;
 
   const studioProps = { apiKey: DZ_SESSION_PLACEHOLDER, locale: 'en' };
+  // Notifications move left of a right-hand panel instead of covering its button.
+  const rightPanelOpen = Boolean(upscaleDrawer) || activeTab === 'upscale';
   const isCollapsed = collapsed && !mobileOpen;
   const runningTabs = Object.keys(running);
 
@@ -273,7 +275,7 @@ export default function DzShell() {
             <VideoStudio {...studioProps} {...callbacks('video')} droppedFiles={activeTab === 'video' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
           <div className={activeTab === 'upscale' ? 'h-full w-full' : 'hidden'}>
-            <DzUpscaleStudio {...studioProps} {...callbacks('upscale')} initial={upscaleTabPick} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+            <DzUpscaleStudio {...studioProps} {...callbacks('upscale')} isAdmin={user.role === 'admin'} initial={upscaleTabPick} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
         </main>
 
@@ -302,6 +304,7 @@ export default function DzShell() {
                 <DzUpscalePanel
                   apiKey={DZ_SESSION_PLACEHOLDER}
                   imageUrl={upscaleDrawer.url}
+                  isAdmin={user.role === 'admin'}
                   compact
                   onStart={() => callbacks('upscale').onGenerationStart()}
                   onDone={(r) => {
@@ -330,7 +333,7 @@ export default function DzShell() {
 
       {/* Notifications: dark cards, bottom-right */}
       {(runningTabs.length > 0 || notifications.length > 0) && (
-        <div aria-live="polite" className="fixed top-16 right-3 md:top-auto md:bottom-5 md:right-5 z-[200] flex w-[320px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none">
+        <div aria-live="polite" className={`fixed top-16 right-3 md:top-auto z-[200] flex w-[320px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none ${rightPanelOpen ? 'md:bottom-5 md:right-[404px]' : 'md:bottom-5 md:right-5'}`}>
           {runningTabs.map((tabId) => (
             <div key={tabId} role="status" className="pointer-events-auto flex items-center gap-3 rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md px-3.5 py-3 text-[13px] shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
               <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#22d3ee]/25 border-t-[#22d3ee]" />

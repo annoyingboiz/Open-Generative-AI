@@ -8,23 +8,28 @@
 //   https://fal.ai/models/topaz/upscale/image/generative/llms.txt
 //   https://fal.ai/models/topaz/upscale/image/creative/llms.txt
 
-const range = (key, label, { min = 0, max = 1, step = 0.01, def = null, hint } = {}) => ({ key, type: 'range', label, min, max, step, default: def, hint });
+// default null = "Auto": the model decides; `start` is where the slider
+// begins when the user switches Auto off.
+const range = (key, label, { min = 0, max = 1, step = 0.01, def = null, hint } = {}) => ({ key, type: 'range', label, min, max, step, default: def, start: def ?? (min + max) / 2, hint });
 const int = (key, label, min, max, { def = null, hint } = {}) => ({ key, type: 'range', label, min, max, step: 1, default: def, hint });
 const bool = (key, label, def, hint) => ({ key, type: 'bool', label, default: def, hint });
-const select = (key, label, options, def, hint) => ({ key, type: 'select', label, options, default: def, hint });
+const select = (key, label, options, def, hint, labels) => ({ key, type: 'select', label, options, default: def, hint, labels });
 const text = (key, label, max, hint) => ({ key, type: 'text', label, max, default: '', hint });
 
+// `when`: the field only matters (and is only sent) while another field has
+// this value; the studio shows it greyed out otherwise.
+const FACE_ON = { face_enhancement: true };
 const FACE = [
   bool('face_enhancement', 'Face enhancement', true, 'Restores faces separately from the rest of the image.'),
-  range('face_enhancement_strength', 'Face strength', { def: 0.8, hint: 'How strongly faces are restored.' }),
-  range('face_enhancement_creativity', 'Face creativity', { def: 0, hint: 'Higher values may invent facial detail.' }),
+  { ...range('face_enhancement_strength', 'Face strength', { def: 0.8, hint: 'How strongly faces are restored.' }), when: FACE_ON },
+  { ...range('face_enhancement_creativity', 'Face creativity', { def: 0, hint: 'Higher values may invent facial detail.' }), when: FACE_ON },
 ];
 const SUBJECT = select('subject_detection', 'Subject', ['All', 'Foreground', 'Background'], 'All', 'Which part of the image to enhance.');
 // No default: the model picks its own value when the field is left on "Auto".
 const SHARPEN = range('sharpen', 'Sharpen');
 const DENOISE = range('denoise', 'Denoise');
 const FIX_COMPRESSION = range('fix_compression', 'Fix compression', { hint: 'Removes JPEG artifacts.' });
-const ENHANCEMENT = select('enhancement_strength', 'Enhancement', ['low', 'medium', 'high'], null, 'Leave on Auto to let the model decide.');
+const ENHANCEMENT = select('enhancement_strength', 'Enhancement', ['low', 'medium', 'high'], null, 'Leave on Auto to let the model decide.', { low: 'Low', medium: 'Medium', high: 'High' });
 
 // price: $usd per started `mp` megapixels of output.
 const PRECISION_PRICE = { usd: 0.08, mp: 24 };
@@ -35,7 +40,7 @@ export const FAL_UPSCALE = Object.freeze({
   id: 'upscale',
   name: 'Upscale',
   factor: { min: 1, max: 4, default: 2 },
-  common: [select('output_format', 'Format', ['jpeg', 'png'], 'jpeg', 'PNG keeps every detail but files are much larger.')],
+  common: [select('output_format', 'Format', ['jpeg', 'png'], 'jpeg', 'PNG keeps every detail but files are much larger.', { jpeg: 'JPEG', png: 'PNG' })],
   groups: [
     {
       id: 'precision',
@@ -116,7 +121,15 @@ export function falBody(endpoint, body = {}) {
   const out = { image_url: body.image_url, model: model.id };
   const factor = Number(body.upscale_factor);
   out.upscale_factor = Number.isFinite(factor) ? clamp(factor, tool.factor.min, tool.factor.max) : tool.factor.default;
-  for (const field of [...tool.common, ...model.fields]) {
+  const fields = [...tool.common, ...model.fields];
+  const valueOf = (key) => {
+    const f = fields.find((x) => x.key === key);
+    const v = body[key];
+    if (v === undefined || v === null || v === '') return f?.default;
+    return f?.type === 'bool' ? v === true || v === 'true' : v;
+  };
+  for (const field of fields) {
+    if (field.when && !Object.entries(field.when).every(([k, want]) => valueOf(k) === want)) continue;
     const v = body[field.key];
     if (v === undefined || v === null || v === '') continue;
     if (field.type === 'range') {

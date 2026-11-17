@@ -24,7 +24,7 @@ input[type=checkbox]{width:auto;height:auto}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px}
 .section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:20px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:640px){.grid2{grid-template-columns:1fr}}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.muted{color:var(--muted)}.mono{font-family:ui-monospace,Menlo,monospace}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.secret{-webkit-text-security:disc;text-security:disc}.muted{color:var(--muted)}.mono{font-family:ui-monospace,Menlo,monospace}
 table{width:100%;border-collapse:collapse}td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:12px;color:var(--muted);font-weight:600}
 .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}.pill.ok{color:var(--ok)}.pill.err{color:var(--danger)}
 details summary{cursor:pointer;color:var(--accent)}
@@ -70,11 +70,11 @@ export function settingsPage({ user, providers = [], balances = [], users = [], 
   const balanceById = Object.fromEntries(balances.map((b) => [b.id, b]));
 
   const providerSections = providers.map((p) => `
-<form class="section" method="post" action="/dz/settings/providers/${esc(p.id)}">
+<form class="section" id="provider-${esc(p.id)}" method="post" action="/dz/settings/providers/${esc(p.id)}" autocomplete="off">
   <div class="top" style="margin-bottom:8px"><h2 style="margin:0">${esc(p.name)}</h2><div>${balanceCell(balanceById[p.id])}</div></div>
   <div class="grid2">
     <div><label>API key ${p.hasKey ? `<span class="mono">${esc(p.keyMask)}</span> <span class="muted">(${p.keySource === 'env' ? 'from .env' : 'saved'})</span>` : '<span class="muted">— not set</span>'}</label>
-      <input name="apiKey" type="password" autocomplete="off" placeholder="${p.hasKey ? 'Leave empty to keep the current key' : 'Paste the key'}">
+      <input name="apiKey" type="text" class="secret" autocomplete="off" spellcheck="false" autocapitalize="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="${p.hasKey ? 'Leave empty to keep the current key' : 'Paste the key'}">
       ${p.keysUrl ? `<div class="muted" style="font-size:12px;margin-top:4px">Get a key: <a href="${esc(p.keysUrl)}" target="_blank" rel="noreferrer">${esc(p.keysUrl)}</a></div>` : ''}</div>
     <div><label>Proxy (optional)</label>
       <input name="proxy" value="${esc(p.proxy)}" placeholder="socks5h://127.0.0.1:1080" autocomplete="off">

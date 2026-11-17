@@ -86,6 +86,12 @@ test('fal body keeps only fields of the chosen model, clamped', () => {
   assert.equal(redefine.texture, 1);
   assert.equal(redefine.prompt.length, 1024);
   assert.equal(falBody('topaz/upscale/image/generative', { image_url: 'x', model: 'Nope' }).model, 'Wonder 4');
+  // Face settings only go out while face enhancement is on.
+  const off = falBody('topaz/upscale/image/precision', { image_url: 'x', model: 'Standard V2', face_enhancement: false, face_enhancement_strength: 0.5 });
+  assert.equal(off.face_enhancement, false);
+  assert.equal(off.face_enhancement_strength, undefined);
+  const on = falBody('topaz/upscale/image/precision', { image_url: 'x', model: 'Standard V2', face_enhancement_strength: 0.5 });
+  assert.equal(on.face_enhancement_strength, 0.5);
   assert.throws(() => falBody('fal-ai/flux/dev', {}));
 });
 
@@ -104,6 +110,16 @@ test('catalog tells the studio about the upscale tool', async () => {
   const res = await app.inject({ url: '/dz/catalog.js', headers: { cookie: adminCookie } });
   assert.match(res.body, /"upscale":\{"provider":"fal"/);
   assert.match(res.body, /topaz\/upscale\/image\/precision/);
+});
+
+test('tools and uploads lists for the studio', async () => {
+  let res = await app.inject({ url: '/dz/api/tools', headers: { cookie: otherCookie } });
+  assert.equal(res.json().tools.upscale.provider, 'fal');
+  res = await app.inject({ url: '/api/v1/uploads?kind=image', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 1);
+  assert.equal(res.json().items[0].url, uploadUrl);
+  res = await app.inject({ url: '/api/v1/uploads?kind=image', headers: { cookie: otherCookie } });
+  assert.equal(res.json().items.length, 0, 'only your own uploads');
 });
 
 test('quote reads the input size from our copy of the file', async () => {

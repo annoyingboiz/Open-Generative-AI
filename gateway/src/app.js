@@ -499,6 +499,10 @@ export async function buildApp(config, { logger = true } = {}) {
     try { return generations.trash(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
   });
   app.get('/api/v1/history', async (req) => generations.history(req.user, req.query));
+  app.get('/api/v1/uploads', async (req) => generations.uploads(req.user, req.query));
+  // Tools that depend on a provider key (e.g. Upscale on fal.ai), for the
+  // studio to notice a key added after the page was loaded.
+  app.get('/dz/api/tools', async (req, reply) => reply.header('cache-control', 'private, no-store').send({ tools: catalog.tools() }));
 
   // Models from the studio's built-in catalog have no provider yet.
   app.all('/api/v1/*', async (req, reply) => reply.code(404).send({

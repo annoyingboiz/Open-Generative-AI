@@ -49,6 +49,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     activeJobs: db.prepare("SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('submitting','submitted','processing','downloading')"),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
+    listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
   };
   const outputRefCache = new Map(); // `${provider}:${genId}/${n}` -> { url, expiresAt }
 
@@ -280,6 +281,16 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     return o ? { path: o.path, mime: o.mime || mimeForExt(o.ext) } : null;
   }
 
+  // The user's own uploaded files (newest first), e.g. to pick one to upscale.
+  function uploads(user, { kind = 'image', cursor, limit = 60 } = {}) {
+    const like = ['image', 'video', 'audio'].includes(kind) ? `${kind}/%` : '%';
+    const rows = q.listUploads.all(user.id, like, Number(cursor) || Number.MAX_SAFE_INTEGER, Math.min(Number(limit) || 60, 200));
+    return {
+      items: rows.map((r) => ({ id: r.id, url: `/media/u/${r.id}.${r.path.split('.').pop()}`, mime: r.mime, name: r.original_name, created_at: r.created_at })),
+      next_cursor: rows.length ? String(rows[rows.length - 1].created_at) : null,
+    };
+  }
+
   // Same for a /media/... link from a request body (e.g. an upscale input).
   function mediaFileForUrl(user, url) {
     const m = typeof url === 'string' && LOCAL_MEDIA_RE.exec(url);
@@ -288,7 +299,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
-    saveUpload, submit, result, history, trash, mediaFile, mediaFileForUrl,
+    saveUpload, uploads, submit, result, history, trash, mediaFile, mediaFileForUrl,
     start() {
       if (!timer) {
         timer = setInterval(tick, 2000);

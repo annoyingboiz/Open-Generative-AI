@@ -49,7 +49,11 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
   const schemaDir = path.join(dir, 'atlas-schemas');
   fs.mkdirSync(schemaDir, { recursive: true });
   const raw = {}; // providerId -> { fetchedAt, list }
-  let built = { variants: new Map(), lists: Object.fromEntries(STUDIO_MODES.map((m) => [m, []])), builtAt: 0, js: '' };
+  let built = { variants: new Map(), lists: Object.fromEntries(STUDIO_MODES.map((m) => [m, []])), builtAt: 0, listsJson: '{}' };
+  // Tools on fal.ai (upscaling): available as soon as fal has a key — checked
+  // on every request, not at the end of a catalog refresh.
+  const falEnabled = () => providers.resolve('fal').enabled && Boolean(providers.resolve('fal').apiKey);
+  const currentTools = () => (falEnabled() ? { upscale: { provider: 'fal', ...FAL_UPSCALE } } : {});
   let refreshing = null;
 
   const fileOf = (name) => path.join(dir, name);
@@ -83,14 +87,11 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
       }
     }
     const lists = buildStudioLists(variants, { recommended: getRecommended() || [] });
-    // Tools on fal.ai (upscaling): shown only when fal has a key.
-    const tools = enabled('fal') ? { upscale: { provider: 'fal', ...FAL_UPSCALE } } : {};
     built = {
       variants: new Map(variants.map((v) => [v.key, v])),
       lists,
-      tools,
       builtAt: Date.now(),
-      js: `window.__DZ_CATALOG__=${JSON.stringify({ builtAt: Date.now(), lists, tools }).replace(/</g, '\\u003c')};\n`,
+      listsJson: JSON.stringify(lists),
     };
     log?.info(`catalog: built ${variants.length} studio models (${STUDIO_MODES.map((m) => `${m} ${lists[m].length}`).join(', ')})`);
   }
@@ -201,7 +202,8 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
       return kind ? { id: modelId, kind } : null;
     },
     variant(key) { return built.variants.get(key) || null; },
-    hasTool(id) { return Boolean(built.tools?.[id]); },
+    hasTool(id) { return Boolean(currentTools()[id]); },
+    tools: currentTools,
     // Families for the "Recommended" editor in Settings: key, name, image/video.
     families() {
       const out = new Map();
@@ -214,7 +216,10 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
       return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
     },
     thumbnail,
-    clientScript() { return built.js; },
+    clientScript() {
+      const json = `{"builtAt":${built.builtAt},"lists":${built.listsJson},"tools":${JSON.stringify(currentTools())}}`;
+      return `window.__DZ_CATALOG__=${json.replace(/</g, '\\u003c')};\n`;
+    },
     stats() {
       return {
         builtAt: built.builtAt,

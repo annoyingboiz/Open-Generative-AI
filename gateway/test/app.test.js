@@ -73,7 +73,7 @@ test('anonymous access is blocked', async () => {
 });
 
 test('signed-in user reaches the studio; cookies and keys are not forwarded', async () => {
-  const res = await app.inject({ url: '/studio', headers: { cookie: adminCookie, 'x-api-key': 'muapi-xyz' } });
+  const res = await app.inject({ url: '/studio', headers: { cookie: adminCookie, 'x-api-key': 'legacy-xyz' } });
   assert.equal(res.statusCode, 200);
   const body = res.json();
   assert.equal(body.upstream, true);
@@ -81,7 +81,7 @@ test('signed-in user reaches the studio; cookies and keys are not forwarded', as
   assert.equal(body.sawKey, false);
 });
 
-test('muapi routes are disabled; models without a provider are refused', async () => {
+test('legacy upstream routes are disabled; models without a provider are refused', async () => {
   let res = await app.inject({ url: '/api/workflow/get-workflow-defs', headers: { cookie: adminCookie } });
   assert.equal(res.statusCode, 410);
   res = await app.inject({ url: '/api/v1/nano-banana-pro', method: 'POST', payload: {}, headers: { cookie: adminCookie } });
@@ -174,10 +174,9 @@ test('recommended models: admin edits the list, users cannot', async () => {
   assert.equal(res.statusCode, 403);
 });
 
-test('studio calls under /api/api/v1 reach the gateway API (not the blocked Muapi proxy)', async () => {
-  let res = await app.inject({ url: '/api/api/v1/history', headers: { cookie: adminCookie } });
+test('the studio API lives at /api/v1; legacy /api/api/v1 is refused', async () => {
+  let res = await app.inject({ url: '/api/v1/history', headers: { cookie: adminCookie } });
   assert.equal(res.statusCode, 200);
-  assert.ok(Array.isArray(res.json().items ?? res.json()));
-  res = await app.inject({ url: '/api/workflow/x', headers: { cookie: adminCookie } });
+  res = await app.inject({ url: '/api/api/v1/history', headers: { cookie: adminCookie } });
   assert.equal(res.statusCode, 410);
 });

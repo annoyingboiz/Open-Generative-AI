@@ -1,6 +1,6 @@
 // The gateway application: sits in front of the Next.js studio.
 //   /login /setup /logout /dz/*   — handled here (accounts, settings, JSON for the shell)
-//   /api/*                         — handled here (provider gateway; Muapi is blocked)
+//   /api/*                         — handled here (provider gateway; legacy upstream routes are blocked)
 //   everything else               — proxied to the studio, only for signed-in users
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
@@ -35,9 +35,6 @@ export async function buildApp(config, { logger = true } = {}) {
     logger: logger ? { level: config.logLevel } : false,
     trustProxy: config.trustProxy,
     bodyLimit: 2 * 1024 * 1024, // uploads have their own limits (multipart)
-    // The studio calls /api/api/v1/* (upstream: a Next.js proxy to Muapi).
-    // We serve those calls ourselves at /api/v1/*.
-    rewriteUrl: (req) => (req.url.startsWith('/api/api/v1/') ? req.url.slice(4) : req.url),
   });
   const storage = createStorage(config.dataDir, { allowLocalDownloads: config.testAllowLocalDownloads === true });
   // Small app-wide settings kept in the meta table (key "setting:<name>", JSON value).
@@ -97,7 +94,7 @@ export async function buildApp(config, { logger = true } = {}) {
   });
 
   // Security headers on everything we send, including the studio pages.
-  // The CSP keeps the browser from contacting any third party (no Muapi CDN,
+  // The CSP keeps the browser from contacting any third party (no third-party CDN,
   // no trackers): only this server, inline/eval scripts the studio needs.
   const CSP = [
     "default-src 'self'",
@@ -358,10 +355,10 @@ export async function buildApp(config, { logger = true } = {}) {
   });
 
   // ── API surface the studio calls ────────────────────────────────────────
-  // Muapi-only services are switched off for good.
+  // Legacy upstream services (workflows, agents, apps…) are switched off for good.
   for (const prefix of ['/api/app', '/api/workflow', '/api/agents', '/api/api', '/api/upload-binary', '/api/v1/creative-agent', '/api/v1/get_upload_url', '/api/v1/upload-binary']) {
-    app.all(prefix, muapiDisabled);
-    app.all(`${prefix}/*`, muapiDisabled);
+    app.all(prefix, legacyDisabled);
+    app.all(`${prefix}/*`, legacyDisabled);
   }
   app.get('/api/v1/account/balance', async () => ({ balance: null }));
 
@@ -439,7 +436,7 @@ export async function buildApp(config, { logger = true } = {}) {
   });
   app.get('/api/v1/history', async (req) => generations.history(req.user, req.query));
 
-  // Models from the studio's built-in (Muapi) catalog have no provider yet.
+  // Models from the studio's built-in catalog have no provider yet.
   app.all('/api/v1/*', async (req, reply) => reply.code(404).send({
     detail: 'This model is not available from your providers. Pick a model from APIMart or Atlas.',
   }));
@@ -487,6 +484,6 @@ export async function buildApp(config, { logger = true } = {}) {
   return app;
 }
 
-async function muapiDisabled(req, reply) {
-  return reply.code(410).send({ error: 'This feature needs Muapi servers and is disabled in this build.' });
+async function legacyDisabled(req, reply) {
+  return reply.code(410).send({ error: 'This feature is not part of this build.' });
 }

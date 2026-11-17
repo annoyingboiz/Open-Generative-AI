@@ -1,39 +1,9 @@
-// DZ: glue between the upstream studio shell and our gateway.
+// DZ: glue between the studio shell and our gateway.
 // The browser never holds a provider key. The gateway authenticates every
 // request with the session cookie; studios still receive a placeholder
 // `apiKey` prop because upstream code expects a non-empty value.
 
 export const DZ_SESSION_PLACEHOLDER = 'dz-session';
-
-// Tabs that only work with Muapi's own servers (workflow storage, agents,
-// design agent, clipping and motion-graphics pipelines, Muapi app showcase).
-export const DZ_HIDDEN_TABS = new Set([
-  'workflows',
-  'agents',
-  'design-agent',
-  'apps',
-  'clipping',
-  'vibe-motion',
-  // Not wired to our providers yet: they call fixed Muapi models, so every
-  // generation would fail. They come back once remapped to catalog models.
-  'layers',
-  'audio',
-  'motion-control',
-  'lipsync',
-  'body-swap',
-  'marketing',
-  'ai-influencer',
-]);
-
-export function dzFilterNavigation(tabs, categories) {
-  for (let i = tabs.length - 1; i >= 0; i -= 1) {
-    if (DZ_HIDDEN_TABS.has(tabs[i].id)) tabs.splice(i, 1);
-  }
-  for (let i = categories.length - 1; i >= 0; i -= 1) {
-    categories[i].tabIds = categories[i].tabIds.filter((id) => !DZ_HIDDEN_TABS.has(id));
-    if (categories[i].tabIds.length === 0) categories.splice(i, 1);
-  }
-}
 
 export async function dzFetchMe() {
   const response = await fetch('/dz/api/me', { credentials: 'same-origin' });

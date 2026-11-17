@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { uploadFile, generateI2I } from "../muapi.js";
+import { uploadFile, generateI2I } from "../api.js";
 
 export default function DrawModal({
   isOpen,
@@ -1137,7 +1137,7 @@ export default function DrawModal({
             >
               <div className="w-56 h-36 rounded-xl border border-white/5 overflow-hidden shadow-lg select-none relative bg-black/40">
                 <img
-                  src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/neta-lumina.avif"
+                  src="/assets/cinema/f_1_4.webp"
                   alt="Draw visual representation"
                   className="w-full h-full object-cover opacity-60"
                 />

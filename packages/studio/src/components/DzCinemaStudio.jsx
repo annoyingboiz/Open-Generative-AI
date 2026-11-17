@@ -7,7 +7,7 @@
 // chosen model, and the camera settings saved with every frame ("Reuse").
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { generateImage, generateI2I, uploadFile } from "../muapi.js";
+import { generateImage, generateI2I, uploadFile } from "../api.js";
 import { imageModelCatalog } from "../modelFamilies.js";
 import { getModelMediaCapabilities, buildReferenceParams } from "../modelCapabilities.js";
 import { createModelParameterValues, getSupplementalModelInputs } from "../modelParameters.js";

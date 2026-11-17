@@ -1,4 +1,4 @@
-// DZ: replaces the built-in Muapi model lists with models from your providers
+// DZ: replaces the built-in model lists with models from your providers
 // (APIMart, Atlas Cloud). The gateway serves them as window.__DZ_CATALOG__
 // via /dz/catalog.js, loaded in <head> before the studio code runs. Lists are
 // replaced in place, so every module that imported them sees the new models.

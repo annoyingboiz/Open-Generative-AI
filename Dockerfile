@@ -8,16 +8,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 FROM base AS deps
 COPY package*.json ./
 COPY . .
-# The app builds from git submodules; fail early with a clear message if missing.
-RUN for d in packages/Vibe-Workflow/packages/workflow-builder packages/Open-Poe-AI/packages/agents packages/Open-AI-Design-Agent/packages/design-agent; do \
-      [ -f "$d/package.json" ] || { echo "ERROR: $d is missing. Submodules are not initialized. Run: git submodule update --init --recursive (or clone with --recurse-submodules), then rebuild." >&2; exit 1; }; \
-    done
 RUN npm ci --no-audit --no-fund
 
-# Build sub-packages
+# Build. The clean check fails the build if any trace of the old upstream
+# service (hosts, CDN links) is found in the source or in the built bundle.
 FROM deps AS builder
-RUN npm run build:packages
+RUN node scripts/dz-check-clean.mjs
 RUN npm run build
+RUN node scripts/dz-check-clean.mjs .next/static .next/server
 
 # Production runner
 FROM base AS runner

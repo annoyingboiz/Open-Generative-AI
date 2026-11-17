@@ -186,7 +186,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     }
   }
 
-  // ── Read side (Muapi-shaped so the studio understands it) ───────────────
+  // ── Read side (in the shape the studio expects) ───────────────
   const outputUrls = (row) => JSON.parse(row.outputs_json || '[]').map((o, i) => `/media/g/${row.id}/${i}.${o.ext}`);
 
   function result(user, id) {

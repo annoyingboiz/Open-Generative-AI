@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
-import { processMotionControl, uploadFile } from "../muapi.js";
+import { processMotionControl, uploadFile } from "../api.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
 import MobileGenerationActions, {
@@ -1006,16 +1006,16 @@ export default function MotionControlStudio({
             {/* Visual Overlapping Cards */}
             <div className="flex items-center justify-center gap-2 md:gap-4 mb-8 select-none scale-90 sm:scale-100">
               <div className="w-20 h-24 sm:w-26 sm:h-32 rounded-2xl border border-white/10 shadow-2xl -rotate-[12deg] transform hover:rotate-0 hover:scale-110 hover:z-20 transition-all duration-300 overflow-hidden bg-white/[0.01] flex-shrink-0">
-                <img src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/sdxl-image.avif" alt="" className="w-full h-full object-cover" />
+                <img src="" alt="" className="w-full h-full object-cover" />
               </div>
               <div className="w-20 h-24 sm:w-26 sm:h-32 rounded-2xl border border-white/10 shadow-2xl -rotate-[4deg] transform hover:rotate-0 hover:scale-110 hover:z-20 transition-all duration-300 overflow-hidden bg-white/[0.01] -ml-4 flex-shrink-0">
-                <img src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/chroma-image.avif" alt="" className="w-full h-full object-cover" />
+                <img src="" alt="" className="w-full h-full object-cover" />
               </div>
               <div className="w-20 h-20 sm:w-26 sm:h-26 rounded-full border border-white/10 shadow-2xl rotate-[6deg] transform hover:rotate-0 hover:scale-110 hover:z-20 transition-all duration-300 overflow-hidden bg-white/[0.01] -ml-4 flex-shrink-0">
-                <img src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/neta-lumina.avif" alt="" className="w-full h-full object-cover" />
+                <img src="" alt="" className="w-full h-full object-cover" />
               </div>
               <div className="w-20 h-24 sm:w-26 sm:h-32 rounded-2xl border border-white/10 shadow-2xl rotate-[12deg] transform hover:rotate-0 hover:scale-110 hover:z-20 transition-all duration-300 overflow-hidden bg-white/[0.01] -ml-4 flex-shrink-0">
-                <img src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/perfect-pony-xl.avif" alt="" className="w-full h-full object-cover" />
+                <img src="" alt="" className="w-full h-full object-cover" />
               </div>
             </div>
 

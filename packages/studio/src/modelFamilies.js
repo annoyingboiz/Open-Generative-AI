@@ -423,8 +423,8 @@ function buildCatalog(modeLists, config) {
       const family = familyMap.get(id) || {
         id,
         name: "",
-        provider: model.provider || "muapi",
-        provider_name: model.provider_name || "Muapi",
+        provider: model.provider || "builtin",
+        provider_name: model.provider_name || "Built-in",
         rawVariants: {},
         freshness: 0,
       };

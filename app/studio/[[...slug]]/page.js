@@ -1,9 +1,9 @@
-import StandaloneShell from '@/components/StandaloneShell';
+import DzShell from '@/components/dz/DzShell';
 
 export const metadata = {
-  title: 'Studio — Open Generative AI',
+  title: 'Director',
 };
 
 export default function StudioPage() {
-  return <StandaloneShell />;
+  return <DzShell />;
 }

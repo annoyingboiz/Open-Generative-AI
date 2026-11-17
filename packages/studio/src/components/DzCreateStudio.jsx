@@ -601,7 +601,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           {missing && <p className="text-amber-300">{missing}</p>}
         </div>
       </div>
-      <DrawModal isOpen={drawOpen} onClose={() => setDrawOpen(false)} apiKey={apiKey} batchSize={1} />
+      <DrawModal isOpen={drawOpen} onClose={() => setDrawOpen(false)} apiKey={apiKey} batchSize={1} studio={mode} onError={onGenerationError} onDone={() => window.dispatchEvent(new CustomEvent("dz:history", { detail: { studio: mode } }))} />
     </div>
   );
 }

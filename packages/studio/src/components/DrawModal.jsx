@@ -9,6 +9,9 @@ export default function DrawModal({
   apiKey,
   batchSize = 1,
   onAddHistoryItem,
+  onDone, // DZ: (count) — results land in the studio history
+  studio = "create", // DZ: whose history the result goes to
+  onError, // DZ: (message)
 }) {
   const [activeTab, setActiveTab] = useState("draw-to-edit"); // 'sketch-to-video' | 'draw-to-video' | 'draw-to-edit'
   const [viewState, setViewState] = useState("setup"); // 'setup' | 'canvas'
@@ -1039,12 +1042,16 @@ export default function DrawModal({
       }
       const body = buildBody(variant, { prompt, values, attached, noDefault: aspect ? [] : ["aspect_ratio", "ratio", "size"] });
       const modelName = `${selectedEntry.familyName} · ${selectedEntry.providerName}`;
-      const results = await Promise.all(
+      const pending = Promise.all(
         Array.from({ length: batchSize }).map(() =>
-          dzWithMeta({ studio: "create", meta: { kind: "image", entryKey: selectedEntry.key, modelName, prompt: `Draw to Edit: ${prompt}`, values, attached } },
+          dzWithMeta({ studio, meta: { kind: "image", entryKey: selectedEntry.key, modelName, prompt: `Draw to Edit: ${prompt}`, values, attached } },
             () => dzGenerate(apiKey, { endpoint: variant.model.endpoint, ...body })),
         ),
       );
+      // DZ: the request is on its way — close the editor; the studio shows the
+      // pending card and the result, like any other generation.
+      onClose();
+      const results = await pending;
 
       results.forEach((res) => {
         if (res && res.url) {
@@ -1060,11 +1067,11 @@ export default function DrawModal({
         }
       });
 
-      alert("Generations complete!");
-      onClose();
+      onDone?.(results.filter((r) => r?.url).length);
     } catch (e) {
       console.error("[DrawModal] Generation failed:", e);
-      alert(`Generation failed: ${e.message}`);
+      const msg = String(e?.message || e).replace(/^API Request Failed: \d+ [^-]*- /, "");
+      if (onError) onError(`Draw to Edit: ${msg}`); else window.alert(`Generation failed: ${msg}`);
     } finally {
       setGenerating(false);
     }
@@ -1856,12 +1863,7 @@ export default function DrawModal({
               </button>
 
               <button
-                onClick={() =>
-                  alert(
-                    "Draw to Edit: paint directly over an image, insert overlay image/text objects, drag/resize elements, or select and delete specific components.",
-                  )
-                }
-                title="Info"
+                title="Draw to Edit: paint directly over an image, insert overlay image/text objects, drag/resize elements, or select and delete specific components."
                 className="h-[38px] w-[38px] flex items-center justify-center bg-[#131316]/80 hover:bg-[#1c1c22] rounded-xl border border-white/5 text-white/60 shadow-xl transition-all"
               >
                 <span className="text-xs font-bold leading-none">i</span>

@@ -423,7 +423,9 @@ export async function buildApp(config, { logger = true } = {}) {
   // Model list for the studio (loaded before the studio code, see app/layout.js).
   app.get('/dz/catalog.js', async (req, reply) => reply
     .type('application/javascript; charset=utf-8')
-    .header('cache-control', 'no-cache')
+    // no-store, not no-cache: Cloudflare's "Browser Cache TTL" rewrote no-cache
+    // to max-age=14400, so browsers kept a 4-hour-old model list.
+    .header('cache-control', 'private, no-store, max-age=0')
     .send(catalog.clientScript()));
 
   app.get('/api/v1/predictions/:id/result', async (req, reply) => {

@@ -61,11 +61,11 @@ export async function buildApp(config, { logger = true } = {}) {
   async function notifyChanges(added) {
     const { botToken, chatId } = config.telegram || {};
     if (!botToken || !chatId || !added.length) return;
-    const review = added.filter((e) => e.status === 'review').length;
+    const reverted = added.filter((e) => e.status === 'reverted').length;
     // Provider error texts may echo prompts or signed links: for refusals only the setting names go out.
     const safeDetail = (e) => (e.type === 'rejected' ? '' : String(e.detail || '').replace(/https?:\/\/\S+/g, '[link]').slice(0, 80));
     const lines = added.slice(0, 12).map((e) => `• ${e.provider} · ${e.name || e.model || e.endpoint || ''} — ${e.type}${e.param ? ` ${e.param}` : ''}${safeDetail(e) ? `: ${safeDetail(e)}` : ''}`);
-    const text = [`Director: ${added.length} provider change(s)${review ? `, ${review} need review` : ''}`, ...lines, added.length > 12 ? `…and ${added.length - 12} more` : '', config.publicUrl ? `${config.publicUrl}/dz/settings#changes` : ''].filter(Boolean).join('\n');
+    const text = [`Director: ${added.length} provider change(s)${reverted ? `, ${reverted} rolled back` : ''}`, ...lines, added.length > 12 ? `…and ${added.length - 12} more` : '', config.publicUrl ? `${config.publicUrl}/dz/settings#changes` : ''].filter(Boolean).join('\n');
     try {
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }), signal: AbortSignal.timeout(10_000) });
     } catch (error) { app.log.warn(`telegram: ${error.message}`); }
@@ -255,7 +255,7 @@ export async function buildApp(config, { logger = true } = {}) {
   // ── Provider changes (admin) ────────────────────────────────────────────
   app.get('/dz/api/changes/summary', async (req, reply) => {
     reply.header('cache-control', 'private, no-store');
-    if (req.user.role !== 'admin') return { review: 0, unseen: 0 };
+    if (req.user.role !== 'admin') return { unseen: 0 };
     return changes.summary();
   });
   app.post('/dz/settings/changes/check', async (req, reply) => {
@@ -263,18 +263,6 @@ export async function buildApp(config, { logger = true } = {}) {
     // Takes a minute or two (every schema and docs page) — runs in the background.
     catalog.refreshAll({ force: true, docs: true }).catch((error) => app.log.warn(`changes check: ${error.message}`));
     return reply.redirect('/dz/settings?notice=checked#changes');
-  });
-  app.post('/dz/settings/changes/:action', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const { model, id } = req.body || {};
-    const action = req.params.action;
-    let ok = false;
-    if (action === 'apply') { ok = changes.applyPending(String(model || '')); if (ok) catalog.requestRebuild(); }
-    else if (action === 'dismiss') ok = changes.dismissPending(String(model || ''));
-    else if (action === 'close') ok = changes.close(String(id || ''));
-    else return reply.code(400).send({ error: 'Unknown action' });
-    if (!ok) return renderSettings(req, reply, { error: 'Nothing to change — the list may be out of date. Reload the page.', code: 409 });
-    return reply.redirect('/dz/settings?notice=changes#changes');
   });
 
   app.post('/dz/settings/password', async (req, reply) => {

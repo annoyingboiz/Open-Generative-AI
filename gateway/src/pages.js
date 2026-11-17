@@ -156,23 +156,14 @@ const CHANGE_LABEL = {
   'values-added': 'New values', 'values-removed': 'Values removed', 'range-changed': 'Range changed',
   'limit-changed': 'File limit changed', 'default-changed': 'Default changed', 'price-changed': 'Price changed',
   'mode-added': 'New mode', 'mode-removed': 'Mode removed', 'rename-changed': 'Field names changed',
-  rejected: 'Request refused', 'check-skipped': 'Check skipped',
+  rejected: 'Request refused', reverted: 'Rolled back', 'check-skipped': 'Check skipped',
 };
-const STATUS_LABEL = { applied: 'live', review: 'needs review', info: 'info', resolved: 'resolved', replaced: 'replaced', dismissed: 'kept old', closed: 'closed', stale: 'gone from the docs' };
-const STATUS_COLOR = { applied: 'var(--ok, #4ade80)', review: '#fbbf24', info: 'var(--muted, #888)' };
+const STATUS_LABEL = { applied: 'applied', info: 'info', reverted: 'rolled back' };
+const STATUS_COLOR = { applied: 'var(--ok, #4ade80)', reverted: '#fbbf24', info: 'var(--muted, #888)' };
 
 function changesSection({ entries, summary, telegram }) {
   const when = (t) => new Date(t).toISOString().slice(0, 16).replace('T', ' ');
-  const form = (action, field, value, label, cls = '') => `<form method="post" action="/dz/settings/changes/${action}" style="display:inline"><input type="hidden" name="${field}" value="${esc(value)}"><button class="btn small ${cls}" type="submit">${label}</button></form>`;
-  const shownModels = new Set();
   const rows = entries.map((e) => {
-    let actions = '';
-    if (e.status === 'review' && e.source === 'docs' && e.model && !shownModels.has(e.model)) {
-      shownModels.add(e.model);
-      actions = `${form('apply', 'model', e.model, 'Use the docs version', 'primary')} ${form('dismiss', 'model', e.model, 'Keep current')}`;
-    } else if (e.status === 'review' && e.source !== 'docs') {
-      actions = form('close', 'id', e.id, 'Done');
-    }
     const what = [e.mode, e.param].filter(Boolean).join(' · ');
     return `<tr${e.seen ? '' : ' style="background:rgba(34,211,238,.06)"'}>
   <td class="muted mono" style="white-space:nowrap">${esc(when(e.at))}</td>
@@ -180,19 +171,18 @@ function changesSection({ entries, summary, telegram }) {
   <td><b>${esc(e.name || e.model || e.endpoint || '')}</b>${what ? `<div class="muted mono" style="font-size:16px">${esc(what)}</div>` : ''}</td>
   <td>${esc(CHANGE_LABEL[e.type] || e.type)}<div class="muted" style="font-size:16px;max-width:420px;overflow-wrap:anywhere">${esc(String(e.detail || '').slice(0, 300))}</div></td>
   <td style="white-space:nowrap;color:${STATUS_COLOR[e.status] || 'inherit'}">${esc(STATUS_LABEL[e.status] || e.status)}</td>
-  <td style="text-align:right;white-space:nowrap">${actions}</td>
 </tr>`;
   }).join('');
   const last = summary.lastCheck ? when(summary.lastCheck) : 'not yet';
   return `<div class="section">
-  <p class="muted" style="margin-top:0">Checked every day. <b>Atlas</b> publishes machine-readable schemas: new settings appear in the studio by themselves, and this list says what changed. <b>APIMart</b> settings come from its docs: new values or wider limits are applied by themselves, anything else waits for you here. Requests a provider refuses are listed too — usually a sign its spec changed.</p>
+  <p class="muted" style="margin-top:0">Everything here happens by itself — nothing to approve. Checked every day. <b>Atlas</b> publishes machine-readable schemas, so the studio follows it at once. <b>APIMart</b>'s API lists its models and prices but not what each setting accepts, so its docs are re-read and every change is applied. If APIMart then refuses requests over a changed setting, the change is rolled back by itself and that docs version is skipped. Removed models leave the studio on the next refresh.</p>
   <div class="row" style="margin-bottom:12px">
-    <span><b>${summary.review}</b> need review · APIMart docs last checked: ${esc(last)}${telegram ? ' · Telegram alerts on' : ' · Telegram alerts off (set DZ_TELEGRAM_BOT_TOKEN and DZ_TELEGRAM_CHAT_ID)'}</span>
+    <span>APIMart docs last checked: ${esc(last)}${telegram ? ' · Telegram alerts on' : ' · Telegram alerts off (set DZ_TELEGRAM_BOT_TOKEN and DZ_TELEGRAM_CHAT_ID)'}</span>
     <span style="flex:1"></span>
     <form method="post" action="/dz/settings/changes/check"><button class="btn small" type="submit">Check now</button></form>
   </div>
-  <div style="max-height:520px;overflow:auto"><table><thead><tr><th>When (UTC)</th><th>Provider</th><th>Model</th><th>Change</th><th>Status</th><th></th></tr></thead>
-  <tbody>${rows || '<tr><td colspan="6" class="muted">No changes yet. The first check only remembers how things are now.</td></tr>'}</tbody></table></div>
+  <div style="max-height:520px;overflow:auto"><table><thead><tr><th>When (UTC)</th><th>Provider</th><th>Model</th><th>Change</th><th>Status</th></tr></thead>
+  <tbody>${rows || '<tr><td colspan="5" class="muted">No changes yet. The first check only remembers how things are now.</td></tr>'}</tbody></table></div>
 </div>`;
 }
 

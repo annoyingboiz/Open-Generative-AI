@@ -181,6 +181,8 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
   }
 
   const isEnabled = (id) => providers.resolve(id).enabled && Boolean(providers.resolve(id).apiKey);
+  // An automatic rollback (provider refused a new spec) is published at once.
+  changes?.setOnSpecsChanged(() => { if (!refreshing) rebuild(); });
 
   // APIMart's parameters come from its docs: re-read them once a day.
   let docsRunning = null;

@@ -4,13 +4,14 @@
 //   DATA_DIR/catalog/changes.json           journal (newest first, capped)
 //   DATA_DIR/catalog/snapshot-<prov>.json   last seen catalog per provider
 //   DATA_DIR/catalog/apimart-live.json      APIMart specs applied from the docs
-//   DATA_DIR/catalog/apimart-pending.json   APIMart specs waiting for review
+//   DATA_DIR/catalog/apimart-previous.json  the spec before each automatic change
+//   DATA_DIR/catalog/apimart-refused.json   docs versions that broke requests
 //
-// Atlas and fal describe their models in machine-readable schemas, and the
-// studio draws itself from them, so their changes are live at once: the
-// journal only reports them. APIMart's parameters come from its docs (parsed
-// text). Changes that only widen what we offer (new values, wider ranges,
-// more files) are applied by themselves; the rest wait for an admin.
+// Everything is automatic. Atlas describes its models in machine-readable
+// schemas and the studio draws itself from them, so its changes are live at
+// once. APIMart's settings come from its docs: every change is applied. If the
+// provider then refuses requests over a setting, the change is undone by
+// itself. The journal says what happened.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -69,7 +70,6 @@ export function diffInputs(before = {}, after = {}) {
     }
     if (a.default !== b.default) {
       const fits = b.enum ? b.enum.includes(b.default) : b.min == null || (Number(b.default) >= b.min && Number(b.default) <= (b.max ?? Infinity));
-      // A new default changes what gets sent (and may cost more): always reviewed.
       items.push({ type: 'default-changed', param: name, detail: `${a.default ?? '—'} → ${b.default ?? '—'}${fits ? '' : ' (outside the allowed values)'}`, safe: false });
     }
   }
@@ -192,100 +192,78 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
   }
 
   const live = () => readJson(file('apimart-live.json'), {});
-  const pending = () => readJson(file('apimart-pending.json'), {});
+  // Per model: the spec in use before the last automatic change (null = the
+  // bundled one), so a change that breaks requests can be undone by itself.
+  const previous = () => readJson(file('apimart-previous.json'), {});
+  // Docs versions that made the provider refuse requests: never applied again.
+  const refused = () => readJson(file('apimart-refused.json'), {});
+  let onSpecsChanged = null;
 
-  // Fresh specs parsed from APIMart's docs, compared with what is in use.
+  // Fresh specs parsed from APIMart's docs: every difference is applied.
+  // (APIMart's API lists models and prices but not what each setting accepts —
+  // that is only in its docs.)
   function apimartDocsChecked(fresh, bundled, { total = 0, failed = 0, invalid = 0 } = {}) {
-    const active = { ...bundled, ...live() };
+    const nextLive = live();
+    const active = { ...bundled, ...nextLive };
     const freshCount = Object.keys(fresh).length;
-    // Half-loaded docs must not look like dozens of removed models.
+    // Half-loaded docs must not look like dozens of removed settings.
     if ((total && (failed + invalid) / total > 0.15) || freshCount < Object.keys(active).length * 0.7) {
       log?.warn(`changes: APIMart docs check skipped — ${freshCount} models parsed, ${failed}/${total} pages failed, ${invalid} unreadable`);
       return record([{ provider: 'apimart', source: 'docs', status: 'info', type: 'check-skipped', detail: `Docs looked incomplete (${freshCount} models, ${failed} of ${total} pages failed, ${invalid} without parameters). Nothing changed.` }]);
     }
-    const nextLive = live();
-    const nextPending = pending();
+    const prev = previous();
+    const bad = refused();
     const out = [];
-    const dismissed = readJson(file('apimart-dismissed.json'), {});
     for (const id of new Set([...Object.keys(active), ...Object.keys(fresh)])) {
-      if (fresh[id] && same(dismissed[id], fresh[id])) continue; // the admin said no to exactly this
-      // A proposal whose page is gone this time can't be applied any more.
-      if (!fresh[id] && nextPending[id]) { delete nextPending[id]; resolve(id, 'stale'); }
+      if (fresh[id] && same(bad[id], fresh[id])) continue; // this version broke requests before
       const items = diffOverride(active[id], fresh[id]);
-      if (!items.length) {
-        if (nextPending[id]) {
-          delete nextPending[id];
-          resolve(id, 'resolved');
-        }
-        continue;
-      }
+      if (!items.length) continue;
+      // The page is gone but APIMart still lists the model: keep what works.
       if (items.every((i) => i.info)) {
         if (!entries.some((e) => e.model === id && e.type === 'model-missing' && now() - e.at < 7 * DAY)) {
           out.push(...items.map((i) => ({ provider: 'apimart', source: 'docs', model: id, status: 'info', ...i })));
         }
         continue;
       }
-      const real = items.filter((i) => !i.info);
-      if (real.every((i) => i.safe)) {
-        nextLive[id] = fresh[id];
-        delete nextPending[id];
-        out.push(...real.map((i) => ({ provider: 'apimart', source: 'docs', model: id, status: 'applied', ...i })));
-      } else if (!same(nextPending[id], fresh[id])) {
-        nextPending[id] = fresh[id];
-        resolve(id, 'replaced');
-        out.push(...real.map((i) => ({ provider: 'apimart', source: 'docs', model: id, status: 'review', ...i })));
-      }
+      prev[id] = { spec: nextLive[id] ?? null, at: now() };
+      nextLive[id] = fresh[id];
+      out.push(...items.filter((i) => !i.info).map(({ safe: _s, ...i }) => ({ provider: 'apimart', source: 'docs', model: id, status: 'applied', ...i })));
     }
     writeJsonAtomic(file('apimart-live.json'), nextLive);
-    writeJsonAtomic(file('apimart-pending.json'), nextPending);
+    writeJsonAtomic(file('apimart-previous.json'), prev);
     return record(out);
   }
 
-  // Review entries of a model get a final status.
-  function resolve(model, status) {
-    let changed = false;
-    for (const e of entries) if (e.model === model && e.status === 'review') { e.status = status; changed = true; }
-    if (changed) save();
-  }
-
-  // Admin: use the docs' version of this model (the whole spec).
-  function applyPending(model) {
-    const p = pending();
-    if (!p[model]) return false;
-    const l = live();
-    l[model] = p[model];
-    delete p[model];
-    writeJsonAtomic(file('apimart-live.json'), l);
-    writeJsonAtomic(file('apimart-pending.json'), p);
-    resolve(model, 'applied');
-    return true;
-  }
-
-  // Admin: keep the current spec; the same docs won't be proposed again.
-  function dismissPending(model) {
-    const p = pending();
-    if (!p[model]) return false;
-    const d = readJson(file('apimart-dismissed.json'), {});
-    d[model] = p[model];
-    delete p[model];
-    writeJsonAtomic(file('apimart-dismissed.json'), d);
-    writeJsonAtomic(file('apimart-pending.json'), p);
-    resolve(model, 'dismissed');
-    return true;
-  }
-
-  // A provider refused a request we built from its spec — a sign the spec is out of date.
+  // A provider refused a request we built from its spec. Logged; and if that
+  // model's spec was changed automatically in the last two weeks, the change
+  // is undone at once (and that docs version is not applied again).
   function providerRejected({ provider, endpoint, model, status, message, params = [] }) {
     const text = String(message || '').slice(0, 400);
     // Must name one of the settings we sent (not the prompt): that is a spec problem.
     const named = params.filter((p) => p !== 'prompt' && new RegExp(`\\b${p.replace(/[^a-z0-9_]/gi, '')}\\b`, 'i').test(text));
     if (!named.length) return [];
-    // Only refusals about the request's shape; content moderation, balance,
-    // and plain prompt problems are not spec changes.
+    // Content moderation, balance and plain prompt problems are not spec changes.
     if (/policy|safety|sensitive|moderat|nsfw|violat|balance|quota|insufficient|credit/i.test(text)) return [];
+    const out = [];
+    if (provider === 'apimart' && model) {
+      const prev = previous();
+      const p = prev[model];
+      if (p && now() - p.at < 14 * DAY) {
+        const l = live();
+        const bad = refused();
+        bad[model] = l[model];
+        if (p.spec) l[model] = p.spec; else delete l[model];
+        delete prev[model];
+        writeJsonAtomic(file('apimart-refused.json'), bad);
+        writeJsonAtomic(file('apimart-live.json'), l);
+        writeJsonAtomic(file('apimart-previous.json'), prev);
+        out.push({ provider, source: 'request', status: 'reverted', type: 'reverted', endpoint, model, param: named.join(', '), detail: 'APIMart refused a request after the last docs update — the previous settings are back.' });
+        try { onSpecsChanged?.(); } catch (error) { log?.warn(`changes: rebuild — ${error.message}`); }
+      }
+    }
     const dupe = entries.some((e) => e.type === 'rejected' && e.endpoint === endpoint && e.detail === text && now() - e.at < DAY);
-    if (dupe) return [];
-    return record([{ provider, source: 'request', status: 'review', type: 'rejected', endpoint, model, param: named.join(', '), detail: text, http: status }]);
+    if (!dupe) out.unshift({ provider, source: 'request', status: 'info', type: 'rejected', endpoint, model, param: named.join(', '), detail: text, http: status });
+    return record(out);
   }
 
   function markSeen(id) {
@@ -294,31 +272,16 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     if (changed) save();
   }
 
-  // Admin: close a review entry that needs nothing (e.g. a one-off rejection).
-  function close(id) {
-    const e = entries.find((x) => x.id === id);
-    if (!e || e.status !== 'review') return false;
-    if (e.model && pending()[e.model] && e.source === 'docs') return false; // use dismissPending
-    e.status = 'closed';
-    save();
-    return true;
-  }
-
   return {
     record,
     catalogChecked,
     apimartDocsChecked,
-    applyPending,
-    dismissPending,
     providerRejected,
     markSeen,
-    close,
     liveOverrides: live,
-    pendingOverrides: pending,
-    dismissedOverride: (model) => readJson(file('apimart-dismissed.json'), {})[model] || null,
+    setOnSpecsChanged: (fn) => { onSpecsChanged = fn; },
     list: ({ limit = 200 } = {}) => entries.slice(0, limit),
     summary: () => ({
-      review: entries.filter((e) => e.status === 'review').length,
       unseen: entries.filter((e) => !e.seen).length,
       lastCheck: readJson(file('changes-meta.json'), {}).lastDocsCheck || null,
     }),

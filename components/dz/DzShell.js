@@ -367,9 +367,9 @@ export default function DzShell() {
             <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
             <span className="truncate">{user.displayName}</span>
           </span>
-          <a href={changes?.review || changes?.unseen ? '/dz/settings#changes' : '/dz/settings'} title={changes?.review ? `${changes.review} provider change(s) need review` : changes?.unseen ? `${changes.unseen} new provider change(s)` : undefined} className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-base font-semibold text-foreground/90 hover:bg-accent">
-            {(changes?.review > 0 || changes?.unseen > 0) && (
-              <span className={`absolute -right-1.5 -top-1.5 min-w-5 h-5 px-1 rounded-full text-[13px] leading-5 text-center font-bold ${changes.review ? 'bg-amber-400 text-black' : 'bg-primary text-primary-foreground'}`}>{changes.review || changes.unseen}</span>
+          <a href={changes?.unseen ? '/dz/settings#changes' : '/dz/settings'} title={changes?.unseen ? `${changes.unseen} new provider change(s) — applied automatically` : undefined} className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-base font-semibold text-foreground/90 hover:bg-accent">
+            {changes?.unseen > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 min-w-5 h-5 px-1 rounded-full bg-primary text-[13px] leading-5 text-center font-bold text-primary-foreground">{changes.unseen}</span>
             )}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 7 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 1.17 14H1a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 2.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 7 4.6 1.65 1.65 0 0 0 8 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.17l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.15.67.4.88.72.21.32.33.7.32 1.08V11a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
             <span className="hidden sm:inline">Settings</span>

@@ -44,46 +44,47 @@ test('diffOverride: media limits and modes', () => {
   assert.equal(diffOverride(before, undefined)[0].info, true);
 });
 
-test('APIMart docs check: safe changes go live, others wait; dismiss and apply', () => {
+test('APIMart docs check: every change is applied by itself', () => {
   const changes = createChanges({ dir: tmp() });
   const fill = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`f${i}`, ov({ duration: dur([5]) })]));
-  const bundled = {
-    a: ov({ duration: dur([5, 10]) }),
-    b: ov({ duration: dur([5, 10]) }),
-    c: ov({ duration: dur([5]) }),
-    ...fill,
-  };
+  const bundled = { a: ov({ duration: dur([5, 10]) }), b: ov({ duration: dur([5, 10]) }), c: ov({ duration: dur([5]) }), ...fill };
   const fresh = {
-    a: ov({ duration: dur([5, 10, 15]) }), // new value → live
-    b: ov({ duration: dur([5]) }), // value removed → review
+    a: ov({ duration: dur([5, 10, 15]) }), // new value
+    b: ov({ duration: dur([5], 5), audio: { type: 'boolean', default: true } }), // value removed + new setting
     c: ov({ duration: dur([5]) }), // same
+    n: ov({ duration: dur([4, 8]) }), // new model page
     ...fill,
   };
-  const added = changes.apimartDocsChecked(fresh, bundled, { total: 3, failed: 0 });
-  assert.deepEqual(added.map((e) => [e.model, e.status]).sort(), [['a', 'applied'], ['b', 'review']]);
-  assert.deepEqual(Object.keys(changes.liveOverrides()), ['a']);
-  assert.deepEqual(Object.keys(changes.pendingOverrides()), ['b']);
-  assert.equal(changes.summary().review, 1);
+  const added = changes.apimartDocsChecked(fresh, bundled, { total: 11, failed: 0 });
+  assert.ok(added.every((e) => e.status === 'applied'));
+  assert.deepEqual([...new Set(added.map((e) => e.model))].sort(), ['a', 'b', 'n']);
+  assert.deepEqual(Object.keys(changes.liveOverrides()).sort(), ['a', 'b', 'n']);
+  // Same docs again: nothing new.
+  assert.equal(changes.apimartDocsChecked(fresh, bundled, { total: 11 }).length, 0);
+  // A page that disappears while the model stays: the last spec is kept.
+  const { a: _gone, ...withoutA } = fresh;
+  const missing = changes.apimartDocsChecked(withoutA, bundled, { total: 11 });
+  assert.equal(missing[0].type, 'model-missing');
+  assert.ok(changes.liveOverrides().a);
+});
 
-  // Same docs again: nothing new is recorded.
-  assert.equal(changes.apimartDocsChecked(fresh, bundled, { total: 3 }).length, 0);
-
-  // Keep current → not proposed again for the same docs.
-  assert.equal(changes.dismissPending('b'), true);
-  assert.equal(changes.summary().review, 0);
-  assert.equal(changes.apimartDocsChecked(fresh, bundled, { total: 3 }).length, 0);
-
-  // Different docs for b → proposed again; apply moves it live.
-  const fresh2 = { ...fresh, b: ov({ duration: dur([6]) }) };
-  assert.equal(changes.apimartDocsChecked(fresh2, bundled, { total: 3 }).some((e) => e.model === 'b' && e.status === 'review'), true);
-  // A proposal whose page is missing next time is withdrawn.
-  const withoutB = { a: fresh.a, c: fresh.c, ...fill };
-  changes.apimartDocsChecked(withoutB, bundled, { total: 3 });
-  assert.equal(changes.applyPending('b'), false);
-  changes.apimartDocsChecked(fresh2, bundled, { total: 3 });
-  assert.equal(changes.applyPending('b'), true);
-  assert.deepEqual(Object.keys(changes.liveOverrides()).sort(), ['a', 'b']);
-  assert.equal(changes.summary().review, 0);
+test('a refused request after an automatic change rolls it back, and that docs version is skipped', () => {
+  const changes = createChanges({ dir: tmp() });
+  let rebuilt = 0;
+  changes.setOnSpecsChanged(() => { rebuilt += 1; });
+  const fill = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`f${i}`, ov({ duration: dur([5]) })]));
+  const bundled = { x: ov({ duration: dur([5, 10]) }), ...fill };
+  const broken = { x: ov({ duration: dur([5, 10, 20]) }), ...fill };
+  changes.apimartDocsChecked(broken, bundled, { total: 8 });
+  assert.ok(changes.liveOverrides().x);
+  const out = changes.providerRejected({ provider: 'apimart', endpoint: 'p/apimart/x?m=t2v', model: 'x', status: 400, message: 'HTTP 400: duration must be 5 or 10', params: ['prompt', 'duration'] });
+  assert.deepEqual(out.map((e) => e.type), ['rejected', 'reverted']);
+  assert.equal(changes.liveOverrides().x, undefined); // back to the bundled spec
+  assert.equal(rebuilt, 1);
+  // The same docs are not applied again; newer docs are.
+  assert.equal(changes.apimartDocsChecked(broken, bundled, { total: 8 }).length, 0);
+  const fixed = { ...broken, x: ov({ duration: dur([5, 10, 15]) }) };
+  assert.equal(changes.apimartDocsChecked(fixed, bundled, { total: 8 })[0].status, 'applied');
 });
 
 test('APIMart docs check: half-loaded docs change nothing', () => {
@@ -109,16 +110,14 @@ test('catalog snapshots: first one is only saved, then differences are journaled
   assert.equal(diffSnapshots(snapshotOf([v('x', {}, '$1')]), {}).at(0).type, 'model-removed');
 });
 
-test('provider refusals are journaled once a day per endpoint and message', () => {
+test('provider refusals are journaled once a day; content refusals are not', () => {
   const changes = createChanges({ dir: tmp() });
-  const r = { provider: 'apimart', endpoint: 'p/apimart/x?m=t2v', model: 'x', status: 400, message: 'HTTP 400: invalid duration', params: ['prompt', 'duration'] };
+  const r = { provider: 'atlas', endpoint: 'p/atlas/x', model: 'x', status: 400, message: 'HTTP 400: invalid duration', params: ['prompt', 'duration'] };
   assert.equal(changes.providerRejected({ ...r, message: 'HTTP 400: prompt must be non-empty' }).length, 0);
   assert.equal(changes.providerRejected(r).length, 1);
   assert.equal(changes.providerRejected(r).length, 0);
-  const [entry] = changes.list();
   assert.equal(changes.providerRejected({ ...r, message: 'HTTP 400: duration violates content policy' }).length, 0);
-  assert.equal(changes.close(entry.id), true);
-  assert.equal(changes.summary().review, 0);
+  assert.equal(changes.list()[0].status, 'info');
 });
 
 test('docs parser: values, ranges and media from a page', () => {

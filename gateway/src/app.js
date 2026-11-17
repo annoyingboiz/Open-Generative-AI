@@ -60,15 +60,20 @@ export async function buildApp(config, { logger = true } = {}) {
     return reply.redirect(`/login?next=${encodeURIComponent(req.url)}`);
   });
 
-  app.get('/healthz', async () => ({ ok: true }));
+  app.get('/healthz', { logLevel: 'warn' }, async () => ({ ok: true }));
 
   // ── First start ─────────────────────────────────────────────────────────
+  // The admin can only be created from the local network, never through a
+  // public tunnel (Cloudflare adds cf-connecting-ip to proxied requests).
+  const viaPublicTunnel = (req) => Boolean(req.headers['cf-connecting-ip']);
   app.get('/setup', async (req, reply) => {
     if (auth.hasUsers()) return reply.redirect('/login');
+    if (viaPublicTunnel(req)) return html(reply, setupPage({ error: 'Open this page from the local network to create the admin.' }), 403);
     return html(reply, setupPage());
   });
   app.post('/setup', async (req, reply) => {
     if (auth.hasUsers()) return reply.redirect('/login');
+    if (viaPublicTunnel(req)) return reply.code(403).send({ error: 'Local network only' });
     const { username, displayName, password } = req.body || {};
     try {
       auth.createUser({ username, displayName, password, role: 'admin' });

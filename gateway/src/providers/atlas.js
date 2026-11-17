@@ -16,7 +16,12 @@ export const atlas = {
       headers: { Authorization: `Bearer ${apiKey}` },
       timeoutMs: 20_000,
     });
+    // Live API: { available: { value, currency }, cash, bonus, ... }.
+    // Docs show a flat { value, currency }; accept both.
     const body = data?.data ?? data;
-    return { amount: Number(body.value), currency: String(body.currency || 'usd').toUpperCase() };
+    const money = body?.available ?? body;
+    const amount = Number(money?.value);
+    if (!Number.isFinite(amount)) throw new Error('Unexpected balance response from Atlas');
+    return { amount, currency: String(money.currency || 'usd').toUpperCase() };
   },
 };

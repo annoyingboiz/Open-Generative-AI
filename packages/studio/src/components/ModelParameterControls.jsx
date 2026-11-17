@@ -36,7 +36,7 @@ function FieldLabel({ schema, inputKey }) {
         {schema.title || inputKey.replaceAll("_", " ")}
       </div>
       {schema.description && (
-        <div className="mt-0.5 text-[10px] leading-relaxed text-white/35">
+        <div className="mt-0.5 text-base leading-relaxed text-white/35">
           {schema.description}
         </div>
       )}
@@ -135,7 +135,7 @@ function ArrayInput({ schema, value, onChange, label }) {
             <div className="flex flex-col gap-2">
               {Object.entries(itemSchema.properties || {}).map(([key, property]) => (
                 <label key={key} className="flex flex-col gap-1">
-                  <span className="text-[10px] font-semibold text-white/45">
+                  <span className="text-base font-semibold text-white/45">
                     {property.title || key.replaceAll("_", " ")}
                   </span>
                   <ScalarInput
@@ -161,7 +161,7 @@ function ArrayInput({ schema, value, onChange, label }) {
             type="button"
             onClick={() => removeItem(index)}
             aria-label={`Remove ${label} ${index + 1}`}
-            className="mt-2 text-[10px] font-semibold text-red-300/70 hover:text-red-300"
+            className="mt-2 text-base font-semibold text-red-300/70 hover:text-red-300"
           >
             Remove
           </button>
@@ -188,7 +188,7 @@ export default function ModelParameterControls({
   open,
   onToggle,
   children,
-  label = <span className="text-[10px] font-black text-primary/80">PARAMS</span>,
+  label = <span className="text-base font-black text-primary/80">PARAMS</span>,
   title = "Model parameters",
   summary = inputs.length,
   fitViewport = false,

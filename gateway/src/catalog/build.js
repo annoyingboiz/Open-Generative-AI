@@ -37,7 +37,8 @@ function vendorOf(id) {
 
 export function priceLabel(price) {
   if (!price || !Number.isFinite(price.usd)) return '';
-  const fmt = (v) => (v >= 0.1 ? v.toFixed(2) : v >= 0.01 ? v.toFixed(3) : v.toFixed(4)).replace(/0+$/, '').replace(/\.$/, '');
+  // Same format as the studio's price label: $0.70, $0.035, $0.008.
+  const fmt = (v) => (v >= 0.1 ? v.toFixed(2) : (v >= 0.01 ? v.toFixed(3) : v.toFixed(4)).replace(/0+$/, '').replace(/\.$/, ''));
   const values = price.byResolution ? Object.values(price.byResolution).filter(Number.isFinite) : [];
   const lo = values.length ? Math.min(...values) : price.usd;
   const hi = values.length ? Math.max(...values) : price.usd;
@@ -118,6 +119,12 @@ export function buildAtlasVariant(entry, schemaDoc) {
       // Served through our server (/dz/thumb) so the browser never calls Atlas's CDN.
       cover: (entry.coverUrl || entry.avatar) ? `/dz/thumb?u=${encodeURIComponent(entry.coverUrl || entry.avatar)}` : undefined,
     }),
+    // Logos from Atlas (organization avatar, model logo), also via /dz/thumb.
+    // buildStudioLists shares them with the same family/vendor on other providers.
+    logos: {
+      vendor: entry.avatar ? `/dz/thumb?u=${encodeURIComponent(entry.avatar)}` : null,
+      model: (entry.logo || entry.avatar) ? `/dz/thumb?u=${encodeURIComponent(entry.logo || entry.avatar)}` : null,
+    },
     server: { rename: toProvider, allowed, fixed: {}, price },
   };
 }
@@ -238,6 +245,14 @@ export function buildStudioLists(variants, { recommended = [] } = {}) {
       familyNames.set(v.family, { name: v.model.dzFamilyName, provider: v.provider });
     }
   }
+  // Logos: Atlas has them, APIMart doesn't — a model gets its family's logo,
+  // or its vendor's, from whichever provider has one.
+  const familyLogo = new Map();
+  const vendorLogo = new Map();
+  for (const v of variants) {
+    if (v.logos?.model && !familyLogo.has(v.family)) familyLogo.set(v.family, v.logos.model);
+    if (v.logos?.vendor && !vendorLogo.has(v.model.provider)) vendorLogo.set(v.model.provider, v.logos.vendor);
+  }
   const seenIds = new Set();
   for (const group of byFamilyMode.values()) {
     group.sort((a, b) => sortKey(b) - sortKey(a));
@@ -249,6 +264,8 @@ export function buildStudioLists(variants, { recommended = [] } = {}) {
       seenIds.add(id);
       const familyName = familyNames.get(v.family)?.name || v.model.dzFamilyName;
       v.model.dzFamilyName = familyName;
+      v.model.dzVendorLogo = vendorLogo.get(v.model.provider) || undefined;
+      v.model.dzLogo = familyLogo.get(v.family) || v.model.dzVendorLogo;
       v.model.name = [familyName, v.model.dzProviderName, v.model.dzPrice?.label, v.model.dzBasic ? 'basic' : ''].filter(Boolean).join(' · ');
       lists[v.mode].push(v.model);
     }

@@ -6,27 +6,29 @@ export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
 }[c]));
 
 const CSS = `
+@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/dz/fonts/inter-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/dz/fonts/inter-cyrillic.woff2) format('woff2');unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
 :root{--bg:#030303;--panel:#0a0a0b;--line:rgba(255,255,255,.08);--text:#f4f4f5;--muted:rgba(255,255,255,.5);--accent:#22d3ee;--danger:#f87171;--ok:#4ade80}
-*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px;width:100%;max-width:380px}
 .wide{max-width:880px;margin:0 auto;padding:24px}
-h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:0 0 12px}p.sub{color:var(--muted);margin:0 0 20px}
-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:12px 0 6px}
-input,select{width:100%;height:40px;padding:0 12px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:0 0 12px}p.sub{color:var(--muted);margin:0 0 20px}
+label{display:block;font-size:16px;font-weight:600;color:var(--muted);margin:12px 0 6px}
+input,select{width:100%;height:44px;padding:0 12px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit}
 input:focus,select:focus{outline:none;border-color:var(--accent)}
 input[type=checkbox]{width:auto;height:auto}
-.btn{display:inline-flex;align-items:center;justify-content:center;height:40px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);font:inherit;font-weight:600;cursor:pointer}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#000}.btn.danger{color:var(--danger)}.btn.small{height:32px;padding:0 10px;font-size:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);font:inherit;font-weight:600;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#000}.btn.danger{color:var(--danger)}.btn.small{height:36px;padding:0 12px;font-size:16px}
 .full{width:100%;margin-top:20px}
 .msg{padding:10px 12px;border-radius:8px;margin:0 0 16px;border:1px solid var(--line)}.msg.err{color:var(--danger);border-color:rgba(248,113,113,.3)}.msg.ok{color:var(--ok);border-color:rgba(74,222,128,.3)}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px}
 .section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:20px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:640px){.grid2{grid-template-columns:1fr}}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.secret{-webkit-text-security:disc;text-security:disc}.muted{color:var(--muted)}.mono{font-family:ui-monospace,Menlo,monospace}
-table{width:100%;border-collapse:collapse}td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:12px;color:var(--muted);font-weight:600}
-.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}.pill.ok{color:var(--ok)}.pill.err{color:var(--danger)}
+table{width:100%;border-collapse:collapse}td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:16px;color:var(--muted);font-weight:600}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:16px;border:1px solid var(--line)}.pill.ok{color:var(--ok)}.pill.err{color:var(--danger)}
 details summary{cursor:pointer;color:var(--accent)}
 `;
 
@@ -75,10 +77,10 @@ export function settingsPage({ user, providers = [], balances = [], users = [], 
   <div class="grid2">
     <div><label>API key ${p.hasKey ? `<span class="mono">${esc(p.keyMask)}</span> <span class="muted">(${p.keySource === 'env' ? 'from .env' : 'saved'})</span>` : '<span class="muted">— not set</span>'}</label>
       <input name="apiKey" type="text" class="secret" autocomplete="off" spellcheck="false" autocapitalize="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="${p.hasKey ? 'Leave empty to keep the current key' : 'Paste the key'}">
-      ${p.keysUrl ? `<div class="muted" style="font-size:12px;margin-top:4px">Get a key: <a href="${esc(p.keysUrl)}" target="_blank" rel="noreferrer">${esc(p.keysUrl)}</a></div>` : ''}</div>
+      ${p.keysUrl ? `<div class="muted" style="font-size:16px;margin-top:4px">Get a key: <a href="${esc(p.keysUrl)}" target="_blank" rel="noreferrer">${esc(p.keysUrl)}</a></div>` : ''}</div>
     <div><label>Proxy (optional)</label>
       <input name="proxy" value="${esc(p.proxy)}" placeholder="socks5h://127.0.0.1:1080" autocomplete="off">
-      <div class="muted" style="font-size:12px;margin-top:4px">All requests to ${esc(p.name)} go through it, incl. downloads. Empty = direct.</div></div>
+      <div class="muted" style="font-size:16px;margin-top:4px">All requests to ${esc(p.name)} go through it, incl. downloads. Empty = direct.</div></div>
   </div>
   <div class="row" style="margin-top:14px">
     <label class="row" style="margin:0;color:var(--text)"><input type="checkbox" name="enabled" value="1" ${p.enabled ? 'checked' : ''}> Enabled</label>
@@ -90,7 +92,7 @@ export function settingsPage({ user, providers = [], balances = [], users = [], 
 
   const userRows = users.map((u) => `
 <tr>
-  <td><b>${esc(u.display_name)}</b><div class="muted mono" style="font-size:12px">${esc(u.username)}</div></td>
+  <td><b>${esc(u.display_name)}</b><div class="muted mono" style="font-size:16px">${esc(u.username)}</div></td>
   <td colspan="4">
     <form class="row" method="post" action="/dz/settings/users/${u.id}">
       <select name="role" style="width:auto">${['user', 'admin'].map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
@@ -170,7 +172,7 @@ function recommendedSection(recommended, families) {
 export function testResultPage({ result, provider, model }) {
   const done = result.status === 'completed' || result.status === 'failed';
   const body = result.status === 'completed'
-    ? `<div class="msg ok">Done. The file is stored on this server.</div><img src="${esc(result.url)}" style="max-width:100%;border-radius:12px;border:1px solid var(--line)"><p class="muted mono" style="font-size:12px">${esc(result.url)}${result.cost != null ? ` · cost $${esc(result.cost)}` : ''}</p>`
+    ? `<div class="msg ok">Done. The file is stored on this server.</div><img src="${esc(result.url)}" style="max-width:100%;border-radius:12px;border:1px solid var(--line)"><p class="muted mono" style="font-size:16px">${esc(result.url)}${result.cost != null ? ` · cost $${esc(result.cost)}` : ''}</p>`
     : result.status === 'failed'
       ? `<div class="msg err">Failed: ${esc(result.error)}</div>`
       : '<p>Waiting for the provider… this page refreshes itself.</p>';

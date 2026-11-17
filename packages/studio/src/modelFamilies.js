@@ -782,7 +782,18 @@ function buildModelPickerEntries(catalog, modes, aliases) {
         .map((mode) => entry.variantsByMode[mode])
         .find(Boolean) || null;
       const duplicateName = nameCounts.get(normalizePickerName(entry.name)) > 1;
-      if (duplicateName) {
+      const dzModel = entry.defaultVariant?.model;
+      if (duplicateName && dzModel?.dzFamily) {
+        // DZ: two rows of one family + provider — say what the second one does.
+        const endpoint = String(dzModel.endpoint || "");
+        const modes = Object.keys(entry.variantsByMode);
+        const label = /reference/i.test(endpoint) ? "References"
+          : modes.includes("v2v") ? "Video edit"
+          : modes.length === 1 && modes[0] === "i2v" ? "Image → Video"
+          : modes.length === 1 && modes[0] === "i2i" ? "Edit"
+          : "";
+        if (label) entry.name = `${entry.name} · ${label}`;
+      } else if (duplicateName) {
         const entryModes = Object.keys(entry.variantsByMode);
         if (entryModes.length === 1 && ["i2i", "i2v"].includes(entryModes[0])) {
           entry.name = `${entry.name} Image`;

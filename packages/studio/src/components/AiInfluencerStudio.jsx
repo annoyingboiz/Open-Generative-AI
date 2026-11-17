@@ -329,7 +329,7 @@ function HoverPill({ label, img, onClick }) {
       <button
         type="button"
         onClick={onClick}
-        className="h-[22px] px-2 rounded-md bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.10] text-[11px] font-medium text-gray-200 whitespace-nowrap transition-all cursor-pointer"
+        className="h-[22px] px-2 rounded-md bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.10] text-base font-medium text-gray-200 whitespace-nowrap transition-all cursor-pointer"
       >
         {label}
       </button>
@@ -488,7 +488,7 @@ export default function AiInfluencerStudio({
 
         {/* Builder header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.07] shrink-0">
-          <span className="text-[13px] font-bold text-white tracking-tight">{copy.builder.title}</span>
+          <span className="text-base font-bold text-white tracking-tight">{copy.builder.title}</span>
           <button
             onClick={() => setSelectedOptions((() => {
               const init = {};
@@ -499,7 +499,7 @@ export default function AiInfluencerStudio({
               );
               return init;
             })())}
-            className="text-[11px] text-gray-500 hover:text-white transition-colors font-medium"
+            className="text-base text-gray-500 hover:text-white transition-colors font-medium"
           >
             {copy.builder.reset}
           </button>
@@ -511,7 +511,7 @@ export default function AiInfluencerStudio({
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className={`flex-1 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
+              className={`flex-1 py-1.5 rounded-lg text-base font-semibold transition-all ${
                 activeTab === key
                   ? "bg-white text-black shadow"
                   : "text-gray-500 hover:text-white hover:bg-white/[0.06]"
@@ -526,7 +526,7 @@ export default function AiInfluencerStudio({
         <div className="flex-1 overflow-y-auto p-3 space-y-5">
           {TABS_CONFIG[activeTab]?.subcategories?.map((subcat) => (
             <div key={subcat.id}>
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 px-0.5">
+              <p className="text-base font-bold text-gray-500 uppercase tracking-widest mb-2 px-0.5">
                 {copy.subcategories[subcat.id] || subcat.label}
               </p>
               <div className="grid grid-cols-3 gap-1.5">
@@ -551,7 +551,7 @@ export default function AiInfluencerStudio({
                       />
                       {/* Label overlay */}
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-4 pb-1 px-1">
-                        <span className="text-[9px] font-semibold text-white leading-none">{opt.label}</span>
+                        <span className="text-base font-semibold text-white leading-none">{opt.label}</span>
                       </div>
                       {/* Selected check badge */}
                       {sel && (
@@ -581,7 +581,7 @@ export default function AiInfluencerStudio({
               <button
                 key={r}
                 onClick={() => setAspectRatio(r)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-base font-bold transition-all ${
                   aspectRatio === r
                     ? "bg-violet-600 text-white shadow-md shadow-violet-600/40"
                     : "text-gray-500 hover:text-white"
@@ -596,7 +596,7 @@ export default function AiInfluencerStudio({
             {/* Shuffle */}
             <button
               onClick={handleShuffle}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08] text-gray-400 hover:text-white hover:bg-white/10 text-[12px] font-semibold transition-all"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08] text-gray-400 hover:text-white hover:bg-white/10 text-base font-semibold transition-all"
             >
               <ShuffleIcon />
               {copy.toolbar.shuffle}
@@ -606,7 +606,7 @@ export default function AiInfluencerStudio({
             <button
               onClick={handleGenerate}
               disabled={isGenerating}
-              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-lg ${
+              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-base font-bold transition-all shadow-lg ${
                 isGenerating
                   ? "bg-violet-600/40 text-white/60 cursor-not-allowed"
                   : "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-violet-600/30 hover:shadow-violet-500/40"
@@ -644,7 +644,7 @@ export default function AiInfluencerStudio({
                 {/* Download overlay button */}
                 <button
                   onClick={() => downloadImg(previewUrl)}
-                  className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 text-white text-[11px] font-semibold hover:bg-black/80 transition-all"
+                  className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 text-white text-base font-semibold hover:bg-black/80 transition-all"
                 >
                   <DownloadIcon />
                   {copy.preview.save}
@@ -684,7 +684,7 @@ export default function AiInfluencerStudio({
                 <button
                   type="button"
                   onClick={() => setShowAllTags((v) => !v)}
-                  className="h-[22px] px-2 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-[11px] text-gray-500 hover:text-gray-300 whitespace-nowrap transition-all"
+                  className="h-[22px] px-2 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-base text-gray-500 hover:text-gray-300 whitespace-nowrap transition-all"
                 >
                   {showAllTags ? copy.tags.hide : copy.tags.showMore}
                 </button>
@@ -695,7 +695,7 @@ export default function AiInfluencerStudio({
 
         {/* Error */}
         {errorMsg && (
-          <div className="mx-6 mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[12px] shrink-0">
+          <div className="mx-6 mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-base shrink-0">
             {errorMsg}
           </div>
         )}
@@ -707,7 +707,7 @@ export default function AiInfluencerStudio({
             value={customPrompt}
             onChange={(e) => setCustomPrompt(e.target.value)}
             placeholder={copy.customPrompt.placeholder}
-            className="w-full h-9 bg-[#161616] border border-white/[0.07] rounded-xl px-3 text-[12px] text-gray-200 placeholder-gray-600 outline-none focus:border-violet-500/40 transition-colors"
+            className="w-full h-9 bg-[#161616] border border-white/[0.07] rounded-xl px-3 text-base text-gray-200 placeholder-gray-600 outline-none focus:border-violet-500/40 transition-colors"
           />
         </div>
       </div>
@@ -719,8 +719,8 @@ export default function AiInfluencerStudio({
 
         {/* Gallery header */}
         <div className="px-3 py-3 border-b border-white/[0.07] shrink-0">
-          <p className="text-[11px] font-bold text-white tracking-tight">{copy.gallery.title}</p>
-          <p className="text-[9px] text-gray-600 mt-0.5">{history.length} {copy.gallery.countSuffix}</p>
+          <p className="text-base font-bold text-white tracking-tight">{copy.gallery.title}</p>
+          <p className="text-base text-gray-600 mt-0.5">{history.length} {copy.gallery.countSuffix}</p>
         </div>
 
         {/* Gallery scroll */}
@@ -730,7 +730,7 @@ export default function AiInfluencerStudio({
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-gray-700 mb-2">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
               </svg>
-              <p className="text-[9px] text-gray-700 leading-relaxed">{copy.gallery.emptyText.split('\n')[0]}<br />{copy.gallery.emptyText.split('\n')[1]}</p>
+              <p className="text-base text-gray-700 leading-relaxed">{copy.gallery.emptyText.split('\n')[0]}<br />{copy.gallery.emptyText.split('\n')[1]}</p>
             </div>
           ) : (
             history.map((item, idx) => (
@@ -779,7 +779,7 @@ export default function AiInfluencerStudio({
                   ]}
                 />
                 {/* Index badge */}
-                <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-[8px] text-gray-300 font-bold">
+                <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-base text-gray-300 font-bold">
                   #{history.length - idx}
                 </div>
               </div>
@@ -787,7 +787,7 @@ export default function AiInfluencerStudio({
           )}
         </div>
       </div>
-      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '13px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
+      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '16px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
     </div>
   );
 }

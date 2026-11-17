@@ -211,7 +211,7 @@ function AudioFileUploader({ label, value, onChange, apiKey, copy = en }) {
             </div>
             <div className="text-left">
               <div className="text-xs font-bold text-white">{copy.uploader.uploadPrompt}</div>
-              <div className="text-[11px] text-zinc-300 font-medium mt-0.5">{copy.uploader.uploadHint}</div>
+              <div className="text-base text-zinc-300 font-medium mt-0.5">{copy.uploader.uploadHint}</div>
             </div>
           </>
         )}
@@ -237,7 +237,7 @@ function AudioFileUploader({ label, value, onChange, apiKey, copy = en }) {
             </div>
             <div className="text-left flex-1 min-w-0">
               <div className="text-xs font-bold text-white truncate">{fileName}</div>
-              <div className="text-[11px] text-primary font-bold mt-0.5">{copy.uploader.ready}</div>
+              <div className="text-base text-primary font-bold mt-0.5">{copy.uploader.ready}</div>
             </div>
           </>
         )}
@@ -797,7 +797,7 @@ export default function AudioStudio({
                   >
                     <span>{model.name}</span>
                     {model.description && (
-                      <span className="text-[10px] text-zinc-300 truncate max-w-[320px] font-normal">
+                      <span className="text-base text-zinc-300 truncate max-w-[320px] font-normal">
                         {model.description}
                       </span>
                     )}
@@ -810,7 +810,7 @@ export default function AudioStudio({
           {/* Model Description */}
           {selectedModel?.description && (
             <div className="">
-              <span className="text-[10px] font-bold text-primary uppercase tracking-wider block mb-1.5">{copy.sidebar.descriptionLabel}</span>
+              <span className="text-base font-bold text-primary uppercase tracking-wider block mb-1.5">{copy.sidebar.descriptionLabel}</span>
               <p className="text-zinc-400 text-xs leading-relaxed font-semibold">{selectedModel.description}</p>
             </div>
           )}
@@ -856,7 +856,7 @@ export default function AudioStudio({
                         {schema.title || key}
                       </span>
                       {schema.description && (
-                        <span className="block text-[11px] text-zinc-300 leading-normal mt-1">
+                        <span className="block text-base text-zinc-300 leading-normal mt-1">
                           {schema.description}
                         </span>
                       )}
@@ -923,7 +923,7 @@ export default function AudioStudio({
                       </div>
                     )}
                     {schema.description && (
-                      <span className="block text-[11px] text-zinc-300 leading-normal">
+                      <span className="block text-base text-zinc-300 leading-normal">
                         {schema.description}
                       </span>
                     )}
@@ -943,7 +943,7 @@ export default function AudioStudio({
                       <span className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded border border-primary/20">{params[key] !== undefined ? params[key] : schema.default}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-zinc-300 font-medium w-6 text-right">{schema.minValue}</span>
+                      <span className="text-base text-zinc-300 font-medium w-6 text-right">{schema.minValue}</span>
                       <input
                         type="range"
                         min={schema.minValue}
@@ -953,10 +953,10 @@ export default function AudioStudio({
                         onChange={(e) => setParams(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
                         className="flex-1 h-1.5 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-primary hover:bg-zinc-700 transition-all"
                       />
-                      <span className="text-[10px] text-zinc-300 font-medium w-6 text-left">{schema.maxValue}</span>
+                      <span className="text-base text-zinc-300 font-medium w-6 text-left">{schema.maxValue}</span>
                     </div>
                     {schema.description && (
-                      <span className="block text-[11px] text-zinc-300 leading-normal">
+                      <span className="block text-base text-zinc-300 leading-normal">
                         {schema.description}
                       </span>
                     )}
@@ -984,7 +984,7 @@ export default function AudioStudio({
                             key={idx}
                             type="button"
                             onClick={() => setParams(prev => ({ ...prev, [key]: ex }))}
-                            className="text-[11px] px-3 py-1 bg-zinc-800/80 border border-zinc-700 hover:bg-primary/20 hover:border-primary/45 hover:text-white rounded-full transition-all font-semibold text-zinc-100"
+                            className="text-base px-3 py-1 bg-zinc-800/80 border border-zinc-700 hover:bg-primary/20 hover:border-primary/45 hover:text-white rounded-full transition-all font-semibold text-zinc-100"
                           >
                             "{ex.slice(0, 35)}..."
                           </button>
@@ -1012,7 +1012,7 @@ export default function AudioStudio({
                     className="w-full bg-zinc-900 border border-zinc-700 hover:border-zinc-600 focus:border-primary/80 rounded px-4 py-3.5 text-xs text-white placeholder:text-zinc-400 focus:outline-none transition-all shadow-inner"
                   />
                   {schema.description && (
-                    <span className="block text-[11px] text-zinc-300 leading-normal">
+                    <span className="block text-base text-zinc-300 leading-normal">
                       {schema.description}
                     </span>
                   )}
@@ -1128,7 +1128,7 @@ export default function AudioStudio({
                     </svg>
                     <span>{copy.result.newGeneration}</span>
                   </button>
-                  <span className="text-[11px] font-bold text-green-400 px-3.5 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full flex items-center gap-2">
+                  <span className="text-base font-bold text-green-400 px-3.5 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full flex items-center gap-2">
                     <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" /> {copy.result.success}
                   </span>
                 </div>
@@ -1163,11 +1163,11 @@ export default function AudioStudio({
                           <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
                         </svg>
                       </div>
-                      <span className="text-[10px] font-bold text-primary uppercase tracking-wider truncate">
+                      <span className="text-base font-bold text-primary uppercase tracking-wider truncate">
                         {entry.model ? entry.model.split('-').slice(0, 2).join(' ') : copy.history.fallbackModel}
                       </span>
                     </div>
-                    <p className="text-[11px] font-semibold text-white line-clamp-2 leading-tight">
+                    <p className="text-base font-semibold text-white line-clamp-2 leading-tight">
                       {entry.title || entry.prompt || copy.history.untitled}
                     </p>
                   </div>
@@ -1179,7 +1179,7 @@ export default function AudioStudio({
         </div>
 
       </div>
-      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '13px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
+      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '16px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
     </div>
   );
 }

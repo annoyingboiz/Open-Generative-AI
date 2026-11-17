@@ -241,7 +241,7 @@ function ModelMenu({ entries, recommended, selectedId, onSelect, triggerRef, onC
       >
         <span className="flex w-full items-center justify-between gap-3">
           <span className="truncate">{entry.family.name}</span>
-          <span className="shrink-0 text-[10px] text-white/40">
+          <span className="shrink-0 text-base text-white/40">
             {[providerOf(model), priceOf(model), entry.variantsByMode.i2i ? "refs" : ""].filter(Boolean).join(" · ")}
           </span>
         </span>
@@ -261,11 +261,11 @@ function ModelMenu({ entries, recommended, selectedId, onSelect, triggerRef, onC
       />
       <PromptMenuList className="max-h-[50vh] overflow-y-auto custom-scrollbar">
         {!q && recommended.length > 0 && (
-          <div className="px-2 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-[#22d3ee]/70">★ Recommended</div>
+          <div className="px-2 pt-1 pb-1 text-base font-bold uppercase tracking-wider text-[#22d3ee]/70">★ Recommended</div>
         )}
         {(q ? list : recommended).map(row)}
         {!q && (
-          <div className="px-2 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-white/30">All models</div>
+          <div className="px-2 pt-3 pb-1 text-base font-bold uppercase tracking-wider text-white/30">All models</div>
         )}
         {!q && list.filter((e) => !recommended.includes(e)).map(row)}
         {q && list.length === 0 && <div className="px-2 py-4 text-xs text-white/30">No models found</div>}
@@ -519,7 +519,7 @@ function ScrollColumn({ title, items, columnKey, value, onChange }) {
                   )}
                 </span>
                 {columnKey !== "focal" && (
-                  <span className="line-clamp-2 min-w-0 text-[10px] font-medium leading-snug text-white/60 transition-colors group-data-[selected=true]:text-white">
+                  <span className="line-clamp-2 min-w-0 text-base font-medium leading-snug text-white/60 transition-colors group-data-[selected=true]:text-white">
                     {item}
                   </span>
                 )}
@@ -579,7 +579,7 @@ function CameraControlsOverlay({
       >
         <div className="flex items-start justify-between border-b border-white/[0.05] px-5 py-5 md:px-7 md:py-6">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#22d3ee]">
+            <div className="mb-2 flex items-center gap-2 text-base font-semibold uppercase tracking-[0.16em] text-[#22d3ee]">
               <svg
                 width="15"
                 height="15"
@@ -1276,14 +1276,14 @@ export default function DzCinemaStudio({
                   </span>
                   <div className="flex items-center mt-1 flex-wrap gap-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-[#22d3ee] px-2 py-0.5 bg-[#22d3ee]/10 rounded border border-[#22d3ee]/20">
+                      <span className="text-base font-bold text-[#22d3ee] px-2 py-0.5 bg-[#22d3ee]/10 rounded border border-[#22d3ee]/20">
                         {entry.settings?.modelName || copy.card.badge}
                       </span>
                       {entry.settings?.camera && (
-                        <span className="text-[10px] text-white/40">{entry.settings.camera} · {entry.settings.lens} · {entry.settings.focal}mm</span>
+                        <span className="text-base text-white/40">{entry.settings.camera} · {entry.settings.lens} · {entry.settings.focal}mm</span>
                       )}
                       {Number.isFinite(entry.cost) && (
-                        <span className="text-[10px] text-white/40 tabular-nums" title="Charged by the provider">${entry.cost < 0.1 ? entry.cost.toFixed(3) : entry.cost.toFixed(2)}</span>
+                        <span className="text-base text-white/40 tabular-nums" title="Charged by the provider">${entry.cost < 0.1 ? entry.cost.toFixed(3) : entry.cost.toFixed(2)}</span>
                       )}
                     </div>
                   </div>
@@ -1397,14 +1397,14 @@ export default function DzCinemaStudio({
                         className="text-primary transition-all duration-300"
                       />
                     </svg>
-                    <span className="absolute text-[8px] font-bold text-white">
+                    <span className="absolute text-base font-bold text-white">
                       {imageUploadProgress}%
                     </span>
                   </div>
                 ) : hasRefs ? (
                   <div className="relative w-full h-full group">
                     {uploadedImages.length > 1 && (
-                      <span className="absolute bottom-0.5 right-0.5 z-10 rounded bg-black/70 px-1 text-[9px] font-bold text-white">{uploadedImages.length}</span>
+                      <span className="absolute bottom-0.5 right-0.5 z-10 rounded bg-black/70 px-1 text-base font-bold text-white">{uploadedImages.length}</span>
                     )}
                     <img
                       src={uploadedImages[0]}
@@ -1443,7 +1443,7 @@ export default function DzCinemaStudio({
                   </button>
                 ))}
                 {uploadedImages.length > maxRefs && (
-                  <span className="self-center text-[10px] text-amber-300/80">This model uses only the first {maxRefs || 0}.</span>
+                  <span className="self-center text-base text-amber-300/80">This model uses only the first {maxRefs || 0}.</span>
                 )}
               </div>
             )}

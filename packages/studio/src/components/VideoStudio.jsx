@@ -31,6 +31,7 @@ import {
 import { dzRecommendedEntries, dzFirstModel, dzModelLabel } from "../dzCatalog.js"; // DZ
 import DzPrice from "./DzPrice.jsx"; // DZ
 import { useDzHistory } from "../dzLibrary.js"; // DZ
+import { Logo } from "../ui/index.js"; // DZ
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx"; // DZ
 import { getSeedanceEndpointResolution, getSeedanceToolConfiguration } from "../seedanceModels.js";
 import { getVeoToolConfiguration } from "../veoModels.js";
@@ -143,7 +144,7 @@ function ReferenceMediaLabel({ label, required = false }) {
   if (!label) return null;
   return (
     <span
-      className={`flex min-h-6 max-w-[88px] items-start justify-center text-balance text-center text-[10px] font-semibold leading-3 ${
+      className={`flex min-h-6 max-w-[88px] items-start justify-center text-balance text-center text-base font-semibold leading-3 ${
         required ? "text-white/60" : "text-white/45"
       }`}
     >
@@ -189,7 +190,7 @@ function ReferencePreview({
           aria-label={`${copy.media.removePrefix} ${actionLabel}`}
           title={`${copy.media.removePrefix} ${actionLabel}`}
           onClick={() => onRemove(index)}
-          className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 hover:bg-black rounded-full flex items-center justify-center text-white/85 hover:text-white text-[8px] border border-white/5"
+          className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 hover:bg-black rounded-full flex items-center justify-center text-white/85 hover:text-white text-base border border-white/5"
         >
           ×
         </button>
@@ -326,7 +327,7 @@ function ReferenceUploadButton({
                 className="text-[#22d3ee] transition-all duration-300"
               />
             </svg>
-            <span className="absolute text-[9px] font-black text-[#22d3ee] leading-none">{progress}%</span>
+            <span className="absolute text-base font-black text-[#22d3ee] leading-none">{progress}%</span>
           </div>
         ) : type === "video" ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-white/40 group-hover:text-[#22d3ee] transition-colors">
@@ -501,6 +502,13 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
     }
   };
 
+  // DZ: vendor logos from the catalog (Atlas has them; shared across providers).
+  const dzVendorLogos = {};
+  for (const e of modelEntries) {
+    const pId = e.family.provider || "builtin";
+    if (!dzVendorLogos[pId] && e.defaultVariant?.model?.dzVendorLogo) dzVendorLogos[pId] = e.defaultVariant.model.dzVendorLogo;
+  }
+
   // Dynamically compute list of providers from the input models lists
   const availableProviders = [];
   const seenProviders = new Set();
@@ -563,28 +571,14 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
       }}
     >
       <div className="flex items-center gap-3.5">
-        {PROVIDER_LOGOS[family.provider] ? (
-          <div className="w-8 h-8 rounded-xl border border-white/5 overflow-hidden shrink-0 flex items-center justify-center bg-white/[0.02]">
-            <img
-              src={PROVIDER_LOGOS[family.provider]}
-              alt={family.provider_name}
-              className={`w-full h-full object-contain p-1 ${invertLogos.includes(family.provider) ? "invert" : ""}`}
-            />
-          </div>
-        ) : (
-          <div
-            className={`w-9 h-9 ${getIconColor(family)} border rounded-xl flex items-center justify-center font-black text-xs shadow-inner uppercase`}
-          >
-            {entry.name.charAt(0)}
-          </div>
-        )}
+        <Logo src={entry.defaultVariant?.model?.dzLogo} name={family.provider_name || entry.name} size={40} />
         <div className="flex flex-col gap-0.5 min-w-0">
           <span className="text-xs font-bold text-white tracking-tight truncate">
             {label}
           </span>
           <div className="flex items-center gap-1.5">
             {selectedProvider === "all" && family.provider_name && (
-              <span className="text-[9px] text-white/40">
+              <span className="text-base text-white/40">
                 {family.provider_name}
               </span>
             )}
@@ -624,22 +618,10 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
               type="button"
               onClick={() => setSelectedProvider(p.id)}
               aria-pressed={isSelected}
-              className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center overflow-hidden font-black text-[10px] border transition-all cursor-pointer ${
-                isSelected
-                  ? `${style.bg} scale-105 shadow-md shadow-black/10`
-                  : "bg-white/[0.02] text-white/40 border-white/[0.02] hover:bg-white/5 hover:text-white/80"
-              }`}
+              className="flex-shrink-0 rounded-xl transition-transform cursor-pointer hover:scale-105"
               title={p.name}
             >
-              {PROVIDER_LOGOS[p.id] ? (
-                <img
-                  src={PROVIDER_LOGOS[p.id]}
-                  alt={p.name}
-                  className={`w-full h-full rounded-full object-contain ${invertLogos.includes(p.id) ? "invert" : ""}`}
-                />
-              ) : (
-                style.text
-              )}
+              <Logo src={dzVendorLogos[p.id]} name={p.name} size={36} className={isSelected ? "ring-2 ring-primary" : "opacity-80 hover:opacity-100"} />
             </button>
           );
         })}
@@ -648,7 +630,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
       {/* Right Pane: Search + Lists */}
       <div className="flex-1 flex flex-col gap-2 min-w-0">
         <div className="px-1 pb-2 border-b border-white/5 shrink-0 space-y-2">
-          <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-0.5">
+          <div className="flex flex-wrap gap-1.5">
             {modelCategories.map((category) => (
               <button
                 key={category.id}
@@ -657,7 +639,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
                   setSelectedCategory(category.id);
                   setSelectedProvider("all");
                 }}
-                className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-colors border ${
+                className={`shrink-0 rounded-lg px-2.5 py-1.5 text-base font-bold transition-colors border ${
                   selectedCategory === category.id
                     ? "bg-primary/15 text-primary border-primary/30"
                     : "bg-white/[0.02] text-white/50 border-white/[0.04] hover:bg-white/5 hover:text-white"
@@ -698,7 +680,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
         <div className="text-xs font-bold text-secondary px-2 py-1 shrink-0 flex items-center justify-between">
           <span>{activeCategory.label} models</span>
           {selectedProvider !== "all" && (
-            <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-white/60">
+            <span className="text-base bg-white/5 px-2 py-0.5 rounded text-white/60">
               {availableProviders.find(p => p.id === selectedProvider)?.name || selectedProvider}
             </span>
           )}
@@ -721,7 +703,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
                     const entries = seedanceToolsByGroup[group].filter(Boolean);
                     return entries.length > 0 && (
                       <div key={group} role="group" aria-label={copy.seedance[group]} className="pt-2">
-                        <p className="px-3 pb-1 text-[11px] font-semibold text-white/60">{copy.seedance[group]}</p>
+                        <p className="px-3 pb-1 text-base font-semibold text-white/60">{copy.seedance[group]}</p>
                         {entries.map((entry) => renderItem(entry, seedanceToolLabel(getSeedanceToolConfiguration(entry.defaultVariant.model.id), copy)))}
                       </div>
                     );
@@ -731,7 +713,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
               {veoTools.length > 0 && (
                 <details open={Boolean(search.trim()) || Boolean(selectedVeoTool)} className="mt-2 border-t border-white/5 pt-2">
                   <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-white/50">{copy.veo.tools}</summary>
-                  <p className="px-3 pb-2 text-[11px] text-white/45">{copy.veo.toolsHelp}</p>
+                  <p className="px-3 pb-2 text-base text-white/45">{copy.veo.toolsHelp}</p>
                   {veoTools.filter(Boolean).map((entry) => renderItem(
                     entry, copy.veo.toolNames[getVeoToolConfiguration(entry.defaultVariant.model.id).key],
                   ))}
@@ -2658,15 +2640,15 @@ export default function VideoStudio({
                     </p>
                     <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap capitalize">
+                        <span className="text-base font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap capitalize">
                           {dzModelLabel(entry.model) || entry.model?.replace("-", " ") || copy.gallery.fallbackTitle} {/* DZ */}
                         </span>
                         <div className="flex gap-2">
                           {entry.resolution && (
-                            <span className="text-[10px] text-white/40">{entry.resolution}</span>
+                            <span className="text-base text-white/40">{entry.resolution}</span>
                           )}
                           {entry.duration && (
-                            <span className="text-[10px] text-white/40">{entry.duration}s</span>
+                            <span className="text-base text-white/40">{entry.duration}s</span>
                           )}
                         </div>
                       </div>
@@ -2964,7 +2946,7 @@ export default function VideoStudio({
               )}
             </div>
           ) : isExtendMode && (
-            <div className="flex items-center gap-2 px-3 py-1.5 mx-3 bg-primary/5 border border-primary/10 rounded-lg text-[10px] text-primary/80 font-medium tracking-tight">
+            <div className="flex items-center gap-2 px-3 py-1.5 mx-3 bg-primary/5 border border-primary/10 rounded-lg text-base text-primary/80 font-medium tracking-tight">
               <svg
                 width="13"
                 height="13"
@@ -2982,13 +2964,13 @@ export default function VideoStudio({
           )}
 
           {groupedConfiguration && selectedVariant.model.aspectRatioMode === "inherited" && (
-            <p className="px-2 text-[10px] text-white/40">{groupCopy.inheritedFormat}</p>
+            <p className="px-2 text-base text-white/40">{groupCopy.inheritedFormat}</p>
           )}
           {groupedConfiguration && selectedWorkflowId === "extend_uploaded_video" && groupedResolution.options.length === 0 && (
-            <p className="px-2 text-[10px] text-white/40">{groupCopy.inheritedVideoResolution}</p>
+            <p className="px-2 text-base text-white/40">{groupCopy.inheritedVideoResolution}</p>
           )}
           {groupedResolution?.label && (
-            <p className="px-2 text-[10px] text-white/40">{groupCopy.resolutionUnknown}</p>
+            <p className="px-2 text-base text-white/40">{groupCopy.resolutionUnknown}</p>
           )}
 
           {/* Bottom row: controls + generate */}
@@ -3013,7 +2995,7 @@ export default function VideoStudio({
                           className={`w-full h-full object-contain ${invertLogos.includes(selectedModelProvider) ? "invert" : ""}`} 
                         />
                       ) : (
-                        <span className="text-[9px] font-bold text-black uppercase">V</span>
+                        <span className="text-base font-bold text-black uppercase">V</span>
                       );
                     })()}
                 </div>
@@ -3150,7 +3132,7 @@ export default function VideoStudio({
                                 clearWorkflow();
                                 closeWorkflowMenu(true);
                               }}
-                              className="flex min-h-9 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-semibold text-white/40 transition-colors hover:bg-white/[0.04] hover:text-white/70 focus:outline-none focus-visible:bg-white/[0.04] focus-visible:text-white/70"
+                              className="flex min-h-9 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-base font-semibold text-white/40 transition-colors hover:bg-white/[0.04] hover:text-white/70 focus:outline-none focus-visible:bg-white/[0.04] focus-visible:text-white/70"
                             >
                               <svg
                                 width="13"
@@ -3237,7 +3219,7 @@ export default function VideoStudio({
                         {copy.dropdowns.aspectRatio}
                       </PromptPopoverHeader>
                       {aspectRatioHelp && (
-                        <p className="px-3 pb-2 text-[11px] text-white/45">{aspectRatioHelp}</p>
+                        <p className="px-3 pb-2 text-base text-white/45">{aspectRatioHelp}</p>
                       )}
                       <PromptMenuList>
                         {(groupedConfiguration ? commonOptions.aspectRatios : getCurrentAspectRatios(selectedModel)).map((r) => (
@@ -3506,7 +3488,7 @@ export default function VideoStudio({
         batchSize={1}
         onAddHistoryItem={handleDrawReference}
       />
-      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '13px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
+      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '16px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
     </div>
   );
 }

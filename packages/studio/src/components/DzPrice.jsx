@@ -7,7 +7,9 @@
 import { useEffect, useRef, useState } from "react";
 import { DZ_QUOTE } from "../api.js";
 
-const fmt = (usd) => (usd >= 1 ? usd.toFixed(2) : usd >= 0.1 ? usd.toFixed(2) : usd >= 0.01 ? usd.toFixed(3) : usd.toFixed(4)).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+// One price format everywhere: cents with 2 decimals ($0.70), below 10 cents
+// up to 3–4 decimals without trailing zeros ($0.035, $0.008).
+const fmt = (usd) => (usd >= 0.1 ? usd.toFixed(2) : (usd >= 0.01 ? usd.toFixed(3) : usd.toFixed(4)).replace(/0+$/, "").replace(/\.$/, ""));
 
 export function useDzQuote(apiKey, build, count = 1) {
   const [state, setState] = useState({ price: null, loading: false });
@@ -48,7 +50,7 @@ export default function DzPrice({ apiKey, build, count = 1, provider = "", fallb
     ? `${price.source === "quote" ? (price.exact ? "Exact price for your account" : "Provider estimate") : "Catalog price"}${count > 1 ? ` · ${count} × $${fmt(price.usd)}` : ""}`
     : "No price from the provider yet";
   return (
-    <span className={`text-[11px] whitespace-nowrap tabular-nums ${loading ? "text-white/30" : "text-white/55"} ${className}`} title={title}>
+    <span className={`text-base whitespace-nowrap tabular-nums ${loading ? "text-white/30" : "text-white/55"} ${className}`} title={title}>
       {[provider, label].filter(Boolean).join(" · ")}
     </span>
   );

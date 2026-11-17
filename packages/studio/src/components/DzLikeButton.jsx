@@ -39,15 +39,15 @@ export function DzPendingTile({ status, error, className = "" }) {
   if (status === "failed") {
     return (
       <div className={`flex flex-col items-center justify-center gap-2 bg-red-500/[0.06] p-4 text-center ${className}`}>
-        <span className="text-[13px] font-semibold text-red-300">Failed</span>
-        {error && <span className="line-clamp-3 text-[12px] text-red-200/70">{error}</span>}
+        <span className="text-base font-semibold text-red-300">Failed</span>
+        {error && <span className="line-clamp-3 text-base text-red-200/70">{error}</span>}
       </div>
     );
   }
   return (
     <div className={`flex flex-col items-center justify-center gap-3 bg-white/[0.02] ${className}`}>
       <span className="h-6 w-6 animate-spin rounded-full border-2 border-[#22d3ee]/25 border-t-[#22d3ee]" />
-      <span className="text-[12px] text-white/50">Generating… it keeps going if you close the page</span>
+      <span className="text-base text-muted-foreground">Generating… it keeps going if you close the page</span>
     </div>
   );
 }

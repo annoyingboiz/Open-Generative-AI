@@ -1343,7 +1343,7 @@ export default function LayersStudio({
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
           )}
-          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[10px] font-bold tracking-tighter text-white">
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-base font-bold tracking-tighter text-white">
             CHANGE
           </div>
         </button>
@@ -1351,7 +1351,7 @@ export default function LayersStudio({
         {markedRegions.length > 0 && (
           <button
             onClick={() => setMarkedRegions([])}
-            className="px-2 py-1 bg-red-500/20 hover:bg-red-500/40 text-red-300 text-[10px] font-black rounded-lg border border-red-500/40 shadow-sm"
+            className="px-2 py-1 bg-red-500/20 hover:bg-red-500/40 text-red-300 text-base font-black rounded-lg border border-red-500/40 shadow-sm"
             title={copy.tools.clearMarkedRegions}
           >
             Clear ({markedRegions.length})
@@ -1782,7 +1782,7 @@ export default function LayersStudio({
               )}
 
               <div className="flex items-center gap-2 border-l border-white/10 pl-3">
-                <span className="text-[11px] text-white/60 font-semibold">
+                <span className="text-base text-white/60 font-semibold">
                   Size:
                 </span>
                 <input
@@ -1896,7 +1896,7 @@ export default function LayersStudio({
                 />
                 <circle cx="12" cy="12" r="3" />
               </svg>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-[11px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-md">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-base font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-md">
                 Lasso edit
               </div>
             </button>
@@ -1932,7 +1932,7 @@ export default function LayersStudio({
                 />
                 <path d="M9 12h6M12 9v6" />
               </svg>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-[11px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-md">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-base font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-md">
                 Regional edit
               </div>
             </button>
@@ -2006,7 +2006,7 @@ export default function LayersStudio({
                 <rect x="3" y="3" width="10" height="10" rx="1" />
                 <circle cx="16" cy="16" r="5" />
               </svg>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-[11px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-md">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-base font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-md">
                 Shapes (R)
               </div>
             </button>
@@ -2232,17 +2232,17 @@ export default function LayersStudio({
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute inset-y-0 left-1/2 w-5 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#d8ff00]/90 to-transparent blur-[3px] animate-pulse" />
-                      <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/75 text-[8px] font-black text-white backdrop-blur-sm">
+                      <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/75 text-base font-black text-white backdrop-blur-sm">
                         {copy.sample.original}
                       </div>
                     </div>
 
                     <div className="flex-1 bg-[#13151d] rounded-2xl p-2.5 flex flex-col justify-between h-36 shadow-inner overflow-hidden">
                       <div className="flex items-center justify-between px-1">
-                        <span className="text-[10px] font-black text-[#a3e635] uppercase tracking-wider">
+                        <span className="text-base font-black text-[#a3e635] uppercase tracking-wider">
                           {copy.sample.layersCount}
                         </span>
-                        <span className="text-[9px] font-bold text-white/50 group-hover:text-white transition-colors">
+                        <span className="text-base font-bold text-white/50 group-hover:text-white transition-colors">
                           {copy.sample.try}
                         </span>
                       </div>
@@ -2263,14 +2263,14 @@ export default function LayersStudio({
                               alt={`Layer ${idx + 1}`}
                               className="max-h-full max-w-full object-contain drop-shadow-sm transition-transform duration-200 group-hover:scale-105"
                             />
-                            <span className="absolute bottom-0.5 right-0.5 text-[8px] font-black text-white/90 bg-black/70 px-1 rounded">
+                            <span className="absolute bottom-0.5 right-0.5 text-base font-black text-white/90 bg-black/70 px-1 rounded">
                               {idx + 1}
                             </span>
                           </div>
                         ))}
                       </div>
 
-                      <div className="text-[9px] text-center text-white/40 font-semibold group-hover:text-[#84cc16] transition-colors">
+                      <div className="text-base text-center text-white/40 font-semibold group-hover:text-[#84cc16] transition-colors">
                         {copy.sample.clickToExplore}
                       </div>
                     </div>
@@ -2284,7 +2284,7 @@ export default function LayersStudio({
                   </h4>
 
                   <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40 mb-2">
+                    <label className="block text-base font-bold uppercase tracking-wider text-white/40 mb-2">
                       {copy.settings.resolution}
                     </label>
                     <div className="grid grid-cols-3 gap-1.5 bg-[#1a1c24] p-1 rounded-2xl border border-white/5">
@@ -2306,7 +2306,7 @@ export default function LayersStudio({
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40">
+                      <label className="block text-base font-bold uppercase tracking-wider text-white/40">
                         {copy.settings.layers}
                       </label>
                       <span className="px-2.5 py-0.5 rounded-lg bg-[#1a1c24] border border-white/10 text-xs font-black text-white shadow-sm">
@@ -2314,7 +2314,7 @@ export default function LayersStudio({
                       </span>
                     </div>
                     <div className="bg-[#1a1c24] rounded-2xl p-3 border border-white/5 flex items-center gap-3">
-                      <span className="text-[10px] font-bold text-white/30">
+                      <span className="text-base font-bold text-white/30">
                         2
                       </span>
                       <input
@@ -2325,7 +2325,7 @@ export default function LayersStudio({
                         onChange={(e) => setLayerCount(Number(e.target.value))}
                         className="w-full accent-[#e2f924] cursor-pointer h-1.5 bg-white/10 rounded-lg"
                       />
-                      <span className="text-[10px] font-bold text-white/30">
+                      <span className="text-base font-bold text-white/30">
                         16
                       </span>
                     </div>
@@ -2340,7 +2340,7 @@ export default function LayersStudio({
                         <span className="text-xs font-bold uppercase text-white/80">
                           {copy.carousel.heading}
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-[#84cc16]/20 text-[#a3e635] text-[10px] font-black">
+                        <span className="px-2 py-0.5 rounded-full bg-[#84cc16]/20 text-[#a3e635] text-base font-black">
                           {carouselIndex + 1} / {decomposedLayers.length}
                         </span>
                       </div>
@@ -2348,7 +2348,7 @@ export default function LayersStudio({
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => setIsSoloMode(!isSoloMode)}
-                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                          className={`px-2 py-0.5 rounded-lg text-base font-bold border transition-all ${
                             isSoloMode
                               ? "bg-[#84cc16] text-black border-[#84cc16]"
                               : "bg-white/5 text-white/60 hover:text-white border-white/10"
@@ -2411,7 +2411,7 @@ export default function LayersStudio({
                           <span className="font-extrabold text-white text-sm">
                             {copy.carousel.layerLabel.replace('{n}', carouselIndex + 1)}
                           </span>
-                          <span className="text-[11px] text-white/40 ml-2">
+                          <span className="text-base text-white/40 ml-2">
                             {copy.carousel.seedreamDecomposed}
                           </span>
                         </div>
@@ -2462,7 +2462,7 @@ export default function LayersStudio({
                             alt={`Thumb ${idx + 1}`}
                             className="w-full h-full object-contain"
                           />
-                          <span className="absolute bottom-0.5 right-1 text-[8px] font-black text-white/80 bg-black/60 px-1 rounded">
+                          <span className="absolute bottom-0.5 right-1 text-base font-black text-white/80 bg-black/60 px-1 rounded">
                             {idx + 1}
                           </span>
                         </button>
@@ -2478,12 +2478,12 @@ export default function LayersStudio({
               <div className="space-y-4 animate-fade-in">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between px-1">
-                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-white/40">
+                    <span className="text-base font-extrabold uppercase tracking-wider text-white/40">
                       {copy.common.model}
                     </span>
                     <button
                       onClick={handleResetUpscale}
-                      className="flex items-center gap-1 text-[11px] font-bold text-white/50 hover:text-white transition-colors"
+                      className="flex items-center gap-1 text-base font-bold text-white/50 hover:text-white transition-colors"
                       title={copy.colorGrading.resetToDefault}
                     >
                       <svg
@@ -2526,7 +2526,7 @@ export default function LayersStudio({
                             {UPSCALE_MODELS.find((m) => m.id === upscaleModel)
                               ?.name || "Topaz"}
                           </h4>
-                          <p className="text-[11px] text-white/50 truncate max-w-[200px]">
+                          <p className="text-base text-white/50 truncate max-w-[200px]">
                             {
                               UPSCALE_MODELS.find((m) => m.id === upscaleModel)
                                 ?.subtitle
@@ -2567,7 +2567,7 @@ export default function LayersStudio({
                                 {opt.name}
                               </span>
                             </div>
-                            <span className="text-[10px] text-white/40">
+                            <span className="text-base text-white/40">
                               {opt.subtitle}
                             </span>
                           </button>
@@ -2580,10 +2580,10 @@ export default function LayersStudio({
                 {upscaleModel === "topaz-image-upscale" && (
                   <div className="bg-[#2d313d] rounded-2xl p-3 border border-white/5 space-y-2 shadow-sm">
                     <div className="flex items-center justify-between px-1">
-                      <span className="text-[11px] font-bold text-white/40 uppercase tracking-wider">
+                      <span className="text-base font-bold text-white/40 uppercase tracking-wider">
                         Upscale Factor
                       </span>
-                      <span className="bg-[#181a22] text-white text-[10px] font-black px-2 py-0.5 rounded-lg border border-white/10">
+                      <span className="bg-[#181a22] text-white text-base font-black px-2 py-0.5 rounded-lg border border-white/10">
                         {topazFactor * 442}×{topazFactor * 413}
                       </span>
                     </div>
@@ -2609,10 +2609,10 @@ export default function LayersStudio({
                 {upscaleModel === "seedvr2-image-upscale" && (
                   <div className="bg-[#2d313d] rounded-2xl p-3 border border-white/5 space-y-2 shadow-sm">
                     <div className="flex items-center justify-between px-1">
-                      <span className="text-[11px] font-bold text-white/40 uppercase tracking-wider">
+                      <span className="text-base font-bold text-white/40 uppercase tracking-wider">
                         {copy.settings.resolution}
                       </span>
-                      <span className="bg-[#181a22] text-white text-[10px] font-black px-2 py-0.5 rounded-lg border border-white/10">
+                      <span className="bg-[#181a22] text-white text-base font-black px-2 py-0.5 rounded-lg border border-white/10">
                         {seedvrResolution.toUpperCase()} UHD
                       </span>
                     </div>
@@ -2651,7 +2651,7 @@ export default function LayersStudio({
                       <h5 className="text-xs font-bold text-white">
                         Automatic AI Super-Resolution
                       </h5>
-                      <p className="text-[10px] text-white/50">
+                      <p className="text-base text-white/50">
                         1-click neural clarity and noise reduction.
                       </p>
                     </div>
@@ -2690,7 +2690,7 @@ export default function LayersStudio({
                         Color Correct
                       </span>
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-[9px] flex items-center justify-center text-white/40 cursor-help"
+                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-base flex items-center justify-center text-white/40 cursor-help"
                         title={copy.colorGrading.colorCorrect.info}
                       >
                         ℹ
@@ -2699,7 +2699,7 @@ export default function LayersStudio({
 
                     <button
                       onClick={() => resetCategory("colorCorrect")}
-                      className="flex items-center gap-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
+                      className="flex items-center gap-1 text-base font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
                       title={copy.colorGrading.colorCorrect.reset}
                     >
                       <svg
@@ -2891,7 +2891,7 @@ export default function LayersStudio({
                         Soften Details
                       </span>
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-[9px] flex items-center justify-center text-white/40 cursor-help"
+                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-base flex items-center justify-center text-white/40 cursor-help"
                         title={copy.colorGrading.softenDetails.info}
                       >
                         ℹ
@@ -2900,7 +2900,7 @@ export default function LayersStudio({
 
                     <button
                       onClick={() => resetCategory("softenDetails")}
-                      className="flex items-center gap-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
+                      className="flex items-center gap-1 text-base font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
                       title={copy.colorGrading.softenDetails.reset}
                     >
                       <svg
@@ -3005,7 +3005,7 @@ export default function LayersStudio({
                         Bloom
                       </span>
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-[9px] flex items-center justify-center text-white/40 cursor-help"
+                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-base flex items-center justify-center text-white/40 cursor-help"
                         title={copy.colorGrading.bloom.info}
                       >
                         ℹ
@@ -3014,7 +3014,7 @@ export default function LayersStudio({
 
                     <button
                       onClick={() => resetCategory("bloom")}
-                      className="flex items-center gap-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
+                      className="flex items-center gap-1 text-base font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
                       title={copy.colorGrading.bloom.reset}
                     >
                       <svg
@@ -3173,7 +3173,7 @@ export default function LayersStudio({
                         Halation
                       </span>
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-[9px] flex items-center justify-center text-white/40 cursor-help"
+                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-base flex items-center justify-center text-white/40 cursor-help"
                         title={copy.colorGrading.halation.info}
                       >
                         ℹ
@@ -3182,7 +3182,7 @@ export default function LayersStudio({
 
                     <button
                       onClick={() => resetCategory("halation")}
-                      className="flex items-center gap-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
+                      className="flex items-center gap-1 text-base font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
                       title={copy.colorGrading.halation.reset}
                     >
                       <svg
@@ -3315,7 +3315,7 @@ export default function LayersStudio({
                         Lens Instructions
                       </span>
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-[9px] flex items-center justify-center text-white/40 cursor-help"
+                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-base flex items-center justify-center text-white/40 cursor-help"
                         title={copy.colorGrading.lensInstructions.info}
                       >
                         ℹ
@@ -3324,7 +3324,7 @@ export default function LayersStudio({
 
                     <button
                       onClick={() => resetCategory("lensInstructions")}
-                      className="flex items-center gap-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
+                      className="flex items-center gap-1 text-base font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
                       title={copy.colorGrading.lensInstructions.reset}
                     >
                       <svg
@@ -3487,7 +3487,7 @@ export default function LayersStudio({
                         Exposure
                       </span>
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-[9px] flex items-center justify-center text-white/40 cursor-help"
+                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-base flex items-center justify-center text-white/40 cursor-help"
                         title={copy.colorGrading.exposure.info}
                       >
                         ℹ
@@ -3496,7 +3496,7 @@ export default function LayersStudio({
 
                     <button
                       onClick={() => resetCategory("exposure")}
-                      className="flex items-center gap-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
+                      className="flex items-center gap-1 text-base font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
                       title={copy.colorGrading.exposure.reset}
                     >
                       <svg
@@ -3574,7 +3574,7 @@ export default function LayersStudio({
                         Film Grain
                       </span>
                       <span
-                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-[9px] flex items-center justify-center text-white/40 cursor-help"
+                        className="w-3.5 h-3.5 rounded-full border border-white/20 text-base flex items-center justify-center text-white/40 cursor-help"
                         title={copy.colorGrading.filmGrain.info}
                       >
                         ℹ
@@ -3583,7 +3583,7 @@ export default function LayersStudio({
 
                     <button
                       onClick={() => resetCategory("filmGrain")}
-                      className="flex items-center gap-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
+                      className="flex items-center gap-1 text-base font-bold text-white/40 hover:text-white transition-colors px-2 py-0.5 rounded-lg hover:bg-white/5"
                       title={copy.colorGrading.filmGrain.reset}
                     >
                       <svg
@@ -3696,7 +3696,7 @@ export default function LayersStudio({
                 {/* Model Selector Card */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between px-1">
-                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-white/40">
+                    <span className="text-base font-extrabold uppercase tracking-wider text-white/40">
                       {copy.common.model}
                     </span>
                   </div>
@@ -3716,7 +3716,7 @@ export default function LayersStudio({
                       <h4 className="text-sm font-bold text-white leading-tight">
                         {copy.removeBg.modelName}
                       </h4>
-                      <p className="text-[11px] text-white/50">
+                      <p className="text-base text-white/50">
                         ai-background-remover
                       </p>
                     </div>
@@ -3729,7 +3729,7 @@ export default function LayersStudio({
                     <span className="text-xs font-bold text-white">
                       {copy.removeBg.targetPreview}
                     </span>
-                    <span className="text-[10px] text-white/40">
+                    <span className="text-base text-white/40">
                       {copy.removeBg.alphaMatte}
                     </span>
                   </div>
@@ -3773,7 +3773,7 @@ export default function LayersStudio({
                 {/* Model Selector Card */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between px-1">
-                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-white/40">
+                    <span className="text-base font-extrabold uppercase tracking-wider text-white/40">
                       {copy.common.model}
                     </span>
                   </div>
@@ -3798,7 +3798,7 @@ export default function LayersStudio({
                       <h4 className="text-sm font-bold text-white leading-tight">
                         {copy.expandCrop.modelName}
                       </h4>
-                      <p className="text-[11px] text-white/50">
+                      <p className="text-base text-white/50">
                         ai-image-extension
                       </p>
                     </div>
@@ -3811,23 +3811,23 @@ export default function LayersStudio({
                     <span className="text-xs font-bold text-white">
                       {copy.expandCrop.canvasPreview}
                     </span>
-                    <span className="text-[10px] text-white/40">
+                    <span className="text-base text-white/40">
                       {copy.expandCrop.boundaryOutpainting}
                     </span>
                   </div>
 
                   <div className="w-full h-44 rounded-2xl overflow-hidden relative flex items-center justify-center border border-dashed border-[#84cc16]/50 bg-[#161822] p-4">
                     {/* Corner Guides */}
-                    <div className="absolute top-2 left-2 text-[#84cc16] text-[10px] font-mono">
+                    <div className="absolute top-2 left-2 text-[#84cc16] text-base font-mono">
                       {'↖ ' + copy.expandCrop.expand}
                     </div>
-                    <div className="absolute top-2 right-2 text-[#84cc16] text-[10px] font-mono">
+                    <div className="absolute top-2 right-2 text-[#84cc16] text-base font-mono">
                       {'↗ ' + copy.expandCrop.expand}
                     </div>
-                    <div className="absolute bottom-2 left-2 text-[#84cc16] text-[10px] font-mono">
+                    <div className="absolute bottom-2 left-2 text-[#84cc16] text-base font-mono">
                       {'↙ ' + copy.expandCrop.expand}
                     </div>
-                    <div className="absolute bottom-2 right-2 text-[#84cc16] text-[10px] font-mono">
+                    <div className="absolute bottom-2 right-2 text-[#84cc16] text-base font-mono">
                       {'↘ ' + copy.expandCrop.expand}
                     </div>
 
@@ -3874,7 +3874,7 @@ export default function LayersStudio({
                       <span>{item.label}</span>
                     </div>
                     {item.isNew && (
-                      <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-[#84cc16] text-black rounded-md tracking-wider">
+                      <span className="px-2 py-0.5 text-base font-black uppercase bg-[#84cc16] text-black rounded-md tracking-wider">
                         {copy.menuItems.new}
                       </span>
                     )}

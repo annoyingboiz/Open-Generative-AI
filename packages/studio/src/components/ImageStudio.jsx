@@ -32,6 +32,7 @@ import {
 } from "../modelFamilies.js";
 import { dzRecommendedEntries, dzFirstModel, dzModelLabel, dzUpscaleSpec, dzOpenUpscale, dzIsOwnImage } from "../dzCatalog.js"; // DZ
 import { useDzHistory } from "../dzLibrary.js"; // DZ
+import { Logo } from "../ui/index.js"; // DZ
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx"; // DZ
 import DzPrice from "./DzPrice.jsx"; // DZ
 import {
@@ -381,7 +382,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
           className="text-[#22d3ee] transition-all duration-300"
         />
       </svg>
-      <span className="absolute text-[9px] font-black text-[#22d3ee] leading-none">
+      <span className="absolute text-base font-black text-[#22d3ee] leading-none">
         {lastUploadProgress}%
       </span>
     </div>
@@ -389,7 +390,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
     hasSelection ? (
       <img src={selectedEntries[0].url} alt="" className="w-full h-full object-cover" />
     ) : (
-      <span className="text-[10px] font-bold text-white/50">{t.faceLabel}</span>
+      <span className="text-base font-bold text-white/50">{t.faceLabel}</span>
     )
   ) : (
     <svg
@@ -461,7 +462,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
                 {t.headerTitle}
               </span>
               {isMulti && (
-                <span className="text-[9px] text-muted">
+                <span className="text-base text-muted">
                   {t.selectUpTo.replace("{max}", maxImages)}
                 </span>
               )}
@@ -550,7 +551,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
                     ) : (
                       <div className="w-full h-full bg-white/5 flex flex-col items-center justify-center">
                         <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin mb-1" />
-                        <span className="text-[10px] font-black text-primary">
+                        <span className="text-base font-black text-primary">
                           {entry.progress}%
                         </span>
                       </div>
@@ -584,7 +585,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [], 
                     {isSelected && (
                       <div className="absolute top-1 left-1 min-w-[20px] h-5 bg-primary rounded-full flex items-center justify-center px-1">
                         {isMulti ? (
-                          <span className="text-[10px] font-black text-black">
+                          <span className="text-base font-black text-black">
                             {selIdx + 1}
                           </span>
                         ) : (
@@ -709,6 +710,13 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
     }
   };
 
+  // DZ: vendor logos from the catalog (Atlas has them; shared across providers).
+  const dzVendorLogos = {};
+  for (const e of modelEntries) {
+    const pId = e.family.provider || "builtin";
+    if (!dzVendorLogos[pId] && e.defaultVariant?.model?.dzVendorLogo) dzVendorLogos[pId] = e.defaultVariant.model.dzVendorLogo;
+  }
+
   // Dynamically compute list of providers from the input models list
   const availableProviders = [];
   const seenProviders = new Set();
@@ -762,22 +770,10 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
               type="button"
               onClick={() => setSelectedProvider(p.id)}
               aria-pressed={isSelected}
-              className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center overflow-hidden font-black text-[10px] border transition-all cursor-pointer ${
-                isSelected
-                  ? `${style.bg} scale-105 shadow-md shadow-black/10`
-                  : "bg-white/[0.02] text-white/40 border-white/[0.02] hover:bg-white/5 hover:text-white/80"
-              }`}
+              className="flex-shrink-0 rounded-xl transition-transform cursor-pointer hover:scale-105"
               title={p.name}
             >
-              {PROVIDER_LOGOS[p.id] ? (
-                <img
-                  src={PROVIDER_LOGOS[p.id]}
-                  alt={p.name}
-                  className={`w-full h-full rounded-full object-contain ${invertLogos.includes(p.id) ? "invert" : ""}`}
-                />
-              ) : (
-                style.text
-              )}
+              <Logo src={dzVendorLogos[p.id]} name={p.name} size={36} className={isSelected ? "ring-2 ring-primary" : "opacity-80 hover:opacity-100"} />
             </button>
           );
         })}
@@ -786,7 +782,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
       {/* Right Pane: Search input + Models list */}
       <div className="flex-1 flex flex-col gap-2 min-w-0">
         <div className="border-b border-white/5 shrink-0 pb-2 space-y-2">
-          <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-0.5">
+          <div className="flex flex-wrap gap-1.5">
             {modelCategories.map((category) => (
               <button
                 key={category.id}
@@ -795,7 +791,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
                   setSelectedCategory(category.id);
                   setSelectedProvider("all");
                 }}
-                className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-colors border ${
+                className={`shrink-0 rounded-lg px-2.5 py-1.5 text-base font-bold transition-colors border ${
                   selectedCategory === category.id
                     ? "bg-primary/15 text-primary border-primary/30"
                     : "bg-white/[0.02] text-white/50 border-white/[0.04] hover:bg-white/5 hover:text-white"
@@ -836,7 +832,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
         <div className="text-xs font-semibold text-secondary py-1 shrink-0 flex items-center justify-between">
           <span>{activeCategory.label} {t.modelsSuffix}</span>
           {selectedProvider !== "all" && (
-            <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-white/60">
+            <span className="text-base bg-white/5 px-2 py-0.5 rounded text-white/60">
               {availableProviders.find(p => p.id === selectedProvider)?.name || selectedProvider}
             </span>
           )}
@@ -865,34 +861,14 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  {PROVIDER_LOGOS[family.provider] ? (
-                    <div className="w-8 h-8 rounded-full border border-white/5 overflow-hidden shrink-0 flex items-center justify-center bg-white/[0.02]">
-                      <img
-                        src={PROVIDER_LOGOS[family.provider]}
-                        alt={family.provider_name}
-                        className={`w-full h-full object-contain p-1 ${invertLogos.includes(family.provider) ? "invert" : ""}`}
-                      />
-                    </div>
-                  ) : (
-                    <div
-                      className={`w-8 h-8 ${
-                        family.id.includes("kontext")
-                          ? "bg-blue-500/10 text-blue-400 border-blue-500/10"
-                          : family.id.includes("effects")
-                            ? "bg-purple-500/10 text-purple-400 border-purple-500/10"
-                            : "bg-primary/10 text-primary border-primary/10"
-                      } border rounded-full flex items-center justify-center font-bold text-xs shadow-inner uppercase`}
-                    >
-                      {entry.name.charAt(0)}
-                    </div>
-                  )}
+                  <Logo src={entry.defaultVariant?.model?.dzLogo} name={family.provider_name || entry.name} size={40} />
                   <div className="flex flex-col gap-0.5 min-w-0">
                     <span className="text-xs font-bold text-white tracking-tight truncate">
                       {entry.name}
                     </span>
                     <div className="flex items-center gap-1.5">
                     {selectedProvider === "all" && family.provider_name && (
-                      <span className="text-[9px] text-white/40">
+                      <span className="text-base text-white/40">
                         {family.provider_name}
                       </span>
                     )}
@@ -1600,10 +1576,10 @@ export default function ImageStudio({
                   </p>
                   <div className="flex items-center justify-between mt-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 capitalize">
+                      <span className="text-base font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 capitalize">
                         {dzModelLabel(entry.model) || entry.model?.replace("-", " ") || copy.gallery.modelFallback} {/* DZ */}
                       </span>
-                      <span className="text-[10px] text-white/40">{entry.aspect_ratio}</span>
+                      <span className="text-base text-white/40">{entry.aspect_ratio}</span>
                     </div>
                   </div>
                 </div>
@@ -1673,7 +1649,7 @@ export default function ImageStudio({
                       setUploadedImageUrls(next);
                       if (next.length === 0) handleUploadClear();
                     }}
-                    className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 hover:bg-black rounded-full flex items-center justify-center text-white/85 hover:text-white text-[8px] border border-white/5"
+                    className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 hover:bg-black rounded-full flex items-center justify-center text-white/85 hover:text-white text-base border border-white/5"
                   >
                     ×
                   </button>
@@ -1743,7 +1719,7 @@ export default function ImageStudio({
                           className={`w-full h-full object-contain ${invertLogos.includes(selectedModelProvider) ? "invert" : ""}`} 
                         />
                       ) : (
-                        <span className="text-[9px] font-bold text-black uppercase">G</span>
+                        <span className="text-base font-bold text-black uppercase">G</span>
                       );
                     })()}
                   </div>
@@ -1984,7 +1960,7 @@ export default function ImageStudio({
         batchSize={1}
         onAddHistoryItem={addToHistory}
       />
-      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '13px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
+      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '16px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
     </div>
   );
 }

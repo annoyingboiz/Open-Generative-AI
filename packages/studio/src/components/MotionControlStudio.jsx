@@ -187,7 +187,7 @@ function VideoMediaButton({
               className="text-[#22d3ee] transition-all duration-300"
             />
           </svg>
-          <span className="absolute text-[9px] font-black text-[#22d3ee] leading-none">
+          <span className="absolute text-base font-black text-[#22d3ee] leading-none">
             {progress}%
           </span>
         </div>
@@ -290,7 +290,7 @@ function CharacterImagesMediaButton({
         {images.length > 0 && (
           <div className="w-full h-full relative rounded-full overflow-hidden">
             <img src={images[images.length - 1].url} alt="" className="w-full h-full object-cover" />
-            <div className="absolute bottom-0 inset-x-0 bg-black/75 text-[9px] font-black text-[#22d3ee] text-center leading-3">
+            <div className="absolute bottom-0 inset-x-0 bg-black/75 text-base font-black text-[#22d3ee] text-center leading-3">
               {images.length}
             </div>
           </div>
@@ -319,7 +319,7 @@ function CharacterImagesMediaButton({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="text-[11px] font-bold text-[#22d3ee] hover:underline"
+              className="text-base font-bold text-[#22d3ee] hover:underline"
             >
               + {copy.labels.addImage}
             </button>
@@ -443,7 +443,7 @@ function AssetsDropdown({
                 <span className="text-xs text-white/95 font-semibold truncate" title={item.name}>
                   {item.name}
                 </span>
-                <span className="text-[10px] text-white/40 truncate mt-0.5">
+                <span className="text-base text-white/40 truncate mt-0.5">
                   {new Date(item.timestamp || Date.now()).toLocaleDateString()}
                 </span>
               </div>
@@ -456,7 +456,7 @@ function AssetsDropdown({
                       e.stopPropagation();
                       onSelectImage(item.url, item.name);
                     }}
-                    className="text-[11px] text-black font-black px-2.5 py-1 bg-[#22d3ee] rounded-md hover:bg-[#22d3ee]/90 transition-colors whitespace-nowrap shadow-sm"
+                    className="text-base text-black font-black px-2.5 py-1 bg-[#22d3ee] rounded-md hover:bg-[#22d3ee]/90 transition-colors whitespace-nowrap shadow-sm"
                   >
                     {copy.buttons.useAsImage}
                   </button>
@@ -467,7 +467,7 @@ function AssetsDropdown({
                       e.stopPropagation();
                       onSelectVideo(item.url, item.name);
                     }}
-                    className="text-[11px] text-black font-black px-2.5 py-1 bg-[#22d3ee] rounded-md hover:bg-[#22d3ee]/90 transition-colors whitespace-nowrap shadow-sm"
+                    className="text-base text-black font-black px-2.5 py-1 bg-[#22d3ee] rounded-md hover:bg-[#22d3ee]/90 transition-colors whitespace-nowrap shadow-sm"
                   >
                     {copy.buttons.useAsVideo}
                   </button>
@@ -986,10 +986,10 @@ export default function MotionControlStudio({
                     </p>
                   )}
                   <div className="flex items-center justify-between flex-wrap gap-1 mt-1">
-                    <span className="text-[10px] font-bold text-[#22d3ee] px-2 py-0.5 bg-[#22d3ee]/10 rounded border border-[#22d3ee]/20 whitespace-nowrap">
+                    <span className="text-base font-bold text-[#22d3ee] px-2 py-0.5 bg-[#22d3ee]/10 rounded border border-[#22d3ee]/20 whitespace-nowrap">
                       {entry.mode === "objects_swap" ? copy.badges.objectsSwap : copy.badges.motionTransfer}
                     </span>
-                    <span className="text-[10px] text-white/40">
+                    <span className="text-base text-white/40">
                       {entry.duration ? `${entry.duration}s • ` : ""}
                       {entry.aspectRatio || "16:9"}
                     </span>
@@ -1053,7 +1053,7 @@ export default function MotionControlStudio({
             </PromptSegmentOption>
           </PromptSegmentedControl>
 
-          <span className="text-[11px] font-medium text-white/40 hidden sm:inline">
+          <span className="text-base font-medium text-white/40 hidden sm:inline">
             {mode === "motion_transfer"
               ? copy.modes.motionTransferDesc
               : copy.modes.objectsSwapDesc}
@@ -1115,7 +1115,7 @@ export default function MotionControlStudio({
                 })}
               >
                 <div className="w-3.5 h-3.5 bg-[#22d3ee] rounded-sm flex items-center justify-center flex-shrink-0">
-                  <span className="text-[9px] font-black text-black">M</span>
+                  <span className="text-base font-black text-black">M</span>
                 </div>
                 <span className={PROMPT_CONTROL_LABEL_CLASS}>
                   {modelShortName}
@@ -1273,7 +1273,7 @@ export default function MotionControlStudio({
                     <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
                       <div className="flex flex-col">
                         <span className="text-xs font-semibold text-white">{copy.labels.highBitrate}</span>
-                        <span className="text-[10px] text-white/40">Enhanced video encoding fidelity</span>
+                        <span className="text-base text-white/40">Enhanced video encoding fidelity</span>
                       </div>
                       <button
                         type="button"
@@ -1318,7 +1318,7 @@ export default function MotionControlStudio({
                   <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
                     <div className="flex flex-col">
                       <span className="text-xs font-semibold text-white">{copy.labels.seed}</span>
-                      <span className="text-[10px] text-white/40">{copy.labels.randomSeed}</span>
+                      <span className="text-base text-white/40">{copy.labels.randomSeed}</span>
                     </div>
                     <input
                       type="number"

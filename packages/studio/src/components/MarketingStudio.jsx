@@ -185,7 +185,7 @@ function UploadSlot({ icon, url, progress, label, title, onUpload, onClear, mult
 
         {progress > 0 && progress < 100 ? (
           <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center z-10">
-            <span className="text-[8px] font-black text-primary">{progress}%</span>
+            <span className="text-base font-black text-primary">{progress}%</span>
           </div>
         ) : url ? (
           <div className="w-full h-full rounded-full overflow-hidden border border-black/20">
@@ -265,7 +265,7 @@ function Dropdown({ isOpen, title, items, selectedId, onSelect, onClose, isVideo
               <img src={item.url} className="w-full aspect-square object-cover group-hover:scale-105 transition-all duration-500" alt={item.name} />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <span className="text-[9px] font-black text-white uppercase tracking-tight">{item.name}</span>
+              <span className="text-base font-black text-white uppercase tracking-tight">{item.name}</span>
             </div>
             {(selectedId === item.id || selectedId === item.url) && (
               <div className="absolute top-1.5 right-1.5 w-4 h-4 bg-primary rounded-full flex items-center justify-center shadow-lg">
@@ -550,11 +550,11 @@ export default function MarketingStudio({
 
                 <div className="p-3 bg-black/80 backdrop-blur-sm border-t border-white/5 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-black text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 uppercase tracking-tighter">
+                    <span className="text-base font-black text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 uppercase tracking-tighter">
                       {copy.history.badge}
                     </span>
                     {entry.format && (
-                      <span className="text-[9px] text-white/40 font-bold">{entry.format}</span>
+                      <span className="text-base text-white/40 font-bold">{entry.format}</span>
                     )}
                   </div>
                 </div>
@@ -687,7 +687,7 @@ export default function MarketingStudio({
                   })}
                 >
                   <div className="w-4 h-4 bg-primary/10 rounded flex items-center justify-center border border-primary/20">
-                    <span className="text-[8px] font-black text-primary uppercase">U</span>
+                    <span className="text-base font-black text-primary uppercase">U</span>
                   </div>
                   <span className={PROMPT_CONTROL_LABEL_CLASS}>{params.format}</span>
                   <PromptChevronIcon />

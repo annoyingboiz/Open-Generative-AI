@@ -1085,7 +1085,7 @@ export default function DrawModal({
               }`}
             >
               Sketch to Video
-              <span className="bg-[#b5f500] text-black text-[8px] font-black px-1 rounded">
+              <span className="bg-[#b5f500] text-black text-base font-black px-1 rounded">
                 NEW
               </span>
             </button>
@@ -1143,7 +1143,7 @@ export default function DrawModal({
                 />
                 <div className="absolute bottom-2 left-2 right-2 bg-black/80 backdrop-blur-md rounded-md p-1 px-2 border border-white/5 flex items-center gap-1">
                   <div className="w-2.5 h-2.5 rounded-full bg-[#b5f500] animate-pulse"></div>
-                  <span className="text-[9px] text-white/50 tracking-wider uppercase font-bold">
+                  <span className="text-base text-white/50 tracking-wider uppercase font-bold">
                     Sketchpad active
                   </span>
                 </div>
@@ -1685,18 +1685,18 @@ export default function DrawModal({
                   onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
                   className="h-[38px] flex items-center gap-2 px-3 bg-[#131316]/80 hover:bg-[#1c1c22] rounded-xl border border-white/5 text-xs text-white/70 whitespace-nowrap shadow-xl"
                 >
-                  <span className="text-[10px] text-[#b5f500] font-black bg-[#b5f500]/10 px-1.5 rounded border border-[#b5f500]/25">
+                  <span className="text-base text-[#b5f500] font-black bg-[#b5f500]/10 px-1.5 rounded border border-[#b5f500]/25">
                     G
                   </span>
                   {selectedModel === "nano-banana-pro-edit"
                     ? "Nano Banana Pro"
                     : "Nano Banana 2"}
-                  <span className="opacity-45 text-[8px] ml-0.5">▼</span>
+                  <span className="opacity-45 text-base ml-0.5">▼</span>
                 </button>
 
                 {isModelDropdownOpen && (
                   <div className="absolute bottom-[calc(100%+8px)] left-0 bg-[#0f0f12] border border-white/10 rounded-2xl p-2 w-64 shadow-2xl flex flex-col gap-1 z-30">
-                    <div className="text-[10px] font-black text-white/30 uppercase tracking-widest p-1.5 pb-1 select-none">
+                    <div className="text-base font-black text-white/30 uppercase tracking-widest p-1.5 pb-1 select-none">
                       Select model
                     </div>
 
@@ -1717,7 +1717,7 @@ export default function DrawModal({
                           <span className="text-[#b5f500]">✓</span>
                         )}
                       </div>
-                      <div className="text-[9px] text-white/30 leading-snug mt-0.5">
+                      <div className="text-base text-white/30 leading-snug mt-0.5">
                         Google's Advanced Image Editing Model
                       </div>
                     </button>
@@ -1739,7 +1739,7 @@ export default function DrawModal({
                           <span className="text-[#b5f500]">✓</span>
                         )}
                       </div>
-                      <div className="text-[9px] text-white/30 leading-snug mt-0.5">
+                      <div className="text-base text-white/30 leading-snug mt-0.5">
                         Best 4K Image Model Ever
                       </div>
                     </button>
@@ -1776,7 +1776,7 @@ export default function DrawModal({
 
                 {showSettingsPopover && (
                   <div className="absolute bottom-[calc(100%+8px)] left-0 bg-[#0f0f12] border border-white/10 rounded-2xl p-3.5 w-44 shadow-2xl flex flex-col gap-2 z-30">
-                    <div className="text-[10px] font-black text-white/30 uppercase tracking-widest">
+                    <div className="text-base font-black text-white/30 uppercase tracking-widest">
                       {selectedObj && selectedObj.type === "text"
                         ? "Text Size"
                         : "Brush Size"}
@@ -1789,7 +1789,7 @@ export default function DrawModal({
                       onChange={(e) => setBrushSize(parseInt(e.target.value))}
                       className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#b5f500]"
                     />
-                    <span className="text-[11px] font-bold text-white/60 text-right">
+                    <span className="text-base font-bold text-white/60 text-right">
                       {brushSize}px
                     </span>
                   </div>
@@ -1828,12 +1828,12 @@ export default function DrawModal({
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                   </svg>
                   {aspectRatio}
-                  <span className="opacity-45 text-[8px] ml-0.5">▼</span>
+                  <span className="opacity-45 text-base ml-0.5">▼</span>
                 </button>
 
                 {isArDropdownOpen && (
                   <div className="absolute bottom-[calc(100%+8px)] right-0 bg-[#0f0f12] border border-white/10 rounded-xl p-2 w-36 max-h-72 overflow-y-auto shadow-2xl flex flex-col gap-1 z-30">
-                    <div className="text-[10px] font-black text-white/30 uppercase tracking-widest p-1.5 pb-1 select-none">
+                    <div className="text-base font-black text-white/30 uppercase tracking-widest p-1.5 pb-1 select-none">
                       Aspect Ratio
                     </div>
                     {["16:9", "9:16", "4:3", "3:4", "1:1", "Auto"].map((r) => (

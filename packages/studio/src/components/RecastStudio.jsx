@@ -191,7 +191,7 @@ function MediaPickerButton({
               className="text-primary transition-all duration-300"
             />
           </svg>
-          <span className="absolute text-[9px] font-black text-primary leading-none">
+          <span className="absolute text-base font-black text-primary leading-none">
             {progress}%
           </span>
         </div>
@@ -344,7 +344,7 @@ function AssetsDropdown({
                 <span className="text-xs text-white/95 font-semibold truncate" title={item.name}>
                   {item.name}
                 </span>
-                <span className="text-[9px] text-white/30 truncate mt-0.5">
+                <span className="text-base text-white/30 truncate mt-0.5">
                   {new Date(item.timestamp || Date.now()).toLocaleDateString()}
                 </span>
               </div>
@@ -951,7 +951,7 @@ export default function RecastStudio({
                     </p>
                   )}
                   <div className="flex items-center justify-between flex-wrap gap-1 mt-1">
-                    <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap">
+                    <span className="text-base font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap">
                       {copy.badges.bodySwap}
                     </span>
                   </div>
@@ -1078,7 +1078,7 @@ export default function RecastStudio({
                   })}
                 >
                   <div className="w-3.5 h-3.5 bg-[#22d3ee] rounded-sm flex items-center justify-center">
-                    <span className="text-[9px] font-black text-black">R</span>
+                    <span className="text-base font-black text-black">R</span>
                   </div>
                   <span className={PROMPT_CONTROL_LABEL_CLASS}>
                     {selectedModel?.name ?? copy.dropdowns.selectModel}
@@ -1291,7 +1291,7 @@ export default function RecastStudio({
           })()}
         </div>
       )}
-      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '13px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
+      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '16px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
     </div>
   );
 }

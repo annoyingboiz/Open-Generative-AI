@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback } from 'react';
-import { ImageStudio, VideoStudio, DzCinemaStudio, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage } from 'studio';
+import { ImageStudio, VideoStudio, DzCinemaStudio, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, Sheet, Button } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
@@ -188,7 +188,17 @@ export default function DzShell() {
     openTab('upscale');
   };
 
-  if (!user) return <div className="h-screen bg-[#030303]" />;
+  // Splash while the session loads (instead of a black screen).
+  if (!user) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/25">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M16 10l6-3v10l-6-3" /></svg>
+        </div>
+        <span className="text-lg font-semibold text-foreground/80">Director</span>
+      </div>
+    );
+  }
 
   const studioProps = { apiKey: DZ_SESSION_PLACEHOLDER, locale: 'en' };
   // Notifications move left of a right-hand panel instead of covering its button.
@@ -206,7 +216,7 @@ export default function DzShell() {
     >
       {dragging && (
         <div className="fixed inset-0 z-[100] bg-[#22d3ee]/10 backdrop-blur-sm border-2 border-dashed border-[#22d3ee]/50 flex items-center justify-center pointer-events-none">
-          <div className="rounded-2xl border border-white/10 bg-[#0d0d10] px-6 py-4 text-sm font-semibold text-white/80">Drop files to use them as references</div>
+          <div className="rounded-2xl border border-border bg-card px-6 py-4 text-lg font-semibold text-foreground">Drop files to use them as references</div>
         </div>
       )}
 
@@ -223,16 +233,26 @@ export default function DzShell() {
             <div className="w-8 h-8 bg-[#22d3ee] rounded-lg flex items-center justify-center shadow-lg shadow-[#22d3ee]/20">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M16 10l6-3v10l-6-3" /></svg>
             </div>
-            <span className="text-sm font-bold tracking-tight hidden sm:block">Director</span>
+            <span className="text-lg font-bold tracking-tight hidden sm:block">Director</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/5" title={balance ? 'Provider balances' : undefined}>
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-xs font-bold text-white/90">{balance || user.displayName}</span>
-          </div>
-          <a href="/dz/settings" className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-white/5 text-[13px] font-bold text-white/80 hover:text-white hover:bg-white/10">
+          {balance ? (
+            <div className="hidden items-center gap-1.5 md:flex" aria-label="Provider balances">
+              {balance.map((b) => (
+                <span key={b.id} title={b.hint} className={`flex items-center gap-2 rounded-full border px-3 py-1 text-base ${b.low ? 'border-amber-400/40 text-amber-300' : 'border-border text-foreground/90'}`}>
+                  <span className="text-muted-foreground">{b.name}</span>
+                  <span className="font-semibold tabular-nums">{b.text}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <span className="flex items-center gap-2 rounded-full border border-border px-3 py-1 text-base text-foreground/90">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            {user.displayName}
+          </span>
+          <a href="/dz/settings" className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-base font-semibold text-foreground/90 hover:bg-accent">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 7 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 1.17 14H1a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 2.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 7 4.6 1.65 1.65 0 0 0 8 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.17l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.15.67.4.88.72.21.32.33.7.32 1.08V11a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
             <span className="hidden sm:inline">Settings</span>
           </a>
@@ -244,7 +264,7 @@ export default function DzShell() {
 
         {/* Sidebar */}
         <aside className={`fixed top-14 bottom-0 left-0 md:static md:h-full z-30 bg-[#0a0a0b]/95 border-r border-white/[0.06] flex flex-col transition-all duration-300 flex-shrink-0 select-none
-          ${mobileOpen ? 'translate-x-0 w-56 z-50' : '-translate-x-full md:translate-x-0'} ${collapsed ? 'md:w-16' : 'md:w-48'}`}>
+          ${mobileOpen ? 'translate-x-0 w-64 z-50' : '-translate-x-full md:translate-x-0'} ${collapsed ? 'md:w-16' : 'md:w-56'}`}>
           <nav aria-label="Studios" className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
             {DZ_TABS.map((tab) => {
               const active = activeTab === tab.id;
@@ -257,9 +277,9 @@ export default function DzShell() {
                   onClick={(e) => { if (e.button === 0 && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openTab(tab.id); } }}
                   aria-current={active ? 'page' : undefined}
                   title={isCollapsed ? tab.label : undefined}
-                  className={`relative flex items-center rounded-xl text-[13px] font-semibold transition-colors
+                  className={`relative flex items-center rounded-xl text-base font-semibold transition-colors
                     ${isCollapsed ? 'h-11 w-11 justify-center mx-auto' : 'px-3 py-2.5 gap-3'}
-                    ${active ? 'bg-[#22d3ee]/12 text-[#22d3ee] border border-[#22d3ee]/20' : 'text-white/60 hover:text-white hover:bg-white/[0.04] border border-transparent'}`}
+                    ${active ? 'bg-primary/12 text-primary border border-primary/25' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60 border border-transparent'}`}
                 >
                   {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#22d3ee]" />}
                   <span className="flex-shrink-0">{ICONS[tab.id]}</span>
@@ -291,24 +311,22 @@ export default function DzShell() {
           </div>
         </main>
 
-        {/* Upscale drawer: opens next to the work, from an image's button or menu */}
-        {upscaleDrawer && (
-          <>
-            <div className="fixed inset-0 z-[60] bg-black/40 md:bg-transparent md:pointer-events-none" onClick={() => setUpscaleDrawer(null)} />
-            <aside aria-label="Upscale" className="fixed top-14 right-0 bottom-0 z-[70] flex w-full max-w-[380px] flex-col border-l border-white/[0.08] bg-[#0d0d10] shadow-[-16px_0_40px_rgba(0,0,0,0.5)] dz-drawer">
-              <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-                <span className="text-[13px] font-bold text-white/90">Upscale</span>
-                <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => openInUpscaleTab(upscaleDrawer.url)} className="rounded-md px-2 py-1 text-[12px] font-semibold text-[#22d3ee] hover:bg-white/5">Open in Upscale tab</button>
-                  <button type="button" onClick={() => setUpscaleDrawer(null)} className="h-7 w-7 rounded-md text-white/45 hover:bg-white/10 hover:text-white" aria-label="Close">✕</button>
-                </div>
-              </div>
-              <div className="flex gap-2 border-b border-white/[0.06] p-3">
-                <img src={upscaleDrawer.url} alt="Original" className="h-24 flex-1 min-w-0 rounded-lg bg-black/40 object-contain" />
+        {/* Upscale drawer: opens next to the work, from an image's button or menu.
+            Non-modal: the page behind stays usable. */}
+        <Sheet
+          open={Boolean(upscaleDrawer)}
+          onOpenChange={(open) => { if (!open) setUpscaleDrawer(null); }}
+          title="Upscale"
+          actions={upscaleDrawer && <Button variant="ghost" size="sm" className="text-primary" onClick={() => openInUpscaleTab(upscaleDrawer.url)}>Open in Upscale tab</Button>}
+        >
+          {upscaleDrawer && (
+            <div className="flex h-full flex-col">
+              <div className="flex gap-3 border-b border-border p-4">
+                <img src={upscaleDrawer.url} alt="Original" className="h-28 min-w-0 flex-1 rounded-xl bg-background object-contain" />
                 {upscaleDrawer.result && (
-                  <button type="button" onClick={() => downloadUrl(upscaleDrawer.result)} title="Download the upscaled image" className="relative h-24 flex-1 min-w-0">
-                    <img src={upscaleDrawer.result} alt="Upscaled" className="h-full w-full rounded-lg border border-[#22d3ee]/40 bg-black/40 object-contain" />
-                    <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white/85">Download</span>
+                  <button type="button" onClick={() => downloadUrl(upscaleDrawer.result)} title="Download the upscaled image" className="relative h-28 min-w-0 flex-1">
+                    <img src={upscaleDrawer.result} alt="Upscaled" className="h-full w-full rounded-xl border border-primary/50 bg-background object-contain" />
+                    <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/75 px-2 py-0.5 text-base font-semibold text-white">Download</span>
                   </button>
                 )}
               </div>
@@ -328,12 +346,12 @@ export default function DzShell() {
                   onError={(msg) => { const cb = callbacks('upscale'); cb.onGenerationEnd(); cb.onGenerationError(msg); }}
                 />
               </div>
-            </aside>
-          </>
-        )}
+            </div>
+          )}
+        </Sheet>
 
         {imageMenu && (
-          <div role="menu" className="fixed z-[210] w-52 overflow-hidden rounded-xl border border-white/[0.08] bg-[#151519] py-1 text-[13px] shadow-[0_12px_32px_rgba(0,0,0,0.6)]" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
+          <div role="menu" className="fixed z-[210] w-52 overflow-hidden rounded-xl border border-white/[0.08] bg-[#151519] py-1 text-base shadow-[0_12px_32px_rgba(0,0,0,0.6)]" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
             {dzUpscaleSpec() && (
               <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-white/85 hover:bg-white/[0.06]" onClick={() => { setUpscaleDrawer({ url: imageMenu.url, result: null }); setImageMenu(null); }}>Upscale…</button>
             )}
@@ -345,16 +363,16 @@ export default function DzShell() {
 
       {/* Notifications: dark cards, bottom-right */}
       {(runningTabs.length > 0 || notifications.length > 0) && (
-        <div aria-live="polite" className={`fixed top-16 right-3 md:top-auto z-[200] flex w-[320px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none ${rightPanelOpen ? 'md:bottom-5 md:right-[404px]' : 'md:bottom-5 md:right-5'}`}>
+        <div aria-live="polite" className={`fixed top-16 right-3 md:top-auto z-[200] flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none ${rightPanelOpen ? 'md:bottom-5 md:right-[440px]' : 'md:bottom-5 md:right-5'}`}>
           {runningTabs.map((tabId) => (
-            <div key={tabId} role="status" className="pointer-events-auto flex items-center gap-3 rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md px-3.5 py-3 text-[13px] shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
+            <div key={tabId} role="status" className="pointer-events-auto flex items-center gap-3 rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md px-3.5 py-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
               <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#22d3ee]/25 border-t-[#22d3ee]" />
               <span className="font-semibold text-white/90">{labelOf(tabId)}</span>
               <span className="text-white/45">generating{running[tabId] > 1 ? ` · ${running[tabId]}` : ''}…</span>
             </div>
           ))}
           {notifications.map((n) => (
-            <div key={n.id} role={n.type === 'error' ? 'alert' : 'status'} className="dz-toast pointer-events-auto flex items-start gap-3 overflow-hidden rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md p-2.5 pr-3 text-[13px] shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
+            <div key={n.id} role={n.type === 'error' ? 'alert' : 'status'} className="dz-toast pointer-events-auto flex items-start gap-3 overflow-hidden rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md p-2.5 pr-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
               <span className={`w-1 self-stretch rounded-full ${n.type === 'error' ? 'bg-red-400' : 'bg-[#22d3ee]'}`} />
               {n.type === 'success' && n.url && /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(n.url) && (
                 <img src={n.url} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover border border-white/10" />
@@ -363,9 +381,9 @@ export default function DzShell() {
                 <p className="font-semibold text-white/90">
                   {labelOf(n.tabId)} <span className="font-normal text-white/45">{n.type === 'error' ? '· failed' : '· ready'}</span>
                 </p>
-                {n.type === 'error' && <p className="mt-0.5 line-clamp-2 text-[12px] text-red-300/90" title={n.message}>{n.message}</p>}
+                {n.type === 'error' && <p className="mt-0.5 line-clamp-2 text-base text-red-300/90" title={n.message}>{n.message}</p>}
                 {n.type === 'success' && n.tabId !== activeTab && (
-                  <button type="button" onClick={() => { openTab(n.tabId); dismiss(n.id); }} className="mt-0.5 text-[12px] font-semibold text-[#22d3ee] hover:text-[#67e8f9]">Open</button>
+                  <button type="button" onClick={() => { openTab(n.tabId); dismiss(n.id); }} className="mt-0.5 text-base font-semibold text-[#22d3ee] hover:text-[#67e8f9]">Open</button>
                 )}
               </div>
               <button type="button" onClick={() => dismiss(n.id)} className="mt-0.5 h-6 w-6 shrink-0 rounded-md text-white/35 hover:bg-white/10 hover:text-white" aria-label="Dismiss">✕</button>
@@ -373,7 +391,7 @@ export default function DzShell() {
           ))}
         </div>
       )}
-      <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.16,1,.3,1)}@keyframes dzToastIn{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}.dz-drawer{animation:dzDrawerIn 240ms cubic-bezier(.16,1,.3,1)}@keyframes dzDrawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>
+      <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.16,1,.3,1)}@keyframes dzToastIn{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}.dz-sheet{animation:dzDrawerIn 240ms cubic-bezier(.16,1,.3,1)}@keyframes dzDrawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>
     </div>
   );
 }

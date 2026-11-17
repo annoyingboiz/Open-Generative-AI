@@ -236,7 +236,7 @@ function MediaPickerButton({
                 className="text-primary transition-all duration-300"
               />
             </svg>
-            <span className="absolute text-[9px] font-black text-primary leading-none">
+            <span className="absolute text-base font-black text-primary leading-none">
               {progress}%
             </span>
           </div>
@@ -300,7 +300,7 @@ function MediaPickerButton({
                   <circle cx="6" cy="18" r="3" />
                   <circle cx="18" cy="16" r="3" />
                 </svg>
-                <span className="text-[7px] font-black text-primary uppercase truncate w-full text-center">
+                <span className="text-base font-black text-primary uppercase truncate w-full text-center">
                   {fileName?.split('.').pop() || "AUD"}
                 </span>
               </div>
@@ -323,7 +323,7 @@ function MediaPickerButton({
             setIsPlaying(false);
             onClear();
           }}
-          className="absolute -top-1 -right-1 w-4 h-4 bg-black/80 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-[10px] border border-white/20 transition-all z-20 shadow-md group-hover/media:opacity-100 opacity-80 sm:opacity-0 sm:group-hover/media:opacity-100"
+          className="absolute -top-1 -right-1 w-4 h-4 bg-black/80 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-base border border-white/20 transition-all z-20 shadow-md group-hover/media:opacity-100 opacity-80 sm:opacity-0 sm:group-hover/media:opacity-100"
         >
           ×
         </button>
@@ -1023,11 +1023,11 @@ export default function LipSyncStudio({
                   )}
                   <div className="flex items-center justify-between flex-wrap gap-1 mt-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap">
+                      <span className="text-base font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap">
                         {copy.badges.lipSync}
                       </span>
                       {entry.resolution && (
-                        <span className="text-[10px] text-white/40">{entry.resolution}</span>
+                        <span className="text-base text-white/40">{entry.resolution}</span>
                       )}
                     </div>
                   </div>
@@ -1230,7 +1230,7 @@ export default function LipSyncStudio({
                   })}
                 >
                   <div className="w-3.5 h-3.5 bg-[#22d3ee] rounded-sm flex items-center justify-center">
-                    <span className="text-[9px] font-black text-black">
+                    <span className="text-base font-black text-black">
                       S
                     </span>
                   </div>
@@ -1335,7 +1335,7 @@ export default function LipSyncStudio({
           />
         </div>
       )}
-      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '13px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
+      <Toaster position="top-right" containerStyle={{ zIndex: 99999 }} toastOptions={{ duration: 5000, style: { background: '#18181b', color: '#ffffff', border: '1px solid rgba(255,255,255,0.15)', fontSize: '16px', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxWidth: '440px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', padding: '12px 16px' } }} />
     </div>
   );
 }

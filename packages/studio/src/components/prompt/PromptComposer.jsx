@@ -229,7 +229,7 @@ export function PromptPopoverHeader({ children, className = "" }) {
   return (
     <div
       className={joinClasses(
-        "text-[11px] font-semibold text-white/30 uppercase tracking-wider pb-2 border-b border-white/[0.05] mb-2 px-1",
+        "text-base font-semibold text-white/30 uppercase tracking-wider pb-2 border-b border-white/[0.05] mb-2 px-1",
         className,
       )}
     >
@@ -273,8 +273,8 @@ export function PromptMenuItem({
           <span className={joinClasses(
             "block font-medium mt-0.5",
             wrapDescription
-              ? "text-[10px] leading-relaxed whitespace-normal text-white/55 group-hover/menu-item:text-white/70"
-              : "text-[9px] text-white/35 truncate group-hover/menu-item:text-white/50",
+              ? "text-base leading-relaxed whitespace-normal text-white/55 group-hover/menu-item:text-white/70"
+              : "text-base text-white/35 truncate group-hover/menu-item:text-white/50",
           )}>
             {description}
           </span>

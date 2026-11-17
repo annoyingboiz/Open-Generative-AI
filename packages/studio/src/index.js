@@ -15,3 +15,4 @@ export { default as AiInfluencerStudio } from './components/AiInfluencerStudio';
 export { default as LayersStudio } from './components/LayersStudio';
 export { default as MotionControlStudio } from './components/MotionControlStudio';
 export * from './api';
+export * from './ui/index.js'; // DZ UI kit

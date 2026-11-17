@@ -22,11 +22,16 @@ export async function dzFetchBalances() {
   return (await response.json()).balances || [];
 }
 
+// Every enabled provider with a key gets its own chip (no combined total).
+// A key that can't read its balance (fal without billing access) shows "—".
 export function dzFormatBalances(balances) {
-  // A provider whose key can't read the balance (fal without billing access) is left out.
-  const shown = (balances || []).filter((b) => b.hasKey && b.enabled && !(b.ok && b.amount == null));
+  const shown = (balances || []).filter((b) => b.hasKey && b.enabled);
   if (shown.length === 0) return null;
-  return shown
-    .map((b) => `${b.name} ${b.ok ? `$${Number(b.amount).toFixed(2)}` : '—'}`)
-    .join(' · ');
+  return shown.map((b) => ({
+    id: b.id,
+    name: b.name,
+    text: b.ok && b.amount != null ? `$${Number(b.amount).toFixed(2)}` : '—',
+    hint: b.ok && b.amount == null ? (b.note || 'This key cannot read the balance.') : (!b.ok ? 'Balance unavailable right now' : 'Balance'),
+    low: b.ok && b.amount != null && b.amount < 5,
+  }));
 }

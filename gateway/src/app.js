@@ -10,6 +10,9 @@ import multipart from '@fastify/multipart';
 import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 import { openDatabase } from './db.js';
 import { loadMasterKey, newToken } from './crypto.js';
 import { createAuth, createLoginThrottle, publicUser, SESSION_COOKIE, UserError } from './auth.js';
@@ -24,7 +27,7 @@ import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
 import { imageSize } from './imagesize.js';
 
-const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico']);
+const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico', '/dz/fonts/inter-latin.woff2', '/dz/fonts/inter-cyrillic.woff2']);
 
 export async function buildApp(config, { logger = true } = {}) {
   process.umask(0o077); // database, keys and files readable by this user only
@@ -131,6 +134,12 @@ export async function buildApp(config, { logger = true } = {}) {
   });
 
   app.get('/healthz', { logLevel: 'warn' }, async () => ({ ok: true }));
+
+  // Inter for the server pages (sign-in, settings), served by us — no font CDN.
+  const fontDir = path.join(path.dirname(require.resolve('@fontsource-variable/inter/package.json')), 'files');
+  for (const subset of ['latin', 'cyrillic']) {
+    app.get(`/dz/fonts/inter-${subset}.woff2`, (req, reply) => sendFile(req, reply, path.join(fontDir, `inter-${subset}-wght-normal.woff2`), 'font/woff2', { cacheControl: 'public, max-age=31536000, immutable' }));
+  }
 
   // ── First start ─────────────────────────────────────────────────────────
   // Creating the admin needs a one-time code printed in the server log and

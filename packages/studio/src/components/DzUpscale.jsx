@@ -11,9 +11,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dzUpscale, uploadFile } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
+import { Button, buttonVariants, Segmented, Select, Slider, Switch, Textarea, InfoTip, Tip, SectionLabel, Spinner, cn } from "../ui/index.js";
 
 const STORE_KEY = "dz_upscale_settings";
-const fmtUsd = (usd) => `$${usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3)}`.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+const fmtUsd = (usd) => `$${usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
 
 function loadSaved() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}; } catch { return {}; }
@@ -71,176 +72,77 @@ export function useDzUpscaleSpec() {
   return spec;
 }
 
-function Info({ text }) {
-  if (!text) return null;
+function FieldLabel({ field }) {
   return (
-    <span className="group/info relative inline-flex">
-      <span className="flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-white/25 text-[9px] font-bold text-white/45">i</span>
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-52 -translate-x-1/2 rounded-lg border border-white/10 bg-[#1b1b20] px-2.5 py-1.5 text-[11px] font-normal leading-snug text-white/80 opacity-0 shadow-xl transition-opacity group-hover/info:opacity-100">{text}</span>
-    </span>
-  );
-}
-
-function Label({ field, children }) {
-  return (
-    <span className="flex items-center gap-1.5 text-[13px] text-white/80">
+    <span className="flex items-center gap-2 text-base font-medium text-foreground">
       {field.label}
-      <Info text={field.hint} />
-      {children}
+      <InfoTip text={field.hint} />
     </span>
   );
 }
 
-// One control. `disabled`: the field does not apply right now (e.g. face
-// settings while face enhancement is off) — shown, but it can't be changed.
-function Field({ field, value, onChange, disabled }) {
-  const wrap = `py-2 ${disabled ? "opacity-35" : ""}`;
+// One control, drawn from the server spec. Ranges without a default are
+// "Auto" (the model decides) until switched to manual.
+function Field({ field, value, onChange }) {
   if (field.type === "bool") {
     const on = value === undefined || value === null ? Boolean(field.default) : Boolean(value);
     return (
-      <div className={`flex items-center justify-between gap-3 ${wrap}`}>
-        <Label field={field} />
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          aria-label={field.label}
-          disabled={disabled}
-          onClick={() => onChange(!on)}
-          className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors disabled:cursor-not-allowed ${on ? "bg-[#22d3ee]" : "bg-white/15"}`}
-        >
-          <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
-        </button>
+      <div className="flex items-center justify-between gap-3 py-2.5">
+        <FieldLabel field={field} />
+        <Switch checked={on} onCheckedChange={onChange} aria-label={field.label} />
       </div>
     );
   }
   if (field.type === "select") {
     const current = value === undefined || value === null || value === "" ? field.default : value;
-    const label = (opt) => field.labels?.[opt] || opt;
+    const options = [
+      ...(field.default == null ? [{ value: "__auto", label: "Auto" }] : []),
+      ...field.options.map((o) => ({ value: o, label: field.labels?.[o] || o })),
+    ];
     return (
-      <div className={wrap}>
-        <div className="mb-1.5"><Label field={field} /></div>
-        <div className="flex flex-wrap gap-1 rounded-lg bg-black/30 p-1">
-          {field.default == null && (
-            <button type="button" disabled={disabled} onClick={() => onChange(null)} className={`flex-1 rounded-md px-2.5 py-1.5 text-[12px] font-semibold disabled:cursor-not-allowed ${current == null ? "bg-white/15 text-white" : "text-white/50 hover:text-white"}`}>Auto</button>
-          )}
-          {field.options.map((opt) => (
-            <button key={opt} type="button" disabled={disabled} onClick={() => onChange(opt)} className={`flex-1 rounded-md px-2.5 py-1.5 text-[12px] font-semibold disabled:cursor-not-allowed ${current === opt ? "bg-white/15 text-white" : "text-white/50 hover:text-white"}`}>{label(opt)}</button>
-          ))}
-        </div>
+      <div className="space-y-2 py-2.5">
+        <FieldLabel field={field} />
+        <Segmented size="sm" value={current ?? "__auto"} onChange={(v) => onChange(v === "__auto" ? null : v)} options={options} aria-label={field.label} />
       </div>
     );
   }
   if (field.type === "text") {
     return (
-      <div className={wrap}>
-        <div className="mb-1.5"><Label field={field} /></div>
-        <textarea
-          value={value || ""}
-          maxLength={field.max}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Describe the image (optional)"
-          rows={3}
-          className="w-full resize-none rounded-lg border border-white/10 bg-black/30 px-2.5 py-2 text-[13px] text-white placeholder:text-white/30 focus:border-[#22d3ee]/50 focus:outline-none disabled:cursor-not-allowed"
-        />
+      <div className="space-y-2 py-2.5">
+        <FieldLabel field={field} />
+        <Textarea value={value || ""} maxLength={field.max} onChange={(e) => onChange(e.target.value)} placeholder="Describe the image (optional)" rows={3} />
       </div>
     );
   }
-  // Range. A field without a default is "Auto" (the model decides) until the
-  // user switches Auto off; while Auto is on the slider is locked.
   const canAuto = field.default === null || field.default === undefined;
   const isAuto = canAuto && (value === undefined || value === null || value === "");
   const shown = isAuto ? field.start : (value === undefined || value === null || value === "" ? field.default : Number(value));
   return (
-    <div className={wrap}>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <Label field={field} />
+    <div className="space-y-1 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <FieldLabel field={field} />
         <span className="flex items-center gap-2">
           {canAuto && (
-            <button
-              type="button"
-              disabled={disabled}
+            <Button
+              size="sm"
+              variant={isAuto ? "secondary" : "ghost"}
+              className={cn("h-8 px-2.5", isAuto && "text-primary")}
               onClick={() => onChange(isAuto ? field.start : null)}
-              className={`rounded-md px-2 py-0.5 text-[11px] font-semibold disabled:cursor-not-allowed ${isAuto ? "bg-[#22d3ee]/15 text-[#22d3ee]" : "bg-white/5 text-white/45 hover:text-white"}`}
-              title={isAuto ? "The model picks this value. Click to set it yourself." : "Let the model pick this value"}
+              aria-pressed={isAuto}
             >
               Auto
-            </button>
+            </Button>
           )}
-          <span className={`w-9 text-right text-[12px] tabular-nums ${isAuto ? "text-white/30" : "text-white/70"}`}>{field.step === 1 ? shown : Number(shown).toFixed(2)}</span>
+          <span className={cn("w-12 text-right tabular-nums", isAuto ? "text-muted-foreground/60" : "text-foreground")}>{field.step === 1 ? shown : Number(shown).toFixed(2)}</span>
         </span>
       </div>
-      <input
-        type="range"
-        min={field.min}
-        max={field.max}
-        step={field.step}
-        value={shown}
-        disabled={disabled || isAuto}
-        onChange={(e) => onChange(Number(e.target.value))}
-        aria-label={field.label}
-        className="w-full accent-[#22d3ee] disabled:cursor-not-allowed disabled:opacity-40"
-      />
+      <Slider min={field.min} max={field.max} step={field.step} value={[Number(shown)]} disabled={isAuto} onValueChange={([v]) => onChange(v)} aria-label={field.label} />
     </div>
   );
 }
 
 const fieldApplies = (field, valueOf) => !field.when || Object.entries(field.when).every(([k, want]) => valueOf(k) === want);
-
-function ModelSelect({ group, model, onPick }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef(null);
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = (e) => { if (!box.current?.contains(e.target)) setOpen(false); };
-    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", esc);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
-  }, [open]);
-  const price = (m) => `${fmtUsd(m.price.usd)} / ${m.price.mp} MP${m.price.assumed ? " ≈" : ""}`;
-  return (
-    <div ref={box} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-left hover:border-white/20"
-      >
-        <span className="min-w-0">
-          <span className="block text-[14px] font-semibold text-white">{model.id}</span>
-          {model.hint && <span className="block truncate text-[12px] text-white/45">{model.hint}</span>}
-        </span>
-        <span className="flex flex-shrink-0 items-center gap-2 text-[11px] tabular-nums text-white/40">
-          {price(model)}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${open ? "rotate-180" : ""}`}><path d="M6 9l6 6 6-6" /></svg>
-        </span>
-      </button>
-      {open && (
-        <div role="listbox" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-[360px] overflow-y-auto custom-scrollbar rounded-xl border border-white/10 bg-[#151519] p-1 shadow-[0_16px_40px_rgba(0,0,0,0.6)]">
-          {group.models.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              role="option"
-              aria-selected={m.id === model.id}
-              onClick={() => { onPick(m.id); setOpen(false); }}
-              className={`flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2 text-left ${m.id === model.id ? "bg-[#22d3ee]/10" : "hover:bg-white/[0.05]"}`}
-            >
-              <span className="min-w-0">
-                <span className={`block text-[13px] font-semibold ${m.id === model.id ? "text-[#22d3ee]" : "text-white/90"}`}>{m.id}</span>
-                {m.hint && <span className="block text-[12px] text-white/45">{m.hint}</span>}
-              </span>
-              <span className="flex-shrink-0 pt-0.5 text-[11px] tabular-nums text-white/35">{price(m)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+const priceLabel = (m) => `${fmtUsd(m.price.usd)} / ${m.price.mp} MP${m.price.assumed ? " ≈" : ""}`;
 
 // Settings + price + Upscale. `imageUrl` must be one of our /media files.
 export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, compact = false, isAdmin = false }) {
@@ -264,7 +166,6 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
   const modelValues = (model && values[model.id]) || {};
   const setValue = (key, v) => setValues((prev) => ({ ...prev, [model.id]: { ...(prev[model.id] || {}), [key]: v } }));
   const fields = useMemo(() => (model ? [...model.fields, ...(spec?.common || [])] : []), [model, spec]);
-  // Hidden settings keep their values but are not sent: Advanced off = the model's defaults.
   const valueOf = useCallback((key) => {
     const f = fields.find((x) => x.key === key);
     const v = modelValues[key];
@@ -277,6 +178,7 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
     return { ...prev, [model.id]: kept };
   });
 
+  // Hidden settings keep their values but are not sent: Advanced off = the model's defaults.
   const body = useMemo(() => {
     if (!model || !imageUrl) return null;
     const b = { image_url: imageUrl, model: model.id, upscale_factor: factor };
@@ -307,109 +209,94 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
     }
   }, [canRun, apiKey, group, body, imageUrl, model, factor, onStart, onDone, onError]);
 
+  const shell = compact ? "flex h-full flex-col" : "flex h-full flex-col rounded-2xl border border-border bg-card";
+
   if (!spec) {
     return (
-      <div className={`flex h-full flex-col items-start gap-3 p-5 ${compact ? "" : "rounded-2xl border border-white/[0.08] bg-[#0d0d10]"}`}>
-        <div className="text-[15px] font-semibold text-white/90">Upscale is not set up yet</div>
-        <p className="text-[13px] leading-relaxed text-white/55">
+      <div className={cn(shell, "items-start gap-3 p-6")}>
+        <div className="text-lg font-semibold text-foreground">Upscale is not set up yet</div>
+        <p className="text-base leading-relaxed text-muted-foreground">
           Upscaling uses Topaz models on fal.ai. {isAdmin ? "Add your fal.ai API key in Settings to turn it on." : "Ask the admin to add a fal.ai API key in Settings."}
         </p>
         {isAdmin && (
-          <a href="/dz/settings#provider-fal" className="rounded-xl bg-[#22d3ee] px-4 py-2 text-[13px] font-bold text-black hover:bg-[#67e8f9]">Add fal.ai key</a>
+          <a href="/dz/settings#provider-fal" className={buttonVariants()}>Add fal.ai key</a>
         )}
       </div>
     );
   }
 
   const input = price?.input;
+  const visibleAdvanced = model.fields.filter((f) => fieldApplies(f, valueOf));
   return (
-    <div className={`flex h-full flex-col ${compact ? "" : "rounded-2xl border border-white/[0.08] bg-[#0d0d10]"}`}>
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-5">
-        {/* Type */}
-        <div>
-          <div className="grid grid-cols-3 gap-1 rounded-xl bg-black/30 p-1">
-            {spec.groups.map((g) => (
-              <button key={g.id} type="button" onClick={() => setGroupId(g.id)} className={`rounded-lg py-2 text-[13px] font-semibold ${g.id === group.id ? "bg-white/12 text-white" : "text-white/50 hover:text-white"}`}>{g.name}</button>
-            ))}
-          </div>
-          <p className="mt-2 text-[12px] leading-snug text-white/45">{group.hint}</p>
-        </div>
+    <div className={shell}>
+      <div className="flex-1 space-y-6 overflow-y-auto custom-scrollbar p-5">
+        <section className="space-y-2">
+          <SectionLabel>Type</SectionLabel>
+          <Segmented value={group.id} onChange={setGroupId} options={spec.groups.map((g) => ({ value: g.id, label: g.name }))} aria-label="Upscale type" />
+          <p className="text-base leading-snug text-muted-foreground">{group.hint}</p>
+        </section>
 
-        {/* Model */}
-        <div>
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-white/40">Model</div>
-          <ModelSelect group={group} model={model} onPick={(id) => setModelByGroup((prev) => ({ ...prev, [group.id]: id }))} />
-        </div>
+        <section className="space-y-2">
+          <SectionLabel>Model</SectionLabel>
+          <Select
+            aria-label="Model"
+            value={model.id}
+            onValueChange={(id) => setModelByGroup((prev) => ({ ...prev, [group.id]: id }))}
+            options={group.models.map((m) => ({ value: m.id, label: m.id, description: m.hint, meta: priceLabel(m) }))}
+          />
+        </section>
 
-        {/* Scale */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-white/40">Scale</span>
-            {input && <span className="text-[12px] tabular-nums text-white/50">{input.width}×{input.height} → {Math.round(input.width * factor)}×{Math.round(input.height * factor)}</span>}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <SectionLabel>Scale</SectionLabel>
+            {input && <span className="tabular-nums text-muted-foreground">{input.width}×{input.height} → {Math.round(input.width * factor)}×{Math.round(input.height * factor)}</span>}
           </div>
-          <div className="grid grid-cols-4 gap-1 rounded-xl bg-black/30 p-1">
-            {[1, 2, 3, 4].filter((f) => f >= spec.factor.min && f <= spec.factor.max).map((f) => (
-              <button key={f} type="button" onClick={() => setFactor(f)} className={`rounded-lg py-2 text-[13px] font-bold ${factor === f ? "bg-white/12 text-white" : "text-white/50 hover:text-white"}`}>{f}×</button>
-            ))}
-          </div>
-          {factor === 1 && <p className="mt-1.5 text-[12px] text-white/40">1× keeps the size and only enhances the image.</p>}
-        </div>
+          <Segmented
+            value={factor}
+            onChange={setFactor}
+            aria-label="Scale"
+            options={[1, 2, 3, 4].filter((f) => f >= spec.factor.min && f <= spec.factor.max).map((f) => ({ value: f, label: `${f}×` }))}
+          />
+          {factor === 1 && <p className="text-base text-muted-foreground">1× keeps the size and only enhances the image.</p>}
+        </section>
 
-        {/* Settings everyone needs (output format) */}
         {(spec.common || []).map((f) => (
           <Field key={f.key} field={f} value={modelValues[f.key]} onChange={(v) => setValue(f.key, v)} />
         ))}
 
-        {/* Advanced: only for models that have settings of their own, like
-            Higgsfield. Settings that don't apply right now (face settings while
-            face enhancement is off) are hidden, not greyed out. */}
+        {/* Advanced: only for models that have settings of their own (like
+            Higgsfield). Settings that don't apply right now are hidden. */}
         {model.fields.length > 0 && (
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3">
-            <div className="flex items-center justify-between gap-3 py-2.5">
-              <span className="text-[13px] font-semibold text-white/85">Advanced settings</span>
+          <section className="rounded-xl border border-border bg-background/40 px-4">
+            <div className="flex items-center justify-between gap-3 py-3">
+              <span className="text-base font-semibold text-foreground">Advanced settings</span>
               <span className="flex items-center gap-2">
-                {advanced && changed && (
-                  <button type="button" onClick={reset} className="rounded-md px-2 py-0.5 text-[12px] font-semibold text-white/55 hover:bg-white/5 hover:text-white" title="Back to the model's defaults">Reset</button>
-                )}
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={advanced}
-                  aria-label="Advanced settings"
-                  onClick={() => setAdvanced((v) => !v)}
-                  className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors ${advanced ? "bg-[#22d3ee]" : "bg-white/15"}`}
-                >
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${advanced ? "left-[18px]" : "left-0.5"}`} />
-                </button>
+                {advanced && changed && <Button size="sm" variant="ghost" onClick={reset}>Reset</Button>}
+                <Switch checked={advanced} onCheckedChange={setAdvanced} aria-label="Advanced settings" />
               </span>
             </div>
             {advanced && (
-              <div className="border-t border-white/[0.06] pb-1">
-                {model.fields.filter((f) => fieldApplies(f, valueOf)).map((f) => (
+              <div className="divide-y divide-border/60 border-t border-border pb-1">
+                {visibleAdvanced.map((f) => (
                   <Field key={f.key} field={f} value={modelValues[f.key]} onChange={(v) => setValue(f.key, v)} />
                 ))}
               </div>
             )}
-          </div>
+          </section>
         )}
       </div>
 
-      {/* Price and run */}
-      <div className="border-t border-white/[0.06] p-4">
-        <div className="mb-2 flex items-center justify-between text-[12px] text-white/50">
-          <span>{price?.output_mp ? `Output ${price.output_mp} MP` : imageUrl ? (dzIsOwnImage(imageUrl) ? "" : "Upload this image first") : "Choose an image"}</span>
-          <span className={`tabular-nums ${loading ? "text-white/30" : "text-white/80"}`} title={price ? (price.exact ? "Price from fal's published rates" : "Estimate: fal does not publish this model's price") : undefined}>
+      <div className="space-y-3 border-t border-border p-5">
+        <div className="flex items-center justify-between text-base">
+          <span className="text-muted-foreground">{price?.output_mp ? `Output ${price.output_mp} MP` : imageUrl ? (dzIsOwnImage(imageUrl) ? "" : "Upload this image first") : "Choose an image"}</span>
+          <span className={cn("font-semibold tabular-nums", loading ? "text-muted-foreground/60" : "text-foreground")} title={price ? (price.exact ? "Price from fal's published rates" : "Estimate: fal does not publish this model's price") : undefined}>
             {price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd)}` : ""}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={run}
-          disabled={!canRun}
-          className="w-full rounded-xl bg-[#22d3ee] py-3 text-[14px] font-bold text-black transition-all hover:bg-[#67e8f9] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {busy > 0 ? `Upscaling${busy > 1 ? ` · ${busy}` : ""}… (you can start another)` : "Upscale"}
-        </button>
+        <Button size="lg" className="w-full" onClick={run} disabled={!canRun}>
+          {busy > 0 ? <><Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> Upscaling{busy > 1 ? ` · ${busy}` : ""}…</> : "Upscale"}
+        </Button>
+        {busy > 0 && <p className="text-center text-base text-muted-foreground">You can start another one meanwhile.</p>}
       </div>
     </div>
   );
@@ -433,10 +320,10 @@ function Compare({ before, after }) {
       <img src={after} alt="Upscaled" className="absolute inset-0 h-full w-full object-contain" draggable={false} />
       <img src={before} alt="Original" className="absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} draggable={false} />
       <div className="absolute inset-y-0 w-0.5 bg-white/80 shadow" style={{ left: `${pos}%` }}>
-        <div className="absolute top-1/2 left-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-[11px] font-bold text-black shadow-lg">⇆</div>
+        <div className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-base font-bold text-black shadow-lg">⇆</div>
       </div>
-      <span className="absolute top-3 left-3 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold text-white/80">Before</span>
-      <span className="absolute top-3 right-3 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold text-white/80">After</span>
+      <span className="absolute top-3 left-3 rounded-lg bg-black/70 px-2.5 py-1 text-base font-semibold text-white/90">Before</span>
+      <span className="absolute top-3 right-3 rounded-lg bg-black/70 px-2.5 py-1 text-base font-semibold text-white/90">After</span>
     </div>
   );
 }
@@ -513,13 +400,14 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
   const upscales = recent.filter(isUpscale);
   const sources = recent.filter((i) => !isUpscale(i));
 
+  const pickList = pickTab === "uploads" ? uploads : sources;
   return (
-    <div className="flex h-full w-full flex-col gap-4 overflow-hidden bg-app-bg p-4 md:flex-row md:p-6">
+    <div className="flex h-full w-full flex-col gap-5 overflow-hidden bg-background p-4 md:flex-row md:p-6">
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />
 
       {/* Image */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-        <div className="relative min-h-[280px] flex-1 overflow-hidden rounded-2xl border border-white/[0.08] bg-black/40">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+        <div className="relative min-h-[300px] flex-1 overflow-hidden rounded-2xl border border-border bg-card">
           {source && !picker ? (
             result && result.source === source ? (
               <Compare before={source} after={result.url} />
@@ -528,26 +416,31 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
             )
           ) : (
             <div className="flex h-full flex-col overflow-hidden">
-              <div className="flex flex-col items-center justify-center gap-3 border-b border-white/[0.06] px-6 py-8 text-center">
-                <div className="text-[15px] font-semibold text-white/85">Choose an image to upscale</div>
-                <div className="text-[12px] text-white/45">Drop a file anywhere, upload one, or pick from your images below.</div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading} className="rounded-xl bg-[#22d3ee] px-4 py-2 text-[13px] font-bold text-black hover:bg-[#67e8f9] disabled:opacity-50">{uploading ? "Uploading…" : "Upload from computer"}</button>
-                  {source && <button type="button" onClick={() => setPicker(false)} className="rounded-xl bg-white/10 px-4 py-2 text-[13px] font-semibold text-white/80 hover:bg-white/15">Cancel</button>}
+              <div className="flex flex-col items-center justify-center gap-3 border-b border-border px-6 py-10 text-center">
+                <div className="text-xl font-semibold text-foreground">Choose an image to upscale</div>
+                <div className="max-w-md text-base text-muted-foreground">Drop a file anywhere, upload one, or pick one of your images below.</div>
+                <div className="flex gap-2 pt-1">
+                  <Button onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <><Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> Uploading…</> : "Upload from computer"}</Button>
+                  {source && <Button variant="secondary" onClick={() => setPicker(false)}>Cancel</Button>}
                 </div>
               </div>
-              <div className="flex gap-1 px-3 pt-3">
-                {[["generated", `Generated · ${sources.length}`], ["uploads", `Uploads · ${uploads.length}`]].map(([id, label]) => (
-                  <button key={id} type="button" onClick={() => setPickTab(id)} className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold ${pickTab === id ? "bg-white/10 text-white" : "text-white/45 hover:text-white"}`}>{label}</button>
-                ))}
+              <div className="px-4 pt-4">
+                <Segmented
+                  className="inline-flex"
+                  size="sm"
+                  value={pickTab}
+                  onChange={setPickTab}
+                  aria-label="Images to choose from"
+                  options={[{ value: "generated", label: `Generated · ${sources.length}` }, { value: "uploads", label: `Uploads · ${uploads.length}` }]}
+                />
               </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
-                {(pickTab === "uploads" ? uploads : sources).length === 0 ? (
-                  <p className="py-6 text-center text-[13px] text-white/40">{pickTab === "uploads" ? "Nothing uploaded yet." : "No generated images yet."}</p>
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                {pickList.length === 0 ? (
+                  <p className="py-8 text-center text-base text-muted-foreground">{pickTab === "uploads" ? "Nothing uploaded yet." : "No generated images yet."}</p>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-                    {(pickTab === "uploads" ? uploads : sources).map((item) => (
-                      <button key={item.id} type="button" onClick={() => { setSource(item.url); setResult(null); setPicker(false); }} className="group relative aspect-square overflow-hidden rounded-lg border border-white/[0.06] hover:border-[#22d3ee]/60">
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                    {pickList.map((item) => (
+                      <button key={item.id} type="button" onClick={() => { setSource(item.url); setResult(null); setPicker(false); }} className="group relative aspect-square overflow-hidden rounded-xl border border-border transition-colors hover:border-primary">
                         <img src={item.url} alt={item.prompt?.slice(0, 40) || item.name || "Image"} loading="lazy" className="h-full w-full object-cover" />
                       </button>
                     ))}
@@ -557,40 +450,37 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
             </div>
           )}
           {source && !picker && (
-            <div className="absolute bottom-3 left-3 flex gap-2">
-              <button type="button" onClick={() => setPicker(true)} className="rounded-lg bg-black/70 px-3 py-1.5 text-[12px] font-semibold text-white/85 backdrop-blur hover:bg-black/90">Change image</button>
+            <div className="absolute bottom-4 left-4 flex gap-2">
+              <Button variant="secondary" size="sm" className="bg-black/70 text-white backdrop-blur hover:bg-black/90" onClick={() => setPicker(true)}>Change image</Button>
               {result && result.source === source && (
-                <button type="button" onClick={() => downloadFile(result.url, `upscaled-${Date.now()}.${result.url.split(".").pop()}`)} className="rounded-lg bg-black/70 px-3 py-1.5 text-[12px] font-semibold text-white/85 backdrop-blur hover:bg-black/90">Download</button>
+                <Button variant="secondary" size="sm" className="bg-black/70 text-white backdrop-blur hover:bg-black/90" onClick={() => downloadFile(result.url, `upscaled-${Date.now()}.${result.url.split(".").pop()}`)}>Download</Button>
               )}
             </div>
           )}
         </div>
 
-        {/* Recent upscales */}
-        {/* Fixed height, so the image above doesn't jump when the first upscale lands. */}
-        {(
-          <div className="h-[92px] flex-shrink-0">
-            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-white/40">Recent upscales</div>
-            {upscales.length === 0 && <p className="text-[12px] text-white/30">Your upscaled images will appear here.</p>}
-            <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-              {upscales.slice(0, 30).map((item) => (
+        {/* Recent upscales. Fixed height, so the image above doesn't jump when the first one lands. */}
+        <div className="h-[112px] flex-shrink-0 space-y-2">
+          <SectionLabel>Recent upscales</SectionLabel>
+          {upscales.length === 0 && <p className="text-base text-muted-foreground/70">Your upscaled images will appear here.</p>}
+          <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+            {upscales.slice(0, 30).map((item) => (
+              <Tip key={item.id} text={`${item.params?.model || ""} · ${item.params?.upscale_factor || ""}×${item.cost_usd != null ? ` · ${fmtUsd(item.cost_usd)}` : ""}`}>
                 <button
-                  key={item.id}
                   type="button"
-                  title={`${item.params?.model || ""} ${item.params?.upscale_factor || ""}×${item.cost_usd != null ? ` · ${fmtUsd(item.cost_usd)}` : ""}`}
                   onClick={() => { const src = item.params?.image_url; if (src) { setSource(src); setResult({ url: item.url, source: src }); setPicker(false); } }}
-                  className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border border-white/[0.08] hover:border-[#22d3ee]/60"
+                  className="h-[72px] w-[72px] flex-shrink-0 overflow-hidden rounded-xl border border-border transition-colors hover:border-primary"
                 >
                   <img src={item.url} alt="Upscaled" loading="lazy" className="h-full w-full object-cover" />
                 </button>
-              ))}
-            </div>
+              </Tip>
+            ))}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Settings */}
-      <div className="h-[46vh] w-full flex-shrink-0 md:h-full md:w-[340px]">
+      <div className="h-[52vh] w-full flex-shrink-0 md:h-full md:w-[400px]">
         <DzUpscalePanel
           apiKey={apiKey}
           isAdmin={isAdmin}

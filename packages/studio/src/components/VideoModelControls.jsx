@@ -132,11 +132,11 @@ export function VideoSettingsControl({
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-white/80">
             {text.label}
             {option.value === "standard" && (
-              <span className="text-[10px] font-medium text-white/45">{copy.defaultVariant}</span>
+              <span className="text-base font-medium text-white/45">{copy.defaultVariant}</span>
             )}
           </span>
           {hasDescription && (
-            <span id={descriptionId} className="mt-1 block text-[11px] leading-relaxed text-white/45">
+            <span id={descriptionId} className="mt-1 block text-base leading-relaxed text-white/45">
               {text.description}
               {option.adjustmentDescription && (
                 <span className="block text-[#22d3ee]/75">{option.adjustmentDescription}</span>
@@ -151,7 +151,7 @@ export function VideoSettingsControl({
   const profileControl = profile?.options.length > 1 && (
     <fieldset className="min-w-0">
       <legend className="text-xs font-semibold text-white/75">{copy.provider}</legend>
-      {copy.providerHelp && <p className="mb-2 mt-1 text-[11px] leading-relaxed text-white/45">{copy.providerHelp}</p>}
+      {copy.providerHelp && <p className="mb-2 mt-1 text-base leading-relaxed text-white/45">{copy.providerHelp}</p>}
       {profile.options.map(renderProfile)}
       {onDefaultResolution && (
         <button type="button" onClick={onDefaultResolution}

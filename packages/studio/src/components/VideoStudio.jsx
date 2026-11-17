@@ -28,6 +28,7 @@ import {
   videoModelMenuEntries as videoModelPickerEntries,
   videoModelMenuEntryByVariantId as videoModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
+import { dzRecommendedEntries } from "../dzCatalog.js"; // DZ
 import { getSeedanceEndpointResolution, getSeedanceToolConfiguration } from "../seedanceModels.js";
 import { getVeoToolConfiguration } from "../veoModels.js";
 import { getGroupedVideoConfiguration, getGroupedVideoCopyKey, getGroupedVideoVariantOptions } from "../groupedVideoModels.js";
@@ -445,7 +446,9 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
   const [search, setSearch] = useState("");
   const selectedEntry = videoModelPickerEntryByVariantId.get(selectedModel);
   const selectedModelProvider = selectedEntry?.family.provider || "all";
+  const dzRecommended = dzRecommendedEntries(videoModelPickerEntries); // DZ
   const modelCategories = [
+    ...(dzRecommended.length ? [{ id: "recommended", label: "★ Recommended", entries: dzRecommended }] : []), // DZ
     {
       id: "all",
       label: copy.categories.all,
@@ -467,7 +470,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
       entries: videoModelPickerEntries.filter((entry) => entry.variantsByMode.v2v || getVeoToolConfiguration(entry.defaultVariant.model.id)),
     },
   ];
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedCategory, setSelectedCategory] = useState(() => (dzRecommended.length && !selectedEntry ? "recommended" : dzRecommended.includes(selectedEntry) ? "recommended" : "all")); // DZ
   const [selectedProvider, setSelectedProvider] = useState(
     () => selectedModelProvider,
   );
@@ -576,7 +579,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
       className={`flex w-full text-left items-center justify-between p-3.5 hover:bg-white/5 rounded-2xl cursor-pointer transition-all border border-transparent hover:border-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${isSelected ? "bg-white/5 border-white/5" : ""}`}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect(entry, activeCategory.id);
+        onSelect(entry, activeCategory.id === "recommended" ? "all" : activeCategory.id); // DZ
         onClose();
       }}
     >

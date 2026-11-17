@@ -30,6 +30,7 @@ import {
   imageModelPickerEntries,
   imageModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
+import { dzRecommendedEntries } from "../dzCatalog.js"; // DZ
 import {
   buildReferenceParams,
   getModelMediaCapabilities,
@@ -660,7 +661,9 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
   const t = copy.modelDropdown;
   const [search, setSearch] = useState("");
   const selectedEntry = imageModelPickerEntryByVariantId.get(selectedModel);
+  const dzRecommended = dzRecommendedEntries(imageModelPickerEntries); // DZ
   const modelCategories = [
+    ...(dzRecommended.length ? [{ id: "recommended", label: "★ Recommended", entries: dzRecommended }] : []), // DZ
     {
       id: "all",
       label: t.categoryAll,
@@ -677,7 +680,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
       entries: imageModelPickerEntries.filter((entry) => entry.variantsByMode.i2i),
     },
   ];
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedCategory, setSelectedCategory] = useState(() => (dzRecommended.length && !selectedEntry ? "recommended" : dzRecommended.includes(selectedEntry) ? "recommended" : "all")); // DZ
   const [selectedProvider, setSelectedProvider] = useState("all");
   const activeCategory = modelCategories.find((category) => category.id === selectedCategory) || modelCategories[0];
   const modelEntries = activeCategory.entries;
@@ -875,7 +878,7 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy }) {
                 ref={isSelected ? activeItemRef : null}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSelect(entry, activeCategory.id);
+                  onSelect(entry, activeCategory.id === "recommended" ? "all" : activeCategory.id); // DZ
                   onClose();
                 }}
                 className={`flex items-center justify-between p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-all border border-transparent hover:border-white/5 ${

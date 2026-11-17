@@ -74,3 +74,16 @@ test('cheaper provider is listed last (the studio picks it by default)', () => {
   assert.ok(lists.t2v.every((m) => m.dzFamily === 'dz-kling-4' && m.dzFamilyName === 'Kling Video 4.0'));
   assert.match(lists.t2v[0].name, /^Kling Video 4\.0 · APIMart · \$0\.14\/s · basic$/);
 });
+
+test('recommended families come first, in admin order, provider order kept', () => {
+  const atlasT2V = buildAtlasVariant({ ...atlasEntry, model: 'kwaivgi/kling-v4.0/text-to-video', categories: ['TEXT-TO-VIDEO'] },
+    { components: { schemas: { Input: { required: ['prompt'], properties: { prompt: { type: 'string' } } } } } });
+  const [apimartT2V] = buildApimartVariants({ id: 'kling-v4', category: 'video', capability_tags: ['Text to Video'] }, null, { usd: 0.14, unit: 'second' });
+  const [veo] = buildApimartVariants({ id: 'veo3.1', category: 'video', capability_tags: ['Text to Video'] }, null, { usd: 0.2, unit: 'second' });
+  const plain = buildStudioLists([veo, atlasT2V, apimartT2V].map((v) => structuredClone(v)));
+  assert.equal(plain.t2v[0].dzFamily, veo.model.dzFamily);
+  assert.ok(plain.t2v.every((m) => m.dzRecommended === undefined));
+  const lists = buildStudioLists([veo, atlasT2V, apimartT2V], { recommended: ['dz-kling-4'] });
+  assert.deepEqual(lists.t2v.map((m) => [m.dzFamily, m.dzProvider, m.dzRecommended]),
+    [['dz-kling-4', 'apimart', 1], ['dz-kling-4', 'atlas', 1], [veo.model.dzFamily, 'apimart', undefined]]);
+});

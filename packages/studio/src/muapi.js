@@ -123,7 +123,8 @@ export async function generateI2I(apiKey, params) {
     };
     if (imagesList.length > 0) {
         if (imageField === 'images_list') payload.images_list = imagesList;
-        else payload[imageField] = imagesList[0];
+        // DZ: array fields (e.g. image_urls) are already filled with all images by mapReferenceParams
+        else if (!Array.isArray(payload[imageField])) payload[imageField] = imagesList[0];
     }
     if (modelInfo) Object.assign(payload, buildImageSizePayload(modelInfo, params.aspect_ratio));
     else if (params.aspect_ratio) payload.aspect_ratio = params.aspect_ratio;

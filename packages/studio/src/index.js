@@ -7,6 +7,7 @@ export { default as VibeMotionStudio } from './components/VibeMotionStudio';
 export { default as LipSyncStudio } from './components/LipSyncStudio';
 export { default as RecastStudio } from './components/RecastStudio';
 export { default as CinemaStudio } from './components/CinemaStudio';
+export { default as DzCinemaStudio } from './components/DzCinemaStudio'; // DZ
 export { default as AudioStudio } from './components/AudioStudio';
 export { default as MarketingStudio } from './components/MarketingStudio';
 export { default as WorkflowStudio } from './components/WorkflowStudio';

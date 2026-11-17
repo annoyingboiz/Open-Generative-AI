@@ -33,7 +33,17 @@ async function mapLimit(items, limit, fn) {
   return results;
 }
 
-export function createCatalog({ dataDir, providers, log }) {
+export const DEFAULT_RECOMMENDED = Object.freeze([
+  'dz-nano-banana-pro', 'dz-gpt-image-2.6-sunburst', 'dz-seedream-5-pro',
+  'dz-kling-4', 'dz-seedance-2.5', 'dz-veo-3.1',
+]);
+
+function writeJsonAtomic(file, data) {
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(data));
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+export function createCatalog({ dataDir, providers, log, getRecommended = () => DEFAULT_RECOMMENDED }) {
   const dir = path.join(dataDir, 'catalog');
   const schemaDir = path.join(dir, 'atlas-schemas');
   fs.mkdirSync(schemaDir, { recursive: true });
@@ -71,7 +81,7 @@ export function createCatalog({ dataDir, providers, log }) {
         variants.push(...buildApimartVariants(model, APIMART_OVERRIDES[model.id], apimartPrice(prices[model.id])));
       }
     }
-    const lists = buildStudioLists(variants);
+    const lists = buildStudioLists(variants, { recommended: getRecommended() || [] });
     built = {
       variants: new Map(variants.map((v) => [v.key, v])),
       lists,
@@ -81,30 +91,40 @@ export function createCatalog({ dataDir, providers, log }) {
     log?.info(`catalog: built ${variants.length} studio models (${STUDIO_MODES.map((m) => `${m} ${lists[m].length}`).join(', ')})`);
   }
 
+  // A fresh list (< 1 day) is kept, but missing derived data (prices, schemas)
+  // is always filled in — a restart mid-refresh must not leave gaps forever.
   async function refreshProvider(providerId, { force }) {
     const provider = providerById(providerId);
     const cfg = providers.resolve(providerId);
     if (!cfg.enabled || !cfg.apiKey) return;
     const current = raw[providerId];
-    if (!force && current && Date.now() - current.fetchedAt < DAY) return;
-    const list = await provider.listModels(cfg);
-    raw[providerId] = { fetchedAt: Date.now(), list };
-    fs.writeFileSync(fileOf(`${providerId}-models.json`), JSON.stringify(raw[providerId]));
+    const fresh = !force && current && Date.now() - current.fetchedAt < DAY;
+    let list = current?.list;
+    if (!fresh) {
+      list = await provider.listModels(cfg);
+      raw[providerId] = { fetchedAt: Date.now(), list };
+      writeJsonAtomic(fileOf(`${providerId}-models.json`), raw[providerId]);
+    }
 
     if (providerId === 'atlas') {
       const media = list.filter((e) => ['Image', 'Video'].includes(e.type) && e.schema);
-      const results = await mapLimit(media, 8, async (e) => {
+      const todo = fresh ? media.filter((e) => !fs.existsSync(schemaFile(e.model))) : media;
+      if (!todo.length) return;
+      const results = await mapLimit(todo, 8, async (e) => {
         const schema = await provider.schema(cfg, e.schema);
-        fs.writeFileSync(schemaFile(e.model), JSON.stringify(schema));
+        writeJsonAtomic(schemaFile(e.model), schema);
         return true;
       });
-      log?.info(`catalog: atlas — ${list.length} models, ${results.filter(Boolean).length}/${media.length} schemas`);
+      log?.info(`catalog: atlas — ${list.length} models, ${results.filter(Boolean).length}/${todo.length} schemas fetched`);
     }
     if (providerId === 'apimart') {
+      const pricesFile = fileOf('apimart-prices.json');
+      const saved = readJson(pricesFile, null);
+      if (fresh && saved) return;
       const media = list.filter((m) => ['image', 'video'].includes(m.category));
       const prices = {};
       await mapLimit(media, 6, async (m) => { prices[m.id] = await provider.price(cfg, m.id); });
-      fs.writeFileSync(fileOf('apimart-prices.json'), JSON.stringify(prices));
+      writeJsonAtomic(pricesFile, prices);
       log?.info(`catalog: apimart — ${list.length} models, ${Object.values(prices).filter(Boolean).length}/${media.length} prices`);
     }
   }
@@ -166,6 +186,17 @@ export function createCatalog({ dataDir, providers, log }) {
       return kind ? { id: modelId, kind } : null;
     },
     variant(key) { return built.variants.get(key) || null; },
+    // Families for the "Recommended" editor in Settings: key, name, image/video.
+    families() {
+      const out = new Map();
+      for (const v of built.variants.values()) {
+        const kind = ['t2i', 'i2i'].includes(v.mode) ? 'image' : ['t2v', 'i2v', 'v2v'].includes(v.mode) ? 'video' : null;
+        const key = v.model.dzFamily;
+        if (!kind || !key) continue;
+        if (!out.has(key)) out.set(key, { key, name: v.model.dzFamilyName || key, kind });
+      }
+      return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+    },
     thumbnail,
     clientScript() { return built.js; },
     stats() {

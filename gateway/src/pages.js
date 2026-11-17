@@ -64,7 +64,7 @@ function balanceCell(b) {
   return `<span class="pill err" title="${esc(b.error)}">error</span> <span class="muted">${esc(b.error)}</span>`;
 }
 
-export function settingsPage({ user, providers = [], balances = [], users = [], error, notice }) {
+export function settingsPage({ user, providers = [], balances = [], users = [], recommended = [], families = [], error, notice }) {
   const isAdmin = user.role === 'admin';
   const balanceById = Object.fromEntries(balances.map((b) => [b.id, b]));
 
@@ -105,6 +105,8 @@ export function settingsPage({ user, providers = [], balances = [], users = [], 
 <h2 style="margin:28px 0 12px">Providers</h2>
 <p class="muted" style="margin-top:-6px">Keys are stored encrypted on this server and never sent to the browser.</p>
 ${providerSections}
+<h2 style="margin:28px 0 12px" id="recommended">Recommended models</h2>
+${recommendedSection(recommended, families)}
 <h2 style="margin:28px 0 12px">Test generation</h2>
 <form class="section" method="post" action="/dz/settings/test-generation">
   <p class="muted" style="margin-top:0">One cheap picture to check that a provider works end to end: request → server waits → file saved on this server. Costs real money (about $0.01).</p>
@@ -141,6 +143,27 @@ ${flash(error, notice)}
 </form></div>
 ${adminBlocks}
 </div>`);
+}
+
+function recommendedSection(recommended, families) {
+  const byKey = new Map(families.map((f) => [f.key, f]));
+  const button = (action, key, label, cls = '') => `<form method="post" action="/dz/settings/recommended" style="display:inline"><input type="hidden" name="action" value="${action}"><input type="hidden" name="key" value="${esc(key)}"><button class="btn small ${cls}" type="submit">${label}</button></form>`;
+  const rows = recommended.map((key, i) => {
+    const f = byKey.get(key);
+    return `<tr><td class="muted">${i + 1}</td><td><b>${esc(f?.name || key)}</b> <span class="muted">${f ? esc(f.kind) : '— not in the catalog now'}</span></td><td style="text-align:right">${i > 0 ? button('up', key, '↑') : ''} ${button('remove', key, 'Remove', 'danger')}</td></tr>`;
+  }).join('');
+  const options = (kind) => families.filter((f) => f.kind === kind && !recommended.includes(f.key))
+    .map((f) => `<option value="${esc(f.key)}">${esc(f.name)}</option>`).join('');
+  return `<div class="section">
+  <p class="muted" style="margin-top:0">These families are shown first in the model lists (images and video), in this order. Inside a family the cheapest provider stays the default.</p>
+  <table><tbody>${rows || '<tr><td class="muted">None — lists use the catalog order.</td></tr>'}</tbody></table>
+  <form method="post" action="/dz/settings/recommended" class="row" style="margin-top:14px">
+    <input type="hidden" name="action" value="add">
+    <select name="key" style="flex:1"><optgroup label="Images">${options('image')}</optgroup><optgroup label="Video">${options('video')}</optgroup></select>
+    <button class="btn small primary" type="submit">Add</button>
+  </form>
+  <div style="margin-top:10px">${button('reset', '', 'Reset to defaults')}</div>
+</div>`;
 }
 
 export function testResultPage({ result, provider, model }) {

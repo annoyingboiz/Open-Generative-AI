@@ -217,7 +217,7 @@ function sortKey(v) {
   return Number.isFinite(usd) ? usd : 1e9;
 }
 
-export function buildStudioLists(variants) {
+export function buildStudioLists(variants, { recommended = [] } = {}) {
   const lists = Object.fromEntries(STUDIO_MODES.map((m) => [m, []]));
   const byFamilyMode = new Map();
   for (const v of variants) {
@@ -241,6 +241,16 @@ export function buildStudioLists(variants) {
       v.model.name = [familyName, v.model.dzProviderName, v.model.dzPrice?.label, v.model.dzBasic ? 'basic' : ''].filter(Boolean).join(' · ');
       lists[v.mode].push(v.model);
     }
+  }
+  // Recommended families go first, in the admin's order. The sort is stable,
+  // so the order of providers inside a family (cheapest last = default) holds.
+  const rank = new Map(recommended.map((key, i) => [key, i + 1]));
+  for (const mode of Object.keys(lists)) {
+    for (const m of lists[mode]) {
+      if (rank.has(m.dzFamily)) m.dzRecommended = rank.get(m.dzFamily);
+      else delete m.dzRecommended;
+    }
+    lists[mode].sort((a, b) => (a.dzRecommended || 1e9) - (b.dzRecommended || 1e9));
   }
   return lists;
 }

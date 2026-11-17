@@ -155,3 +155,21 @@ test('cross-site sign-in is refused (login CSRF)', async () => {
   const res = await app.inject({ method: 'POST', url: '/login', headers: { origin: 'https://evil.example', host: 'director.zabelin.design' }, payload: { username: 'denis', password: 'long-enough-1' } });
   assert.equal(res.statusCode, 403);
 });
+
+test('recommended models: admin edits the list, users cannot', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: adminCookie }, payload: { action: 'remove', key: 'dz-kling-4' } });
+  assert.equal(res.statusCode, 302);
+  res = await app.inject({ url: '/dz/settings', headers: { cookie: adminCookie } });
+  assert.ok(res.body.includes('Recommended models'));
+  assert.ok(!res.body.includes('>dz-kling-4<'));
+  assert.ok(res.body.includes('dz-nano-banana-pro'));
+  res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: adminCookie }, payload: { action: 'add', key: 'dz-not-a-model' } });
+  assert.equal(res.statusCode, 400);
+  res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: adminCookie }, payload: { action: 'reset' } });
+  assert.equal(res.statusCode, 302);
+  res = await app.inject({ url: '/dz/settings', headers: { cookie: adminCookie } });
+  assert.ok(res.body.includes('dz-kling-4'));
+  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'daughter', password: 'kid-password-1' } });
+  res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: cookieOf(res) }, payload: { action: 'reset' } });
+  assert.equal(res.statusCode, 403);
+});

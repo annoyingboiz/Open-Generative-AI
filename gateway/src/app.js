@@ -17,7 +17,7 @@ import { PROVIDERS, providerById, createProviderSettings, fetchBalances } from '
 import { validateProxyUrl } from './providers/http.js';
 import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
-import { createCatalog } from './catalog/index.js';
+import { createCatalog, DEFAULT_RECOMMENDED } from './catalog/index.js';
 import { createGenerations, GenerationError } from './generations.js';
 import { toProviderBody, estimateCost } from './catalog/build.js';
 
@@ -37,7 +37,19 @@ export async function buildApp(config, { logger = true } = {}) {
     bodyLimit: 2 * 1024 * 1024, // uploads have their own limits (multipart)
   });
   const storage = createStorage(config.dataDir, { allowLocalDownloads: config.testAllowLocalDownloads === true });
-  const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log });
+  // Small app-wide settings kept in the meta table (key "setting:<name>", JSON value).
+  const appSettings = {
+    get(name, fallback) {
+      const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(`setting:${name}`);
+      try { return row ? JSON.parse(row.value) : fallback; } catch { return fallback; }
+    },
+    set(name, value) {
+      db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+        .run(`setting:${name}`, JSON.stringify(value));
+    },
+  };
+  const getRecommended = () => appSettings.get('recommended', DEFAULT_RECOMMENDED);
+  const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended });
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, maxActiveJobsPerUser: config.maxActiveJobsPerUser });
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);
@@ -183,7 +195,7 @@ export async function buildApp(config, { logger = true } = {}) {
   });
 
   // ── Settings ────────────────────────────────────────────────────────────
-  const NOTICES = { welcome: 'Admin created. Add provider keys below.', saved: 'Saved.', password: 'Password changed.', user: 'Account saved.' };
+  const NOTICES = { welcome: 'Admin created. Add provider keys below.', saved: 'Saved.', password: 'Password changed.', user: 'Account saved.', recommended: 'Recommended models saved. Reload the studio to see them.' };
 
   async function renderSettings(req, reply, { error, notice, code = 200 } = {}) {
     const isAdmin = req.user.role === 'admin';
@@ -192,6 +204,8 @@ export async function buildApp(config, { logger = true } = {}) {
       providers: isAdmin ? PROVIDERS.map((p) => providers.publicView(p.id)) : [],
       balances: isAdmin ? await fetchBalances(providers) : [],
       users: isAdmin ? auth.listUsers() : [],
+      recommended: isAdmin ? getRecommended() : [],
+      families: isAdmin ? catalog.families() : [],
       error,
       notice: notice ?? NOTICES[req.query?.notice],
     }), code);
@@ -239,6 +253,31 @@ export async function buildApp(config, { logger = true } = {}) {
     return renderSettings(req, reply, {
       notice: balance?.ok ? `${provider.name}: saved, key works — balance $${balance.amount.toFixed(2)}.` : `${provider.name}: saved.`,
     });
+  });
+
+  // Recommended models: shown first in every model picker, in this order.
+  app.post('/dz/settings/recommended', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const { action, key } = req.body || {};
+    let list = [...getRecommended()];
+    const known = new Set(catalog.families().map((f) => f.key));
+    if (action === 'add') {
+      if (!known.has(key)) return renderSettings(req, reply, { error: 'Unknown model family.', code: 400 });
+      if (!list.includes(key)) list.push(key);
+      list = list.slice(0, 24);
+    } else if (action === 'remove') {
+      list = list.filter((k) => k !== key);
+    } else if (action === 'up') {
+      const i = list.indexOf(key);
+      if (i > 0) [list[i - 1], list[i]] = [list[i], list[i - 1]];
+    } else if (action === 'reset') {
+      list = [...DEFAULT_RECOMMENDED];
+    } else {
+      return reply.code(400).send({ error: 'Unknown action' });
+    }
+    appSettings.set('recommended', list);
+    catalog.rebuild();
+    return reply.redirect('/dz/settings?notice=recommended#recommended');
   });
 
   const TEST_MODELS = {

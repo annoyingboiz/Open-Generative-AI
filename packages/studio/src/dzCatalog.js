@@ -15,3 +15,10 @@ export function dzApplyProviderCatalog(targets) {
     list.push(...models);
   }
 }
+
+// DZ: picker entries of the admin's "Recommended" families, in the admin's order.
+export function dzRecommendedEntries(entries) {
+  return entries
+    .filter((entry) => entry.family?.dzRecommended > 0)
+    .sort((a, b) => a.family.dzRecommended - b.family.dzRecommended);
+}

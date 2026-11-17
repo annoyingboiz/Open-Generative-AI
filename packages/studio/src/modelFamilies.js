@@ -439,6 +439,9 @@ function buildCatalog(modeLists, config) {
       (a, b) => b.freshness - a.freshness,
     )[0];
     family.name = namingEntry.model.dzFamilyName || config.familyName(family.id, namingEntry.model.name); // DZ
+    // DZ: rank in the admin's "Recommended" list (0 = not recommended).
+    family.dzRecommended = Object.values(family.rawVariants).flat()
+      .reduce((best, { model }) => (model.dzRecommended && (!best || model.dzRecommended < best) ? model.dzRecommended : best), 0);
     family.provider = namingEntry.model.provider || family.provider;
     family.provider_name = namingEntry.model.provider_name || family.provider_name;
     family.variants = {};

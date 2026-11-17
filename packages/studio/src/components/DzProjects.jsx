@@ -160,14 +160,14 @@ export function FolderPath({ ctx, folders = [], onFolder, onNewFolder }) {
         <button className="flex h-9 min-w-0 max-w-[220px] items-center gap-1.5 rounded-lg px-2 text-base text-foreground/80 hover:bg-accent" aria-label="Folder for new work">
           <span className="opacity-50">/</span>
           <FolderIcon />
-          <span className="truncate">{current ? current.name : "No folder"}</span>
+          <span className="truncate">{current ? current.name : "All"}</span>
           <span className="opacity-60">▾</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">
         <DropdownMenuLabel className="text-muted-foreground">New work goes to</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => onFolder(null)} className="gap-2 text-base">
-          <FolderIcon /> Project root {!ctx.folder && <span className="ml-auto">✓</span>}
+          <FolderIcon /> <span>All <span className="text-muted-foreground">— shows everything, new work at the top level</span></span> {!ctx.folder && <span className="ml-auto">✓</span>}
         </DropdownMenuItem>
         {tree.map((f) => (
           <DropdownMenuItem key={f.id} onSelect={() => onFolder(f.id)} className="gap-2 text-base" style={{ paddingLeft: 8 + (f.depth + 1) * 14 }}>
@@ -227,12 +227,13 @@ export function MoveDialog({ item, onOpenChange, projects = [] }) {
     setFolder(item.folder_id || null);
     setError("");
   }, [open, item]);
+  // Fresh folders every time the dialog opens (a folder may have been added since).
   useEffect(() => {
-    if (!target) { setFolders([]); return undefined; }
+    if (!open || !target) { setFolders([]); return undefined; }
     let alive = true;
     dzProjectsApi.details(target).then((d) => alive && setFolders(d.folders || [])).catch(() => alive && setFolders([]));
     return () => { alive = false; };
-  }, [target]);
+  }, [target, open, item?.id]);
   const tree = useMemo(() => folderTree(folders), [folders]);
   const move = async () => {
     setBusy(true);

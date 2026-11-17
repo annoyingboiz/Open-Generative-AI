@@ -428,7 +428,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       const videoEntries = createEntries("video");
       const ve = videoEntries.find((e) => e.key === modelByKind.video) || videoEntries[0];
       const has = (r) => ve?.slots.some((sl) => sl.role === r);
-      const role = has("first") ? "first" : has("reference") ? "reference" : "first";
+      const role = has("first") ? "first" : "reference";
       setKind("video");
       setAttached((prev) => ({ ...prev, [role]: role === "first" ? [{ url: item.url, name: "result" }] : [...(prev[role] || []), { url: item.url, name: "result" }] }));
       return;

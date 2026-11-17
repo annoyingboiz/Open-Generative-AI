@@ -1,6 +1,5 @@
 // APIMart (https://apimart.ai) — docs: https://docs.apimart.ai
-import fs from 'node:fs';
-import { providerJson, providerFetch, ProviderHttpError } from './http.js';
+import { providerJson, providerFetch, ProviderHttpError, fileForm } from './http.js';
 
 const API = 'https://api.apimart.ai';
 const auth = (apiKey) => ({ Authorization: `Bearer ${apiKey}` });
@@ -86,9 +85,8 @@ export const apimart = {
   async upload({ apiKey, proxy }, { path, mime, name, kind }) {
     const bucket = UPLOAD_KIND[kind];
     if (!bucket) throw new Error(`APIMart: cannot upload ${mime}`);
-    const form = new FormData();
     // Streamed from disk, not read into memory.
-    form.append('file', await fs.openAsBlob(path, { type: mime }), name || `file.${mime.split('/')[1]}`);
+    const form = await fileForm('file', path, mime, name || `file.${mime.split('/')[1]}`);
     const response = await providerFetch(`${API}/v1/uploads/${bucket}?retention_days=7`, {
       proxy, method: 'POST', headers: auth(apiKey), body: form, timeoutMs: 10 * 60_000,
     });

@@ -17,3 +17,21 @@ test('server-side fetches refuse http, local names and private IPs', async () =>
   await assert.rejects(assertPublicHttpsUrl('file:///etc/passwd'));
   await assert.doesNotReject(assertPublicHttpsUrl('https://cdn.example.com/x.png', { viaProxy: true }));
 });
+
+test('provider uploads are real multipart bodies (undici FormData)', async () => {
+  const http = await import('node:http');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { providerFetch, fileForm } = await import('../src/providers/http.js');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'up-')), 'a.png');
+  fs.writeFileSync(file, Buffer.alloc(2048, 7));
+  const srv = http.createServer((req, res) => { let n = 0; req.on('data', (c) => { n += c.length; }); req.on('end', () => res.end(JSON.stringify({ ct: req.headers['content-type'], n }))); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const res = await providerFetch(`http://127.0.0.1:${srv.address().port}/`, { method: 'POST', body: await fileForm('file', file, 'image/png', 'a.png') });
+    const { ct, n } = await res.json();
+    assert.match(ct, /^multipart\/form-data; boundary=/);
+    assert.ok(n > 2048);
+  } finally { srv.close(); }
+});

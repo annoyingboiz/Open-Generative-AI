@@ -1,6 +1,7 @@
+import fs from 'node:fs';
 // HTTP client for providers. Every request of a provider — API calls, uploads
 // and result downloads — goes through that provider's optional proxy.
-import { fetch, ProxyAgent, Agent } from 'undici';
+import { fetch, FormData, ProxyAgent, Agent } from 'undici';
 import { socksDispatcher } from 'fetch-socks';
 
 const dispatchers = new Map();
@@ -71,4 +72,13 @@ export async function providerJson(url, options = {}) {
     throw new ProviderHttpError(`HTTP ${response.status}: ${detail}`, { status: response.status, body });
   }
   return body;
+}
+
+// A multipart body with one file streamed from disk. It must be undici's own
+// FormData: undici's fetch sends Node's global FormData as the text
+// "[object FormData]" (both are "FormData", but different classes).
+export async function fileForm(field, path, mime, name) {
+  const form = new FormData();
+  form.append(field, await fs.openAsBlob(path, { type: mime }), name);
+  return form;
 }

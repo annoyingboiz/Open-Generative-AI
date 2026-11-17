@@ -1,7 +1,6 @@
 // Atlas Cloud (https://atlascloud.ai) — docs: https://www.atlascloud.ai/docs
 // Atlas blocks some countries (e.g. Ukraine); set a proxy in Settings there.
-import fs from 'node:fs';
-import { providerJson, providerFetch, ProviderHttpError } from './http.js';
+import { providerJson, providerFetch, ProviderHttpError, fileForm } from './http.js';
 
 const API = 'https://api.atlascloud.ai';
 const auth = (apiKey) => ({ Authorization: `Bearer ${apiKey}` });
@@ -71,9 +70,8 @@ export const atlas = {
   },
 
   async upload({ apiKey, proxy }, { path, mime, name }) {
-    const form = new FormData();
     // Streamed from disk, not read into memory.
-    form.append('file', await fs.openAsBlob(path, { type: mime }), name || `file.${mime.split('/')[1]}`);
+    const form = await fileForm('file', path, mime, name || `file.${mime.split('/')[1]}`);
     const response = await providerFetch(`${API}/api/v1/model/uploadMedia`, {
       proxy, method: 'POST', headers: auth(apiKey), body: form, timeoutMs: 10 * 60_000,
     });

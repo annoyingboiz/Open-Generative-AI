@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import toast, { Toaster } from "react-hot-toast";
-import { generateImage, generateI2I, uploadFile } from "../api.js";
+import { generateImage, generateI2I, uploadFile, dzWithMeta } from "../api.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
 import DrawModal from "./DrawModal.jsx";
@@ -31,6 +31,8 @@ import {
   imageModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
 import { dzRecommendedEntries, dzFirstModel, dzModelLabel, dzUpscaleSpec, dzOpenUpscale, dzIsOwnImage } from "../dzCatalog.js"; // DZ
+import { useDzHistory } from "../dzLibrary.js"; // DZ
+import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx"; // DZ
 import DzPrice from "./DzPrice.jsx"; // DZ
 import {
   buildReferenceParams,
@@ -1003,7 +1005,23 @@ export default function ImageStudio({
   const [localHistory, setLocalHistory] = useState([]); // [{id,url,prompt,model,aspect_ratio,timestamp}]
 
   // Use prop history if provided, otherwise local
-  const history = historyItems ?? localHistory;
+  // DZ: history lives on the server (any device, survives reloads). Items made
+  // before studios were recorded have no studio: they show here too.
+  const dzHistory = useDzHistory({ studio: "image,other", kind: "image" });
+  const dzEntries = useMemo(() => dzHistory.items
+    .filter((i) => !String(i.model || "").startsWith("p/fal/"))
+    .map((i) => ({
+      id: i.id,
+      url: i.url,
+      prompt: i.prompt,
+      model: i.model,
+      aspect_ratio: i.params?.aspect_ratio || i.params?.size || "",
+      timestamp: i.timestamp,
+      status: i.status,
+      error: i.error,
+      liked: i.liked,
+    })), [dzHistory.items]);
+  const history = historyItems ?? dzEntries;
 
   // When historyItems is server-backed (White Label / backfilled sessions),
   // localHistory isn't what's rendered — removal has to go through the
@@ -1014,9 +1032,9 @@ export default function ImageStudio({
     if (historyItems && onDeleteHistoryItem) {
       await onDeleteHistoryItem(entry);
     } else {
-      setLocalHistory((prev) => prev.filter((_, i) => i !== idx));
+      await dzHistory.trash(entry.id); // DZ: to the Library's trash (7 days)
     }
-  }, [historyItems, onDeleteHistoryItem]);
+  }, [historyItems, onDeleteHistoryItem, dzHistory]);
 
   // ── Refs ────────────────────────────────────────────────────────────────
   const textareaRef = useRef(null);
@@ -1306,9 +1324,7 @@ export default function ImageStudio({
   // ── History helpers ──────────────────────────────────────────────────────
   const addToHistory = useCallback(
     (entry) => {
-      if (!historyItems) {
-        setLocalHistory((prev) => [entry, ...prev.slice(0, 49)]);
-      }
+      // DZ: the server history already has it (refreshed by the dz:history event).
       setActiveHistoryIdx(0);
       setCurrentImageUrl(entry.url);
     },
@@ -1413,7 +1429,7 @@ export default function ImageStudio({
               genParams[currentQualityField] = selectedQuality;
             }
             if (showEffectBtn && selectedEffect) genParams.name = selectedEffect;
-            return await generateI2I(apiKey, genParams);
+            return await dzWithMeta({ studio: "image" }, () => generateI2I(apiKey, genParams));
           } else {
             const referenceParams = buildReferenceParams(selectedVariant?.model, {
               imageUrls: uploadedImageUrls,
@@ -1431,7 +1447,7 @@ export default function ImageStudio({
             if (currentQualityField && selectedQuality) {
               genParams[currentQualityField] = selectedQuality;
             }
-            return await generateImage(apiKey, genParams);
+            return await dzWithMeta({ studio: "image" }, () => generateImage(apiKey, genParams));
           }
         })
       );
@@ -1485,16 +1501,21 @@ export default function ImageStudio({
               <div
                 key={entry.id || idx}
                 className="relative group rounded-lg overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col cursor-pointer"
-                onClick={() => setFullscreenUrl(entry.url)}
+                onClick={() => entry.url && setFullscreenUrl(entry.url)}
               >
-                <img
-                  src={entry.url}
-                  alt={entry.prompt?.substring(0, 30) || copy.gallery.generatedImageAlt}
-                  className="w-full aspect-square object-cover bg-black/40 hover:opacity-80 transition-opacity"
-                />
+                {entry.url ? (
+                  <img
+                    src={entry.url}
+                    alt={entry.prompt?.substring(0, 30) || copy.gallery.generatedImageAlt}
+                    className="w-full aspect-square object-cover bg-black/40 hover:opacity-80 transition-opacity"
+                  />
+                ) : (
+                  <DzPendingTile status={entry.status} error={entry.error} className="w-full aspect-square" />
+                )}
 
                 {/* Overlay actions */}
                 <div className="absolute top-2 right-2 hidden md:flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {entry.url && <DzLikeButton id={entry.id} liked={entry.liked} onChange={dzHistory.like} />}
                   <GenerationCopyButtons
                     prompt={entry.prompt}
                     imageUrl={entry.url}

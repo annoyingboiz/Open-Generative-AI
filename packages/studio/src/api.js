@@ -75,14 +75,30 @@ async function quoteRequest(endpoint, payload) {
     return (await response.json()).price || null;
 }
 
+// DZ: which studio a request comes from, plus the studio's own settings
+// (camera, lens…) to keep with the history item. Set around a generate* call:
+//   dzWithMeta({ studio: 'image' }, () => generateImage(apiKey, params))
+// generate* functions reach submitAndPoll synchronously, so the value is read
+// before the first await. The gateway stores it and never sends it on.
+let DZ_CURRENT_META = null;
+export function dzWithMeta(meta, fn) {
+    const previous = DZ_CURRENT_META;
+    DZ_CURRENT_META = meta;
+    try { return fn(); } finally { DZ_CURRENT_META = previous; }
+}
+function dzNotify(detail) {
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dz:history', { detail }));
+}
+
 async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = POLL_ATTEMPTS) {
+    const dz = DZ_CURRENT_META;
     if (onRequestId === DZ_QUOTE) return quoteRequest(endpoint, payload);
     maxAttempts = Math.max(maxAttempts, POLL_ATTEMPTS);
     const url = `${BASE_URL}/api/v1/${endpoint}`;
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(dz ? { ...payload, _dz: dz } : payload)
     });
     if (!response.ok) {
         const errText = await response.text();
@@ -93,7 +109,13 @@ async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 
     const requestId = submitData.request_id || submitData.id;
     if (!requestId) return submitData;
     if (typeof onRequestId === 'function') onRequestId(requestId);
-    const result = await pollForResult(requestId, key, maxAttempts);
+    dzNotify({ id: requestId, status: 'processing', studio: dz?.studio || null });
+    let result;
+    try {
+        result = await pollForResult(requestId, key, maxAttempts);
+    } finally {
+        dzNotify({ id: requestId, status: 'done', studio: dz?.studio || null });
+    }
     const outputUrl = result.outputs?.[0] || result.url || result.output?.url;
     return normalizePredictionResult(submitData, result, outputUrl);
 }

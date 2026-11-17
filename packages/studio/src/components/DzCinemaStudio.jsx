@@ -7,7 +7,9 @@
 // chosen model, and the camera settings saved with every frame ("Reuse").
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { generateImage, generateI2I, uploadFile } from "../api.js";
+import { generateImage, generateI2I, uploadFile, dzWithMeta } from "../api.js";
+import { useDzHistory } from "../dzLibrary.js";
+import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import { imageModelCatalog } from "../modelFamilies.js";
 import { getModelMediaCapabilities, buildReferenceParams } from "../modelCapabilities.js";
 import { createModelParameterValues, getSupplementalModelInputs } from "../modelParameters.js";
@@ -847,12 +849,25 @@ export default function DzCinemaStudio({
   }, [settings, resolution, internalHistory, uploadedImages, modelEntryId]);
 
   // Derive effective history (prop wins over internal)
-  const history = historyItems != null ? historyItems : internalHistory;
+  // DZ: history lives on the server; the camera settings travel with each
+  // frame as its Library "meta", so Reuse works on any device.
+  const dzHistory = useDzHistory({ studio: "cinema" });
+  const dzEntries = useMemo(() => dzHistory.items.map((i) => ({
+    id: i.id,
+    url: i.url,
+    timestamp: i.created_at,
+    settings: i.meta || {},
+    cost: Number.isFinite(i.cost_usd) ? i.cost_usd : null,
+    status: i.status,
+    error: i.error,
+    liked: i.liked,
+  })), [dzHistory.items]);
+  const history = historyItems != null ? historyItems : dzEntries;
+  const latestUrl = history.find((h) => h.url)?.url || null;
 
   useEffect(() => {
-    setCanvasUrl(history[0]?.url || null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyItems]);
+    setCanvasUrl(latestUrl);
+  }, [latestUrl]);
 
   const formatSummaryValue = () =>
     `${settings.lens}, ${settings.focal}mm, ${settings.aperture}`;
@@ -896,33 +911,23 @@ export default function DzCinemaStudio({
       const request = buildRequest();
       if (!request) throw new Error("No image model available. Check the providers in Settings.");
       const [generate, params] = request;
-      const res = await generate(apiKey, { ...params, prompt: finalPrompt });
+      // Saved with the frame on the server (Library meta) — used by Reuse.
+      const frameSettings = {
+        prompt: basePrompt,
+        camera: settings.camera,
+        lens: settings.lens,
+        focal: settings.focal,
+        aperture: settings.aperture,
+        aspect_ratio: effectiveAspect,
+        resolution: effectiveResolution,
+        modelEntryId: entry?.id || null,
+        modelName: entry?.family.name || model?.name || "",
+        provider: providerOf(model),
+        refs: uploadedImages.slice(0, Math.max(maxRefs, 0)),
+      };
+      const res = await dzWithMeta({ studio: "cinema", meta: frameSettings }, () => generate(apiKey, { ...params, prompt: finalPrompt }));
 
       if (res && res.url) {
-        const historyEntry = {
-          url: res.url,
-          timestamp: Date.now(),
-          settings: {
-            prompt: basePrompt,
-            camera: settings.camera,
-            lens: settings.lens,
-            focal: settings.focal,
-            aperture: settings.aperture,
-            aspect_ratio: effectiveAspect,
-            resolution: effectiveResolution,
-            modelEntryId: entry?.id || null,
-            modelName: entry?.family.name || model?.name || "",
-            provider: providerOf(model),
-            refs: uploadedImages.slice(0, Math.max(maxRefs, 0)),
-          },
-          cost: Number.isFinite(res.cost) ? res.cost : null,
-        };
-
-        // Only update internal history if not using prop-driven history
-        if (historyItems == null) {
-          setInternalHistory((prev) => [historyEntry, ...prev].slice(0, 50));
-        }
-
         setCanvasUrl(res.url);
 
         if (onGenerationComplete) {
@@ -1075,18 +1080,23 @@ export default function DzCinemaStudio({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full pt-4 animate-fade-in-up">
             {history.map((entry, idx) => (
               <div
-                key={entry.timestamp ?? idx}
+                key={entry.id ?? entry.timestamp ?? idx}
                 className="relative group rounded-lg overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-[#22d3ee]/50 transition-all duration-300 flex flex-col cursor-pointer"
-                onClick={() => setFullscreenUrl(entry.url)}
+                onClick={() => entry.url && setFullscreenUrl(entry.url)}
               >
-                <img
-                  src={entry.url}
-                  alt={copy.card.historyItemAlt.replace("{index}", idx + 1)}
-                  className="w-full aspect-[4/3] object-cover bg-black/40"
-                />
+                {entry.url ? (
+                  <img
+                    src={entry.url}
+                    alt={copy.card.historyItemAlt.replace("{index}", idx + 1)}
+                    className="w-full aspect-[4/3] object-cover bg-black/40"
+                  />
+                ) : (
+                  <DzPendingTile status={entry.status} error={entry.error} className="w-full aspect-[4/3]" />
+                )}
                 
                 {/* Overlay actions */}
                 <div className="absolute top-2 right-2 hidden md:flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {entry.url && <DzLikeButton id={entry.id} liked={entry.liked} onChange={dzHistory.like} />}
                   <button
                     type="button"
                     title={copiedPromptIndex === idx ? copy.actions.promptCopied : copy.actions.copyPrompt}
@@ -1184,7 +1194,7 @@ export default function DzCinemaStudio({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (confirm(copy.actions.deleteConfirm)) {
-                        setInternalHistory(prev => prev.filter((_, i) => i !== idx));
+                        dzHistory.trash(entry.id).catch(() => {});
                       }
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500 hover:text-white transition-all border border-white/10"
@@ -1242,7 +1252,7 @@ export default function DzCinemaStudio({
                       danger: true,
                       onSelect: () => {
                         if (confirm(copy.actions.deleteConfirm)) {
-                          setInternalHistory((prev) => prev.filter((_, i) => i !== idx));
+                          dzHistory.trash(entry.id).catch(() => {});
                         }
                       },
                     },

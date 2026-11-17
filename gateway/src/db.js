@@ -83,6 +83,21 @@ const MIGRATIONS = [
   ALTER TABLE generations ADD COLUMN poll_errors INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX generations_settle ON generations(settle_next_at) WHERE settle_next_at IS NOT NULL;
   `,
+  // 5: Library — which studio made it, studio settings (camera, lens…), likes;
+  // places for workspaces, projects and folders (filled in later steps).
+  `
+  ALTER TABLE generations ADD COLUMN studio TEXT;
+  ALTER TABLE generations ADD COLUMN meta_json TEXT;
+  ALTER TABLE generations ADD COLUMN liked_at INTEGER;
+  ALTER TABLE generations ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE generations ADD COLUMN project_id TEXT;
+  ALTER TABLE generations ADD COLUMN folder_id TEXT;
+  ALTER TABLE uploads ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE uploads ADD COLUMN project_id TEXT;
+  ALTER TABLE uploads ADD COLUMN folder_id TEXT;
+  CREATE INDEX generations_user_studio ON generations(user_id, studio, created_at DESC);
+  CREATE INDEX generations_user_liked ON generations(user_id, liked_at DESC) WHERE liked_at IS NOT NULL;
+  `,
 ];
 
 export function openDatabase(dataDir) {

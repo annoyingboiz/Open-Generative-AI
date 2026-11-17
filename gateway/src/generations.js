@@ -25,8 +25,8 @@ const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an h
 
 export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS }) {
   const q = {
-    insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, next_poll_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, 0, ?, ?)`),
+    insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, studio, meta_json, next_poll_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
     setSubmitted: db.prepare("UPDATE generations SET provider_task_id = ?, status = 'submitted', next_poll_at = ?, updated_at = ? WHERE id = ?"),
     setFailed: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     setPolled: db.prepare('UPDATE generations SET status = ?, next_poll_at = ?, poll_errors = 0, updated_at = ? WHERE id = ?'),
@@ -38,8 +38,9 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     pollError: db.prepare('UPDATE generations SET poll_errors = poll_errors + 1, next_poll_at = ?, updated_at = ? WHERE id = ?'),
     byId: db.prepare('SELECT * FROM generations WHERE id = ?'),
     due: db.prepare(`SELECT * FROM generations WHERE status IN ('submitted','processing','downloading') AND next_poll_at <= ? ORDER BY next_poll_at LIMIT 10`),
-    history: db.prepare(`SELECT * FROM generations WHERE user_id = ? AND deleted_at IS NULL AND created_at < ? ORDER BY created_at DESC LIMIT ?`),
     trash: db.prepare('UPDATE generations SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'),
+    restore: db.prepare('UPDATE generations SET deleted_at = NULL WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL'),
+    like: db.prepare('UPDATE generations SET liked_at = ? WHERE id = ? AND user_id = ?'),
     expired: db.prepare('SELECT * FROM generations WHERE deleted_at IS NOT NULL AND deleted_at < ?'),
     deleteRow: db.prepare('DELETE FROM generations WHERE id = ?'),
     spentThisMonth: db.prepare(`SELECT COALESCE(SUM(COALESCE(cost_usd, est_cost_usd, 0)), 0) AS usd FROM generations
@@ -103,7 +104,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   }
 
-  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, estSource = null, kind = null }) {
+  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, estSource = null, kind = null, studio = null, meta = null }) {
     const provider = providerById(providerId);
     if (!provider) throw new GenerationError(`Unknown provider: ${providerId}`, 404);
     const cfg = providers.resolve(providerId);
@@ -122,7 +123,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const { onRequestId: _ignored, ...clean } = body || {};
     const id = newId('gen');
     const t = now();
-    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 4000), JSON.stringify(clean), estCostUsd, estSource, t, t);
+    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 4000), JSON.stringify(clean), estCostUsd, estSource, studio, meta == null ? null : JSON.stringify(meta), t, t);
     try {
       const resolved = await resolveMedia(user, providerId, cfg, clean);
       const { taskId } = await provider.submit(cfg, { kind: model.kind, model: modelId, body: resolved });
@@ -236,9 +237,15 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   function historyItem(row) {
     const outputs = outputUrls(row);
+    let meta = null;
+    try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
     return {
       id: row.id,
       request_id: row.id,
+      studio: row.studio || null,
+      meta,
+      liked: row.liked_at != null,
+      deleted_at: row.deleted_at || null,
       status: row.status === 'completed' ? 'completed' : row.status === 'failed' ? 'failed' : 'processing',
       url: outputs[0] || null,
       outputs,
@@ -256,15 +263,65 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     };
   }
 
-  function history(user, { cursor, limit = 50 } = {}) {
-    const before = Number(cursor) || Number.MAX_SAFE_INTEGER;
-    const rows = q.history.all(user.id, before, Math.min(Number(limit) || 50, 200));
+  // The user's own history, newest first. Filters (all optional):
+  //   studio=cinema|image|video|upscale (comma list; "other" = no studio)
+  //   kind=image|video|audio   liked=1   trash=1 (only deleted)   status=processing|completed|failed
+  // Each user sees only their own items — there is no shared history.
+  const STUDIOS = new Set(['cinema', 'image', 'video', 'upscale']);
+  const KINDS = new Set(['image', 'video', 'audio']);
+  function history(user, { cursor, limit = 50, studio, kind, liked, trash: inTrash, status } = {}) {
+    const where = ['user_id = ?'];
+    const args = [user.id];
+    where.push(inTrash === '1' || inTrash === true ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL');
+    if (studio) {
+      const list = String(studio).split(',').map((x) => x.trim()).filter(Boolean);
+      const named = list.filter((x) => STUDIOS.has(x));
+      const parts = [];
+      if (named.length) { parts.push(`studio IN (${named.map(() => '?').join(',')})`); args.push(...named); }
+      if (list.includes('other')) parts.push('studio IS NULL');
+      if (parts.length) where.push(`(${parts.join(' OR ')})`);
+    }
+    if (KINDS.has(kind)) { where.push('kind = ?'); args.push(kind); }
+    if (liked === '1' || liked === true) where.push('liked_at IS NOT NULL');
+    if (status === 'completed' || status === 'failed') { where.push('status = ?'); args.push(status); }
+    if (status === 'processing') where.push("status IN ('submitting','submitted','processing','downloading')");
+    where.push('created_at < ?');
+    args.push(Number(cursor) || Number.MAX_SAFE_INTEGER);
+    const rows = db.prepare(`SELECT * FROM generations WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`)
+      .all(...args, Math.min(Number(limit) || 50, 200));
     return { items: rows.map(historyItem), next_cursor: rows.length ? String(rows[rows.length - 1].created_at) : null };
+  }
+
+  function owned(user, id) {
+    const row = q.byId.get(id);
+    if (!row || row.user_id !== user.id) throw new GenerationError('Not found', 404);
+    return row;
   }
 
   function trash(user, id) {
     const info = q.trash.run(now(), id, user.id);
     if (!info.changes) throw new GenerationError('Not found', 404);
+    return { ok: true };
+  }
+
+  function restore(user, id) {
+    const info = q.restore.run(id, user.id);
+    if (!info.changes) throw new GenerationError('Not found', 404);
+    return { ok: true };
+  }
+
+  function like(user, id, liked) {
+    owned(user, id);
+    q.like.run(liked ? now() : null, id, user.id);
+    return { ok: true, liked: Boolean(liked) };
+  }
+
+  // Delete for good — only from the trash, and files go with it.
+  function purge(user, id) {
+    const row = owned(user, id);
+    if (row.deleted_at == null) throw new GenerationError('Move it to the trash first.', 409);
+    for (const o of JSON.parse(row.outputs_json || '[]')) storage.remove(o.path);
+    q.deleteRow.run(row.id);
     return { ok: true };
   }
 
@@ -299,7 +356,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
-    saveUpload, uploads, submit, result, history, trash, mediaFile, mediaFileForUrl,
+    saveUpload, uploads, submit, result, history, trash, restore, like, purge, mediaFile, mediaFileForUrl,
     start() {
       if (!timer) {
         timer = setInterval(tick, 2000);

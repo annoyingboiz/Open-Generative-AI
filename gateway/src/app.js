@@ -437,7 +437,7 @@ export async function buildApp(config, { logger = true } = {}) {
     const [, providerId, modelId, mode] = m;
     const resolved = resolveEndpoint(req.user, providerId, modelId, mode);
     if (!resolved) return reply.code(404).send({ error: 'Unknown model' });
-    const body = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
+    const { _dz: _ignored, ...body } = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
     const providerBody = providerBodyFor(resolved, providerId, modelId, body);
     const price = await priceFor(req.user, resolved, providerId, modelId, providerBody);
     return { price };
@@ -450,7 +450,13 @@ export async function buildApp(config, { logger = true } = {}) {
       const resolved = resolveEndpoint(req.user, providerId, modelId, req.query.m);
       if (!resolved) return reply.code(404).send({ detail: 'Unknown model' });
       const { key, variant } = resolved;
-      const body = providerBodyFor(resolved, providerId, modelId, req.body);
+      // `_dz`: our own data about the request (which studio, its settings) —
+      // stored with the history item, never sent to the provider.
+      const { _dz: dz, ...requestBody } = req.body || {};
+      const studio = ['cinema', 'image', 'video', 'upscale'].includes(dz?.studio) ? dz.studio : null;
+      const metaText = dz?.meta && typeof dz.meta === 'object' ? JSON.stringify(dz.meta) : null;
+      const meta = metaText && metaText.length <= 16_384 ? dz.meta : null;
+      const body = providerBodyFor(resolved, providerId, modelId, requestBody);
       if (resolved.tool && !generations.mediaFileForUrl(req.user, body.image_url)) {
         return reply.code(400).send({ detail: 'Choose an image to upscale.' });
       }
@@ -471,6 +477,8 @@ export async function buildApp(config, { logger = true } = {}) {
         kind: variant?.kind || resolved.tool?.kind || null,
         estCostUsd: price?.usd ?? null,
         estSource: !price ? null : price.source === 'quote' ? (price.exact ? 'quote' : 'quote~') : 'estimate',
+        studio: studio || (resolved.tool ? 'upscale' : null),
+        meta,
       });
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }
@@ -499,6 +507,15 @@ export async function buildApp(config, { logger = true } = {}) {
     try { return generations.trash(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
   });
   app.get('/api/v1/history', async (req) => generations.history(req.user, req.query));
+  app.post('/api/v1/predictions/:id/like', async (req, reply) => {
+    try { return generations.like(req.user, req.params.id, req.body?.liked !== false); } catch (error) { return sendGenError(reply, error); }
+  });
+  app.post('/api/v1/predictions/:id/restore', async (req, reply) => {
+    try { return generations.restore(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
+  });
+  app.delete('/api/v1/predictions/:id', async (req, reply) => {
+    try { return generations.purge(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
+  });
   app.get('/api/v1/uploads', async (req) => generations.uploads(req.user, req.query));
   // Tools that depend on a provider key (e.g. Upscale on fal.ai), for the
   // studio to notice a key added after the page was loaded.

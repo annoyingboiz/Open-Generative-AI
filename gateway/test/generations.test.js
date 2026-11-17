@@ -148,6 +148,52 @@ test('history is per user; trash hides an item', async () => {
   assert.equal(res.statusCode, 200);
   res = await app.inject({ url: '/api/v1/history', headers: { cookie: adminCookie } });
   assert.equal(res.json().items.length, 0);
+  // The trash lists it; restore brings it back.
+  res = await app.inject({ url: '/api/v1/history?trash=1', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 1);
+  assert.ok(res.json().items[0].deleted_at);
+  res = await app.inject({ method: 'POST', url: `/api/v1/predictions/${genId}/restore`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200);
+  res = await app.inject({ url: '/api/v1/history', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 1);
+});
+
+test('library: studio and its settings are stored, not sent; likes; delete for good only from the trash', async () => {
+  let res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image', headers: { cookie: adminCookie },
+    payload: { prompt: 'a dog', size: '1:1', _dz: { studio: 'cinema', meta: { camera: 'Alexa 35', lens: '50mm' } } } });
+  assert.equal(res.statusCode, 200, res.body);
+  const id = res.json().request_id;
+  assert.deepEqual(calls.submit.at(-1).req.body, { prompt: 'a dog', size: '1:1' }, '_dz never reaches the provider');
+  res = await app.inject({ url: '/api/v1/history?studio=cinema', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 1);
+  assert.deepEqual(res.json().items[0].meta, { camera: 'Alexa 35', lens: '50mm' });
+  assert.equal(res.json().items[0].studio, 'cinema');
+  res = await app.inject({ url: '/api/v1/history?studio=image', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 0);
+  res = await app.inject({ url: '/api/v1/history?studio=other', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 1, 'items without a studio');
+  res = await app.inject({ url: '/api/v1/history?status=processing', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 1);
+
+  res = await app.inject({ method: 'POST', url: `/api/v1/predictions/${id}/like`, headers: { cookie: userCookie }, payload: { liked: true } });
+  assert.equal(res.statusCode, 404, 'only the owner');
+  res = await app.inject({ method: 'POST', url: `/api/v1/predictions/${id}/like`, headers: { cookie: adminCookie }, payload: { liked: true } });
+  assert.equal(res.json().liked, true);
+  res = await app.inject({ url: '/api/v1/history?liked=1', headers: { cookie: adminCookie } });
+  assert.deepEqual(res.json().items.map((i) => i.id), [id]);
+  await app.inject({ method: 'POST', url: `/api/v1/predictions/${id}/like`, headers: { cookie: adminCookie }, payload: { liked: false } });
+  res = await app.inject({ url: '/api/v1/history?liked=1', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 0);
+
+  res = await app.inject({ method: 'DELETE', url: `/api/v1/predictions/${id}`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 409, 'trash first');
+  await app.inject({ method: 'DELETE', url: `/api/v1/predictions/${id}/media`, headers: { cookie: adminCookie } });
+  res = await app.inject({ method: 'DELETE', url: `/api/v1/predictions/${id}`, headers: { cookie: userCookie } });
+  assert.equal(res.statusCode, 404);
+  res = await app.inject({ method: 'DELETE', url: `/api/v1/predictions/${id}`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200);
+  res = await app.inject({ url: '/api/v1/history?trash=1', headers: { cookie: adminCookie } });
+  assert.equal(res.json().items.length, 0);
 });
 
 test('monthly limit stops generation', async () => {

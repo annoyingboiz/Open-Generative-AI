@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback } from 'react';
-import { ImageStudio, VideoStudio, DzCinemaStudio, DzUpscaleStudio, DzUpscalePanel, dzUpscaleSpec, dzIsOwnImage } from 'studio';
+import { ImageStudio, VideoStudio, DzCinemaStudio, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
@@ -27,6 +27,11 @@ const ICONS = {
       <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" />
     </svg>
   ),
+  library: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  ),
   upscale: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
@@ -39,6 +44,7 @@ export const DZ_TABS = [
   { id: 'image', label: 'Image' },
   { id: 'video', label: 'Video' },
   { id: 'upscale', label: 'Upscale' },
+  { id: 'library', label: 'Library', divider: true },
 ];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
 const DEFAULT_TAB = 'cinema';
@@ -243,6 +249,8 @@ export default function DzShell() {
             {DZ_TABS.map((tab) => {
               const active = activeTab === tab.id;
               return (
+                <div key={tab.id}>
+                {tab.divider && <div className="mx-2 my-2 border-t border-white/[0.06]" />}
                 <a
                   key={tab.id}
                   href={`/studio/${tab.id}`}
@@ -258,6 +266,7 @@ export default function DzShell() {
                   {!isCollapsed && <span className="truncate">{tab.label}</span>}
                   {running[tab.id] > 0 && <span className={`${isCollapsed ? 'absolute top-1.5 right-1.5' : 'ml-auto'} h-2 w-2 rounded-full bg-[#22d3ee] animate-pulse`} />}
                 </a>
+                </div>
               );
             })}
           </nav>
@@ -273,6 +282,9 @@ export default function DzShell() {
           </div>
           <div className={activeTab === 'video' ? 'h-full w-full' : 'hidden'}>
             <VideoStudio {...studioProps} {...callbacks('video')} droppedFiles={activeTab === 'video' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+          </div>
+          <div className={activeTab === 'library' ? 'h-full w-full' : 'hidden'}>
+            <DzLibrary onGenerationError={callbacks('library').onGenerationError} />
           </div>
           <div className={activeTab === 'upscale' ? 'h-full w-full' : 'hidden'}>
             <DzUpscaleStudio {...studioProps} {...callbacks('upscale')} isAdmin={user.role === 'admin'} initial={upscaleTabPick} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />

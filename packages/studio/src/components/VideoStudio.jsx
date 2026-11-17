@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, useId } from "react";
 import toast, { Toaster } from "react-hot-toast";
-import { generateVideo, generateI2V, processV2V, uploadFile } from "../api.js";
+import { generateVideo, generateI2V, processV2V, uploadFile, dzWithMeta } from "../api.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
 import DrawModal from "./DrawModal.jsx";
@@ -30,6 +30,8 @@ import {
 } from "../modelFamilies.js";
 import { dzRecommendedEntries, dzFirstModel, dzModelLabel } from "../dzCatalog.js"; // DZ
 import DzPrice from "./DzPrice.jsx"; // DZ
+import { useDzHistory } from "../dzLibrary.js"; // DZ
+import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx"; // DZ
 import { getSeedanceEndpointResolution, getSeedanceToolConfiguration } from "../seedanceModels.js";
 import { getVeoToolConfiguration } from "../veoModels.js";
 import { getGroupedVideoConfiguration, getGroupedVideoCopyKey, getGroupedVideoVariantOptions } from "../groupedVideoModels.js";
@@ -888,7 +890,21 @@ export default function VideoStudio({
   };
 
   // ── derived data ──
-  const history = historyItems ?? localHistory;
+  // DZ: history lives on the server (any device, survives reloads).
+  const dzHistory = useDzHistory({ studio: "video,other", kind: "video" });
+  const dzEntries = useMemo(() => dzHistory.items.map((i) => ({
+    id: i.id,
+    url: i.url,
+    prompt: i.prompt,
+    model: i.model,
+    aspect_ratio: i.params?.aspect_ratio || i.params?.ratio || "",
+    duration: i.params?.duration,
+    timestamp: i.timestamp,
+    status: i.status,
+    error: i.error,
+    liked: i.liked,
+  })), [dzHistory.items]);
+  const history = historyItems ?? dzEntries;
 
   // See ImageStudio's handleDeleteEntry: when historyItems is server-backed
   // (White Label / backfilled sessions), localHistory isn't what's rendered,
@@ -898,9 +914,9 @@ export default function VideoStudio({
     if (historyItems && onDeleteHistoryItem) {
       await onDeleteHistoryItem(entry);
     } else {
-      setLocalHistory((prev) => prev.filter((_, i) => i !== idx));
+      await dzHistory.trash(entry.id); // DZ: to the Library's trash (7 days)
     }
-  }, [historyItems, onDeleteHistoryItem]);
+  }, [historyItems, onDeleteHistoryItem, dzHistory]);
 
   const getCurrentAspectRatios = useCallback(
     (id) =>
@@ -2046,8 +2062,8 @@ export default function VideoStudio({
   }, [handleGroupedSelection, selectedFamily, selectedWorkflowId, selectedModel, selectedResolution, activeWorkflowMediaDraft]);
 
   // ── add to local history ──────────────────────────────────────────────────
-  const addToLocalHistory = useCallback((entry) => {
-    setLocalHistory((prev) => [entry, ...prev].slice(0, 30));
+  const addToLocalHistory = useCallback(() => {
+    // DZ: the server history already has it (refreshed by the dz:history event).
     setActiveHistoryIdx(0);
   }, []);
 
@@ -2228,7 +2244,7 @@ export default function VideoStudio({
         if (currentModel?.hasPrompt && trimmedPrompt) {
           v2vParams.prompt = trimmedPrompt;
         }
-        res = await processV2V(apiKey, v2vParams);
+        res = await dzWithMeta({ studio: "video" }, () => processV2V(apiKey, v2vParams));
         if (!res?.url) throw new Error(copy.errors.noVideoUrlReturned);
 
         const genId = res.request_id || res.id || Date.now().toString();
@@ -2266,7 +2282,7 @@ export default function VideoStudio({
         if (!grouped && selectedQuality) i2vParams.quality = selectedQuality;
         if (showEffect && selectedEffect) i2vParams.name = selectedEffect;
 
-        res = await generateI2V(apiKey, i2vParams);
+        res = await dzWithMeta({ studio: "video" }, () => generateI2V(apiKey, i2vParams));
         if (!res?.url) throw new Error(copy.errors.noVideoUrlReturned);
 
         const genId = res.request_id || res.id || Date.now().toString();
@@ -2316,7 +2332,7 @@ export default function VideoStudio({
         if (!grouped && resolutions.length > 0) params.resolution = selectedResolution;
         if (!grouped && !selectedVeoTool && selectedQuality) params.quality = selectedQuality;
 
-        res = await generateVideo(apiKey, params);
+        res = await dzWithMeta({ studio: "video" }, () => generateVideo(apiKey, params));
         if (!res?.url) throw new Error(copy.errors.noVideoUrlReturned);
 
         const genId = res.request_id || res.id || Date.now().toString();
@@ -2529,8 +2545,11 @@ export default function VideoStudio({
                 <div
                   key={entry.id || idx}
                   className="relative group rounded-lg overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col cursor-pointer"
-                  onClick={() => setFullscreenUrl(entry.url)}
+                  onClick={() => entry.url && setFullscreenUrl(entry.url)}
                 >
+                  {!entry.url ? (
+                    <DzPendingTile status={entry.status} error={entry.error} className="w-full aspect-video" />
+                  ) : (
                   <video
                     src={entry.url}
                     className="w-full aspect-video object-cover bg-black/40 hover:opacity-80 transition-opacity"
@@ -2544,9 +2563,11 @@ export default function VideoStudio({
                       e.target.currentTime = 0;
                     }}
                   />
+                  )}
                   
                   {/* Overlay actions */}
                   <div className="absolute top-2 right-2 hidden md:flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {entry.url && <DzLikeButton id={entry.id} liked={entry.liked} onChange={dzHistory.like} />}
                     <GenerationCopyButtons
                       prompt={entry.prompt}
                       onCopyError={onGenerationError}

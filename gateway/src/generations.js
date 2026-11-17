@@ -24,7 +24,7 @@ export class GenerationError extends Error {
 
 const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an hour of retries
 
-export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS, onProviderRejected = null, projects = null }) {
+export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS, onProviderRejected = null, projects = null, uploadQuotaBytes = Infinity, maxUploadBytes = Infinity }) {
   // Personal items: only the author. Project items: every member of the project.
   const isMember = (userId, projectId) => Boolean(projectId && projects?.isMember(userId, projectId));
   // A project item belongs to the project: its author sees it only while still a member.
@@ -57,6 +57,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     upload: db.prepare('SELECT * FROM uploads WHERE id = ?'),
     uploadBytes: db.prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM uploads WHERE user_id = ?'),
     activeJobs: db.prepare("SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('submitting','submitted','processing','downloading')"),
+    deleteUpload: db.prepare('DELETE FROM uploads WHERE id = ?'),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, project_id, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
     listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
@@ -422,20 +423,42 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   // A copy of a file the user can see, as an upload in the given scope (personal
   // or a project) — e.g. an element's pictures, so everyone who sees the element
   // sees its files. An upload already in that scope is reused as is.
-  async function adoptMedia(user, url, { projectId = null } = {}) {
+  // Step 1 (no side effects): what each URL needs — reuse as is, or copy (with its size).
+  function planAdopt(user, url, { projectId = null } = {}) {
     const m = typeof url === 'string' && LOCAL_MEDIA_RE.exec(url);
     if (!m) throw new GenerationError('Use a file from this app.', 400);
     if (m[1].toLowerCase() === 'u') {
       const up = q.upload.get(m[2]);
       if (!canSee(user, up)) throw new GenerationError('File not found.', 404);
-      if ((up.project_id || null) === projectId && (projectId || up.user_id === user.id)) return url;
+      if ((up.project_id || null) === projectId && (projectId || up.user_id === user.id)) return { url, reuse: true };
     }
     const f = mediaFile(user, m[1].toLowerCase(), m[2], m[3]);
     if (!f) throw new GenerationError('File not found.', 404);
-    const saved = await storage.saveUpload(user.id, fs.createReadStream(f.path), f.mime);
-    q.insertUpload.run(saved.id, user.id, saved.path, f.mime, saved.bytes, null, projectId, null, now());
-    return `/media/u/${saved.id}.${saved.path.split('.').pop()}`;
+    let bytes = 0;
+    try { bytes = fs.statSync(f.path).size; } catch { throw new GenerationError('File not found.', 404); }
+    if (bytes > maxUploadBytes) throw new GenerationError('The file is too large to copy.', 413);
+    return { url, reuse: false, file: f, bytes };
   }
+  // Copies of several files, all or nothing, within the user's upload quota.
+  async function adoptMany(user, urls, { projectId = null } = {}) {
+    const plans = urls.map((u) => planAdopt(user, u, { projectId }));
+    const need = plans.reduce((n, p) => n + (p.reuse ? 0 : p.bytes), 0);
+    if (need && q.uploadBytes.get(user.id).b + need > uploadQuotaBytes) throw new GenerationError('Upload quota reached. Delete old references or ask the admin.', 413);
+    const made = [];
+    try {
+      for (const p of plans) {
+        if (p.reuse) { made.push({ url: p.url }); continue; }
+        const saved = await storage.saveUpload(user.id, fs.createReadStream(p.file.path), p.file.mime);
+        q.insertUpload.run(saved.id, user.id, saved.path, p.file.mime, saved.bytes, null, projectId, null, now());
+        made.push({ url: `/media/u/${saved.id}.${saved.path.split('.').pop()}`, id: saved.id, path: saved.path });
+      }
+    } catch (error) {
+      for (const x of made) if (x.id) { storage.remove(x.path); q.deleteUpload.run(x.id); }
+      throw error;
+    }
+    return made.map((x) => x.url);
+  }
+  const adoptMedia = async (user, url, opts) => (await adoptMany(user, [url], opts))[0];
 
   // Same for a /media/... link from a request body (e.g. an upscale input).
   function mediaFileForUrl(user, url) {
@@ -445,7 +468,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
-    saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, mediaFile, mediaFileForUrl, adoptMedia,
+    saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

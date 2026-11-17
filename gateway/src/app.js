@@ -74,7 +74,7 @@ export async function buildApp(config, { logger = true } = {}) {
   const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended, changes });
   const quoter = createQuoter({ providers, log: app.log });
   const projects = createProjects({ db });
-  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
+  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations });
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);

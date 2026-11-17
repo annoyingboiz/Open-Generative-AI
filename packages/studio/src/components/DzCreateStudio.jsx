@@ -13,10 +13,10 @@ import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
-import { ElementPicker } from "./DzElements.jsx";
+import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
-  mergeElements, elementsInputOf, entryTakesElements,
+  mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
   ROLE_INFO, CAMERA, LENS, FOCAL, APERTURE, CAMERA_ASSETS, CAMERA_MOVES, DEFAULT_CAMERA,
 } from "../dzCreate.js";
 import {
@@ -340,6 +340,17 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const [attached, setAttached] = useState(saved.attached || {});
   const [uploadingRole, setUploadingRole] = useState(null);
   const [elements, setElements] = useState(saved.elements || []); // chosen elements (Library or project)
+  // Keep the chosen elements in step with what the user can see now (current
+  // project + Library): fresh pictures, and none from a project they left or switched away from.
+  const elementLists = useDzElements();
+  useEffect(() => {
+    if (!elementLists.loaded) return;
+    const fresh = new Map([...elementLists.library, ...elementLists.project].map((e) => [e.id, e]));
+    setElements((prev) => {
+      const next = prev.map((e) => fresh.get(e.id)).filter(Boolean);
+      return next.length === prev.length && next.every((e, i) => e === prev[i]) ? prev : next;
+    });
+  }, [elementLists]);
   const [uploads, setUploads] = useState(0); // files still uploading — Generate waits for them
   const [busy, setBusy] = useState(0);
   const [drawOpen, setDrawOpen] = useState(false);
@@ -369,6 +380,10 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const merged = entry ? mergeElements(entry, used, activeElements) : { attached: used, native: false };
   const variant = entry ? chooseVariant(entry, merged.attached, { native: merged.native }) : null;
   const elementSpec = variant ? elementsInputOf(variant.model) : null;
+  // What actually goes into the request: Kling subjects, or element files among the references.
+  const elementPairs = elementSpec ? klingElementPairs(activeElements, elementSpec) : [];
+  const elementFilesUsed = !elementSpec && Object.values(merged.attached).some((files) => (files || []).some((f) => f.element));
+  const elementsUsed = elementPairs.length > 0 || elementFilesUsed;
   const elementMax = nativeElements ? (entry.variants.map((v) => elementsInputOf(v.model)?.maxItems || 0).reduce((a, b) => Math.max(a, b), 0) || 7) : 7;
   const params = variant ? paramsOf(variant.model) : { main: [], advanced: [] };
   // Only values this endpoint accepts (attaching files can switch the endpoint).
@@ -377,7 +392,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, merged.attached);
   const finalPrompt = composePrompt(prompt, { kind, camera, move });
   const needsPrompt = variant?.model.promptRequired;
-  const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || activeElements.length));
+  const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
   const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
   const { price, loading: priceLoading } = useDzQuote(apiKey, () => (body ? [dzGenerate, { endpoint: variant.model.endpoint, ...body }] : null));
 
@@ -452,7 +467,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       camera,
       move: kind === "video" ? move : "",
       attached: used,
-      elements: activeElements.map((e) => ({ id: e.id, name: e.name })),
+      elements: (elementSpec ? elementPairs.map((p) => p.element) : elementsUsed ? activeElements : []).map((e) => ({ id: e.id, name: e.name })),
     };
     const request = { endpoint: variant.model.endpoint, ...body };
     setBusy((n) => n + 1);
@@ -525,7 +540,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     let a = 0;
     for (const _ of merged.attached.audio || []) { a += 1; refChips.push({ label: syntax.audio(a), role: "audio" }); }
   }
-  if (elementSpec) activeElements.slice(0, elementSpec.maxItems || 7).forEach((e, i) => refChips.push({ label: `@element_${i + 1}`, name: e.name }));
+  elementPairs.forEach((p, i) => refChips.push({ label: `@element_${i + 1}`, name: p.element.name }));
 
   const items = history.items;
 

@@ -190,18 +190,21 @@ export function klingElement(e, spec, { allowVideo }) {
   return { element_name: name, element_description: description, reference_type: "image_refer", frontal_image: images[0], refer_images: refs.length ? refs : [images[0]] };
 }
 
-export function klingElements(elements, spec) {
+// [{ element, kling }] in the order sent — prompt tags (@element_N) follow it.
+export function klingElementPairs(elements, spec) {
   let videos = 0;
   const out = [];
-  for (const e of elements.slice(0, spec.maxItems || 7)) {
+  for (const e of elements) {
+    if (out.length >= (spec.maxItems || 7)) break;
     const allowVideo = videos < (spec.maxVideo || 0);
     const k = klingElement(e, spec, { allowVideo });
     if (!k) continue;
     if (k.reference_type === "video_refer") videos += 1;
-    out.push(k);
+    out.push({ element: e, kling: Object.fromEntries(Object.entries(k).filter(([, v]) => v !== undefined)) });
   }
   return out;
 }
+export const klingElements = (elements, spec) => klingElementPairs(elements, spec).map((p) => p.kling);
 
 // The endpoint to call for what is attached. Prefers the simplest endpoint
 // that accepts every attached role and has room for every file.
@@ -253,7 +256,7 @@ export function buildBody(variant, { prompt, values, attached, noDefault = [], e
   const spec = elementsInputOf(variant.model);
   if (spec && elements.length) {
     const list = klingElements(elements, spec);
-    if (list.length) body.elements = list.map((k) => Object.fromEntries(Object.entries(k).filter(([, v]) => v !== undefined)));
+    if (list.length) body.elements = list;
   }
   return body;
 }

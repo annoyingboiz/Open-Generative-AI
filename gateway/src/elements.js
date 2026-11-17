@@ -65,11 +65,11 @@ export function createElements({ db, projects, generations }) {
 
   // Every picture/video becomes a file in the element's own scope.
   async function adoptAll(user, projectId, images, video) {
-    const list = Array.isArray(images) ? images.filter((u) => typeof u === 'string' && u).slice(0, MAX_IMAGES) : [];
-    const out = [];
-    for (const url of list) out.push(await generations.adoptMedia(user, url, { projectId }));
-    const v = typeof video === 'string' && video ? await generations.adoptMedia(user, video, { projectId }) : null;
-    return { images: [...new Set(out)], video: v };
+    const list = [...new Set(Array.isArray(images) ? images.filter((u) => typeof u === 'string' && u) : [])].slice(0, MAX_IMAGES);
+    const v = typeof video === 'string' && video ? video : null;
+    // All files checked first, then copied together (nothing half-done on an error).
+    const out = await generations.adoptMany(user, v ? [...list, v] : list, { projectId });
+    return { images: v ? out.slice(0, -1) : out, video: v ? out[out.length - 1] : null };
   }
 
   function list(user, { project } = {}) {

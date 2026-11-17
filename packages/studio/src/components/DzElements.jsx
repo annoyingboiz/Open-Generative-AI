@@ -198,6 +198,8 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError })
 export function DzElementsPage({ projects = [], onError }) {
   const { project, library, loaded, ctx } = useDzElements();
   const [editing, setEditing] = useState(null); // element | 'new' | null
+  // An open editor belongs to the context it was opened in.
+  useEffect(() => { setEditing(null); }, [ctx.project?.id]);
   const list = ctx.project ? project : library;
   const targets = projects.filter((p) => !p.archived && p.id !== ctx.project?.id);
   const report = (e) => onError?.(e.message || String(e));

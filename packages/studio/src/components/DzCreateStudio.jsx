@@ -23,7 +23,6 @@ import {
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 
-const STORE = "dz_create_v1";
 const isObj = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 const isScalar = (x) => ["string", "number", "boolean"].includes(typeof x);
 const cleanValues = (v) => (isObj(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => isScalar(x))) : {});
@@ -41,7 +40,17 @@ function normalizeSaved(raw) {
   if (isObj(s.attached)) out.attached = Object.fromEntries(Object.entries(s.attached).filter(([role]) => ROLE_INFO[role]).map(([role, list]) => [role, cleanFiles(list)]));
   return out;
 }
-const load = () => { try { return normalizeSaved(JSON.parse(localStorage.getItem(STORE) || "{}")); } catch { return {}; } };
+const load = (store) => { try { return normalizeSaved(JSON.parse(localStorage.getItem(store) || "{}")); } catch { return {}; } };
+
+// One engine, three tabs: Create (image + video), Image, Video.
+const MODES = {
+  create: { store: "dz_create_v1", title: "Create", text: "Images and video with any model you have. Pick a model below — the panel shows exactly what that model accepts." },
+  image: { store: "dz_image_v2", title: "Image", text: "Pick an image model — the panel shows exactly what it accepts: references, sizes, settings." },
+  video: { store: "dz_video_v2", title: "Video", text: "Pick a video model — the panel shows its frames, references and settings." },
+};
+
+// Image tab → Video tab hand-off (Animate).
+export const DZ_SEND_EVENT = "dz:send-to";
 const fmtUsd = (usd) => `$${usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
 const ACCEPT = { image: "image/png,image/jpeg,image/webp", video: "video/mp4,video/quicktime,video/webm", audio: "audio/mpeg,audio/wav,audio/mp4,audio/x-m4a" };
 
@@ -295,9 +304,12 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash }) {
 
 // ── Studio ─────────────────────────────────────────────────────────────────
 
-export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled }) {
-  const saved = useMemo(load, []);
-  const [kind, setKind] = useState(saved.kind === "video" ? "video" : "image");
+export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {
+  const cfg = MODES[mode] || MODES.create;
+  const fixedKind = mode === "image" || mode === "video" ? mode : null;
+  const saved = useMemo(() => load(cfg.store), [cfg.store]);
+  const [kindState, setKind] = useState(saved.kind === "video" ? "video" : "image");
+  const kind = fixedKind || kindState;
   const [modelByKind, setModelByKind] = useState(saved.modelByKind || {});
   const [valuesByKind, setValuesByKind] = useState(saved.valuesByKind || { image: {}, video: {} });
   const [prompt, setPrompt] = useState(saved.prompt || "");
@@ -318,8 +330,8 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const storedValues = valuesByKind[kind] || {};
 
   useEffect(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached })); } catch { /* optional */ }
-  }, [kind, modelByKind, valuesByKind, prompt, camera, move, attached]);
+    try { localStorage.setItem(cfg.store, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached })); } catch { /* optional */ }
+  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached]);
 
   // Only the slots this model has; other attached files are kept but not sent.
   const slotRoles = new Set((entry?.slots || []).map((s) => s.role));
@@ -345,7 +357,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     setValuesByKind((prev) => ({ ...prev, [kind]: keepValues(prev[kind] || {}, nextVariant) }));
   };
 
-  const history = useDzHistory({ studio: "create" });
+  const history = useDzHistory({ studio: mode });
 
   const addFiles = useCallback(async (role, files) => {
     const info = ROLE_INFO[role];
@@ -411,7 +423,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     setBusy((n) => n + 1);
     onGenerationStart?.();
     try {
-      const res = await dzWithMeta({ studio: "create", meta }, () => dzGenerate(apiKey, request));
+      const res = await dzWithMeta({ studio: mode, meta }, () => dzGenerate(apiKey, request));
       onGenerationEnd?.();
       if (res?.url) onGenerationComplete?.({ url: res.url, type: kind });
     } catch (e) {
@@ -423,6 +435,11 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   }, [canRun, variant, kind, entry, prompt, values, camera, move, used, body, apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError]);
 
   const applyResult = (item, how) => {
+    if (how === "animate" && fixedKind === "image") {
+      // The Image tab hands the picture to the Video tab.
+      window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: item.url } }));
+      return;
+    }
     if (how === "animate") {
       // The start frame if the chosen video model has one, else a reference.
       const videoEntries = createEntries("video");
@@ -435,9 +452,24 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     }
     setAttached((prev) => ({ ...prev, reference: [...(prev.reference || []), { url: item.url, name: "result" }] }));
   };
+  // Video tab: take a picture sent from the Image tab (Animate).
+  useEffect(() => {
+    if (mode !== "video") return undefined;
+    const onSend = (e) => {
+      const { to, url } = e.detail || {};
+      if (to !== "video" || typeof url !== "string") return;
+      const has = (r) => entry?.slots.some((sl) => sl.role === r);
+      const role = has("first") ? "first" : "reference";
+      setAttached((prev) => ({ ...prev, [role]: role === "first" ? [{ url, name: "result" }] : [...(prev[role] || []), { url, name: "result" }] }));
+    };
+    window.addEventListener(DZ_SEND_EVENT, onSend);
+    return () => window.removeEventListener(DZ_SEND_EVENT, onSend);
+  }, [mode, entry]);
+
   const reuse = (item) => {
     const m = item.meta || {};
-    if (m.kind) setKind(m.kind);
+    if (m.kind && !fixedKind) setKind(m.kind);
+    if (fixedKind && m.kind && m.kind !== fixedKind) return;
     if (m.entryKey) setModelByKind((prev) => ({ ...prev, [m.kind || kind]: m.entryKey }));
     if (m.values) setValuesByKind((prev) => ({ ...prev, [m.kind || kind]: cleanValues(m.values) }));
     if (typeof m.prompt === "string") setPrompt(m.prompt);
@@ -464,8 +496,8 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-6 pt-5 md:px-8">
         {history.loaded && items.length === 0 ? (
           <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center gap-3 text-center">
-            <div className="text-3xl font-bold text-foreground">Create</div>
-            <p className="text-lg text-muted-foreground">Images and video with any model you have. Pick a model below — the panel shows exactly what that model accepts.</p>
+            <div className="text-3xl font-bold text-foreground">{cfg.title}</div>
+            <p className="text-lg text-muted-foreground">{cfg.text}</p>
           </div>
         ) : (
           <div className="mx-auto grid max-w-[1600px] grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
@@ -511,7 +543,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           />
 
           <div className="flex flex-wrap items-center gap-2">
-            <Segmented className="w-auto" value={kind} onChange={setKind} aria-label="Image or video" options={[{ value: "image", label: "Image" }, { value: "video", label: "Video" }]} />
+            {!fixedKind && <Segmented className="w-auto" value={kind} onChange={setKind} aria-label="Image or video" options={[{ value: "image", label: "Image" }, { value: "video", label: "Video" }]} />}
             <ModelPicker entries={entries} entry={entry} onPick={pickModel} />
             {params.main.map((p) => <ParamControl key={p.key} p={p} value={values[p.key]} onChange={(v) => setValue(p.key, v)} compact />)}
 

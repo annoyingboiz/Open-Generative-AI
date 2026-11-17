@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback } from 'react';
-import { ImageStudio, VideoStudio, DzCinemaStudio, DzCreateStudio, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button } from 'studio';
+import { DzCinemaStudio, DzCreateStudio, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
@@ -47,10 +47,11 @@ const ICONS = {
 export const DZ_TABS = [
   { id: 'create', label: 'Create' },
   { id: 'upscale', label: 'Upscale' },
-  // The old studios stay until Create has been checked, then they go.
+  // Quick single-purpose studios on the same adaptive engine as Create.
+  { id: 'image', label: 'Image' },
+  { id: 'video', label: 'Video' },
+  // The old Cinema stays for now.
   { id: 'cinema', label: 'Cinema (old)', divider: true },
-  { id: 'image', label: 'Image (old)' },
-  { id: 'video', label: 'Video (old)' },
   { id: 'library', label: 'Library', divider: true },
 ];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
@@ -119,6 +120,13 @@ export default function DzShell() {
     setActiveTab(tabId);
     setMobileOpen(false);
   }, []);
+
+  // Animate in the Image tab → open the Video tab (it picks the picture up itself).
+  useEffect(() => {
+    const onSend = (e) => { if (e.detail?.to === 'video') openTab('video'); };
+    window.addEventListener(DZ_SEND_EVENT, onSend);
+    return () => window.removeEventListener(DZ_SEND_EVENT, onSend);
+  }, [openTab]);
 
   const toggleSidebar = () => setCollapsed((prev) => {
     try { localStorage.setItem('dz_sidebar_collapsed', prev ? '0' : '1'); } catch { /* optional */ }
@@ -308,10 +316,10 @@ export default function DzShell() {
             <DzCinemaStudio {...studioProps} {...callbacks('cinema')} />
           </div>
           <div className={activeTab === 'image' ? 'h-full w-full' : 'hidden'}>
-            <ImageStudio {...studioProps} {...callbacks('image')} droppedFiles={activeTab === 'image' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+            <DzCreateStudio mode="image" {...studioProps} {...callbacks('image')} droppedFiles={activeTab === 'image' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
           <div className={activeTab === 'video' ? 'h-full w-full' : 'hidden'}>
-            <VideoStudio {...studioProps} {...callbacks('video')} droppedFiles={activeTab === 'video' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+            <DzCreateStudio mode="video" {...studioProps} {...callbacks('video')} droppedFiles={activeTab === 'video' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
           <div className={activeTab === 'library' ? 'h-full w-full' : 'hidden'}>
             <DzLibrary onGenerationError={callbacks('library').onGenerationError} />

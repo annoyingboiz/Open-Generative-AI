@@ -78,11 +78,21 @@ export function createStorage(dataDir, { allowLocalDownloads = false } = {}) {
     return { path: file, mime, bytes: fs.statSync(file).size, ext };
   }
 
+  // A copy of a result file for another generation (Copy to…), on its own disk path.
+  async function copyResult({ userId, generationId, index, from, ext }) {
+    const d = new Date();
+    const dir = path.join(mediaRoot, `u${userId}`, String(d.getUTCFullYear()), String(d.getUTCMonth() + 1).padStart(2, '0'));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${generationId}-${index}.${ext}`);
+    await fs.promises.copyFile(from, file, fs.constants.COPYFILE_FICLONE);
+    return { path: file, bytes: fs.statSync(file).size };
+  }
+
   function remove(file) {
     try { fs.unlinkSync(file); } catch { /* already gone */ }
   }
 
-  return { saveUpload, downloadResult, remove, uploadsRoot, mediaRoot };
+  return { saveUpload, downloadResult, copyResult, remove, uploadsRoot, mediaRoot };
 }
 
 // Sends a file with HTTP Range support (needed for video seeking).

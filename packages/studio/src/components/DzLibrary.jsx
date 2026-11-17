@@ -1,24 +1,34 @@
 "use client";
 
-// DZ: Library — everything you made, on any device. Only your own items.
-//   All · Images · Videos · Upscaled · Liked · Uploads · Trash
-// Trash keeps items 7 days; "Delete forever" removes the files at once.
+// DZ: All work · Liked · Trash — one screen with three starting points.
+//   Library: your personal work plus the work of your projects.
+//   In a project: the project's work (the folder picked in the sidebar, or all of it).
+// Filters: type, tool, liked, words in the prompt. "Select" for Move / Copy /
+// Download / Trash on many at once. Trash keeps items 7 days.
 import { useEffect, useState } from "react";
 import { useDzContext } from "../dzContext.js";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec } from "../dzCatalog.js";
-import { ScrollTabs, Button } from "../ui/index.js";
+import { Segmented, Button, Input, cn, SelectParts } from "../ui/index.js";
+import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
 
-const VIEWS = [
-  { id: "all", label: "All", filter: {} },
-  { id: "images", label: "Images", filter: { kind: "image" } },
-  { id: "videos", label: "Videos", filter: { kind: "video" } },
-  { id: "upscaled", label: "Upscaled", filter: { studio: "upscale" } },
-  { id: "liked", label: "Liked", filter: { liked: true } },
-  { id: "uploads", label: "Uploads", uploads: true },
-  { id: "trash", label: "Trash", filter: { trash: true } },
+const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
+const TYPES = [
+  { value: "all", label: "All" },
+  { value: "image", label: "Images" },
+  { value: "video", label: "Videos" },
+  { value: "uploads", label: "Uploads" },
 ];
+const TOOLS = [
+  { value: "any", label: "Any tool" },
+  { value: "create", label: "Create" },
+  { value: "image", label: "Image" },
+  { value: "video", label: "Video" },
+  { value: "upscale", label: "Upscale" },
+  { value: "cinema", label: "Cinema (old)" },
+];
+const SECTION_TITLE = { all: "All work", liked: "Liked", trash: "Trash" };
 const STUDIO_LABEL = { create: "Create", cinema: "Cinema", image: "Image", video: "Video", upscale: "Upscale" };
 
 async function download(url, name) {
@@ -79,12 +89,14 @@ function Viewer({ item, onClose }) {
   );
 }
 
-function Card({ item, view, onOpen, actions }) {
+function Card({ item, view, onOpen, actions, sel }) {
   const isVideo = item.kind === "video";
   const studio = STUDIO_LABEL[item.studio] || null;
+  const on = sel?.has(item.id);
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-white/20">
-      <button type="button" className="relative block w-full" onClick={() => item.url && onOpen(item)} disabled={!item.url}>
+    <div className={cn("group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-white/20", selectedRing(on))} {...(sel ? sel.dragProps(item) : {})}>
+      {sel && <SelectBox sel={sel} item={item} />}
+      <button type="button" className="relative block w-full" onClick={(e) => { if (sel?.click(item, e)) return; if (item.url) onOpen(item); }} disabled={!item.url}>
         {!item.url ? (
           <DzPendingTile status={item.status} error={item.error} className="aspect-square w-full" />
         ) : isVideo ? (
@@ -101,9 +113,9 @@ function Card({ item, view, onOpen, actions }) {
         ) : (
           <img src={item.url} alt={item.prompt?.slice(0, 60) || item.name || "Image"} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
         )}
-        {isVideo && item.url && <span className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-base font-semibold text-foreground">Video</span>}
+        {isVideo && item.url && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-base font-semibold text-foreground">Video</span>}
       </button>
-      {item.url && view !== "uploads" && (
+      {item.url && view !== "uploads" && !sel?.selecting && (
         <div className="absolute right-2 top-2 flex flex-col gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
           {actions}
         </div>
@@ -116,6 +128,8 @@ function Card({ item, view, onOpen, actions }) {
         ) : null}
         <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 text-base text-muted-foreground">
           {studio && <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-muted-foreground">{studio}</span>}
+          {item.meta?.copiedFrom && <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-muted-foreground">Copy</span>}
+          {item.author && <span className="truncate">{item.author}</span>}
           {item.model && <span className="truncate">{dzModelLabel(item.model) || item.provider_model}</span>}
           {Number.isFinite(item.cost_usd) && <span className="tabular-nums">${fmtUsd(item.cost_usd)}</span>}
           <span className="ml-auto tabular-nums">{fmtDate(item.created_at)}</span>
@@ -152,23 +166,34 @@ function Uploads({ onOpen, project }) {
   );
 }
 
-export default function DzLibrary({ onGenerationError }) {
-  const [viewId, setViewId] = useState(() => {
-    try { return localStorage.getItem("dz_library_view") || "all"; } catch { return "all"; }
-  });
-  const view = VIEWS.find((v) => v.id === viewId) || VIEWS[0];
-  useEffect(() => { try { localStorage.setItem("dz_library_view", view.id); } catch { /* optional */ } }, [view.id]);
+export default function DzLibrary({ section = "all", onGenerationError }) {
+  const inTrash = section === "trash";
+  const [type, setType] = useState("all");
+  const [tool, setTool] = useState("any");
+  const [likedOnly, setLikedOnly] = useState(false);
+  const [text, setText] = useState("");
+  const [search, setSearch] = useState("");
+  useEffect(() => { const t = setTimeout(() => setSearch(text.trim()), 300); return () => clearTimeout(t); }, [text]);
+  const uploads = type === "uploads" && !inTrash;
   const [open, setOpen] = useState(null);
-  // In a project: its work (current folder, if one is picked). In Library:
-  // everything the user can see — their own and their projects'.
   const ctx = useDzContext();
   const scope = ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : {};
-  const lib = useDzHistory({ ...(view.filter || {}), ...scope }, { limit: 60 });
+  const filter = {
+    ...scope,
+    ...(type === "image" || type === "video" ? { kind: type } : {}),
+    ...(tool !== "any" ? { studio: tool } : {}),
+    ...(section === "liked" || (likedOnly && section === "all") ? { liked: true } : {}),
+    ...(inTrash ? { trash: true } : {}),
+    ...(search ? { q: search } : {}),
+  };
+  const lib = useDzHistory(filter, { limit: 60 });
+  const sel = useDzSelection(uploads ? [] : lib.items);
   const report = (e) => onGenerationError?.(String(e?.message || e));
   const canUpscale = Boolean(dzUpscaleSpec());
+  const filtered = type !== "all" || tool !== "any" || likedOnly || Boolean(search);
 
   const actionsFor = (item) => {
-    if (view.id === "trash") {
+    if (inTrash) {
       return (
         <>
           <IconButton title="Restore" onClick={() => dzLibrary.restore(item.id).catch(report)}>
@@ -191,11 +216,9 @@ export default function DzLibrary({ onGenerationError }) {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
           </IconButton>
         )}
-        {item.mine !== false && (
-          <IconButton title="Move to…" onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: item }))}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14l3 3 3-3" /></svg>
-          </IconButton>
-        )}
+        <IconButton title={item.mine !== false ? "Move or copy to…" : "Copy to…"} onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: { items: [item], mode: item.mine !== false ? "move" : "copy" } }))}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14l3 3 3-3" /></svg>
+        </IconButton>
         <IconButton title="Move to trash" danger onClick={() => lib.trash(item.id).catch(report)}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
         </IconButton>
@@ -203,26 +226,35 @@ export default function DzLibrary({ onGenerationError }) {
     );
   };
 
-  const empty = {
-    all: "Nothing here yet. Everything you generate in any studio appears here, on every device.",
-    images: "No images yet.",
-    videos: "No videos yet.",
-    upscaled: "No upscaled images yet.",
-    liked: "Nothing liked yet. Tap the heart on any result to keep it here.",
-    trash: "Trash is empty. Deleted items stay here for 7 days.",
-  }[view.id];
+  const where = ctx.project ? (ctx.folderPath?.length ? "this folder" : "this project") : "your Library";
+  const empty = filtered ? "Nothing matches these filters."
+    : section === "liked" ? `Nothing liked in ${where} yet. Tap the heart on any result to keep it here.`
+      : inTrash ? "Trash is empty. Deleted items stay here for 7 days."
+        : `Nothing in ${where} yet. Everything you generate appears here, on every device.`;
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background">
-      <div className="flex flex-shrink-0 flex-wrap items-center gap-x-6 gap-y-3 border-b border-border px-4 py-4 md:px-6">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
-          {ctx.project && <span className="h-3 w-3 rounded-full" style={{ background: ctx.project.color }} />}
-          {ctx.project ? ctx.project.name : "Library"}
-        </h1>
-        <ScrollTabs className="min-w-0 max-w-full" value={view.id} onChange={setViewId} aria-label="Library view" items={VIEWS.map((v) => ({ value: v.id, label: v.label }))} />
+      <div className="flex-shrink-0 space-y-3 border-b border-border px-4 py-3 md:px-6">
+        <GridToolbar ctx={ctx} sel={uploads ? null : sel} title={SECTION_TITLE[section]} inTrash={inTrash} canSelect={!uploads} />
+        {!sel.selecting && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmented value={type} onChange={setType} options={inTrash ? TYPES.filter((t) => t.value !== "uploads") : TYPES} aria-label="Type" className="w-auto" size="sm" />
+            {!uploads && (
+              <Select value={tool} onValueChange={setTool}>
+                <SelectTrigger className="h-9 w-[150px]" aria-label="Tool"><SelectValue /></SelectTrigger>
+                <SelectContent>{TOOLS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
+              </Select>
+            )}
+            {section === "all" && !uploads && (
+              <Button size="sm" variant={likedOnly ? "default" : "secondary"} aria-pressed={likedOnly} onClick={() => setLikedOnly((v) => !v)}>♥ Liked</Button>
+            )}
+            {!uploads && <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Search prompts" aria-label="Search prompts" className="h-9 w-[220px]" />}
+            {filtered && <Button size="sm" variant="ghost" onClick={() => { setType("all"); setTool("any"); setLikedOnly(false); setText(""); }}>Clear</Button>}
+          </div>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-5 md:px-6">
-        {view.uploads ? (
+        {uploads ? (
           <Uploads onOpen={setOpen} project={ctx.project?.id} />
         ) : !lib.loaded ? (
           <p className="py-16 text-center text-base text-muted-foreground">Loading…</p>
@@ -230,10 +262,10 @@ export default function DzLibrary({ onGenerationError }) {
           <p className="py-16 text-center text-base text-muted-foreground">{empty}</p>
         ) : (
           <>
-            {view.id === "trash" && <p className="mb-4 text-base text-muted-foreground">Items in the trash are deleted for good after 7 days.</p>}
+            {inTrash && <p className="mb-4 text-base text-muted-foreground">Items in the trash are deleted for good after 7 days.</p>}
             <Grid>
               {lib.items.map((item) => (
-                <Card key={item.id} item={item} view={view.id} onOpen={setOpen} actions={actionsFor(item)} />
+                <Card key={item.id} item={item} view={section} onOpen={setOpen} actions={actionsFor(item)} sel={sel} />
               ))}
             </Grid>
             {lib.hasMore && (

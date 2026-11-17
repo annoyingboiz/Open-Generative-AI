@@ -565,6 +565,13 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/api/v1/predictions/:id/move', async (req, reply) => {
     try { return generations.move(req.user, req.params.id, { project: req.body?.project || null, folder: req.body?.folder || null }); } catch (error) { return sendGenError(reply, error); }
   });
+  app.post('/api/v1/predictions/:id/copy', async (req, reply) => {
+    try { return await generations.copy(req.user, req.params.id, { project: req.body?.project || null, folder: req.body?.folder || null }); } catch (error) { return sendGenError(reply, error); }
+  });
+  // Many at once: { action: move|copy|trash|restore|purge, ids: [...], project?, folder? }.
+  app.post('/api/v1/predictions/batch', async (req, reply) => {
+    try { return await generations.batch(req.user, req.body || {}); } catch (error) { return sendGenError(reply, error); }
+  });
   app.post('/api/v1/predictions/:id/like', async (req, reply) => {
     try { return generations.like(req.user, req.params.id, req.body?.liked !== false); } catch (error) { return sendGenError(reply, error); }
   });

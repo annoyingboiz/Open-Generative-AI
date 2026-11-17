@@ -187,6 +187,63 @@ test('move to another place: author only, and only into own projects', async () 
   assert.equal(res.json().project_id, null);
 });
 
+test('copy to another place: new item with its own files, free; batch move/trash/restore; search by prompt', async () => {
+  // Finish the personal job so it has a file.
+  apimart.poll = async () => ({ state: 'completed', outputs: [`http://127.0.0.1:${files.address().port}/out.png`], costUsd: 0.02 });
+  app.ctx.db.prepare('UPDATE generations SET next_poll_at = 0 WHERE id = ?').run(personalGen);
+  await app.ctx.generations.tick();
+  apimart.poll = async () => ({ state: 'processing' });
+  let res = await as('admin', 'POST', `/api/v1/predictions/${personalGen}/copy`, { project: project.id, folder: folder.id });
+  assert.equal(res.statusCode, 200, res.body);
+  const copyId = res.json().id;
+  assert.notEqual(copyId, personalGen);
+  res = await as('wife', 'GET', `/api/v1/history?project=${project.id}&folder=${folder.id}`);
+  const copied = res.json().items.find((i) => i.id === copyId);
+  assert.ok(copied, 'members see the copy');
+  assert.equal(copied.cost_usd, 0);
+  assert.equal(copied.meta.copiedFrom, personalGen);
+  assert.equal(copied.mine, false);
+  const orig = app.ctx.db.prepare('SELECT outputs_json FROM generations WHERE id = ?').get(personalGen);
+  const copy = app.ctx.db.prepare('SELECT outputs_json FROM generations WHERE id = ?').get(copyId);
+  assert.notEqual(JSON.parse(orig.outputs_json)[0].path, JSON.parse(copy.outputs_json)[0].path);
+  assert.ok(fs.existsSync(JSON.parse(copy.outputs_json)[0].path));
+  // The original stays where it was (personal).
+  res = await as('admin', 'GET', '/api/v1/history?project=none');
+  assert.ok(res.json().items.some((i) => i.id === personalGen));
+  // A member copies project work into their own Library; an unfinished job can't be copied.
+  res = await as('wife', 'POST', `/api/v1/predictions/${copyId}/copy`, { project: null });
+  assert.equal(res.statusCode, 200, res.body);
+  res = await as('admin', 'POST', `/api/v1/predictions/${projGen}/copy`, { project: null });
+  assert.equal(res.statusCode, 409);
+  // Someone outside can't copy personal work.
+  res = await as('kid', 'POST', `/api/v1/predictions/${personalGen}/copy`, { project: null });
+  assert.equal(res.statusCode, 404);
+
+  // Batch: each item on its own.
+  res = await as('wife', 'POST', '/api/v1/predictions/batch', { action: 'move', ids: [copyId, projGen], project: project.id, folder: null });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json().done.length, 0, 'wife is the author of neither');
+  assert.equal(res.json().failed.length, 2);
+  res = await as('admin', 'POST', '/api/v1/predictions/batch', { action: 'move', ids: [copyId, projGen], project: project.id, folder: null });
+  assert.deepEqual(res.json().done.sort(), [copyId, projGen].sort());
+  res = await as('admin', 'POST', '/api/v1/predictions/batch', { action: 'trash', ids: [copyId] });
+  assert.deepEqual(res.json().done, [copyId]);
+  res = await as('admin', 'POST', '/api/v1/predictions/batch', { action: 'restore', ids: [copyId] });
+  assert.deepEqual(res.json().done, [copyId]);
+  res = await as('admin', 'POST', '/api/v1/predictions/batch', { action: 'nope', ids: [copyId] });
+  assert.equal(res.statusCode, 400);
+  res = await as('admin', 'POST', '/api/v1/predictions/batch', { action: 'move', ids: [] });
+  assert.equal(res.statusCode, 400);
+
+  // Search by words in the prompt; % and _ are plain characters.
+  res = await as('admin', 'GET', `/api/v1/history?project=${project.id}&q=CAT`);
+  assert.ok(res.json().items.length >= 2);
+  res = await as('admin', 'GET', `/api/v1/history?project=${project.id}&q=dog`);
+  assert.equal(res.json().items.length, 0);
+  res = await as('admin', 'GET', `/api/v1/history?project=${project.id}&q=%25`);
+  assert.equal(res.json().items.length, 0);
+});
+
 test('deleting a folder keeps its work (moves up); archive stops new work', async () => {
   let res = await as('admin', 'DELETE', `/dz/api/folders/${folder.id}`);
   assert.equal(res.statusCode, 200, res.body);

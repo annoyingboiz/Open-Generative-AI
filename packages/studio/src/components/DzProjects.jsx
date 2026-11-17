@@ -33,6 +33,11 @@ export const dzProjectsApi = {
   updateFolder: (folderId, patch) => call("PATCH", `/dz/api/folders/${encodeURIComponent(folderId)}`, patch),
   deleteFolder: (folderId) => call("DELETE", `/dz/api/folders/${encodeURIComponent(folderId)}`),
   users: () => call("GET", "/dz/api/users"),
+  batch: async (action, ids, project, folder) => {
+    const r = await call("POST", "/api/v1/predictions/batch", { action, ids, project: project || null, folder: folder || null });
+    window.dispatchEvent(new CustomEvent("dz:history", { detail: { status: "changed" } }));
+    return r;
+  },
   move: async (genId, project, folder) => {
     const r = await call("POST", `/api/v1/predictions/${encodeURIComponent(genId)}/move`, { project: project || null, folder: folder || null });
     window.dispatchEvent(new CustomEvent("dz:history", { detail: { status: "changed" } }));
@@ -214,40 +219,81 @@ export function NameDialog({ open, onOpenChange, title, description, placeholder
 
 // ── Move to… ─────────────────────────────────────────────────────────────
 
-export function MoveDialog({ item, onOpenChange, projects = [] }) {
-  const open = Boolean(item);
+// Move to… / Copy to…: one or many items into Library or a project and folder.
+// `request` = { items: [...], mode: "move" | "copy" } (a single item works too).
+// Move is for the author's own items; anything you can see can be copied.
+export function MoveDialog({ item: request, onOpenChange, projects = [] }) {
+  const open = Boolean(request);
+  const items = useMemo(() => (!request ? [] : Array.isArray(request.items) ? request.items : request.id ? [request] : []), [request]);
+  const [mode, setMode] = useState("move");
   const [target, setTarget] = useState(null); // project id or null (Library)
   const [folders, setFolders] = useState([]);
   const [folder, setFolder] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const theirs = items.filter((i) => i.mine === false).length;
+  const same = (key) => (items.length && items.every((i) => (i[key] || null) === (items[0][key] || null)) ? items[0][key] || null : undefined);
+  const fromProject = same("project_id");
+  const fromFolder = same("folder_id");
   useEffect(() => {
     if (!open) return;
-    setTarget(item.project_id || null);
-    setFolder(item.folder_id || null);
+    const m = request?.mode === "copy" || (items.length && items.every((i) => i.mine === false)) ? "copy" : "move";
+    setMode(m);
+    setTarget(fromProject === undefined ? null : fromProject);
+    setFolder(fromProject === undefined ? null : fromFolder ?? null);
     setError("");
-  }, [open, item]);
+  }, [open, request]); // eslint-disable-line react-hooks/exhaustive-deps
   // Fresh folders every time the dialog opens (a folder may have been added since).
   useEffect(() => {
     if (!open || !target) { setFolders([]); return undefined; }
     let alive = true;
     dzProjectsApi.details(target).then((d) => alive && setFolders(d.folders || [])).catch(() => alive && setFolders([]));
     return () => { alive = false; };
-  }, [target, open, item?.id]);
+  }, [target, open, request]);
   const tree = useMemo(() => folderTree(folders), [folders]);
-  const move = async () => {
+  const n = items.length;
+  const movable = n - theirs;
+  const unchanged = mode === "move" && fromProject !== undefined && target === fromProject && (folder || null) === (fromFolder ?? null);
+  const submit = async () => {
     setBusy(true);
     setError("");
-    try { await dzProjectsApi.move(item.id, target, target ? folder : null); onOpenChange(false); } catch (err) { setError(err.message); } finally { setBusy(false); }
+    try {
+      const ids = (mode === "move" ? items.filter((i) => i.mine !== false) : items).map((i) => i.id);
+      const r = await dzProjectsApi.batch(mode, ids, target, target ? folder : null);
+      const done = r.done?.length || 0;
+      const verb = mode === "move" ? "Moved" : "Copied";
+      const failed = r.failed || [];
+      window.dispatchEvent(new CustomEvent("dz:notify", {
+        detail: failed.length || (mode === "move" && theirs)
+          ? { type: done ? "success" : "error", title: verb, message: `${verb} ${done} of ${n}.${failed[0]?.error ? ` ${failed[0].error}` : ""}${mode === "move" && theirs ? ` ${theirs} by others stay — copy them instead.` : ""}` }
+          : { type: "success", title: verb, message: `${verb} ${done} item${done === 1 ? "" : "s"}.` },
+      }));
+      if (done) window.dispatchEvent(new CustomEvent("dz:moved"));
+      if (!done && failed.length) { setError(failed[0].error || "Nothing was done."); return; }
+      onOpenChange(false);
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
   const row = (selected) => cn("flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-base", selected ? "bg-primary/15 text-foreground" : "hover:bg-accent text-foreground/85");
+  const what = n === 1 ? "1 item" : `${n} items`;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Move to…</DialogTitle>
-          <DialogDescription>Personal work is only yours. In a project, every member sees it.</DialogDescription>
+          <DialogTitle>{mode === "move" ? "Move" : "Copy"} {what} to…</DialogTitle>
+          <DialogDescription>
+            {mode === "move" ? "It leaves where it is now." : "The original stays; the copy is yours, with its own files, and costs nothing."} Personal work is only yours; in a project every member sees it.
+          </DialogDescription>
         </DialogHeader>
+        <div className="flex gap-1 rounded-xl bg-muted p-1" role="radiogroup" aria-label="Move or copy">
+          {["move", "copy"].map((m) => (
+            <button key={m} type="button" role="radio" aria-checked={mode === m} disabled={m === "move" && !movable}
+              onClick={() => setMode(m)}
+              className={cn("h-9 flex-1 rounded-lg font-semibold", mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground", m === "move" && !movable && "opacity-40")}>
+              {m === "move" ? "Move" : "Copy"}
+            </button>
+          ))}
+        </div>
+        {mode === "move" && theirs > 0 && <p className="text-amber-300">{theirs} of them {theirs === 1 ? "was" : "were"} made by someone else — only the author can move it. Those stay; copy them instead.</p>}
         <div className="grid max-h-[50vh] gap-1 overflow-y-auto">
           <button className={row(!target)} onClick={() => { setTarget(null); setFolder(null); }}><span className="w-3" /> Library (personal)</button>
           {projects.filter((p) => !p.archived).map((p) => (
@@ -262,10 +308,95 @@ export function MoveDialog({ item, onOpenChange, projects = [] }) {
         {error && <p className="text-destructive">{error}</p>}
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={move} disabled={busy || (target === (item?.project_id || null) && (folder || null) === (item?.folder_id || null))}>{busy ? <Spinner /> : "Move"}</Button>
+          <Button onClick={submit} disabled={busy || !n || unchanged || (mode === "move" && !movable)}>{busy ? <Spinner /> : mode === "move" ? "Move" : "Copy"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── Sidebar folder tree (inside a project) ─────────────────────────────────
+// "All" plus the folders; click picks the folder (what you see and where new
+// work goes). Folders open and close; the ⋯ menu adds, renames, deletes.
+// Cards dragged onto a folder move there (only the author's own; others are reported).
+export function FolderTree({ project, folders = [], current, onPick, onNew, onRename, onDelete, onDropItems, collapsed = false }) {
+  const [closed, setClosed] = useState(() => new Set());
+  const [over, setOver] = useState(undefined);
+  useEffect(() => {
+    try { setClosed(new Set(JSON.parse(localStorage.getItem(`dz_tree_${project.id}`) || "[]"))); } catch { setClosed(new Set()); }
+  }, [project.id]);
+  const toggle = (id) => setClosed((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    try { localStorage.setItem(`dz_tree_${project.id}`, JSON.stringify([...next])); } catch { /* optional */ }
+    return next;
+  });
+  const tree = useMemo(() => folderTree(folders), [folders]);
+  const hasKids = useMemo(() => new Set(folders.map((f) => f.parent_id).filter(Boolean)), [folders]);
+  // A folder shows when none of its parents is closed.
+  const parentOf = useMemo(() => new Map(folders.map((f) => [f.id, f.parent_id || null])), [folders]);
+  const shown = (f) => { let p = parentOf.get(f.id); while (p) { if (closed.has(p)) return false; p = parentOf.get(p); } return true; };
+  // The current folder's parents stay open.
+  useEffect(() => {
+    if (!current) return;
+    setClosed((prev) => { let p = parentOf.get(current); let next = prev; while (p) { if (next.has(p)) { next = new Set(next); next.delete(p); } p = parentOf.get(p); } return next; });
+  }, [current, parentOf]);
+  const dropProps = (folderId) => (project.archived || !onDropItems ? {} : {
+    onDragOver: (e) => { if (Array.from(e.dataTransfer.types).includes("application/x-dz-items")) { e.preventDefault(); e.stopPropagation(); setOver(folderId); } },
+    onDragLeave: () => setOver((o) => (o === folderId ? undefined : o)),
+    onDrop: (e) => {
+      const raw = e.dataTransfer.getData("application/x-dz-items");
+      setOver(undefined);
+      if (!raw) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try { onDropItems(JSON.parse(raw), folderId); } catch { /* not ours */ }
+    },
+  });
+  if (collapsed) return null;
+  const rowCls = (active, isOver) => cn(
+    "group flex h-9 w-full min-w-0 items-center gap-1.5 rounded-lg pr-1 text-left text-base transition-colors",
+    active ? "bg-primary/15 font-semibold text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+    isOver && "ring-2 ring-primary",
+  );
+  return (
+    <div className="space-y-0.5" role="tree" aria-label="Folders">
+      <div className="flex items-center justify-between px-3 pb-1 pt-2">
+        <span className="text-base font-semibold text-muted-foreground/80">Folders</span>
+        {!project.archived && <button type="button" onClick={() => onNew(null)} className="rounded-md px-1.5 text-lg leading-6 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="New folder" title="New folder">+</button>}
+      </div>
+      <button type="button" role="treeitem" aria-selected={!current} onClick={() => onPick(null)} className={rowCls(!current, over === null)} style={{ paddingLeft: 12 }} {...dropProps(null)}>
+        <span className="w-4" />
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
+        <span className="truncate">All</span>
+      </button>
+      {tree.filter(shown).map((f) => (
+        <div key={f.id} role="treeitem" aria-selected={current === f.id} aria-expanded={hasKids.has(f.id) ? !closed.has(f.id) : undefined}
+          className={rowCls(current === f.id, over === f.id)} style={{ paddingLeft: 12 + f.depth * 14 }} {...dropProps(f.id)}>
+          <button type="button" aria-label={closed.has(f.id) ? "Open" : "Close"} onClick={() => hasKids.has(f.id) && toggle(f.id)}
+            className={cn("flex h-6 w-4 shrink-0 items-center justify-center text-muted-foreground", !hasKids.has(f.id) && "invisible")}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className={cn("transition-transform", !closed.has(f.id) && "rotate-90")}><path d="M9 6l6 6-6 6" /></svg>
+          </button>
+          <button type="button" onClick={() => onPick(f.id)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+            <FolderIcon />
+            <span className="truncate">{f.name}</span>
+          </button>
+          {!project.archived && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" aria-label={`Folder actions: ${f.name}`} className="h-7 w-7 shrink-0 rounded-md text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus:opacity-100 group-hover:opacity-100">⋯</button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuItem className="text-base" onSelect={() => onNew(f)}>New folder inside</DropdownMenuItem>
+                <DropdownMenuItem className="text-base" onSelect={() => onRename(f)}>Rename</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-base text-destructive" onSelect={() => onDelete(f)}>Delete folder…</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 

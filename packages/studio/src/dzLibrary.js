@@ -31,6 +31,12 @@ export const dzLibrary = {
   async like(id, liked) { const r = await call("POST", `/api/v1/predictions/${encodeURIComponent(id)}/like`, { liked }); changed(); return r; },
   async trash(id) { const r = await call("DELETE", `/api/v1/predictions/${encodeURIComponent(id)}/media`); changed(); return r; },
   async restore(id) { const r = await call("POST", `/api/v1/predictions/${encodeURIComponent(id)}/restore`); changed(); return r; },
+  // One action on many items: { action: move|copy|trash|restore|purge, ids, project?, folder? } → { done, failed }.
+  async batch(action, ids, target = {}) {
+    const r = await call("POST", "/api/v1/predictions/batch", { action, ids, project: target.project || null, folder: target.folder || null });
+    changed();
+    return r;
+  },
   async purge(id) { const r = await call("DELETE", `/api/v1/predictions/${encodeURIComponent(id)}`); changed(); return r; },
   uploads(params = {}) {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]));

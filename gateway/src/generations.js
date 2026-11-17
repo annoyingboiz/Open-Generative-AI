@@ -33,6 +33,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, studio, meta_json, project_id, folder_id, next_poll_at, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
     move: db.prepare('UPDATE generations SET project_id = ?, folder_id = ?, updated_at = ? WHERE id = ?'),
+    insertCopy: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, cost_usd, est_cost_usd, cost_source, est_source, studio, meta_json, project_id, folder_id, outputs_json, next_poll_at, created_at, updated_at, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, 0, 0, 'copy', 'copy', ?, ?, ?, ?, ?, 0, ?, ?, ?)`),
     author: db.prepare('SELECT display_name FROM users WHERE id = ?'),
     setSubmitted: db.prepare("UPDATE generations SET provider_task_id = ?, status = 'submitted', next_poll_at = ?, updated_at = ? WHERE id = ?"),
     setFailed: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
@@ -298,7 +300,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   const KINDS = new Set(['image', 'video', 'audio']);
   //   project=<id> (that project; folder=<id>|root narrows it) · project=none (personal only)
   //   no project → the user's Library: their own items plus their projects' items.
-  function history(user, { cursor, limit = 50, studio, kind, liked, trash: inTrash, status, project, folder } = {}) {
+  function history(user, { cursor, limit = 50, studio, kind, liked, trash: inTrash, status, project, folder, q: search } = {}) {
     const where = ['purged_at IS NULL'];
     const args = [];
     if (project === 'none') {
@@ -328,6 +330,9 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     if (liked === '1' || liked === true) where.push('liked_at IS NOT NULL');
     if (status === 'completed' || status === 'failed') { where.push('status = ?'); args.push(status); }
     if (status === 'processing') where.push("status IN ('submitting','submitted','processing','downloading')");
+    // Words in the prompt (each one must be there), case-insensitive.
+    const words = String(search || '').toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+    for (const w of words) { where.push("LOWER(COALESCE(prompt, '')) LIKE ? ESCAPE '\\'"); args.push(`%${w.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`)}%`); }
     where.push('created_at < ?');
     args.push(Number(cursor) || Number.MAX_SAFE_INTEGER);
     const rows = db.prepare(`SELECT * FROM generations WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`)
@@ -380,6 +385,51 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const { projectId, folderId } = projects ? projects.target(user, project || null, folder || null) : { projectId: null, folderId: null };
     q.move.run(projectId, folderId, now(), row.id);
     return { ok: true, project_id: projectId, folder_id: folderId };
+  }
+
+  // A copy of a finished item in another place (Library, or a project and
+  // folder the user is in), owned by whoever copies it. Its files are copied
+  // too, so the copy and the original live and die on their own. A copy costs
+  // nothing and does not count as spending.
+  async function copy(user, id, { project = null, folder = null } = {}) {
+    const row = visible(user, id);
+    if (row.status !== 'completed' || row.deleted_at != null) throw new GenerationError('Only finished items can be copied.', 409);
+    const { projectId, folderId } = projects ? projects.target(user, project || null, folder || null) : { projectId: null, folderId: null };
+    const outputs = JSON.parse(row.outputs_json || '[]');
+    if (!outputs.length) throw new GenerationError('Nothing to copy.', 409);
+    const newGen = newId('gen');
+    const saved = [];
+    try {
+      for (let i = 0; i < outputs.length; i += 1) {
+        const f = await storage.copyResult({ userId: user.id, generationId: newGen, index: i, from: outputs[i].path, ext: outputs[i].ext });
+        saved.push({ ...outputs[i], path: f.path, bytes: f.bytes });
+      }
+    } catch (error) {
+      for (const f of saved) storage.remove(f.path);
+      throw error.status ? error : new GenerationError('The file could not be copied.', 500);
+    }
+    let meta = null;
+    try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
+    const t = now();
+    q.insertCopy.run(newGen, user.id, row.endpoint, row.provider, row.provider_model, row.kind, row.prompt, row.params_json || '{}', row.studio,
+      JSON.stringify({ ...(meta || {}), copiedFrom: row.id }), projectId, folderId, JSON.stringify(saved), t, t, t);
+    return { ok: true, id: newGen, project_id: projectId, folder_id: folderId };
+  }
+
+  // The same action on many items; each one succeeds or fails on its own.
+  const BATCH = { move: (u, id, o) => move(u, id, o), copy: (u, id, o) => copy(u, id, o), trash: (u, id) => trash(u, id), restore: (u, id) => restore(u, id), purge: (u, id) => purge(u, id) };
+  async function batch(user, { action, ids, project = null, folder = null } = {}) {
+    const fn = BATCH[action];
+    if (!fn) throw new GenerationError('Unknown action.', 400);
+    const list = [...new Set((Array.isArray(ids) ? ids : []).filter((x) => typeof x === 'string' && x))];
+    if (!list.length) throw new GenerationError('Nothing selected.', 400);
+    if (list.length > 200) throw new GenerationError('Select at most 200 items at once.', 400);
+    const done = [];
+    const failed = [];
+    for (const id of list) {
+      try { await fn(user, id, { project, folder }); done.push(id); } catch (error) { failed.push({ id, error: error.message }); }
+    }
+    return { ok: failed.length === 0, done, failed };
   }
 
   // Delete for good — only from the trash, and files go with it.
@@ -468,7 +518,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
-    saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
+    saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

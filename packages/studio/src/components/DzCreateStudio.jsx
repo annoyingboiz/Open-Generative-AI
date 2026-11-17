@@ -14,6 +14,7 @@ import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
+import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
@@ -288,7 +289,7 @@ function CameraPanel({ camera, setCamera }) {
   );
 }
 
-function ResultCard({ item, onUse, onReuse, onLike, onTrash }) {
+function ResultCard({ item, onUse, onReuse, onLike, onTrash, sel }) {
   const isVideo = item.kind === "video";
   const canUpscale = !isVideo && dzUpscaleSpec() && dzIsOwnImage(item.url);
   const Icon = ({ title, onClick, children, danger }) => (
@@ -296,12 +297,15 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash }) {
       <button type="button" aria-label={title} onClick={(e) => { e.stopPropagation(); onClick(); }} className={cn("flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/65 text-white backdrop-blur-md transition-colors", danger ? "hover:bg-destructive" : "hover:bg-primary hover:text-primary-foreground")}>{children}</button>
     </Tip>
   );
+  const on = sel?.has(item.id);
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border bg-card">
+    <div className={cn("group relative overflow-hidden rounded-2xl border border-border bg-card", selectedRing(on))} {...(sel ? sel.dragProps(item) : {})}
+      onClickCapture={(e) => { if (sel?.click(item, e)) e.stopPropagation(); }}>
+      {sel && <SelectBox sel={sel} item={item} />}
       {!item.url ? <DzPendingTile status={item.status} error={item.error} className="aspect-square w-full" />
         : isVideo ? <video src={item.url} className="aspect-square w-full bg-black object-cover" muted loop playsInline preload="metadata" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
           : <img src={item.url} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />}
-      {item.url && (
+      {item.url && !sel?.selecting && (
         <div className="absolute right-2 top-2 flex flex-col gap-1.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
           <DzLikeButton id={item.id} liked={item.liked} onChange={onLike} className="h-9 w-9" />
           {!isVideo && <Icon title="Animate — use as start frame of a video" onClick={() => onUse(item, "animate")}><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></Icon>}
@@ -309,7 +313,7 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash }) {
           {item.meta?.entryKey && <Icon title="Reuse settings" onClick={() => onReuse(item)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" /></svg></Icon>}
           {canUpscale && <Icon title="Upscale" onClick={() => dzOpenUpscale(item.url)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg></Icon>}
           <Icon title="Download" onClick={() => download(item.url)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg></Icon>
-          {item.mine !== false && <Icon title="Move to…" onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: item }))}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14l3 3 3-3" /></svg></Icon>}
+          {<Icon title={item.mine !== false ? "Move or copy to…" : "Copy to…"} onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: { items: [item], mode: item.mine !== false ? "move" : "copy" } }))}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14l3 3 3-3" /></svg></Icon>}
           <Icon title="Move to trash" danger onClick={() => onTrash(item.id)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg></Icon>
         </div>
       )}
@@ -410,7 +414,11 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const ctx = useDzContext();
   // Everything of this kind in the current place, whatever tool made it
   // (Image shows upscales and Draw to Edit too; Create shows all).
-  const history = useDzHistory({ ...(mode === "image" ? { kind: "image" } : mode === "video" ? { kind: "video" } : {}), ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
+  // Create shows both kinds (with a filter); Image and Video their own.
+  const [kindFilter, setKindFilter] = useState("all");
+  const showKind = mode === "image" ? "image" : mode === "video" ? "video" : kindFilter === "all" ? null : kindFilter;
+  const history = useDzHistory({ ...(showKind ? { kind: showKind } : {}), ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
+  const sel = useDzSelection(history.items);
 
   const addFiles = useCallback(async (role, files) => {
     const info = ROLE_INFO[role];
@@ -550,8 +558,19 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background">
+      {/* Where you are + Select; while choosing, what to do with the chosen */}
+      <div className="flex-shrink-0 px-4 pt-3 md:px-8">
+        <div className="mx-auto max-w-[1600px]">
+          <GridToolbar ctx={ctx} sel={sel} title={cfg.title} canSelect={items.length > 0}>
+            {mode === "create" && (
+              <Segmented value={kindFilter} onChange={setKindFilter} size="sm" className="w-auto" aria-label="Show"
+                options={[{ value: "all", label: "All" }, { value: "image", label: "Images" }, { value: "video", label: "Videos" }]} />
+            )}
+          </GridToolbar>
+        </div>
+      </div>
       {/* Results */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-6 pt-5 md:px-8">
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-6 pt-3 md:px-8">
         {history.loaded && items.length === 0 ? (
           <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center gap-3 text-center">
             <div className="text-3xl font-bold text-foreground">{cfg.title}</div>
@@ -560,7 +579,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
         ) : (
           <div className="mx-auto grid max-w-[1600px] grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
             {items.map((item) => (
-              <ResultCard key={item.id} item={item} onUse={applyResult} onReuse={reuse} onLike={history.like} onTrash={(id) => history.trash(id).catch((e) => onGenerationError?.(String(e?.message || e)))} />
+              <ResultCard key={item.id} item={item} sel={sel} onUse={applyResult} onReuse={reuse} onLike={history.like} onTrash={(id) => history.trash(id).catch((e) => onGenerationError?.(String(e?.message || e)))} />
             ))}
           </div>
         )}

@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 
 const EVENT = "dz:context";
-let current = { project: null, folder: null, pending: false }; // project: { id, slug, name, color, role, archived }
+let current = { project: null, folder: null, folderPath: [], pending: false }; // project: { id, slug, name, color, role, archived }
 
 export function dzGetContext() {
   return current;
@@ -17,8 +17,10 @@ export function dzSetContext(next) {
   const project = next.project ? { id: next.project.id, slug: next.project.slug, name: next.project.name, color: next.project.color, role: next.project.role, archived: Boolean(next.project.archived) } : null;
   const folder = project ? next.folder || null : null;
   const pending = Boolean(next.pending);
-  if (current.pending === pending && current.project?.id === project?.id && current.folder === folder && current.project?.name === project?.name && current.project?.color === project?.color && current.project?.archived === project?.archived) return;
-  current = { project, folder, pending };
+  // Names from the top folder down to the current one (for "Props / Rock Glass").
+  const folderPath = folder && Array.isArray(next.folderPath) ? next.folderPath.map(String) : [];
+  if (current.pending === pending && current.project?.id === project?.id && current.folder === folder && current.project?.name === project?.name && current.project?.color === project?.color && current.project?.archived === project?.archived && current.folderPath.join("\u0000") === folderPath.join("\u0000")) return;
+  current = { project, folder, folderPath, pending };
   if (typeof window !== "undefined") {
     window.__DZ_CONTEXT__ = current;
     window.dispatchEvent(new CustomEvent(EVENT, { detail: current }));

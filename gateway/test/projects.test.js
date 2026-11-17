@@ -70,6 +70,7 @@ let project;
 let folder;
 let projGen;
 let personalGen;
+let wifeGen;
 
 test('slugs: Cyrillic names become readable Latin', () => {
   assert.equal(slugBase('Свадьба Ани'), 'svadba-ani');
@@ -122,6 +123,8 @@ test('generate into a project folder and into personal', async () => {
   assert.equal(res.json().items[0].folder_id, folder.id);
   res = await as('admin', 'GET', `/api/v1/history?project=${project.id}&folder=root`);
   assert.equal(res.json().items.length, 0);
+  res = await as('admin', 'GET', `/api/v1/history?project=${project.id}&folder=fld_other`);
+  assert.equal(res.statusCode, 404);
   res = await as('admin', 'GET', '/api/v1/history?project=none');
   assert.deepEqual(res.json().items.map((i) => i.id), [personalGen]);
   res = await as('admin', 'GET', '/api/v1/history');
@@ -169,7 +172,8 @@ test('uploads in a project are shared with its members', async () => {
   assert.equal(res.json().items.length, 1);
   // A member can use it as a reference in the project.
   res = await as('wife', 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'x', image_urls: [url], _dz: { project: project.id } });
-  assert.notEqual(res.statusCode, 404, res.body);
+  assert.equal(res.statusCode, 200, res.body);
+  wifeGen = res.json().id;
 });
 
 test('move to another place: author only, and only into own projects', async () => {
@@ -201,6 +205,11 @@ test('a member can leave; the owner cannot', async () => {
   assert.equal(res.json().left, true);
   res = await as('wife', 'GET', `/api/v1/predictions/${projGen}/result`);
   assert.equal(res.statusCode, 404);
+  // Her own work in the project stays with the project.
+  res = await as('wife', 'GET', `/api/v1/predictions/${wifeGen}/result`);
+  assert.equal(res.statusCode, 404);
+  res = await as('wife', 'GET', '/api/v1/history');
+  assert.ok(!res.json().items.some((i) => i.id === wifeGen));
   const admin = (await as('admin', 'GET', `/dz/api/projects/${project.id}`)).json().members.find((m) => m.username === 'admin');
   res = await as('admin', 'DELETE', `/dz/api/projects/${project.id}/members/${admin.id}`);
   assert.equal(res.statusCode, 409);

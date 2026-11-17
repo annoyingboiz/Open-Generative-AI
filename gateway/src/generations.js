@@ -26,7 +26,8 @@ const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an h
 export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS, onProviderRejected = null, projects = null }) {
   // Personal items: only the author. Project items: every member of the project.
   const isMember = (userId, projectId) => Boolean(projectId && projects?.isMember(userId, projectId));
-  const canSee = (user, row) => Boolean(row && (row.user_id === user.id || isMember(user.id, row.project_id)));
+  // A project item belongs to the project: its author sees it only while still a member.
+  const canSee = (user, row) => Boolean(row && (row.project_id ? isMember(user.id, row.project_id) : row.user_id === user.id));
   const q = {
     insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, studio, meta_json, project_id, folder_id, next_poll_at, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`),
@@ -57,7 +58,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     activeJobs: db.prepare("SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('submitting','submitted','processing','downloading')"),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, project_id, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
-    listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
+    listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
     listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
   };
   const outputRefCache = new Map(); // `${provider}:${genId}/${n}` -> { url, expiresAt }
@@ -140,7 +141,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       q.setFailed.run(error.message.slice(0, 1000), now(), now(), id);
       // The provider refused what we built from its spec: report it (Settings → Provider changes).
       if ([400, 422].includes(error.status)) {
-        try { onProviderRejected?.({ provider: providerId, endpoint, model: modelId, status: error.status, message: error.message, params: Object.keys(clean) }); } catch { /* reporting is best effort */ }
+        try { onProviderRejected?.({ provider: providerId, endpoint, model: modelId, status: error.status, message: error.message, params: Object.keys(clean), body: clean }); } catch { /* reporting is best effort */ }
       }
       throw error instanceof GenerationError ? error : new GenerationError(`${provider.name}: ${error.message}`, 502);
     }
@@ -306,10 +307,10 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       where.push('project_id = ?');
       args.push(p.id);
       if (folder === 'root') where.push('folder_id IS NULL');
-      else if (folder) { where.push('folder_id = ?'); args.push(String(folder)); }
+      else if (folder) { where.push('folder_id = ?'); args.push(projects.checkFolder(p.id, folder)); }
     } else {
       const ids = projects ? projects.memberProjectIds(user.id) : [];
-      where.push(ids.length ? `(user_id = ? OR project_id IN (${ids.map(() => '?').join(',')}))` : 'user_id = ?');
+      where.push(ids.length ? `((user_id = ? AND project_id IS NULL) OR project_id IN (${ids.map(() => '?').join(',')}))` : '(user_id = ? AND project_id IS NULL)');
       args.push(user.id, ...ids);
     }
     where.push(inTrash === '1' || inTrash === true ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL');

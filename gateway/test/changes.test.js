@@ -77,7 +77,12 @@ test('a refused request after an automatic change rolls it back, and that docs v
   const broken = { x: ov({ duration: dur([5, 10, 20]) }), ...fill };
   changes.apimartDocsChecked(broken, bundled, { total: 8 });
   assert.ok(changes.liveOverrides().x);
-  const out = changes.providerRejected({ provider: 'apimart', endpoint: 'p/apimart/x?m=t2v', model: 'x', status: 400, message: 'HTTP 400: duration must be 5 or 10', params: ['prompt', 'duration'] });
+  // A refusal about another setting, or a value our spec doesn't offer, rolls nothing back.
+  const base = { provider: 'apimart', endpoint: 'p/apimart/x?m=t2v', model: 'x', status: 400 };
+  assert.ok(!changes.providerRejected({ ...base, message: 'HTTP 400: bad size', params: ['prompt', 'size'], body: { size: '16:9' } }).some((e) => e.type === 'reverted'));
+  assert.ok(!changes.providerRejected({ ...base, message: 'HTTP 400: duration out of range', params: ['duration'], body: { duration: 999 } }).some((e) => e.type === 'reverted'));
+  assert.ok(changes.liveOverrides().x);
+  const out = changes.providerRejected({ ...base, message: 'HTTP 400: duration must be 5 or 10', params: ['prompt', 'duration'], body: { duration: 20 } });
   assert.deepEqual(out.map((e) => e.type), ['rejected', 'reverted']);
   assert.equal(changes.liveOverrides().x, undefined); // back to the bundled spec
   assert.equal(rebuilt, 1);

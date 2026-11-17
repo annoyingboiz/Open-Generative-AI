@@ -225,7 +225,7 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
         }
         continue;
       }
-      prev[id] = { spec: nextLive[id] ?? null, at: now() };
+      prev[id] = { spec: nextLive[id] ?? null, at: now(), fields: changedFields(items, active[id], fresh[id]) };
       nextLive[id] = fresh[id];
       out.push(...items.filter((i) => !i.info).map(({ safe: _s, ...i }) => ({ provider: 'apimart', source: 'docs', model: id, status: 'applied', ...i })));
     }
@@ -234,10 +234,42 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     return record(out);
   }
 
+  // Request field names a change touched (the provider's names: "size" for aspect_ratio, media fields).
+  function changedFields(items, before, after) {
+    const rename = { ...(before?.rename || {}), ...(after?.rename || {}) };
+    const out = new Set();
+    for (const i of items) {
+      if (i.param) {
+        const p = i.param.includes('→') ? i.param.split('→').pop().trim() : i.param.replace(/^fixed /, '');
+        out.add(p);
+        if (rename[p]) out.add(rename[p]);
+      }
+      // Whole-mode or field-name changes touch every field of the model.
+      if (['mode-added', 'mode-removed', 'rename-changed', 'model-added'].includes(i.type)) out.add('*');
+    }
+    return [...out];
+  }
+
+  // Was `value` one the new spec offers for this provider field? (If not, the
+  // request didn't come from our studio's choices — not the spec's fault.)
+  function offered(spec, field, value) {
+    if (value === undefined) return true;
+    const rename = spec?.rename || {};
+    for (const inputs of Object.values(flattenOverride(spec))) {
+      for (const [name, input] of Object.entries(inputs)) {
+        if (name !== field && rename[name] !== field) continue;
+        if (Array.isArray(input.enum) && !input.enum.map(String).includes(String(value))) return false;
+        if (input.minValue != null && Number(value) < Number(input.minValue)) return false;
+        if (input.maxValue != null && Number(value) > Number(input.maxValue)) return false;
+      }
+    }
+    return true;
+  }
+
   // A provider refused a request we built from its spec. Logged; and if that
   // model's spec was changed automatically in the last two weeks, the change
   // is undone at once (and that docs version is not applied again).
-  function providerRejected({ provider, endpoint, model, status, message, params = [] }) {
+  function providerRejected({ provider, endpoint, model, status, message, params = [], body = {} }) {
     const text = String(message || '').slice(0, 400);
     // Must name one of the settings we sent (not the prompt): that is a spec problem.
     const named = params.filter((p) => p !== 'prompt' && new RegExp(`\\b${p.replace(/[^a-z0-9_]/gi, '')}\\b`, 'i').test(text));
@@ -248,7 +280,11 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     if (provider === 'apimart' && model) {
       const prev = previous();
       const p = prev[model];
-      if (p && now() - p.at < 14 * DAY) {
+      const l0 = live();
+      // Only when the refused setting is one the last change touched, with a value that change offers.
+      const touched = p && (p.fields || ['*']).some((f) => f === '*' || named.includes(f));
+      const fromOurSpec = named.every((f) => offered(l0[model], f, body[f]));
+      if (p && now() - p.at < 14 * DAY && touched && fromOurSpec) {
         const l = live();
         const bad = refused();
         bad[model] = l[model];

@@ -217,6 +217,11 @@ export function createProjects({ db }) {
     return { folders: q.folders.all(f.project_id) };
   }
 
+  // A folder id from a request must belong to that project (archived ones too).
+  function checkFolder(projectId, folderId) {
+    return folderIn(projectId, folderId).id;
+  }
+
   // Where a new item goes: { projectId, folderId } after access checks.
   function target(user, project, folder) {
     if (!project) return { projectId: null, folderId: null };
@@ -228,7 +233,7 @@ export function createProjects({ db }) {
 
   return {
     list, create, details, update, touch, addMember, removeMember,
-    createFolder, updateFolder, deleteFolder, target,
+    createFolder, updateFolder, deleteFolder, target, checkFolder,
     isMember, roleIn, memberProjectIds, get,
     users: () => q.users.all().map((u) => ({ id: u.id, username: u.username, name: u.display_name })),
     colors: PROJECT_COLORS,

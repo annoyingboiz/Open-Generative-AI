@@ -160,7 +160,7 @@ export function FolderPath({ ctx, folders = [], onFolder, onNewFolder }) {
         <button className="flex h-9 min-w-0 max-w-[220px] items-center gap-1.5 rounded-lg px-2 text-base text-foreground/80 hover:bg-accent" aria-label="Folder for new work">
           <span className="opacity-50">/</span>
           <FolderIcon />
-          <span className="truncate">{current ? current.name : "All"}</span>
+          <span className="truncate">{current ? current.name : "No folder"}</span>
           <span className="opacity-60">▾</span>
         </button>
       </DropdownMenuTrigger>

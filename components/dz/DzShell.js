@@ -4,7 +4,7 @@
 // Replaces the upstream StandaloneShell (API-key handling, promo banners and
 // tabs for services we do not use). Studios come from the `studio` package.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { DzCinemaStudio, DzCreateStudio, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
   DzProjectsPage, ProjectSwitcher, FolderPath, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
@@ -98,6 +98,9 @@ export default function DzShell() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [moveItem, setMoveItem] = useState(null);
+  // Only the latest project switch counts; until the first one resolves the studios wait.
+  const navSeq = useRef(0);
+  const [switching, setSwitching] = useState(true);
 
   // Session check (the gateway already required sign-in) and initial tab.
   useEffect(() => {
@@ -121,17 +124,22 @@ export default function DzShell() {
     setFolder((details.folders || []).some((x) => x.id === f) ? f : null);
   }, []);
   const loadProjectFromPath = useCallback(async () => {
+    const seq = ++navSeq.current;
     const { slug, tab } = parsePath(window.location.pathname);
-    if (!slug) { applyProject(null); return; }
+    if (!slug) { applyProject(null); setSwitching(false); return; }
+    setSwitching(true);
     try {
       const details = await dzProjectsApi.details(slug);
+      if (seq !== navSeq.current) return;
       applyProject(details);
       dzProjectsApi.touch(details.project.id).catch(() => {});
     } catch {
+      if (seq !== navSeq.current) return;
       applyProject(null);
       window.history.replaceState(null, '', pathFor(null, tab));
       push({ type: 'error', tabId: tab, message: 'That project was not found, or you are not in it. Back in your Library.' });
     }
+    setSwitching(false);
   }, [applyProject]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!user) return;
@@ -139,24 +147,32 @@ export default function DzShell() {
     loadProjectFromPath();
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
   // Everyone reads where new work goes from here (uploads, generations, history).
-  useEffect(() => { dzSetContext({ project, folder }); }, [project, folder]);
+  useEffect(() => { dzSetContext({ project, folder, pending: switching }); }, [project, folder, switching]);
   const pickFolder = (id) => {
     setFolder(id);
     try { if (project) { if (id) localStorage.setItem(folderKey(project.id), id); else localStorage.removeItem(folderKey(project.id)); } } catch { /* optional */ }
   };
   const openProject = async (p, tab = activeTab) => {
+    const seq = ++navSeq.current;
     setActiveTab(tab);
     if (!p) {
       applyProject(null);
+      setSwitching(false);
       window.history.pushState(null, '', pathFor(null, tab));
       return;
     }
+    setSwitching(true);
     try {
       const details = await dzProjectsApi.details(p.id);
+      if (seq !== navSeq.current) return;
       applyProject(details);
       window.history.pushState(null, '', pathFor(details.project, tab));
       dzProjectsApi.touch(details.project.id).then(reloadProjects).catch(() => {});
-    } catch (e) { push({ type: 'error', tabId: tab, message: e.message }); }
+    } catch (e) {
+      if (seq !== navSeq.current) return;
+      push({ type: 'error', tabId: tab, message: e.message });
+    }
+    setSwitching(false);
   };
   const refreshProject = async () => {
     reloadProjects();
@@ -299,7 +315,8 @@ export default function DzShell() {
   };
 
   // Splash while the session loads (instead of a black screen).
-  if (!user) {
+  // Splash until the session and the project in the URL are known (nothing can go to the wrong place).
+  if (!user || (switching && !project && parsePath(typeof window !== 'undefined' ? window.location.pathname : '').slug)) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/25">
@@ -436,7 +453,7 @@ export default function DzShell() {
             <DzLibrary onGenerationError={callbacks('library').onGenerationError} />
           </div>
           <div className={activeTab === 'upscale' ? 'h-full w-full' : 'hidden'}>
-            <DzUpscaleStudio {...studioProps} {...callbacks('upscale')} isAdmin={user.role === 'admin'} initial={upscaleTabPick} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+            <DzUpscaleStudio key={project?.id || 'library'} {...studioProps} {...callbacks('upscale')} isAdmin={user.role === 'admin'} initial={upscaleTabPick} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
         </main>
 

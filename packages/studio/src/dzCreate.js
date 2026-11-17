@@ -143,7 +143,9 @@ export function chooseVariant(entry, attached) {
     const plain = fits.find((v) => Object.keys(v.media).length === 0 || !(v.model.required || []).some((f) => v.model.inputs?.[f]?.field));
     if (plain) return plain;
   }
-  return fits.sort((a, b) => Object.keys(a.media).length - Object.keys(b.media).length)[0];
+  // Prefer endpoints whose required media are all attached, then the simplest one.
+  const score = (v) => (missingFor(v, attached) ? 1000 : 0) + Object.keys(v.media).length;
+  return [...fits].sort((a, b) => score(a) - score(b))[0];
 }
 
 // What is missing for the chosen endpoint (required media) — null when ready.

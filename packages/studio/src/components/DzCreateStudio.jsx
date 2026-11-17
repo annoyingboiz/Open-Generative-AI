@@ -11,6 +11,7 @@ import { useDzQuote } from "./DzPrice.jsx";
 import { useDzHistory } from "../dzLibrary.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
+import DrawModal from "./DrawModal.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxOf, composePrompt,
   ROLE_INFO, CAMERA, LENS, FOCAL, APERTURE, CAMERA_ASSETS, CAMERA_MOVES, DEFAULT_CAMERA,
@@ -42,7 +43,7 @@ async function download(url) {
 }
 
 const optLabel = (p, v) => {
-  if (p.key === "duration") return `${v}s`;
+  if (p.key === "duration") return Number(v) === -1 ? "Auto" : `${v}s`;
   return String(v);
 };
 
@@ -288,6 +289,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const [attached, setAttached] = useState(saved.attached || {});
   const [uploadingRole, setUploadingRole] = useState(null);
   const [busy, setBusy] = useState(0);
+  const [drawOpen, setDrawOpen] = useState(false);
   const promptRef = useRef(null);
 
   // The catalog script is loaded with the page; read it on the client only.
@@ -505,6 +507,10 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
               <PopoverContent side="top" align="start" className="w-[min(440px,calc(100vw-24px))] rounded-2xl"><CameraPanel camera={camera} setCamera={setCamera} /></PopoverContent>
             </Popover>
 
+            {kind === "image" && (
+              <Button variant="secondary" className="h-10 rounded-xl px-3 font-medium" onClick={() => setDrawOpen(true)}>Draw to Edit</Button>
+            )}
+
             {params.advanced.length > 0 && (
               <Popover>
                 <PopoverTrigger asChild>
@@ -536,6 +542,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           {missing && <p className="text-amber-300">{missing}</p>}
         </div>
       </div>
+      <DrawModal isOpen={drawOpen} onClose={() => setDrawOpen(false)} apiKey={apiKey} batchSize={1} />
     </div>
   );
 }

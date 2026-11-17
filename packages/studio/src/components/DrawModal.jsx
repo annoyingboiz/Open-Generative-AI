@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
-import { uploadFile, generateI2I } from "../api.js";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { uploadFile, dzGenerate, dzWithMeta } from "../api.js";
+import { createEntries, chooseVariant, buildBody } from "../dzCreate.js"; // DZ: edit models from our catalog
+import { Logo } from "../ui/index.js";
 
 export default function DrawModal({
   isOpen,
@@ -12,7 +14,10 @@ export default function DrawModal({
   const [viewState, setViewState] = useState("setup"); // 'setup' | 'canvas'
   const [bgImageUrl, setBgImageUrl] = useState(null); // Image dataURL or src
   const [aspectRatio, setAspectRatio] = useState("16:9"); // '16:9' | '1:1' | 'Auto'
-  const [selectedModel, setSelectedModel] = useState("nano-banana-pro-edit"); // 'nano-banana-2-edit' | 'nano-banana-pro-edit'
+  // DZ: every image model that accepts reference images (edit), from our catalog.
+  const editEntries = useMemo(() => (typeof window === "undefined" ? [] : createEntries("image").filter((e) => e.slots.some((sl) => sl.role === "reference"))), [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [selectedModel, setSelectedModel] = useState(null); // entry key
+  const selectedEntry = editEntries.find((e) => e.key === selectedModel) || editEntries[0] || null;
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [isArDropdownOpen, setIsArDropdownOpen] = useState(false);
   const [promptText, setPromptText] = useState("Edit the image based on the drawing overlay"); // text prompt for generation
@@ -1017,16 +1022,24 @@ export default function DrawModal({
 
       const uploadedUrl = await uploadFile(apiKey, blob);
 
+      if (!selectedEntry) throw new Error("No edit model available. Check the providers in Settings.");
+      const attached = { reference: [{ url: uploadedUrl }] };
+      const variant = chooseVariant(selectedEntry, attached);
+      if (!variant) throw new Error(`${selectedEntry.familyName} can't edit an image here.`);
+      const prompt = promptText.trim() || "Edit the image based on the drawing overlay";
+      const aspect = aspectRatio === "Auto" ? undefined : aspectRatio;
+      const values = {};
+      for (const key of ["aspect_ratio", "ratio"]) {
+        const enumValues = variant.model.inputs?.[key]?.enum;
+        if (aspect && enumValues?.includes(aspect)) values[key] = aspect;
+      }
+      const body = buildBody(variant, { prompt, values, attached });
+      const modelName = `${selectedEntry.familyName} · ${selectedEntry.providerName}`;
       const results = await Promise.all(
-        Array.from({ length: batchSize }).map(async () => {
-          const genParams = {
-            model: selectedModel,
-            prompt: promptText.trim() || "Edit the image based on the drawing overlay",
-            images_list: [uploadedUrl],
-            aspect_ratio: aspectRatio === "Auto" ? "1:1" : aspectRatio,
-          };
-          return await generateI2I(apiKey, genParams);
-        }),
+        Array.from({ length: batchSize }).map(() =>
+          dzWithMeta({ studio: "create", meta: { kind: "image", entryKey: selectedEntry.key, modelName, prompt: `Draw to Edit: ${prompt}`, values, attached } },
+            () => dzGenerate(apiKey, { endpoint: variant.model.endpoint, ...body })),
+        ),
       );
 
       results.forEach((res) => {
@@ -1034,12 +1047,12 @@ export default function DrawModal({
           const entry = {
             id: res.id || Math.random().toString(36).substring(7),
             url: res.url,
-            prompt: `Draw to Edit with ${selectedModel === "nano-banana-pro-edit" ? "Nano Banana Pro" : "Nano Banana 2"}`,
-            model: selectedModel,
-            aspect_ratio: aspectRatio === "Auto" ? "1:1" : aspectRatio,
+            prompt: `Draw to Edit with ${modelName}`,
+            model: variant.model.endpoint,
+            aspect_ratio: aspect || "",
             timestamp: new Date().toISOString(),
           };
-          onAddHistoryItem(entry);
+          onAddHistoryItem?.(entry);
         }
       });
 
@@ -1085,7 +1098,7 @@ export default function DrawModal({
               }`}
             >
               Sketch to Video
-              <span className="bg-[#b5f500] text-black text-base font-black px-1 rounded">
+              <span className="bg-[#22d3ee] text-black text-base font-black px-1 rounded">
                 NEW
               </span>
             </button>
@@ -1131,7 +1144,7 @@ export default function DrawModal({
               onDrop={handleBgDrop}
               className={`border-2 border-dashed rounded-2xl p-8 max-w-md w-full text-center flex flex-col items-center gap-6 bg-[#070708]/50 transition-colors ${
                 isBgDragging
-                  ? "border-[#b5f500] bg-[#b5f500]/5"
+                  ? "border-[#22d3ee] bg-[#22d3ee]/5"
                   : "border-white/10"
               }`}
             >
@@ -1142,7 +1155,7 @@ export default function DrawModal({
                   className="w-full h-full object-cover opacity-60"
                 />
                 <div className="absolute bottom-2 left-2 right-2 bg-black/80 backdrop-blur-md rounded-md p-1 px-2 border border-white/5 flex items-center gap-1">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#b5f500] animate-pulse"></div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#22d3ee] animate-pulse"></div>
                   <span className="text-base text-white/50 tracking-wider uppercase font-bold">
                     Sketchpad active
                   </span>
@@ -1263,7 +1276,7 @@ export default function DrawModal({
                       return (
                         <div
                           key={imgObj.id}
-                          className={`absolute group cursor-move ${isSelected ? "ring-2 ring-[#b5f500] ring-offset-1 ring-offset-black z-10" : ""}`}
+                          className={`absolute group cursor-move ${isSelected ? "ring-2 ring-[#22d3ee] ring-offset-1 ring-offset-black z-10" : ""}`}
                           style={{
                             left: `${leftPct}%`,
                             top: `${topPct}%`,
@@ -1320,7 +1333,7 @@ export default function DrawModal({
                           }}
                           className={`absolute bg-transparent border-none outline-none resize-none font-bold text-left overflow-hidden select-text z-10 ${
                             isSelected
-                              ? "ring-1 ring-[#b5f500] ring-dashed bg-black/25"
+                              ? "ring-1 ring-[#22d3ee] ring-dashed bg-black/25"
                               : ""
                           }`}
                           style={{
@@ -1341,7 +1354,7 @@ export default function DrawModal({
                   {/* Unified Outline Handles Overlay for Selected Object */}
                   {activeTool === "pointer" && selectedObjectId && bbox && (
                     <div
-                      className="absolute border border-dashed border-[#b5f500] pointer-events-auto z-20 cursor-move"
+                      className="absolute border border-dashed border-[#22d3ee] pointer-events-auto z-20 cursor-move"
                       style={{
                         left: `${(bbox.x / canvasDimensions.width) * 100}%`,
                         top: `${(bbox.y / canvasDimensions.height) * 100}%`,
@@ -1352,37 +1365,37 @@ export default function DrawModal({
                     >
                       {/* Corner handles */}
                       <div
-                        className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-[#b5f500] cursor-nwse-resize rounded-full"
+                        className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-[#22d3ee] cursor-nwse-resize rounded-full"
                         onMouseDown={(e) => handleStartResizeSelected(e, "tl")}
                       />
                       <div
-                        className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-[#b5f500] cursor-nesw-resize rounded-full"
+                        className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-[#22d3ee] cursor-nesw-resize rounded-full"
                         onMouseDown={(e) => handleStartResizeSelected(e, "tr")}
                       />
                       <div
-                        className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-[#b5f500] cursor-nesw-resize rounded-full"
+                        className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-[#22d3ee] cursor-nesw-resize rounded-full"
                         onMouseDown={(e) => handleStartResizeSelected(e, "bl")}
                       />
                       <div
-                        className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-[#b5f500] cursor-nwse-resize rounded-full"
+                        className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-[#22d3ee] cursor-nwse-resize rounded-full"
                         onMouseDown={(e) => handleStartResizeSelected(e, "br")}
                       />
 
                       {/* Edge handles */}
                       <div
-                        className="absolute -top-1.5 left-[calc(50%-6px)] w-3 h-3 bg-white border border-[#b5f500] cursor-ns-resize rounded-full"
+                        className="absolute -top-1.5 left-[calc(50%-6px)] w-3 h-3 bg-white border border-[#22d3ee] cursor-ns-resize rounded-full"
                         onMouseDown={(e) => handleStartResizeSelected(e, "t")}
                       />
                       <div
-                        className="absolute -bottom-1.5 left-[calc(50%-6px)] w-3 h-3 bg-white border border-[#b5f500] cursor-ns-resize rounded-full"
+                        className="absolute -bottom-1.5 left-[calc(50%-6px)] w-3 h-3 bg-white border border-[#22d3ee] cursor-ns-resize rounded-full"
                         onMouseDown={(e) => handleStartResizeSelected(e, "b")}
                       />
                       <div
-                        className="absolute top-[calc(50%-6px)] -left-1.5 w-3 h-3 bg-white border border-[#b5f500] cursor-ew-resize rounded-full"
+                        className="absolute top-[calc(50%-6px)] -left-1.5 w-3 h-3 bg-white border border-[#22d3ee] cursor-ew-resize rounded-full"
                         onMouseDown={(e) => handleStartResizeSelected(e, "l")}
                       />
                       <div
-                        className="absolute top-[calc(50%-6px)] -right-1.5 w-3 h-3 bg-white border border-[#b5f500] cursor-ew-resize rounded-full"
+                        className="absolute top-[calc(50%-6px)] -right-1.5 w-3 h-3 bg-white border border-[#22d3ee] cursor-ew-resize rounded-full"
                         onMouseDown={(e) => handleStartResizeSelected(e, "r")}
                       />
                     </div>
@@ -1568,7 +1581,7 @@ export default function DrawModal({
                   title="Insert overlay image (or drop an image here)"
                   className={`p-1.5 rounded-lg transition-all ${
                     isOverlayDragging
-                      ? "bg-[#b5f500] text-black ring-2 ring-[#b5f500]"
+                      ? "bg-[#22d3ee] text-black ring-2 ring-[#22d3ee]"
                       : activeTool === "image"
                       ? "bg-white text-black"
                       : "text-white/60 hover:text-white"
@@ -1657,7 +1670,7 @@ export default function DrawModal({
                 <button
                   onClick={handleGenerateClick}
                   disabled={generating}
-                  className="ml-1 bg-[#b5f500] hover:opacity-90 active:scale-[0.97] transition-all text-black font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-md shadow-[#b5f500]/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="ml-1 bg-[#22d3ee] hover:opacity-90 active:scale-[0.97] transition-all text-black font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-md shadow-[#22d3ee]/10 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {generating ? (
                     <>
@@ -1683,66 +1696,30 @@ export default function DrawModal({
               <div className="relative" ref={modelDropdownRef}>
                 <button
                   onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                  className="h-[38px] flex items-center gap-2 px-3 bg-[#131316]/80 hover:bg-[#1c1c22] rounded-xl border border-white/5 text-xs text-white/70 whitespace-nowrap shadow-xl"
+                  className="h-10 flex items-center gap-2 px-2.5 bg-muted hover:bg-accent rounded-xl border border-border text-base text-foreground whitespace-nowrap shadow-xl"
                 >
-                  <span className="text-base text-[#b5f500] font-black bg-[#b5f500]/10 px-1.5 rounded border border-[#b5f500]/25">
-                    G
-                  </span>
-                  {selectedModel === "nano-banana-pro-edit"
-                    ? "Nano Banana Pro"
-                    : "Nano Banana 2"}
-                  <span className="opacity-45 text-base ml-0.5">▼</span>
+                  <Logo src={selectedEntry?.logo} name={selectedEntry?.vendorName || ""} size={24} className="rounded-md" />
+                  {selectedEntry ? `${selectedEntry.familyName} · ${selectedEntry.providerName}` : "No edit model"}
+                  <span className="opacity-45 ml-0.5">▾</span>
                 </button>
 
                 {isModelDropdownOpen && (
-                  <div className="absolute bottom-[calc(100%+8px)] left-0 bg-[#0f0f12] border border-white/10 rounded-2xl p-2 w-64 shadow-2xl flex flex-col gap-1 z-30">
-                    <div className="text-base font-black text-white/30 uppercase tracking-widest p-1.5 pb-1 select-none">
-                      Select model
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setSelectedModel("nano-banana-2-edit");
-                        setIsModelDropdownOpen(false);
-                      }}
-                      className={`flex flex-col text-left p-2.5 rounded-xl transition-all ${
-                        selectedModel === "nano-banana-2-edit"
-                          ? "bg-[#b5f500]/10 text-white"
-                          : "hover:bg-white/5 text-white/70"
-                      }`}
-                    >
-                      <div className="text-xs font-bold flex items-center gap-1.5">
-                        Nano Banana 2
-                        {selectedModel === "nano-banana-2-edit" && (
-                          <span className="text-[#b5f500]">✓</span>
-                        )}
-                      </div>
-                      <div className="text-base text-white/30 leading-snug mt-0.5">
-                        Google's Advanced Image Editing Model
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setSelectedModel("nano-banana-pro-edit");
-                        setIsModelDropdownOpen(false);
-                      }}
-                      className={`flex flex-col text-left p-2.5 rounded-xl transition-all ${
-                        selectedModel === "nano-banana-pro-edit"
-                          ? "bg-[#b5f500]/10 text-white"
-                          : "hover:bg-white/5 text-white/70"
-                      }`}
-                    >
-                      <div className="text-xs font-bold flex items-center gap-1.5">
-                        Nano Banana Pro
-                        {selectedModel === "nano-banana-pro-edit" && (
-                          <span className="text-[#b5f500]">✓</span>
-                        )}
-                      </div>
-                      <div className="text-base text-white/30 leading-snug mt-0.5">
-                        Best 4K Image Model Ever
-                      </div>
-                    </button>
+                  <div className="absolute bottom-[calc(100%+8px)] left-0 bg-popover border border-border rounded-2xl p-2 w-[360px] max-h-[50vh] overflow-y-auto custom-scrollbar shadow-2xl flex flex-col gap-1 z-30">
+                    <div className="text-base font-semibold text-muted-foreground p-1.5 pb-1 select-none">Edit with</div>
+                    {editEntries.map((e) => (
+                      <button
+                        key={e.key}
+                        onClick={() => { setSelectedModel(e.key); setIsModelDropdownOpen(false); }}
+                        className={`flex items-center gap-3 text-left p-2.5 rounded-xl transition-colors ${e.key === selectedEntry?.key ? "bg-primary/10 text-foreground" : "hover:bg-accent text-foreground/85"}`}
+                      >
+                        <Logo src={e.logo} name={e.vendorName} size={32} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-semibold truncate">{e.familyName}</span>
+                          <span className="block text-muted-foreground truncate">{e.vendorName} · {e.providerName}</span>
+                        </span>
+                        {e.priceLabel && <span className="shrink-0 text-muted-foreground tabular-nums">{e.priceLabel}</span>}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1787,7 +1764,7 @@ export default function DrawModal({
                       max="100"
                       value={brushSize}
                       onChange={(e) => setBrushSize(parseInt(e.target.value))}
-                      className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#b5f500]"
+                      className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#22d3ee]"
                     />
                     <span className="text-base font-bold text-white/60 text-right">
                       {brushSize}px
@@ -1806,7 +1783,7 @@ export default function DrawModal({
                 if (e.key === "Enter" && !generating) handleGenerateClick();
               }}
               placeholder="Describe what you want to generate…"
-              className="flex-1 mx-3 h-[38px] bg-[#131316]/80 border border-white/5 rounded-xl px-3 text-xs text-white/80 placeholder-white/25 outline-none focus:border-[#b5f500]/40 focus:ring-1 focus:ring-[#b5f500]/20 transition-all"
+              className="flex-1 mx-3 h-[38px] bg-[#131316]/80 border border-white/5 rounded-xl px-3 text-xs text-white/80 placeholder-white/25 outline-none focus:border-[#22d3ee]/40 focus:ring-1 focus:ring-[#22d3ee]/20 transition-all"
             />
 
             {/* Right Options */}
@@ -1845,7 +1822,7 @@ export default function DrawModal({
                         }}
                         className={`text-left p-1.5 px-2.5 rounded-xl text-xs font-bold transition-all ${
                           aspectRatio === r
-                            ? "bg-[#b5f500]/10 text-white"
+                            ? "bg-[#22d3ee]/10 text-white"
                             : "hover:bg-white/5 text-white/70"
                         }`}
                       >

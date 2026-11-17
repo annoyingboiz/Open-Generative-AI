@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DzCinemaStudio, DzCreateStudio, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
-  DzProjectsPage, ProjectSwitcher, FolderPath, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
+  DzProjectsPage, DzElementsPage, ProjectSwitcher, FolderPath, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
@@ -38,6 +38,9 @@ const ICONS = {
       <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
+  elements: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+  ),
   projects: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
   ),
@@ -57,6 +60,7 @@ export const DZ_TABS = [
   // The old Cinema stays for now.
   { id: 'cinema', label: 'Cinema (old)', divider: true },
   { id: 'library', label: 'Library', divider: true },
+  { id: 'elements', label: 'Elements' },
   { id: 'projects', label: 'Projects' },
 ];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
@@ -433,6 +437,9 @@ export default function DzShell() {
         <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]" onContextMenu={onContextMenu}>
           <div className={activeTab === 'create' ? 'h-full w-full' : 'hidden'}>
             <DzCreateStudio {...studioProps} {...callbacks('create')} droppedFiles={activeTab === 'create' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+          </div>
+          <div className={activeTab === 'elements' ? 'h-full w-full' : 'hidden'}>
+            {activeTab === 'elements' && <DzElementsPage projects={projects} onError={(message) => push({ type: 'error', tabId: 'elements', message })} />}
           </div>
           <div className={activeTab === 'projects' ? 'h-full w-full' : 'hidden'}>
             {activeTab === 'projects' && (

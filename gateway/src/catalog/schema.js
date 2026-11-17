@@ -62,6 +62,26 @@ export function toStudioInput(name, prop = {}) {
   }
 }
 
+// { type: 'elements', format: 'kling', maxItems, maxVideo, nameMax, descMax, refMax }
+// when the field takes subjects defined by name + images (and maybe a video).
+export function elementsSpec(prop = {}) {
+  const item = prop.items?.properties;
+  if (prop.type !== 'array' || !item?.element_name || !item?.reference_type) return null;
+  const types = item.reference_type.enum || [];
+  const desc = String(prop.description || '');
+  const video = types.includes('video_refer');
+  const maxVideo = video ? Number((/at most (\d+) video/i.exec(desc) || [])[1]) || 1 : 0;
+  return {
+    name: 'elements', title: 'Elements', type: 'elements', field: 'element', format: 'kling',
+    maxItems: prop.maxItems || 7,
+    maxVideo,
+    nameMax: Number((/max (\d+) characters/i.exec(item.element_name.description || '') || [])[1]) || 20,
+    descMax: Number((/max (\d+) characters/i.exec(item.element_description?.description || '') || [])[1]) || 100,
+    refMax: item.refer_images?.maxItems || 3,
+    images: types.includes('image_refer'),
+  };
+}
+
 // Builds studio inputs + media capability fields from a JSON schema.
 // Returns null if the model needs something our UI cannot provide.
 export function studioFieldsFromSchema(properties = {}, required = [], { renames = {} } = {}) {
@@ -70,7 +90,12 @@ export function studioFieldsFromSchema(properties = {}, required = [], { renames
   for (const name of required) if (UNSUPPORTED_FIELDS.has(name)) return null;
 
   for (const [rawName, prop] of Object.entries(properties)) {
-    if (HIDDEN_FIELDS.has(rawName) || UNSUPPORTED_FIELDS.has(rawName)) continue;
+    if (HIDDEN_FIELDS.has(rawName)) continue;
+    // Kling-style subjects (name + front image + more images, or a person video):
+    // our Elements fill them. Other providers' "elements" stay unsupported.
+    const subject = rawName === 'elements' && elementsSpec(prop);
+    if (subject) { inputs.elements = subject; continue; }
+    if (UNSUPPORTED_FIELDS.has(rawName)) continue;
     const name = renames[rawName] || rawName;
     const type = mediaTypeOf(rawName, prop);
     if (type) {

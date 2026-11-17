@@ -13,8 +13,10 @@ import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
+import { ElementPicker } from "./DzElements.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
+  mergeElements, elementsInputOf, entryTakesElements,
   ROLE_INFO, CAMERA, LENS, FOCAL, APERTURE, CAMERA_ASSETS, CAMERA_MOVES, DEFAULT_CAMERA,
 } from "../dzCreate.js";
 import {
@@ -38,6 +40,10 @@ function normalizeSaved(raw) {
   if (typeof s.prompt === "string") out.prompt = s.prompt;
   if (isObj(s.camera)) out.camera = Object.fromEntries(Object.entries(s.camera).filter(([, v]) => isScalar(v)));
   if (typeof s.move === "string") out.move = s.move;
+  if (Array.isArray(s.elements)) out.elements = s.elements.filter((e) => isObj(e) && typeof e.id === "string" && typeof e.name === "string").slice(0, 7).map((e) => ({
+    id: e.id, name: e.name, kind: typeof e.kind === "string" ? e.kind : "other", description: typeof e.description === "string" ? e.description : "",
+    images: Array.isArray(e.images) ? e.images.filter((u) => typeof u === "string").slice(0, 8) : [], video: typeof e.video === "string" ? e.video : null,
+  }));
   if (isObj(s.attached)) out.attached = Object.fromEntries(Object.entries(s.attached).filter(([role]) => ROLE_INFO[role]).map(([role, list]) => [role, cleanFiles(list)]));
   return out;
 }
@@ -333,6 +339,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const [move, setMove] = useState(saved.move || "");
   const [attached, setAttached] = useState(saved.attached || {});
   const [uploadingRole, setUploadingRole] = useState(null);
+  const [elements, setElements] = useState(saved.elements || []); // chosen elements (Library or project)
   const [uploads, setUploads] = useState(0); // files still uploading — Generate waits for them
   const [busy, setBusy] = useState(0);
   const [drawOpen, setDrawOpen] = useState(false);
@@ -348,23 +355,30 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const storedValues = valuesByKind[kind] || {};
 
   useEffect(() => {
-    try { localStorage.setItem(cfg.store, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached })); } catch { /* optional */ }
-  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached]);
+    try { localStorage.setItem(cfg.store, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements })); } catch { /* optional */ }
+  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements]);
 
   // Only the slots this model has; other attached files are kept but not sent.
   const slotRoles = new Set((entry?.slots || []).map((s) => s.role));
   const used = Object.fromEntries(Object.entries(attached).filter(([role, files]) => slotRoles.has(role) && files?.length));
   const unusedCount = Object.entries(attached).filter(([role]) => !slotRoles.has(role)).reduce((n, [, f]) => n + (f?.length || 0), 0);
-  const variant = entry ? chooseVariant(entry, used) : null;
+  // Elements: natively (Kling `elements`) or as extra reference files.
+  const nativeElements = entryTakesElements(entry);
+  const canUseElements = Boolean(entry && (nativeElements || entry.slots.some((sl) => sl.role === "reference" || sl.role === "video")));
+  const activeElements = canUseElements ? elements : [];
+  const merged = entry ? mergeElements(entry, used, activeElements) : { attached: used, native: false };
+  const variant = entry ? chooseVariant(entry, merged.attached, { native: merged.native }) : null;
+  const elementSpec = variant ? elementsInputOf(variant.model) : null;
+  const elementMax = nativeElements ? (entry.variants.map((v) => elementsInputOf(v.model)?.maxItems || 0).reduce((a, b) => Math.max(a, b), 0) || 7) : 7;
   const params = variant ? paramsOf(variant.model) : { main: [], advanced: [] };
   // Only values this endpoint accepts (attaching files can switch the endpoint).
   const values = variant ? keepValues(storedValues, variant) : storedValues;
   const syntax = variant ? refSyntaxFor(variant.model) : null;
-  const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, used);
+  const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, merged.attached);
   const finalPrompt = composePrompt(prompt, { kind, camera, move });
   const needsPrompt = variant?.model.promptRequired;
-  const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(used).length));
-  const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values, attached: used }) : null;
+  const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || activeElements.length));
+  const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
   const { price, loading: priceLoading } = useDzQuote(apiKey, () => (body ? [dzGenerate, { endpoint: variant.model.endpoint, ...body }] : null));
 
   const setValue = (key, v) => setValuesByKind((prev) => ({ ...prev, [kind]: { ...(prev[kind] || {}), [key]: v } }));
@@ -438,6 +452,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       camera,
       move: kind === "video" ? move : "",
       attached: used,
+      elements: activeElements.map((e) => ({ id: e.id, name: e.name })),
     };
     const request = { endpoint: variant.model.endpoint, ...body };
     setBusy((n) => n + 1);
@@ -495,15 +510,22 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     if (isObj(m.attached)) setAttached(normalizeSaved({ attached: m.attached }).attached || {});
   };
 
+  // Prompt tags for what is attached; an element's tag shows its name.
   const refChips = [];
   if (syntax) {
+    const seenElement = new Set();
     let n = 0;
-    for (const role of ["first", "middle", "last", "reference"]) for (const _ of used[role] || []) { n += 1; refChips.push({ label: syntax.image(n), role }); }
+    for (const role of ["first", "middle", "last", "reference"]) for (const f of merged.attached[role] || []) {
+      n += 1;
+      if (f.element) { if (!seenElement.has(f.element)) { seenElement.add(f.element); refChips.push({ label: syntax.image(n), name: f.name }); } }
+      else refChips.push({ label: syntax.image(n), role });
+    }
     let v = 0;
-    for (const role of ["video", "source"]) for (const _ of used[role] || []) { v += 1; refChips.push({ label: syntax.video(v), role }); }
+    for (const role of ["video", "source"]) for (const f of merged.attached[role] || []) { v += 1; refChips.push({ label: syntax.video(v), role, name: f.element ? f.name : undefined }); }
     let a = 0;
-    for (const _ of used.audio || []) { a += 1; refChips.push({ label: syntax.audio(a), role: "audio" }); }
+    for (const _ of merged.attached.audio || []) { a += 1; refChips.push({ label: syntax.audio(a), role: "audio" }); }
   }
+  if (elementSpec) activeElements.slice(0, elementSpec.maxItems || 7).forEach((e, i) => refChips.push({ label: `@element_${i + 1}`, name: e.name }));
 
   const items = history.items;
 
@@ -538,13 +560,26 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
               ))}
             </div>
           )}
+          {elements.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-muted-foreground">Elements:</span>
+              {elements.map((e) => (
+                <span key={e.id} className={cn("flex items-center gap-1.5 rounded-full border border-border py-0.5 pl-0.5 pr-2", !canUseElements && "opacity-50")}>
+                  {e.images?.[0] ? <img src={e.images[0]} alt="" className="h-6 w-6 rounded-full object-cover" /> : <span className="h-6 w-6 rounded-full bg-muted" />}
+                  <span className="font-medium">{e.name}</span>
+                  <button type="button" aria-label={`Remove ${e.name}`} onClick={() => setElements((list) => list.filter((x) => x.id !== e.id))} className="text-muted-foreground hover:text-foreground">✕</button>
+                </span>
+              ))}
+              {!canUseElements && <span className="text-amber-300">This model takes no references — elements are not used.</span>}
+            </div>
+          )}
           {unusedCount > 0 && <p className="text-muted-foreground">{unusedCount} attached file{unusedCount > 1 ? "s are" : " is"} not used by this model.</p>}
 
           {refChips.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-muted-foreground">Refer to them in the prompt:</span>
               {refChips.map((c) => (
-                <button key={c.label} type="button" onClick={() => insertAtCursor(c.label)} className="rounded-lg bg-primary/15 px-2.5 py-1 font-semibold text-primary transition-colors hover:bg-primary/20">{c.label}</button>
+                <button key={c.label} type="button" onClick={() => insertAtCursor(c.label)} title={c.name ? `${c.name}` : undefined} className="rounded-lg bg-primary/15 px-2.5 py-1 font-semibold text-primary transition-colors hover:bg-primary/20">{c.name ? <span className="mr-1 font-normal text-foreground/80">{c.name}</span> : null}{c.label}</button>
               ))}
             </div>
           )}
@@ -583,6 +618,10 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
               <PopoverContent side="top" align="start" className="w-[min(440px,calc(100vw-24px))] rounded-2xl"><CameraPanel camera={camera} setCamera={setCamera} /></PopoverContent>
             </Popover>
 
+            {canUseElements && (
+              <ElementPicker selected={elements} onChange={setElements} max={elementMax}
+                note={nativeElements ? "This model takes elements directly (name, pictures, video)." : "Their pictures go in as references."} />
+            )}
             {kind === "image" && (
               <Button variant="secondary" className="h-10 rounded-xl px-3 font-medium" onClick={() => setDrawOpen(true)}>Draw to Edit</Button>
             )}

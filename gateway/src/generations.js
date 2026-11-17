@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // Generations: submit to a provider, poll on the server, download results to
 // our disk, keep history. Runs even when nobody has the page open.
 import { providerById } from './providers/index.js';
@@ -418,6 +419,24 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     };
   }
 
+  // A copy of a file the user can see, as an upload in the given scope (personal
+  // or a project) — e.g. an element's pictures, so everyone who sees the element
+  // sees its files. An upload already in that scope is reused as is.
+  async function adoptMedia(user, url, { projectId = null } = {}) {
+    const m = typeof url === 'string' && LOCAL_MEDIA_RE.exec(url);
+    if (!m) throw new GenerationError('Use a file from this app.', 400);
+    if (m[1].toLowerCase() === 'u') {
+      const up = q.upload.get(m[2]);
+      if (!canSee(user, up)) throw new GenerationError('File not found.', 404);
+      if ((up.project_id || null) === projectId && (projectId || up.user_id === user.id)) return url;
+    }
+    const f = mediaFile(user, m[1].toLowerCase(), m[2], m[3]);
+    if (!f) throw new GenerationError('File not found.', 404);
+    const saved = await storage.saveUpload(user.id, fs.createReadStream(f.path), f.mime);
+    q.insertUpload.run(saved.id, user.id, saved.path, f.mime, saved.bytes, null, projectId, null, now());
+    return `/media/u/${saved.id}.${saved.path.split('.').pop()}`;
+  }
+
   // Same for a /media/... link from a request body (e.g. an upscale input).
   function mediaFileForUrl(user, url) {
     const m = typeof url === 'string' && LOCAL_MEDIA_RE.exec(url);
@@ -426,7 +445,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
-    saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, mediaFile, mediaFileForUrl,
+    saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, mediaFile, mediaFileForUrl, adoptMedia,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

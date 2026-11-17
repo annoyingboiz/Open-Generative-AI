@@ -24,6 +24,7 @@ import { createCatalog, DEFAULT_RECOMMENDED } from './catalog/index.js';
 import { createChanges } from './catalog/changes.js';
 import { createGenerations, GenerationError } from './generations.js';
 import { createProjects, ProjectError } from './projects.js';
+import { createElements, ElementError } from './elements.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
@@ -74,6 +75,7 @@ export async function buildApp(config, { logger = true } = {}) {
   const quoter = createQuoter({ providers, log: app.log });
   const projects = createProjects({ db });
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
+  const elements = createElements({ db, projects, generations });
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);
   await app.register(formbody);
@@ -411,7 +413,7 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/api/v1/account/balance', async () => ({ balance: null }));
 
   const sendGenError = (reply, error) => {
-    if (error instanceof GenerationError || error instanceof ProjectError) return reply.code(error.status).send({ detail: error.message, error: error.message });
+    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError) return reply.code(error.status).send({ detail: error.message, error: error.message });
     throw error;
   };
   // Where new work goes: ?project=&folder= (or _dz.project/_dz.folder) → checked ids.
@@ -591,6 +593,13 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/dz/api/projects/:id/folders', projectRoute((req) => projects.createFolder(req.user, req.params.id, req.body || {})));
   app.patch('/dz/api/folders/:id', projectRoute((req) => projects.updateFolder(req.user, req.params.id, req.body || {})));
   app.delete('/dz/api/folders/:id', projectRoute((req) => projects.deleteFolder(req.user, req.params.id)));
+  // ── Elements (Library or project; copies between them) ────────────────
+  app.get('/dz/api/elements', projectRoute((req) => elements.list(req.user, req.query)));
+  app.post('/dz/api/elements', projectRoute((req) => elements.create(req.user, req.body || {})));
+  app.patch('/dz/api/elements/:id', projectRoute((req) => elements.update(req.user, req.params.id, req.body || {})));
+  app.delete('/dz/api/elements/:id', projectRoute((req) => elements.remove(req.user, req.params.id)));
+  app.post('/dz/api/elements/:id/copy', projectRoute((req) => elements.copy(req.user, req.params.id, { project: req.body?.project || null })));
+
   // Names to add people to a project (signed-in users only; no roles, no limits).
   app.get('/dz/api/users', projectRoute(() => ({ users: projects.users() })));
   // Tools that depend on a provider key (e.g. Upscale on fal.ai), for the

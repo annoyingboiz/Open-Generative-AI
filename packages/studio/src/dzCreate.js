@@ -147,9 +147,69 @@ export function createEntries(kind) {
   return [...byKey.values()].sort((a, b) => (a.recommended ?? 1e9) - (b.recommended ?? 1e9) || a.familyName.localeCompare(b.familyName));
 }
 
+// ── Elements ─────────────────────────────────────────────────────────────
+// Kling-style models take elements natively (`elements`: name + front image +
+// more images, or a person video). Every other model gets an element's
+// pictures as references (and its video as a video reference, if it takes one).
+
+export const elementsInputOf = (model) => (model?.inputs?.elements?.type === "elements" ? model.inputs.elements : null);
+export const entryTakesElements = (entry) => Boolean(entry?.variants.some((v) => elementsInputOf(v.model)));
+
+// The files an element adds when the model has no native elements.
+export function elementMedia(entry, elements = []) {
+  const has = (r) => entry?.slots.some((s) => s.role === r);
+  const out = {};
+  if (has("reference")) out.reference = elements.flatMap((e) => (e.images || []).slice(0, 3).map((url) => ({ url, name: e.name, element: e.id })));
+  if (has("video")) {
+    const videos = elements.filter((e) => e.video).map((e) => ({ url: e.video, name: e.name, element: e.id }));
+    if (videos.length) out.video = videos;
+  }
+  return out;
+}
+
+// Attached files + elements → what the endpoint choice and the body use.
+export function mergeElements(entry, attached, elements = []) {
+  if (!elements.length) return { attached, native: false };
+  if (entryTakesElements(entry)) return { attached, native: true };
+  const extra = elementMedia(entry, elements);
+  const merged = { ...attached };
+  for (const [role, files] of Object.entries(extra)) merged[role] = [...(attached[role] || []), ...files];
+  return { attached: merged, native: false };
+}
+
+// One element in Kling's shape.
+export function klingElement(e, spec, { allowVideo }) {
+  const name = String(e.name || "Element").slice(0, spec.nameMax || 20);
+  const description = String(e.description || "").slice(0, spec.descMax || 100) || undefined;
+  if (allowVideo && e.video && e.kind === "character") {
+    return { element_name: name, element_description: description, reference_type: "video_refer", refer_videos: [e.video] };
+  }
+  const images = e.images || [];
+  if (!images.length) return null;
+  const refs = images.slice(1, 1 + (spec.refMax || 3));
+  return { element_name: name, element_description: description, reference_type: "image_refer", frontal_image: images[0], refer_images: refs.length ? refs : [images[0]] };
+}
+
+export function klingElements(elements, spec) {
+  let videos = 0;
+  const out = [];
+  for (const e of elements.slice(0, spec.maxItems || 7)) {
+    const allowVideo = videos < (spec.maxVideo || 0);
+    const k = klingElement(e, spec, { allowVideo });
+    if (!k) continue;
+    if (k.reference_type === "video_refer") videos += 1;
+    out.push(k);
+  }
+  return out;
+}
+
 // The endpoint to call for what is attached. Prefers the simplest endpoint
 // that accepts every attached role and has room for every file.
-export function chooseVariant(entry, attached) {
+export function chooseVariant(entry, attached, { native = false } = {}) {
+  if (native) {
+    const own = { ...entry, variants: entry.variants.filter((v) => elementsInputOf(v.model)) };
+    if (own.variants.length) return chooseVariant(own, attached);
+  }
   const used = Object.entries(attached).filter(([, files]) => files.length).map(([role]) => role);
   const fits = entry.variants.filter((v) => used.every((role) => v.media[role] && attached[role].length <= v.media[role].max));
   if (!fits.length) return null;
@@ -176,7 +236,7 @@ export function missingFor(variant, attached) {
 }
 
 // Request body for the chosen endpoint.
-export function buildBody(variant, { prompt, values, attached, noDefault = [] }) {
+export function buildBody(variant, { prompt, values, attached, noDefault = [], elements = [] }) {
   const body = {};
   if (variant.model.hasPrompt !== false && prompt) body.prompt = prompt;
   const { main, advanced } = paramsOf(variant.model);
@@ -189,6 +249,11 @@ export function buildBody(variant, { prompt, values, attached, noDefault = [] })
     const files = (attached[role] || []).map((f) => f.url).filter(Boolean);
     if (!files.length) continue;
     body[m.field] = m.array ? files.slice(0, m.max) : files[0];
+  }
+  const spec = elementsInputOf(variant.model);
+  if (spec && elements.length) {
+    const list = klingElements(elements, spec);
+    if (list.length) body.elements = list.map((k) => Object.fromEntries(Object.entries(k).filter(([, v]) => v !== undefined)));
   }
   return body;
 }

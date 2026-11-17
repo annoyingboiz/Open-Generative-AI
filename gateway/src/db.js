@@ -138,6 +138,27 @@ const MIGRATIONS = [
   CREATE INDEX generations_project ON generations(project_id, created_at DESC) WHERE project_id IS NOT NULL;
   CREATE INDEX uploads_project ON uploads(project_id, created_at DESC) WHERE project_id IS NOT NULL;
   `,
+  // 8: elements — named subjects (characters, objects, places) with pictures and
+  // an optional video. In the Library (personal) or in a project; copies, not links.
+  `
+  CREATE TABLE elements (
+    id TEXT PRIMARY KEY,
+    workspace_id INTEGER NOT NULL DEFAULT 1,
+    owner_id INTEGER NOT NULL REFERENCES users(id),
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'character' CHECK (kind IN ('character', 'object', 'place', 'other')),
+    description TEXT NOT NULL DEFAULT '',
+    images_json TEXT NOT NULL DEFAULT '[]',
+    video_url TEXT,
+    source_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE INDEX elements_owner ON elements(owner_id, updated_at DESC) WHERE project_id IS NULL;
+  CREATE INDEX elements_project ON elements(project_id, updated_at DESC) WHERE project_id IS NOT NULL;
+  `,
 ];
 
 export function openDatabase(dataDir) {

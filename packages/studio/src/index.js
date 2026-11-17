@@ -19,3 +19,4 @@ export * from './api';
 export * from './ui/index.js'; // DZ UI kit
 export { DzProjectsPage, ProjectSwitcher, FolderPath, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, folderTree } from './components/DzProjects'; // DZ
 export { dzSetContext, dzGetContext, useDzContext, dzContextScope } from './dzContext'; // DZ
+export { DzElementsPage, ElementPicker, ElementEditor, dzElementsApi, useDzElements } from './components/DzElements'; // DZ

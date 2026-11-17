@@ -214,3 +214,68 @@ test('a member can leave; the owner cannot', async () => {
   res = await as('admin', 'DELETE', `/dz/api/projects/${project.id}/members/${admin.id}`);
   assert.equal(res.statusCode, 409);
 });
+
+test('elements: personal and project, copies both ways with their own files', async () => {
+  // A fresh project for this test (the first one is archived by now).
+  let res = await as('admin', 'POST', '/dz/api/projects', { name: 'Elements test' });
+  const proj = res.json().project;
+  await as('admin', 'POST', `/dz/api/projects/${proj.id}/members`, { username: 'wife' });
+  const mp = multipart('hero.png', 'image/png', PNG);
+  res = await app.inject({ method: 'POST', url: '/api/v1/upload_file', headers: { cookie: cookies.admin, ...mp.headers }, payload: mp.payload });
+  const personalUpload = res.json().url;
+
+  // Personal element: only the owner.
+  res = await as('admin', 'POST', '/dz/api/elements', { name: 'Hero', kind: 'character', description: 'Tall', images: [personalUpload] });
+  assert.equal(res.statusCode, 200, res.body);
+  const hero = res.json().element;
+  assert.equal(hero.images[0], personalUpload); // already a personal upload: reused
+  res = await as('wife', 'PATCH', `/dz/api/elements/${hero.id}`, { name: 'Mine' });
+  assert.equal(res.statusCode, 404);
+  res = await as('admin', 'POST', '/dz/api/elements', { name: '', images: [personalUpload] });
+  assert.equal(res.statusCode, 400);
+  res = await as('admin', 'POST', '/dz/api/elements', { name: 'Empty' });
+  assert.equal(res.statusCode, 400);
+  // Someone else's file can't be put into an element.
+  res = await as('wife', 'POST', '/dz/api/elements', { name: 'Steal', images: [personalUpload] });
+  assert.equal(res.statusCode, 404);
+
+  // Copy into the project: new files that members can open.
+  res = await as('admin', 'POST', `/dz/api/elements/${hero.id}/copy`, { project: proj.id });
+  assert.equal(res.statusCode, 200, res.body);
+  const inProject = res.json().element;
+  assert.equal(inProject.project_id, proj.id);
+  assert.equal(inProject.source_id, hero.id);
+  assert.notEqual(inProject.images[0], personalUpload);
+  res = await as('wife', 'GET', inProject.images[0]);
+  assert.equal(res.statusCode, 200);
+  res = await as('wife', 'GET', personalUpload);
+  assert.equal(res.statusCode, 404);
+  res = await as('wife', 'GET', `/dz/api/elements?project=${proj.id}`);
+  assert.deepEqual(res.json().elements.map((e) => e.id), [inProject.id]);
+  res = await as('kid', 'GET', `/dz/api/elements?project=${proj.id}`);
+  assert.equal(res.statusCode, 404);
+
+  // Edits don't reach the other copy.
+  res = await as('wife', 'PATCH', `/dz/api/elements/${inProject.id}`, { name: 'Hero (trip)' });
+  assert.equal(res.json().element.name, 'Hero (trip)');
+  res = await as('admin', 'GET', '/dz/api/elements');
+  assert.equal(res.json().elements.find((e) => e.id === hero.id).name, 'Hero');
+
+  // A member copies the project element into her own Library.
+  res = await as('wife', 'POST', `/dz/api/elements/${inProject.id}/copy`, { project: null });
+  assert.equal(res.statusCode, 200, res.body);
+  const hers = res.json().element;
+  assert.equal(hers.project_id, null);
+  res = await as('wife', 'GET', hers.images[0]);
+  assert.equal(res.statusCode, 200);
+  res = await as('admin', 'GET', hers.images[0]);
+  assert.equal(res.statusCode, 404);
+
+  // Delete: author or project owner; the member is not the author of the project copy.
+  res = await as('wife', 'DELETE', `/dz/api/elements/${inProject.id}`);
+  assert.equal(res.statusCode, 403);
+  res = await as('admin', 'DELETE', `/dz/api/elements/${inProject.id}`);
+  assert.equal(res.statusCode, 200);
+  res = await as('wife', 'GET', `/dz/api/elements?project=${proj.id}`);
+  assert.equal(res.json().elements.length, 0);
+});

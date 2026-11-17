@@ -29,3 +29,15 @@ export function dzFirstModel(list, catalog, mode) {
   const family = catalog?.familyByVariantId?.get(list[0]?.id);
   return family?.variants?.[mode]?.[0]?.model || list[0];
 }
+
+// DZ: readable label for a catalog model id in history cards
+// ("dz-atlas-kwaivgi-kling-v4.0-text-to-video" → "Kling Video 4.0 · Atlas").
+export function dzModelLabel(id) {
+  if (typeof window === "undefined" || !id) return null;
+  const lists = window.__DZ_CATALOG__?.lists || {};
+  for (const list of Object.values(lists)) {
+    const model = Array.isArray(list) ? list.find((m) => m.id === id) : null;
+    if (model) return [model.dzFamilyName, model.dzProviderName].filter(Boolean).join(" · ");
+  }
+  return null;
+}

@@ -30,7 +30,7 @@ import {
   imageModelPickerEntries,
   imageModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
-import { dzRecommendedEntries, dzFirstModel } from "../dzCatalog.js"; // DZ
+import { dzRecommendedEntries, dzFirstModel, dzModelLabel } from "../dzCatalog.js"; // DZ
 import {
   buildReferenceParams,
   getModelMediaCapabilities,
@@ -1562,7 +1562,7 @@ export default function ImageStudio({
                   <div className="flex items-center justify-between mt-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 capitalize">
-                        {entry.model?.replace("-", " ") || copy.gallery.modelFallback}
+                        {dzModelLabel(entry.model) || entry.model?.replace("-", " ") || copy.gallery.modelFallback} {/* DZ */}
                       </span>
                       <span className="text-[10px] text-white/40">{entry.aspect_ratio}</span>
                     </div>
@@ -1577,28 +1577,28 @@ export default function ImageStudio({
             <div className="flex items-center justify-center gap-1.5 md:gap-3 mb-10 select-none scale-90 sm:scale-100">
               <div className="w-18 h-22 sm:w-24 sm:h-28 rounded-2xl border border-white/10 shadow-2xl -rotate-[12deg] transform hover:rotate-0 hover:scale-110 hover:z-20 transition-all duration-300 overflow-hidden bg-white/[0.01] flex-shrink-0">
                 <img
-                  src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/sdxl-image.avif"
+                  src="/assets/cinema/grand_format_70mm_film.webp"
                   alt="Creative asset 1"
                   className="w-full h-full object-cover"
                 />
               </div>
               <div className="w-18 h-22 sm:w-24 sm:h-28 rounded-2xl border border-white/10 shadow-2xl -rotate-[4deg] transform hover:rotate-0 hover:scale-110 hover:z-20 transition-all duration-300 overflow-hidden bg-white/[0.01] -ml-3 sm:-ml-4 flex-shrink-0">
                 <img
-                  src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/chroma-image.avif"
+                  src="/assets/cinema/classic_anamorphic.webp"
                   alt="Creative asset 2"
                   className="w-full h-full object-cover"
                 />
               </div>
               <div className="w-18 h-18 sm:w-24 sm:h-24 rounded-full border border-white/10 shadow-2xl rotate-[6deg] transform hover:rotate-0 hover:scale-110 hover:z-20 transition-all duration-300 overflow-hidden bg-white/[0.01] -ml-3 sm:-ml-4 flex-shrink-0">
                 <img
-                  src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/neta-lumina.avif"
+                  src="/assets/cinema/f_1_4.webp"
                   alt="Creative asset 3"
                   className="w-full h-full object-cover"
                 />
               </div>
               <div className="w-18 h-22 sm:w-24 sm:h-28 rounded-2xl border border-white/10 shadow-2xl rotate-[12deg] transform hover:rotate-0 hover:scale-110 hover:z-20 transition-all duration-300 overflow-hidden bg-white/[0.01] -ml-3 sm:-ml-4 flex-shrink-0">
                 <img
-                  src="https://d3adwkbyhxyrtq.cloudfront.net/webassets/videomodels/perfect-pony-xl.avif"
+                  src="/assets/cinema/classic_16mm_film.webp"
                   alt="Creative asset 4"
                   className="w-full h-full object-cover"
                 />

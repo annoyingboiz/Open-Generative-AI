@@ -42,7 +42,8 @@ export function priceLabel(price) {
   const lo = values.length ? Math.min(...values) : price.usd;
   const hi = values.length ? Math.max(...values) : price.usd;
   const amount = lo === hi ? `$${fmt(lo)}` : `$${fmt(lo)}–${fmt(hi)}`;
-  return price.unit === 'second' ? `${amount}/s` : amount;
+  const label = price.unit === 'second' ? `${amount}/s` : amount;
+  return price.from ? `from ${label}` : label;
 }
 
 function studioModel({ provider, mode, slug, endpoint, family, familyName, vendorId, fields, price, description, cover, basic }) {
@@ -74,6 +75,10 @@ export function atlasPrice(entry) {
   const actual = entry?.price?.actual;
   const usd = Number(actual?.base_price);
   if (!Number.isFinite(usd)) return null;
+  // Atlas lists some video prices without a unit. They are per second at the
+  // lowest resolution (Seedance 2.5: $0.134 listed, a 5 s 720p clip with
+  // audio cost $1.51), so we show them as "from $x/s" and estimate per second.
+  if (!actual.unit && entry.type === 'Video') return { usd, unit: 'second', from: true };
   const unit = actual.unit === 'second' ? 'second' : entry.type === 'Image' ? 'image' : (actual.unit || 'request');
   return { usd, unit };
 }

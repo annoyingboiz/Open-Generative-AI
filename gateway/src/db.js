@@ -98,6 +98,11 @@ const MIGRATIONS = [
   CREATE INDEX generations_user_studio ON generations(user_id, studio, created_at DESC);
   CREATE INDEX generations_user_liked ON generations(user_id, liked_at DESC) WHERE liked_at IS NOT NULL;
   `,
+  // 6: "delete for good" removes the files but keeps the row (cost, dates),
+  // so monthly spending can't be erased by deleting results.
+  `
+  ALTER TABLE generations ADD COLUMN purged_at INTEGER;
+  `,
 ];
 
 export function openDatabase(dataDir) {

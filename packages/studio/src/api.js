@@ -397,6 +397,7 @@ export function uploadFile(apiKey, file, onProgress) {
                         reject(new Error('No URL returned from file upload'));
                     } else {
                         onProgress?.(100);
+                        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dz:history', { detail: { status: 'upload' } }));
                         resolve(fileUrl);
                     }
                 } catch (e) {

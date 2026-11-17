@@ -131,8 +131,12 @@ function Uploads({ onOpen }) {
   const [items, setItems] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    dzLibrary.uploads({ limit: 200 }).then((d) => { if (!cancelled) setItems(d.items || []); }).catch(() => { if (!cancelled) setItems([]); });
-    return () => { cancelled = true; };
+    const load = () => dzLibrary.uploads({ limit: 200 }).then((d) => { if (!cancelled) setItems(d.items || []); }).catch(() => { if (!cancelled) setItems((v) => v || []); });
+    load();
+    const on = (e) => { if (!e?.detail || e.detail.status === "upload") load(); };
+    window.addEventListener("dz:history", on);
+    window.addEventListener("focus", on);
+    return () => { cancelled = true; window.removeEventListener("dz:history", on); window.removeEventListener("focus", on); };
   }, []);
   if (!items) return <p className="py-16 text-center text-[15px] text-white/40">Loading…</p>;
   if (!items.length) return <p className="py-16 text-center text-[15px] text-white/40">Nothing uploaded yet. Files you add as references show up here.</p>;

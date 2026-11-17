@@ -191,9 +191,20 @@ test('library: studio and its settings are stored, not sent; likes; delete for g
   res = await app.inject({ method: 'DELETE', url: `/api/v1/predictions/${id}`, headers: { cookie: userCookie } });
   assert.equal(res.statusCode, 404);
   res = await app.inject({ method: 'DELETE', url: `/api/v1/predictions/${id}`, headers: { cookie: adminCookie } });
-  assert.equal(res.statusCode, 200);
+  assert.equal(res.statusCode, 409, 'not while it is still running');
+  app.ctx.db.prepare("UPDATE generations SET status = 'completed', cost_usd = 0.5 WHERE id = ?").run(id);
+  res = await app.inject({ method: 'DELETE', url: `/api/v1/predictions/${id}`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200, res.body);
   res = await app.inject({ url: '/api/v1/history?trash=1', headers: { cookie: adminCookie } });
   assert.equal(res.json().items.length, 0);
+  // The row stays as a tombstone, so its cost still counts.
+  const row = app.ctx.db.prepare('SELECT purged_at, cost_usd, outputs_json FROM generations WHERE id = ?').get(id);
+  assert.ok(row.purged_at);
+  assert.equal(row.cost_usd, 0.5);
+  res = await app.inject({ method: 'POST', url: `/api/v1/predictions/${id}/restore`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 404, 'deleted for good cannot come back');
+  res = await app.inject({ url: '/api/v1/history?limit=-1', headers: { cookie: adminCookie } });
+  assert.ok(res.json().items.length <= 1, 'limit is clamped');
 });
 
 test('monthly limit stops generation', async () => {

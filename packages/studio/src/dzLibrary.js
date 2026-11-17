@@ -49,6 +49,9 @@ export function useDzHistory(filter = {}, { limit = 60 } = {}) {
   const [loadingMore, setLoadingMore] = useState(false);
   const seq = useRef(0);
 
+  // A new filter starts from an empty list (no stale items from the old one).
+  useEffect(() => { seq.current += 1; setItems([]); setLoaded(false); setCursor(null); }, [key]);
+
   const refresh = useCallback(async () => {
     const mine = ++seq.current;
     try {
@@ -62,9 +65,11 @@ export function useDzHistory(filter = {}, { limit = 60 } = {}) {
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
+    const mine = seq.current;
     setLoadingMore(true);
     try {
       const data = await dzLibrary.list({ ...JSON.parse(key), limit, cursor });
+      if (mine !== seq.current) { setLoadingMore(false); return; }
       setItems((prev) => {
         const seen = new Set(prev.map((i) => i.id));
         return [...prev, ...(data.items || []).filter((i) => !seen.has(i.id))];
@@ -75,16 +80,26 @@ export function useDzHistory(filter = {}, { limit = 60 } = {}) {
   }, [cursor, loadingMore, key, limit]);
 
   useEffect(() => { refresh(); }, [refresh]);
+  // Events from anywhere in the app, debounced; a generation event only
+  // refreshes views that can show that studio.
   useEffect(() => {
-    const on = () => refresh();
-    window.addEventListener("dz:history", on);
-    window.addEventListener("focus", on);
-    return () => { window.removeEventListener("dz:history", on); window.removeEventListener("focus", on); };
-  }, [refresh]);
+    const studios = JSON.parse(key).studio ? String(JSON.parse(key).studio).split(",") : null;
+    let timer = null;
+    const later = () => { clearTimeout(timer); timer = setTimeout(refresh, 300); };
+    const onHistory = (e) => {
+      const st = e.detail?.studio;
+      if (st && studios && !studios.includes(st)) return;
+      later();
+    };
+    window.addEventListener("dz:history", onHistory);
+    window.addEventListener("focus", later);
+    return () => { clearTimeout(timer); window.removeEventListener("dz:history", onHistory); window.removeEventListener("focus", later); };
+  }, [refresh, key]);
+  // While something runs, check every few seconds — only while the page is visible.
   const running = items.some((i) => i.status === "processing");
   useEffect(() => {
     if (!running) return undefined;
-    const timer = setInterval(refresh, 4000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 4000);
     return () => clearInterval(timer);
   }, [running, refresh]);
 

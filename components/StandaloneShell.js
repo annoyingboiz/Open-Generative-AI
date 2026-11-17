@@ -10,7 +10,7 @@ const DesignAgentStudio = dynamic(() => import('studio').then(mod => mod.DesignA
   loading: () => <div className="h-full w-full bg-black flex items-center justify-center text-white/20">Loading Design Studio...</div>
 });
 import axios from 'axios';
-import ApiKeyModal from './ApiKeyModal';
+import { DZ_HIDDEN_TABS, DZ_SESSION_PLACEHOLDER, dzFilterNavigation, dzFetchMe, dzFetchBalances, dzFormatBalances } from './dz/session'; // DZ
 import ThemeToggle from './ThemeToggle';
 import { getCommonCopy, getLocaleConfig, localizeStudioPath } from '@/lib/locales';
 
@@ -261,6 +261,8 @@ const NAVIGATION_CATEGORIES = [
   }
 ];
 
+dzFilterNavigation(TABS, NAVIGATION_CATEGORIES); // DZ: hide Muapi-only tabs
+
 const EXPLORE_APPS_TAB = TABS.find((tab) => tab.id === 'apps');
 
 const getNavigationCategory = (tabId) => (
@@ -346,13 +348,11 @@ export default function StandaloneShell({ locale = 'en' }) {
   const [activeTab, setActiveTab] = useState(getInitialTab());
 
   const [balance, setBalance] = useState(null);
+  const [dzUser, setDzUser] = useState(null); // DZ: signed-in account
   const [showSettings, setShowSettings] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [hasMounted, setHasMounted] = useState(false);
-  const [showVadooBanner, setShowVadooBanner] = useState(() => {
-    if (typeof window !== 'undefined') return localStorage.getItem('vadoo_banner_dismissed') !== '1';
-    return true;
-  });
+  const [showVadooBanner, setShowVadooBanner] = useState(false); // DZ: no promo banner
 
   // Sidebar Collapsed & Mobile Drawer State
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -448,10 +448,10 @@ export default function StandaloneShell({ locale = 'en' }) {
     return () => window.clearTimeout(timer);
   }, [notifications]);
 
-  const fetchBalance = useCallback(async (key) => {
+  // DZ: balances of the providers (admin only), from the gateway.
+  const fetchBalance = useCallback(async () => {
     try {
-      const data = await getUserBalance(key);
-      setBalance(data.balance);
+      setBalance(dzFormatBalances(await dzFetchBalances()));
     } catch (err) {
       console.error('Balance fetch failed:', err);
     }
@@ -577,13 +577,17 @@ export default function StandaloneShell({ locale = 'en' }) {
 
   useEffect(() => {
     setHasMounted(true);
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      setApiKey(stored);
-      fetchBalance(stored);
-      // Sync cookie immediately on mount to establish identity for background requests
-      document.cookie = `muapi_key=${stored}; path=/; max-age=31536000; SameSite=Lax`;
-    }
+    // DZ: no Muapi key. The gateway session (httpOnly cookie) identifies the user.
+    localStorage.removeItem(STORAGE_KEY);
+    document.cookie = "muapi_key=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    dzFetchMe()
+      .then((user) => {
+        if (!user) return;
+        setDzUser(user);
+        setApiKey(DZ_SESSION_PLACEHOLDER);
+        fetchBalance();
+      })
+      .catch((err) => console.error(err));
   }, [fetchBalance]);
 
   const handleKeySave = useCallback((key) => {
@@ -628,7 +632,7 @@ export default function StandaloneShell({ locale = 'en' }) {
   // Poll for balance every 30 seconds if key is present
   useEffect(() => {
     if (!apiKey) return;
-    const interval = setInterval(() => fetchBalance(apiKey), 30000);
+    const interval = setInterval(() => fetchBalance(), 60000); // DZ
     return () => clearInterval(interval);
   }, [apiKey, fetchBalance]);
 
@@ -677,7 +681,8 @@ export default function StandaloneShell({ locale = 'en' }) {
   );
 
   if (!apiKey) {
-    return <ApiKeyModal onSave={handleKeySave} locale={locale} />;
+    // DZ: the gateway already required sign-in; this is only the session check.
+    return <div className="h-screen bg-[#030303]" />;
   }
 
   return (
@@ -801,12 +806,13 @@ export default function StandaloneShell({ locale = 'en' }) {
             <div className="flex items-center gap-2.5 bg-white/5 px-3 py-1.5 rounded-full border border-white/5 transition-colors">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-xs font-bold text-white/90">
-                ${balance !== null ? `${balance}` : '---'}
+                {/* DZ: per-provider balances for admins, the account name for others */}
+                {balance || dzUser?.displayName || '---'}
               </span>
             </div>
 
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => { window.location.href = '/dz/settings'; /* DZ: settings live in the gateway */ }}
               className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-white/5 text-[13px] font-bold text-white/80 hover:text-white hover:bg-white/10 hover:border-white/20 transition-colors"
               aria-label={copy.shell.settings}
             >
@@ -987,13 +993,13 @@ export default function StandaloneShell({ locale = 'en' }) {
           <VideoStudio apiKey={apiKey} locale={locale} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('video')} onGenerationEnd={makeGenerationEndCallback('video')} onGenerationComplete={makeSuccessCallback('video')} onGenerationError={makeErrorCallback('video')} />
         </div>
         <div className={activeTab === 'clipping' ? "h-full w-full" : "hidden"}>
-          <ClippingStudio apiKey={apiKey} locale={locale} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('clipping')} onGenerationEnd={makeGenerationEndCallback('clipping')} onGenerationComplete={makeSuccessCallback('clipping')} onGenerationError={makeErrorCallback('clipping')} />
+          {!DZ_HIDDEN_TABS.has('clipping') && (<ClippingStudio apiKey={apiKey} locale={locale} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('clipping')} onGenerationEnd={makeGenerationEndCallback('clipping')} onGenerationComplete={makeSuccessCallback('clipping')} onGenerationError={makeErrorCallback('clipping')} />)}
         </div>
         <div className={activeTab === 'motion-control' ? "h-full w-full" : "hidden"}>
           <MotionControlStudio apiKey={apiKey} locale={locale} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('motion-control')} onGenerationEnd={makeGenerationEndCallback('motion-control')} onGenerationComplete={makeSuccessCallback('motion-control')} onGenerationError={makeErrorCallback('motion-control')} />
         </div>
         <div className={activeTab === 'vibe-motion' ? "h-full w-full" : "hidden"}>
-          <VibeMotionStudio apiKey={apiKey} locale={locale} onGenerationStart={makeGenerationStartCallback('vibe-motion')} onGenerationEnd={makeGenerationEndCallback('vibe-motion')} onGenerationComplete={makeSuccessCallback('vibe-motion')} onGenerationError={makeErrorCallback('vibe-motion')} />
+          {!DZ_HIDDEN_TABS.has('vibe-motion') && (<VibeMotionStudio apiKey={apiKey} locale={locale} onGenerationStart={makeGenerationStartCallback('vibe-motion')} onGenerationEnd={makeGenerationEndCallback('vibe-motion')} onGenerationComplete={makeSuccessCallback('vibe-motion')} onGenerationError={makeErrorCallback('vibe-motion')} />)}
         </div>
         <div className={activeTab === 'lipsync' ? "h-full w-full" : "hidden"}>
           <LipSyncStudio apiKey={apiKey} locale={locale} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('lipsync')} onGenerationEnd={makeGenerationEndCallback('lipsync')} onGenerationComplete={makeSuccessCallback('lipsync')} onGenerationError={makeErrorCallback('lipsync')} />
@@ -1011,6 +1017,7 @@ export default function StandaloneShell({ locale = 'en' }) {
           <MarketingStudio apiKey={apiKey} locale={locale} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} onGenerationStart={makeGenerationStartCallback('marketing')} onGenerationEnd={makeGenerationEndCallback('marketing')} onGenerationComplete={makeSuccessCallback('marketing')} onGenerationError={makeErrorCallback('marketing')} />
         </div>
         <div className={activeTab === 'workflows' ? "h-full w-full" : "hidden"}>
+          {!DZ_HIDDEN_TABS.has('workflows') && (
           <WorkflowStudio
             apiKey={apiKey}
             isHeaderVisible={isHeaderVisible}
@@ -1019,13 +1026,13 @@ export default function StandaloneShell({ locale = 'en' }) {
             onGenerationEnd={makeGenerationEndCallback('workflows')}
             onGenerationComplete={makeSuccessCallback('workflows')}
             onGenerationError={makeErrorCallback('workflows')}
-          />
+          />)}
         </div>
         <div className={activeTab === 'agents' ? "h-full w-full" : "hidden"}>
-          <AgentStudio apiKey={apiKey} locale={locale} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />
+          {!DZ_HIDDEN_TABS.has('agents') && (<AgentStudio apiKey={apiKey} locale={locale} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />)}
         </div>
         <div className={activeTab === 'design-agent' ? "h-full w-full" : "hidden"}>
-          {activeTab === 'design-agent' && (
+          {activeTab === 'design-agent' && !DZ_HIDDEN_TABS.has('design-agent') && (
             <DesignAgentStudio
               apiKey={apiKey}
               isHeaderVisible={isHeaderVisible}
@@ -1038,7 +1045,7 @@ export default function StandaloneShell({ locale = 'en' }) {
           )}
         </div>
         <div className={activeTab === 'apps' ? "h-full w-full" : "hidden"}>
-          <AppsStudio apiKey={apiKey} locale={locale} />
+          {!DZ_HIDDEN_TABS.has('apps') && (<AppsStudio apiKey={apiKey} locale={locale} />)}
         </div>
         <div className={activeTab === 'ai-influencer' ? "h-full w-full" : "hidden"}>
           <AiInfluencerStudio

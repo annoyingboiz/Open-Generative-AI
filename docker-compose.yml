@@ -1,9 +1,36 @@
+# DZ: two services. The gateway is the only door: sign-in, accounts, provider
+# keys, generation through APIMart / Atlas Cloud. The studio (Next.js UI from
+# upstream) is reachable only through the gateway.
+#
+#   cp .env.example .env    # optional: keys can also be entered in Settings
+#   docker compose up -d --build
+#   open http://<this-machine>:3300
+name: ai-video-platform
+
 services:
-  open-generative-ai:
+  studio:
     build: .
-    container_name: open-generative-ai
-    ports:
-      - "3001:3000"
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    expose:
+      - "3000"
+
+  gateway:
+    build: ./gateway
     restart: unless-stopped
+    depends_on:
+      - studio
+    ports:
+      - "${PORT:-3300}:3300"
+    environment:
+      STUDIO_URL: http://studio:3000
+      DATA_DIR: /data
+      APP_SECRET: ${APP_SECRET:-}
+      APIMART_API_KEY: ${APIMART_API_KEY:-}
+      APIMART_PROXY: ${APIMART_PROXY:-}
+      ATLAS_API_KEY: ${ATLAS_API_KEY:-}
+      ATLAS_PROXY: ${ATLAS_PROXY:-}
+    volumes:
+      - ${DATA_DIR:-./data}:/data

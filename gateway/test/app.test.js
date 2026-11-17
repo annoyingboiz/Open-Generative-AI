@@ -1,0 +1,133 @@
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { buildApp } from '../src/app.js';
+import { encrypt, decrypt, hashPassword, verifyPassword } from '../src/crypto.js';
+
+let upstream;
+let app;
+let dataDir;
+
+const cookieOf = (res) => {
+  const raw = res.headers['set-cookie'];
+  const line = Array.isArray(raw) ? raw[0] : raw;
+  return line ? line.split(';')[0] : '';
+};
+
+before(async () => {
+  upstream = http.createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ upstream: true, url: req.url, sawCookie: Boolean(req.headers.cookie), sawKey: Boolean(req.headers['x-api-key']) }));
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-'));
+  app = await buildApp({
+    host: '127.0.0.1', port: 0, studioUrl: `http://127.0.0.1:${upstream.address().port}`,
+    dataDir, appSecret: '', sessionDays: 30, logLevel: 'error',
+    providerEnv: { apimart: { apiKey: '', proxy: '' }, atlas: { apiKey: 'env-key-1234', proxy: '' } },
+  }, { logger: false });
+});
+
+after(async () => {
+  await app.close();
+  upstream.close();
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test('crypto round-trips', () => {
+  const key = Buffer.alloc(32, 7);
+  assert.equal(decrypt(key, encrypt(key, 'sk-secret')), 'sk-secret');
+  const h = hashPassword('correct horse');
+  assert.ok(verifyPassword('correct horse', h));
+  assert.ok(!verifyPassword('wrong', h));
+});
+
+let adminCookie;
+
+test('first start redirects to setup, then creates admin', async () => {
+  let res = await app.inject({ url: '/studio' });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/setup');
+  res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'denis', displayName: 'Denis', password: 'short' } });
+  assert.equal(res.statusCode, 400);
+  res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'denis', displayName: 'Denis', password: 'long-enough-1' } });
+  assert.equal(res.statusCode, 302);
+  adminCookie = cookieOf(res);
+  assert.match(adminCookie, /^dz_session=/);
+  res = await app.inject({ url: '/setup' });
+  assert.equal(res.headers.location, '/login', 'setup is closed once a user exists');
+});
+
+test('anonymous access is blocked', async () => {
+  let res = await app.inject({ url: '/studio/video' });
+  assert.equal(res.statusCode, 302);
+  assert.match(res.headers.location, /^\/login\?next=/);
+  res = await app.inject({ url: '/api/v1/nano-banana-pro', method: 'POST', payload: {} });
+  assert.equal(res.statusCode, 401);
+});
+
+test('signed-in user reaches the studio; cookies and keys are not forwarded', async () => {
+  const res = await app.inject({ url: '/studio', headers: { cookie: adminCookie, 'x-api-key': 'muapi-xyz' } });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.equal(body.upstream, true);
+  assert.equal(body.sawCookie, false);
+  assert.equal(body.sawKey, false);
+});
+
+test('muapi routes are disabled, generation is not yet wired', async () => {
+  let res = await app.inject({ url: '/api/workflow/get-workflow-defs', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 410);
+  res = await app.inject({ url: '/api/v1/nano-banana-pro', method: 'POST', payload: {}, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 503);
+});
+
+test('login flow and wrong password', async () => {
+  let res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'denis', password: 'nope-nope' } });
+  assert.equal(res.statusCode, 401);
+  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'DENIS', password: 'long-enough-1', next: '/studio/video' } });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/studio/video');
+  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'denis', password: 'long-enough-1', next: '//evil.com' } });
+  assert.equal(res.headers.location, '/studio');
+});
+
+test('admin creates a user; user cannot see keys or admin pages', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie },
+    payload: { username: 'daughter', displayName: 'Daughter', password: 'kid-password-1', role: 'user', monthlyLimitUsd: '5' } });
+  assert.equal(res.statusCode, 302);
+  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'daughter', password: 'kid-password-1' } });
+  const userCookie = cookieOf(res);
+  res = await app.inject({ url: '/dz/api/me', headers: { cookie: userCookie } });
+  assert.deepEqual(res.json().user, { id: 2, username: 'daughter', displayName: 'Daughter', role: 'user', monthlyLimitUsd: 5 });
+  res = await app.inject({ url: '/dz/settings', headers: { cookie: userCookie } });
+  assert.equal(res.statusCode, 200);
+  assert.ok(!res.body.includes('Providers'), 'no provider section for users');
+  res = await app.inject({ method: 'POST', url: '/dz/settings/providers/atlas', headers: { cookie: userCookie }, payload: { apiKey: 'x' } });
+  assert.equal(res.statusCode, 403);
+  res = await app.inject({ url: '/dz/api/balances', headers: { cookie: userCookie } });
+  assert.deepEqual(res.json(), { balances: [] });
+});
+
+test('settings page never prints a full key', async () => {
+  const res = await app.inject({ url: '/dz/settings', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200);
+  assert.ok(!res.body.includes('env-key-1234'));
+  assert.ok(res.body.includes('••••1234'));
+});
+
+test('bad proxy is rejected; cross-origin POST is blocked', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/settings/providers/atlas', headers: { cookie: adminCookie }, payload: { proxy: 'ftp://x', enabled: '1' } });
+  assert.equal(res.statusCode, 400);
+  res = await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie, origin: 'https://evil.com', host: 'director.zabelin.design' }, payload: {} });
+  assert.equal(res.statusCode, 403);
+});
+
+test('last admin cannot be demoted', async () => {
+  const res = await app.inject({ method: 'POST', url: '/dz/settings/users/1', headers: { cookie: adminCookie }, payload: { role: 'user' } });
+  assert.equal(res.statusCode, 400);
+  assert.ok(res.body.includes('At least one active admin'));
+});

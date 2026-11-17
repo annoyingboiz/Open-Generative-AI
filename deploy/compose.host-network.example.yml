@@ -1,0 +1,28 @@
+# DZ: optional override for a server where the proxy for a provider listens on
+# the host's 127.0.0.1 (e.g. `ssh -D 127.0.0.1:1081 ...`). The gateway then runs
+# in the host network so it can reach that proxy; the studio is published only
+# on 127.0.0.1. Optionally adds a Cloudflare Tunnel (token from Zero Trust →
+# Networks → Tunnels) that points your hostname to http://localhost:3300.
+#
+#   cp deploy/compose.host-network.example.yml compose.local.yml   # edit it
+#   docker compose -f docker-compose.yml -f compose.local.yml up -d --build
+services:
+  studio:
+    ports:
+      - "127.0.0.1:3301:3000"
+
+  gateway:
+    network_mode: host
+    ports: !reset []
+    environment:
+      STUDIO_URL: http://127.0.0.1:3301
+      PORT: "3300"
+      ATLAS_PROXY: socks5h://127.0.0.1:1081
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    network_mode: host
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}

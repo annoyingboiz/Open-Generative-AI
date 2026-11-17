@@ -1,0 +1,25 @@
+{
+  "name": "ai-video-platform-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Front door for Open Generative AI: login, users, provider keys, provider gateway (APIMart, Atlas Cloud), server-side history.",
+  "type": "module",
+  "main": "src/server.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/formbody": "^9.0.2",
+    "@fastify/http-proxy": "^11.6.9",
+    "fastify": "^5.12.8",
+    "fetch-socks": "^1.3.3",
+    "undici": "^8.12.4"
+  }
+}

@@ -36,3 +36,7 @@ out/
 .env
 .env.*
 !.env.example
+
+# DZ: runtime data and local compose overrides
+/data/
+compose.local.yml

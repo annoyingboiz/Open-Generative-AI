@@ -138,4 +138,30 @@ test('submit sends a clean body with the file uploaded to fal', async () => {
 test('fal task ids are checked before building URLs', async () => {
   fal.poll = original.poll;
   await assert.rejects(() => fal.poll({ apiKey: 'k' }, '../../evil/x'), /bad task id/);
+  await assert.rejects(() => fal.poll({ apiKey: 'k' }, 'topaz/upscale/..'), /bad task id/);
+});
+
+test('AVIF size comes from the ispe box', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sz-'));
+  const b = Buffer.alloc(64);
+  b.write('ftypavif', 4, 'ascii');
+  b.write('ispe', 32, 'ascii');
+  b.writeUInt32BE(3000, 40);
+  b.writeUInt32BE(2000, 44);
+  fs.writeFileSync(path.join(dir, 'a.avif'), b);
+  assert.deepEqual(imageSize(path.join(dir, 'a.avif')), { width: 3000, height: 2000 });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a user with a spending limit cannot run a model without a published price', async () => {
+  await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie }, payload: { username: 'kid', displayName: 'Kid', password: 'kid-pass-123', monthlyLimitUsd: '5' } });
+  const login = await app.inject({ method: 'POST', url: '/login', payload: { username: 'kid', password: 'kid-pass-123' } });
+  const kid = cookieOf(login);
+  const mp = multipart('file', 'k.png', 'image/png', pngHeader(1000, 1000));
+  const up = await app.inject({ method: 'POST', url: '/api/v1/upload_file', headers: { cookie: kid, ...mp.headers }, payload: mp.payload });
+  const url = up.json().url;
+  let res = await app.inject({ method: 'POST', url: '/api/v1/p/fal/topaz/upscale/image/generative', headers: { cookie: kid }, payload: { image_url: url, model: 'Wonder 4' } });
+  assert.equal(res.statusCode, 402);
+  res = await app.inject({ method: 'POST', url: '/api/v1/p/fal/topaz/upscale/image/generative', headers: { cookie: kid }, payload: { image_url: url, model: 'Wonder 3' } });
+  assert.equal(res.statusCode, 200, res.body);
 });

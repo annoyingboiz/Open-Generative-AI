@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import { providerJson, providerFetch, ProviderHttpError } from './http.js';
 import { FAL_TOOL_ENDPOINTS, falTool } from './fal-tools.js';
+import { assertPublicHttpsUrl } from '../net-guard.js';
 
 const QUEUE = 'https://queue.fal.run';
 const REST = 'https://rest.fal.ai';
@@ -14,7 +15,7 @@ const UPLOAD_DAYS = 3;
 
 // "topaz/upscale/image/precision" → app "topaz/upscale".
 const appOf = (endpoint) => endpoint.split('/').slice(0, 2).join('/');
-const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
+const SAFE_SEGMENT = /^(?!\.{1,2}$)[A-Za-z0-9._-]+$/;
 
 function parseTaskId(taskId) {
   const parts = String(taskId).split('/');
@@ -105,6 +106,8 @@ export const fal = {
     let data;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     if (response.status >= 500) return { state: 'processing', transient: `HTTP ${response.status}` };
+    // Status and result can race: fal answers 400 "still in progress" for a moment.
+    if (response.status === 400 && /in progress/i.test(errorText(data, ''))) return { state: 'processing', transient: 'result not ready' };
     if (!response.ok) return { state: 'failed', error: errorText(data, `fal: HTTP ${response.status}`) };
     return { state: 'completed', outputs: resultUrls(data), costUsd: null, progress: 100 };
   },
@@ -139,6 +142,10 @@ export const fal = {
       timeoutMs: 30_000,
     });
     if (!init?.upload_url || !init?.file_url) throw new Error('fal upload: no upload URL');
+    // Both URLs come from fal's answer: make sure they are public HTTPS
+    // addresses before we send a file there or hand the link to a model.
+    await assertPublicHttpsUrl(init.upload_url, { viaProxy: Boolean(proxy) });
+    if (new URL(init.file_url).protocol !== 'https:') throw new Error('fal upload: file URL is not HTTPS');
     const size = fs.statSync(path).size;
     const response = await providerFetch(init.upload_url, {
       proxy,
@@ -146,6 +153,7 @@ export const fal = {
       headers: { 'Content-Type': mime, 'Content-Length': String(size) },
       body: fs.createReadStream(path),
       duplex: 'half',
+      redirect: 'error',
       timeoutMs: 10 * 60_000,
     });
     if (!response.ok) throw new Error(`fal upload failed: HTTP ${response.status}`);

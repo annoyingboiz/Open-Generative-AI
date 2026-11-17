@@ -63,7 +63,7 @@ export default function DzShell() {
   const [droppedFiles, setDroppedFiles] = useState(null);
   // Upscale from anywhere: a side drawer next to the work, plus a right-click menu.
   const [upscaleDrawer, setUpscaleDrawer] = useState(null); // { url, result }
-  const [upscaleTabUrl, setUpscaleTabUrl] = useState(null);
+  const [upscaleTabPick, setUpscaleTabPick] = useState(null); // { url } — a new object each time
   const [imageMenu, setImageMenu] = useState(null); // { x, y, url }
 
   // Session check (the gateway already required sign-in) and initial tab.
@@ -177,7 +177,7 @@ export default function DzShell() {
     } catch { window.open(url, '_blank'); }
   };
   const openInUpscaleTab = (url) => {
-    setUpscaleTabUrl(url);
+    setUpscaleTabPick({ url });
     setUpscaleDrawer(null);
     openTab('upscale');
   };
@@ -273,7 +273,7 @@ export default function DzShell() {
             <VideoStudio {...studioProps} {...callbacks('video')} droppedFiles={activeTab === 'video' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
           <div className={activeTab === 'upscale' ? 'h-full w-full' : 'hidden'}>
-            <DzUpscaleStudio {...studioProps} {...callbacks('upscale')} initialUrl={upscaleTabUrl} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+            <DzUpscaleStudio {...studioProps} {...callbacks('upscale')} initial={upscaleTabPick} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
         </main>
 

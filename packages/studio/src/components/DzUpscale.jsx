@@ -124,6 +124,10 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
   const [factor, setFactor] = useState(saved.factor || spec?.factor?.default || 2);
   const [values, setValues] = useState(saved.values || {}); // per model id
   const [busy, setBusy] = useState(0);
+  // The drawer can close while a job runs: the job and its callbacks go on,
+  // only this panel's own state is no longer touched.
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => { save({ groupId, modelByGroup, factor, values }); }, [groupId, modelByGroup, factor, values]);
 
@@ -146,7 +150,7 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
 
   const run = useCallback(async () => {
     if (!canRun) return;
-    setBusy((n) => n + 1);
+    if (mounted.current) setBusy((n) => n + 1);
     onStart?.({ source: imageUrl });
     try {
       const res = await dzUpscale(apiKey, { endpoint: group.endpoint, ...body });
@@ -155,7 +159,7 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
     } catch (e) {
       onError?.(String(e?.message || e).replace(/^API Request Failed: \d+ [^-]*- /, ""));
     } finally {
-      setBusy((n) => n - 1);
+      if (mounted.current) setBusy((n) => n - 1);
     }
   }, [canRun, apiKey, group, body, imageUrl, model, factor, onStart, onDone, onError]);
 
@@ -284,8 +288,8 @@ function Compare({ before, after }) {
 const isUpscale = (item) => String(item?.model || "").startsWith("p/fal/topaz/upscale");
 
 // The Upscale tab.
-export default function DzUpscaleStudio({ apiKey, initialUrl, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled }) {
-  const [source, setSource] = useState(initialUrl || null);
+export default function DzUpscaleStudio({ apiKey, initial, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled }) {
+  const [source, setSource] = useState(initial?.url || null);
   const [result, setResult] = useState(null); // { url, source }
   const [recent, setRecent] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -303,20 +307,25 @@ export default function DzUpscaleStudio({ apiKey, initialUrl, onGenerationStart,
     } catch { /* shown as empty */ }
   }, []);
   useEffect(() => { loadHistory(); }, [loadHistory]);
-  useEffect(() => { if (initialUrl) { setSource(initialUrl); setResult(null); } }, [initialUrl]);
+  // `initial` is a new object on every "Open in Upscale tab", even for the same image.
+  useEffect(() => { if (initial?.url) { setSource(initial.url); setResult(null); setPicker(false); } }, [initial]);
 
+  // Only the latest upload may change the selection.
+  const uploadSeq = useRef(0);
   const upload = useCallback(async (file) => {
     if (!file || !/^image\//.test(file.type)) { onGenerationError?.("Choose an image file (PNG, JPEG or WebP)."); return; }
+    const seq = ++uploadSeq.current;
     setUploading(true);
     try {
       const url = await uploadFile(apiKey, file);
+      if (seq !== uploadSeq.current) return;
       setSource(url);
       setResult(null);
       setPicker(false);
     } catch (e) {
-      onGenerationError?.(String(e?.message || e));
+      if (seq === uploadSeq.current) onGenerationError?.(String(e?.message || e));
     } finally {
-      setUploading(false);
+      if (seq === uploadSeq.current) setUploading(false);
     }
   }, [apiKey, onGenerationError]);
 

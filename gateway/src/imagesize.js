@@ -1,4 +1,4 @@
-// Width and height of a PNG, JPEG, WebP or GIF file, read from its header.
+// Width and height of a PNG, JPEG, WebP, GIF or AVIF file, read from its header.
 // Used to price upscaling (fal bills per megapixel of output).
 import fs from 'node:fs';
 
@@ -17,6 +17,12 @@ function fromBuffer(b) {
       return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
     }
     if (chunk === 'VP8 ') return { width: b.readUInt16LE(26) & 0x3fff, height: b.readUInt16LE(28) & 0x3fff };
+    return null;
+  }
+  // AVIF/HEIF: the "ispe" box holds the image size.
+  if (b.length >= 12 && b.toString('ascii', 4, 8) === 'ftyp') {
+    const at = b.indexOf('ispe');
+    if (at > 0 && at + 16 <= b.length) return { width: b.readUInt32BE(at + 8), height: b.readUInt32BE(at + 12) };
     return null;
   }
   if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {

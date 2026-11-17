@@ -456,6 +456,10 @@ export async function buildApp(config, { logger = true } = {}) {
       }
       // The provider's own price for this exact request, or the catalog price.
       const price = await priceFor(req.user, resolved, providerId, modelId, body);
+      // A tool price we only assume (fal doesn't publish it) can't back a spending limit.
+      if (req.user.monthly_limit_usd != null && resolved.tool && price && !price.exact) {
+        return reply.code(402).send({ detail: 'This model has no published price, so it is not available with a spending limit.' });
+      }
       if (req.user.monthly_limit_usd != null && !Number.isFinite(price?.usd)) {
         return reply.code(402).send({ detail: 'This model has no known price, so it is not available with a spending limit.' });
       }

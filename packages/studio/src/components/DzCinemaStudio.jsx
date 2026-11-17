@@ -9,7 +9,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { generateImage, generateI2I, uploadFile } from "../muapi.js";
 import { imageModelCatalog } from "../modelFamilies.js";
-import { getModelMediaCapabilities } from "../modelCapabilities.js";
+import { getModelMediaCapabilities, buildReferenceParams } from "../modelCapabilities.js";
+import { createModelParameterValues } from "../modelParameters.js";
 import { getAspectRatioOptions, T2I_DIMENSION_RATIOS, I2I_DIMENSION_RATIOS } from "../imageSizing.js";
 import { dzRecommendedEntries } from "../dzCatalog.js";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
@@ -155,11 +156,27 @@ function cinemaEntries() {
       id: family.id,
       family,
       searchText: family.searchText || family.name.toLowerCase(),
-      variantsByMode: { t2i: family.variants.t2i?.[0] || null, i2i: family.variants.i2i?.[0] || null },
+      variantsByMode: {
+        t2i: (family.variants.t2i || []).find(cinemaCanDrive) || null,
+        i2i: (family.variants.i2i || []).find(cinemaCanDrive) || null,
+      },
     }))
     .filter((e) => e.variantsByMode.t2i || e.variantsByMode.i2i);
   const recommended = dzRecommendedEntries(usable);
   return { recommended, all: [...recommended, ...usable.filter((e) => !recommended.includes(e))] };
+}
+
+// Cinema sends prompt, size, resolution, references and the model's own
+// defaults. A model with a required field that has no default can't be driven
+// from here, so such variants are left out.
+const CINEMA_FIELDS = new Set(["prompt", "aspect_ratio", "size", "width", "height", "resolution"]);
+function cinemaCanDrive(variant) {
+  const model = variant?.model;
+  if (!model) return false;
+  const imageFields = new Set(["image_url", "images_list", "image_urls", "last_image", "last_image_url", "end_image_url", model.imageField, model.lastImageField].filter(Boolean));
+  return (model.required || []).every((name) =>
+    CINEMA_FIELDS.has(name) || imageFields.has(name) || model.inputs?.[name]?.field === "image" ||
+    (model.inputs?.[name]?.default !== undefined && model.inputs?.[name]?.default !== ""));
 }
 
 // The variant to call: edit (i2i) when there are references, else text-to-image.
@@ -850,17 +867,18 @@ export default function DzCinemaStudio({
       if (!model) throw new Error("No image model available. Check the providers in Settings.");
       const refs = uploadedImages.slice(0, Math.max(maxRefs, 0));
       const params = {
+        ...createModelParameterValues(model),
         model: model.id,
         prompt: finalPrompt,
         aspect_ratio: effectiveAspect || undefined,
         resolution: effectiveResolution || undefined,
       };
       const res = variant.mode === "i2i" && refs.length
-        ? await generateI2I(apiKey, { ...params, images_list: refs })
+        ? await generateI2I(apiKey, { ...params, ...buildReferenceParams(model, { imageUrls: refs }) })
         : await generateImage(apiKey, params);
 
       if (res && res.url) {
-        const entry = {
+        const historyEntry = {
           url: res.url,
           timestamp: Date.now(),
           settings: {
@@ -880,7 +898,7 @@ export default function DzCinemaStudio({
 
         // Only update internal history if not using prop-driven history
         if (historyItems == null) {
-          setInternalHistory((prev) => [entry, ...prev].slice(0, 50));
+          setInternalHistory((prev) => [historyEntry, ...prev].slice(0, 50));
         }
 
         setCanvasUrl(res.url);

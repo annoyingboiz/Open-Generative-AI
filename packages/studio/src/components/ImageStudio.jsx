@@ -30,7 +30,7 @@ import {
   imageModelPickerEntries,
   imageModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
-import { dzRecommendedEntries } from "../dzCatalog.js"; // DZ
+import { dzRecommendedEntries, dzFirstModel } from "../dzCatalog.js"; // DZ
 import {
   buildReferenceParams,
   getModelMediaCapabilities,
@@ -989,20 +989,21 @@ export default function ImageStudio({
   }, [PERSIST_KEY]);
 
   // ── Model state ─────────────────────────────────────────────────────────
-  const initialFamily = imageModelCatalog.familyByVariantId.get(t2iModels[0].id);
+  const dzFirstT2I = dzFirstModel(t2iModels, imageModelCatalog, "t2i"); // DZ: family's default provider
+  const initialFamily = imageModelCatalog.familyByVariantId.get(dzFirstT2I.id);
   const [imageMode, setImageMode] = useState(false); // false=t2i, true=i2i
-  const [selectedModelId, setSelectedModelId] = useState(t2iModels[0].id);
+  const [selectedModelId, setSelectedModelId] = useState(dzFirstT2I.id);
   const [selectedFamilyId, setSelectedFamilyId] = useState(initialFamily.id);
   const [selectedAr, setSelectedAr] = useState(
-    t2iModels[0].inputs?.aspect_ratio?.default || "1:1",
+    dzFirstT2I.inputs?.aspect_ratio?.default || "1:1",
   );
   const [selectedQuality, setSelectedQuality] = useState(() => {
-    const resolutions = getResolutionsForModel(t2iModels[0].id);
+    const resolutions = getResolutionsForModel(dzFirstT2I.id);
     return resolutions[0] || null;
   });
   const [selectedEffect, setSelectedEffect] = useState("");
   const [modelParameterValues, setModelParameterValues] = useState(() =>
-    createModelParameterValues(t2iModels[0]),
+    createModelParameterValues(dzFirstT2I),
   );
 
   // ── Prompt / upload state ───────────────────────────────────────────────
@@ -1344,7 +1345,7 @@ export default function ImageStudio({
     setPrompt("");
     setUploadedImageUrls([]);
     setImageMode(false);
-    const firstT2I = t2iModels[0];
+    const firstT2I = dzFirstModel(t2iModels, imageModelCatalog, "t2i"); // DZ
     const ars = getAspectRatiosForModel(firstT2I.id);
     const resolutions = getResolutionsForModel(firstT2I.id);
     const family = imageModelCatalog.familyByVariantId.get(firstT2I.id);

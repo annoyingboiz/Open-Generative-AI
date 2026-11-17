@@ -22,3 +22,10 @@ export function dzRecommendedEntries(entries) {
     .filter((entry) => entry.family?.dzRecommended > 0)
     .sort((a, b) => a.family.dzRecommended - b.family.dzRecommended);
 }
+
+// DZ: the default model of the first family in a list — the family's preferred
+// (cheapest) provider, not simply list[0], which may be a pricier provider.
+export function dzFirstModel(list, catalog, mode) {
+  const family = catalog?.familyByVariantId?.get(list[0]?.id);
+  return family?.variants?.[mode]?.[0]?.model || list[0];
+}

@@ -28,7 +28,7 @@ import {
   videoModelMenuEntries as videoModelPickerEntries,
   videoModelMenuEntryByVariantId as videoModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
-import { dzRecommendedEntries } from "../dzCatalog.js"; // DZ
+import { dzRecommendedEntries, dzFirstModel } from "../dzCatalog.js"; // DZ
 import { getSeedanceEndpointResolution, getSeedanceToolConfiguration } from "../seedanceModels.js";
 import { getVeoToolConfiguration } from "../veoModels.js";
 import { getGroupedVideoConfiguration, getGroupedVideoCopyKey, getGroupedVideoVariantOptions } from "../groupedVideoModels.js";
@@ -798,7 +798,7 @@ export default function VideoStudio({
   const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
 
   // ── model / params ──
-  const defaultModel = t2vModels[0];
+  const defaultModel = dzFirstModel(t2vModels, videoModelCatalog, "t2v"); // DZ
   const defaultFamily = videoModelCatalog.familyByVariantId.get(defaultModel.id);
   const [selectedModel, setSelectedModel] = useState(defaultModel.id);
   const [selectedFamilyId, setSelectedFamilyId] = useState(defaultFamily.id);
@@ -2376,7 +2376,7 @@ export default function VideoStudio({
     setUploadedAudioUrls([]);
     workflowDraftSessionRef.current += 1;
     setWorkflowMediaDrafts({});
-    const first = t2vModels[0];
+    const first = dzFirstModel(t2vModels, videoModelCatalog, "t2v"); // DZ
     const family = videoModelCatalog.familyByVariantId.get(first.id);
     const variant = videoModelCatalog.variantById.get(first.id);
     applyUserSelectedVariant(variant, "t2v", family);

@@ -118,14 +118,19 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
       log?.info(`catalog: atlas — ${list.length} models, ${results.filter(Boolean).length}/${todo.length} schemas fetched`);
     }
     if (providerId === 'apimart') {
+      // Fetch prices for the whole list when it is new, otherwise only for the
+      // models still without one. A failed request keeps the previous price.
       const pricesFile = fileOf('apimart-prices.json');
-      const saved = readJson(pricesFile, null);
-      if (fresh && saved) return;
+      const saved = readJson(pricesFile, {}) || {};
       const media = list.filter((m) => ['image', 'video'].includes(m.category));
+      const todo = fresh ? media.filter((m) => !saved[m.id]) : media;
+      if (!todo.length) return;
+      const fetched = {};
+      await mapLimit(todo, 6, async (m) => { fetched[m.id] = await provider.price(cfg, m.id); });
       const prices = {};
-      await mapLimit(media, 6, async (m) => { prices[m.id] = await provider.price(cfg, m.id); });
+      for (const m of media) prices[m.id] = fetched[m.id] || saved[m.id] || null;
       writeJsonAtomic(pricesFile, prices);
-      log?.info(`catalog: apimart — ${list.length} models, ${Object.values(prices).filter(Boolean).length}/${media.length} prices`);
+      log?.info(`catalog: apimart — ${list.length} models, ${Object.values(fetched).filter(Boolean).length}/${todo.length} prices fetched, ${Object.values(prices).filter(Boolean).length}/${media.length} known`);
     }
   }
 
@@ -178,6 +183,13 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
   return {
     refreshAll,
     rebuild,
+    // Rebuild after a settings change. While a refresh runs it rebuilds at the
+    // end anyway (with the new settings), so we wait for it instead of
+    // publishing a half-refreshed catalog.
+    async requestRebuild() {
+      if (refreshing) return refreshing;
+      rebuild();
+    },
     // Model kind lookup for direct calls (/api/v1/p/<provider>/<model>).
     model(providerId, modelId) {
       const entry = raw[providerId]?.list?.find((m) => (providerId === 'atlas' ? m.model : m.id) === modelId);

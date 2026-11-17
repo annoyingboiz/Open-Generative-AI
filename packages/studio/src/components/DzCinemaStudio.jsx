@@ -1283,7 +1283,7 @@ export default function DzCinemaStudio({
                         <span className="text-base text-white/40">{entry.settings.camera} · {entry.settings.lens} · {entry.settings.focal}mm</span>
                       )}
                       {Number.isFinite(entry.cost) && (
-                        <span className="text-base text-white/40 tabular-nums" title="Charged by the provider">${entry.cost < 0.1 ? entry.cost.toFixed(3) : entry.cost.toFixed(2)}</span>
+                        <span className="text-base text-white/40 tabular-nums" title="Charged by the provider">${entry.cost < 0.1 ? entry.cost.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") : entry.cost.toFixed(2)}</span>
                       )}
                     </div>
                   </div>

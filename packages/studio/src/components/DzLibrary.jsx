@@ -36,7 +36,7 @@ async function download(url, name) {
   }
 }
 
-const fmtUsd = (usd) => (usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3));
+const fmtUsd = (usd) => (usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, ""));
 const fmtDate = (ms) => new Date(ms).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 function IconButton({ title, onClick, danger, children }) {

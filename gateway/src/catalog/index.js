@@ -142,14 +142,24 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     }
   }
 
+  // One refresh at a time. A call that asks for more (force / docs) while one
+  // runs is not dropped: it runs right after, with the combined flags.
+  let queued = null;
   async function refreshAll({ force = false, docs = false } = {}) {
-    if (refreshing) return refreshing;
+    if (refreshing) {
+      if (!force && !docs) return refreshing;
+      queued = { force: Boolean(queued?.force || force), docs: Boolean(queued?.docs || docs) };
+      return refreshing.then(() => {
+        const next = queued;
+        queued = null;
+        return next ? refreshAll(next) : undefined;
+      });
+    }
     refreshing = (async () => {
       const ok = [];
       for (const p of PROVIDERS) {
         try { await refreshProvider(p.id, { force }); ok.push(p.id); } catch (error) { log?.warn(`catalog: ${p.id} refresh failed — ${error.message}`); }
       }
-      await checkApimartDocs({ force: docs });
       rebuild();
       // What changed since the last check, per provider that answered.
       if (changes) {
@@ -162,24 +172,39 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
         }
       }
     })().finally(() => { refreshing = null; });
+    // The docs crawl takes a while: it never holds up the catalog or a request.
+    // An explicit check (docs: true) waits for it, so its caller knows it ran.
+    const done = refreshing.then(() => checkApimartDocs({ force: docs }));
+    if (docs) return done;
+    done.catch(() => {});
     return refreshing;
   }
 
   const isEnabled = (id) => providers.resolve(id).enabled && Boolean(providers.resolve(id).apiKey);
 
   // APIMart's parameters come from its docs: re-read them once a day.
-  async function checkApimartDocs({ force = false } = {}) {
-    if (!changes || !isEnabled('apimart')) return;
-    if (!force && Date.now() - changes.lastDocsCheck() < DAY) return;
-    try {
-      const cfg = providers.resolve('apimart');
-      const { docs, total, failed } = await fetchDocs({ fetchFn: (url) => providerFetch(url, { proxy: cfg.proxy, timeoutMs: 20_000, redirect: 'error' }) });
-      changes.apimartDocsChecked(buildApimartOverrides(docs), APIMART_OVERRIDES, { total, failed });
-      changes.setLastDocsCheck(Date.now());
-      log?.info(`changes: APIMart docs checked — ${docs.length}/${total} pages`);
-    } catch (error) {
-      log?.warn(`changes: APIMart docs check failed — ${error.message}`);
-    }
+  let docsRunning = null;
+  function checkApimartDocs({ force = false } = {}) {
+    if (!changes || !isEnabled('apimart')) return Promise.resolve();
+    if (docsRunning) return docsRunning;
+    if (!force && Date.now() - changes.lastDocsCheck() < DAY) return Promise.resolve();
+    docsRunning = (async () => {
+      try {
+        const cfg = providers.resolve('apimart');
+        const before = JSON.stringify(changes.liveOverrides());
+        const { docs, total, failed, invalid } = await fetchDocs({ fetchFn: (url) => providerFetch(url, { proxy: cfg.proxy, timeoutMs: 20_000, redirect: 'error' }) });
+        changes.apimartDocsChecked(buildApimartOverrides(docs), APIMART_OVERRIDES, { total, failed, invalid });
+        changes.setLastDocsCheck(Date.now());
+        log?.info(`changes: APIMart docs checked — ${docs.length}/${total} pages, ${invalid || 0} without parameters`);
+        // New specs went live: publish them (unless a refresh is about to).
+        if (JSON.stringify(changes.liveOverrides()) !== before && !refreshing) rebuild();
+      } catch (error) {
+        log?.warn(`changes: APIMart docs check failed — ${error.message}`);
+      } finally {
+        docsRunning = null;
+      }
+    })();
+    return docsRunning;
   }
 
   // Model cover images from Atlas, cached on disk (see /dz/thumb).

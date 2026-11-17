@@ -61,7 +61,9 @@ export async function buildApp(config, { logger = true } = {}) {
     const { botToken, chatId } = config.telegram || {};
     if (!botToken || !chatId || !added.length) return;
     const review = added.filter((e) => e.status === 'review').length;
-    const lines = added.slice(0, 12).map((e) => `• ${e.provider} · ${e.name || e.model || e.endpoint || ''} — ${e.type}${e.param ? ` ${e.param}` : ''}${e.detail ? `: ${String(e.detail).slice(0, 80)}` : ''}`);
+    // Provider error texts may echo prompts or signed links: for refusals only the setting names go out.
+    const safeDetail = (e) => (e.type === 'rejected' ? '' : String(e.detail || '').replace(/https?:\/\/\S+/g, '[link]').slice(0, 80));
+    const lines = added.slice(0, 12).map((e) => `• ${e.provider} · ${e.name || e.model || e.endpoint || ''} — ${e.type}${e.param ? ` ${e.param}` : ''}${safeDetail(e) ? `: ${safeDetail(e)}` : ''}`);
     const text = [`Director: ${added.length} provider change(s)${review ? `, ${review} need review` : ''}`, ...lines, added.length > 12 ? `…and ${added.length - 12} more` : '', config.publicUrl ? `${config.publicUrl}/dz/settings#changes` : ''].filter(Boolean).join('\n');
     try {
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }), signal: AbortSignal.timeout(10_000) });

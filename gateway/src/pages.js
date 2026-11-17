@@ -158,7 +158,7 @@ const CHANGE_LABEL = {
   'mode-added': 'New mode', 'mode-removed': 'Mode removed', 'rename-changed': 'Field names changed',
   rejected: 'Request refused', 'check-skipped': 'Check skipped',
 };
-const STATUS_LABEL = { applied: 'live', review: 'needs review', info: 'info', resolved: 'resolved', replaced: 'replaced', dismissed: 'kept old', closed: 'closed' };
+const STATUS_LABEL = { applied: 'live', review: 'needs review', info: 'info', resolved: 'resolved', replaced: 'replaced', dismissed: 'kept old', closed: 'closed', stale: 'gone from the docs' };
 const STATUS_COLOR = { applied: 'var(--ok, #4ade80)', review: '#fbbf24', info: 'var(--muted, #888)' };
 
 function changesSection({ entries, summary, telegram }) {

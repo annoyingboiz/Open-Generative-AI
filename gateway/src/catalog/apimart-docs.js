@@ -189,15 +189,20 @@ export async function fetchApimartDocs({ fetchFn = (url) => providerFetch(url, {
   const docs = [];
   let i = 0;
   let failed = 0;
+  let invalid = 0; // pages without a readable parameter list (a few are normal: guides, query pages)
   await Promise.all(Array.from({ length: Math.min(concurrency, urls.length) }, async () => {
     while (i < urls.length) {
       const url = urls[i++];
       try {
         const r = await fetchFn(url);
-        if (r.ok) docs.push({ url, text: await r.text() }); else failed += 1;
+        if (!r.ok) { failed += 1; continue; }
+        const text = await r.text();
+        // A page cut short keeps its title and model id but loses the parameters.
+        if (!Object.keys(parseParams(text)).length) invalid += 1;
+        docs.push({ url, text });
       } catch { failed += 1; }
     }
   }));
   docs.sort((a, b) => a.url.localeCompare(b.url)); // stable "most complete page" choice
-  return { docs, total: urls.length, failed };
+  return { docs, total: urls.length, failed, invalid };
 }

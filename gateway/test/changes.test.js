@@ -46,15 +46,18 @@ test('diffOverride: media limits and modes', () => {
 
 test('APIMart docs check: safe changes go live, others wait; dismiss and apply', () => {
   const changes = createChanges({ dir: tmp() });
+  const fill = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`f${i}`, ov({ duration: dur([5]) })]));
   const bundled = {
     a: ov({ duration: dur([5, 10]) }),
     b: ov({ duration: dur([5, 10]) }),
     c: ov({ duration: dur([5]) }),
+    ...fill,
   };
   const fresh = {
     a: ov({ duration: dur([5, 10, 15]) }), // new value → live
     b: ov({ duration: dur([5]) }), // value removed → review
     c: ov({ duration: dur([5]) }), // same
+    ...fill,
   };
   const added = changes.apimartDocsChecked(fresh, bundled, { total: 3, failed: 0 });
   assert.deepEqual(added.map((e) => [e.model, e.status]).sort(), [['a', 'applied'], ['b', 'review']]);
@@ -73,6 +76,11 @@ test('APIMart docs check: safe changes go live, others wait; dismiss and apply',
   // Different docs for b → proposed again; apply moves it live.
   const fresh2 = { ...fresh, b: ov({ duration: dur([6]) }) };
   assert.equal(changes.apimartDocsChecked(fresh2, bundled, { total: 3 }).some((e) => e.model === 'b' && e.status === 'review'), true);
+  // A proposal whose page is missing next time is withdrawn.
+  const withoutB = { a: fresh.a, c: fresh.c, ...fill };
+  changes.apimartDocsChecked(withoutB, bundled, { total: 3 });
+  assert.equal(changes.applyPending('b'), false);
+  changes.apimartDocsChecked(fresh2, bundled, { total: 3 });
   assert.equal(changes.applyPending('b'), true);
   assert.deepEqual(Object.keys(changes.liveOverrides()).sort(), ['a', 'b']);
   assert.equal(changes.summary().review, 0);
@@ -96,16 +104,19 @@ test('catalog snapshots: first one is only saved, then differences are journaled
   assert.ok(added.every((e) => e.status === 'applied'));
   // An empty answer is an outage, not "everything removed".
   assert.equal(changes.catalogChecked('atlas', []).length, 0);
+  // …and the old snapshot is kept, so the next full answer is not "all new".
+  assert.equal(changes.catalogChecked('atlas', [v('p/atlas/k', { duration: dur([5, 10]) }, '$0.12/s'), v('p/atlas/new', {}, '$1')]).length, 0);
   assert.equal(diffSnapshots(snapshotOf([v('x', {}, '$1')]), {}).at(0).type, 'model-removed');
 });
 
 test('provider refusals are journaled once a day per endpoint and message', () => {
   const changes = createChanges({ dir: tmp() });
-  const r = { provider: 'apimart', endpoint: 'p/apimart/x?m=t2v', model: 'x', status: 400, message: 'HTTP 400: invalid duration' };
+  const r = { provider: 'apimart', endpoint: 'p/apimart/x?m=t2v', model: 'x', status: 400, message: 'HTTP 400: invalid duration', params: ['prompt', 'duration'] };
+  assert.equal(changes.providerRejected({ ...r, message: 'HTTP 400: prompt must be non-empty' }).length, 0);
   assert.equal(changes.providerRejected(r).length, 1);
   assert.equal(changes.providerRejected(r).length, 0);
   const [entry] = changes.list();
-  assert.equal(changes.providerRejected({ ...r, message: 'HTTP 400: prompt violates content policy' }).length, 0);
+  assert.equal(changes.providerRejected({ ...r, message: 'HTTP 400: duration violates content policy' }).length, 0);
   assert.equal(changes.close(entry.id), true);
   assert.equal(changes.summary().review, 0);
 });

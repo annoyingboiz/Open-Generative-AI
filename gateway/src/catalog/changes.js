@@ -69,7 +69,8 @@ export function diffInputs(before = {}, after = {}) {
     }
     if (a.default !== b.default) {
       const fits = b.enum ? b.enum.includes(b.default) : b.min == null || (Number(b.default) >= b.min && Number(b.default) <= (b.max ?? Infinity));
-      items.push({ type: 'default-changed', param: name, detail: `${a.default ?? '—'} → ${b.default ?? '—'}`, safe: b.default !== undefined && fits });
+      // A new default changes what gets sent (and may cost more): always reviewed.
+      items.push({ type: 'default-changed', param: name, detail: `${a.default ?? '—'} → ${b.default ?? '—'}${fits ? '' : ' (outside the allowed values)'}`, safe: false });
     }
   }
   return items;
@@ -102,7 +103,7 @@ export function flattenOverride(o) {
 
 // [{ type, mode?, param?, detail, safe }] — what the new docs change for one model.
 export function diffOverride(before, after) {
-  if (!before && after) return [{ type: 'model-added', detail: after.docTitle || '', safe: true }];
+  if (!before && after) return [{ type: 'model-added', detail: after.docTitle || '', safe: false }];
   if (before && !after) return [{ type: 'model-missing', detail: 'No longer found in the docs — kept as is.', safe: false, info: true }];
   const items = [];
   if (!same(before.rename || {}, after.rename || {})) items.push({ type: 'rename-changed', detail: `${JSON.stringify(before.rename || {})} → ${JSON.stringify(after.rename || {})}`, safe: false });
@@ -177,10 +178,15 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     const snapFile = file(`snapshot-${providerId}.json`);
     const before = readJson(snapFile, null);
     const after = snapshotOf(variants);
+    // A provider that suddenly lists far fewer models is an outage or a cut-off
+    // answer, not a change: keep the old snapshot and say nothing.
+    const was = Object.keys(before || {}).length;
+    if (was && Object.keys(after).length < was * 0.7) {
+      log?.warn(`changes: ${providerId} listed ${Object.keys(after).length} of ${was} models — snapshot kept`);
+      return [];
+    }
     writeJsonAtomic(snapFile, after);
     if (!before) return [];
-    // A provider that suddenly has nothing is an outage, not a change.
-    if (Object.keys(before).length && !Object.keys(after).length) return [];
     const status = providerId === 'apimart' ? 'info' : 'applied';
     return record(diffSnapshots(before, after, { params }).map((i) => ({ provider: providerId, source: 'catalog', status, ...i })));
   }
@@ -189,13 +195,13 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
   const pending = () => readJson(file('apimart-pending.json'), {});
 
   // Fresh specs parsed from APIMart's docs, compared with what is in use.
-  function apimartDocsChecked(fresh, bundled, { total = 0, failed = 0 } = {}) {
+  function apimartDocsChecked(fresh, bundled, { total = 0, failed = 0, invalid = 0 } = {}) {
     const active = { ...bundled, ...live() };
     const freshCount = Object.keys(fresh).length;
     // Half-loaded docs must not look like dozens of removed models.
-    if ((total && failed / total > 0.2) || freshCount < Object.keys(active).length * 0.7) {
-      log?.warn(`changes: APIMart docs check skipped — ${freshCount} models parsed, ${failed}/${total} pages failed`);
-      return record([{ provider: 'apimart', source: 'docs', status: 'info', type: 'check-skipped', detail: `Docs looked incomplete (${freshCount} models, ${failed} of ${total} pages failed). Nothing changed.` }]);
+    if ((total && (failed + invalid) / total > 0.15) || freshCount < Object.keys(active).length * 0.7) {
+      log?.warn(`changes: APIMart docs check skipped — ${freshCount} models parsed, ${failed}/${total} pages failed, ${invalid} unreadable`);
+      return record([{ provider: 'apimart', source: 'docs', status: 'info', type: 'check-skipped', detail: `Docs looked incomplete (${freshCount} models, ${failed} of ${total} pages failed, ${invalid} without parameters). Nothing changed.` }]);
     }
     const nextLive = live();
     const nextPending = pending();
@@ -203,6 +209,8 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     const dismissed = readJson(file('apimart-dismissed.json'), {});
     for (const id of new Set([...Object.keys(active), ...Object.keys(fresh)])) {
       if (fresh[id] && same(dismissed[id], fresh[id])) continue; // the admin said no to exactly this
+      // A proposal whose page is gone this time can't be applied any more.
+      if (!fresh[id] && nextPending[id]) { delete nextPending[id]; resolve(id, 'stale'); }
       const items = diffOverride(active[id], fresh[id]);
       if (!items.length) {
         if (nextPending[id]) {
@@ -267,15 +275,17 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
   }
 
   // A provider refused a request we built from its spec — a sign the spec is out of date.
-  function providerRejected({ provider, endpoint, model, status, message }) {
+  function providerRejected({ provider, endpoint, model, status, message, params = [] }) {
     const text = String(message || '').slice(0, 400);
+    // Must name one of the settings we sent (not the prompt): that is a spec problem.
+    const named = params.filter((p) => p !== 'prompt' && new RegExp(`\\b${p.replace(/[^a-z0-9_]/gi, '')}\\b`, 'i').test(text));
+    if (!named.length) return [];
     // Only refusals about the request's shape; content moderation, balance,
     // and plain prompt problems are not spec changes.
     if (/policy|safety|sensitive|moderat|nsfw|violat|balance|quota|insufficient|credit/i.test(text)) return [];
-    if (!/param|field|invalid|unsupported|not support|unknown|must be|should be|allowed|enum|range|expected|required|unrecognized/i.test(text)) return [];
     const dupe = entries.some((e) => e.type === 'rejected' && e.endpoint === endpoint && e.detail === text && now() - e.at < DAY);
     if (dupe) return [];
-    return record([{ provider, source: 'request', status: 'review', type: 'rejected', endpoint, model, detail: text, http: status }]);
+    return record([{ provider, source: 'request', status: 'review', type: 'rejected', endpoint, model, param: named.join(', '), detail: text, http: status }]);
   }
 
   function markSeen(id) {

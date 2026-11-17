@@ -134,7 +134,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       q.setFailed.run(error.message.slice(0, 1000), now(), now(), id);
       // The provider refused what we built from its spec: report it (Settings → Provider changes).
       if ([400, 422].includes(error.status)) {
-        try { onProviderRejected?.({ provider: providerId, endpoint, model: modelId, status: error.status, message: error.message }); } catch { /* reporting is best effort */ }
+        try { onProviderRejected?.({ provider: providerId, endpoint, model: modelId, status: error.status, message: error.message, params: Object.keys(clean) }); } catch { /* reporting is best effort */ }
       }
       throw error instanceof GenerationError ? error : new GenerationError(`${provider.name}: ${error.message}`, 502);
     }

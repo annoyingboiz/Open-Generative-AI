@@ -36,7 +36,7 @@ before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-gen-'));
   fs.mkdirSync(path.join(dataDir, 'catalog'), { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'catalog', 'apimart-models.json'), JSON.stringify({
-    fetchedAt: Date.now(), list: [{ id: 'test-image', category: 'image' }, { id: 'chat-model', category: 'chat' }],
+    fetchedAt: Date.now(), list: [{ id: 'test-image', category: 'image', capability_tags: ['Text to Image'] }, { id: 'chat-model', category: 'chat' }],
   }));
 
   let polls = 0;
@@ -51,7 +51,8 @@ before(async () => {
   }, { logger: false });
   await app.ready();
 
-  let res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'admin', displayName: 'Admin', password: 'admin-pass-1' } });
+  const setupCode = fs.readFileSync(path.join(dataDir, 'setup-code'), 'utf8').trim();
+  let res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'admin', displayName: 'Admin', password: 'admin-pass-1', setupCode } });
   adminCookie = cookieOf(res);
   await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie }, payload: { username: 'kid', displayName: 'Kid', password: 'kid-pass-12', monthlyLimitUsd: '0.01' } });
   res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'kid', password: 'kid-pass-12' } });
@@ -143,7 +144,14 @@ test('history is per user; trash hides an item', async () => {
 test('monthly limit stops generation', async () => {
   // Kid's limit is $0.01; a previous paid job brings them over.
   app.ctx.db.prepare("INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, cost_usd, created_at, updated_at) VALUES ('gen_old', 2, 'x', 'apimart', 'test-image', 'image', 'completed', 0.02, ?, ?)").run(Date.now(), Date.now());
-  const res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image', headers: { cookie: userCookie }, payload: { prompt: 'x' } });
+  let res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image', headers: { cookie: userCookie }, payload: { prompt: 'x' } });
+  assert.equal(res.statusCode, 404, 'non-admins cannot bypass the catalog');
+  res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image?m=t2i', headers: { cookie: userCookie }, payload: { prompt: 'x' } });
+  assert.equal(res.statusCode, 402, 'unpriced model is not allowed with a limit');
+  // With a price, the limit itself applies.
+  const variant = app.ctx.catalog.variant('p/apimart/test-image?m=t2i');
+  variant.server.price = { usd: 0.02, unit: 'image' };
+  res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image?m=t2i', headers: { cookie: userCookie }, payload: { prompt: 'x' } });
   assert.equal(res.statusCode, 402);
   assert.match(res.json().detail, /Monthly limit/);
 });

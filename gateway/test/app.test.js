@@ -51,9 +51,12 @@ test('first start redirects to setup, then creates admin', async () => {
   let res = await app.inject({ url: '/studio' });
   assert.equal(res.statusCode, 302);
   assert.equal(res.headers.location, '/setup');
-  res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'denis', displayName: 'Denis', password: 'short' } });
+  const setupCode = fs.readFileSync(path.join(dataDir, 'setup-code'), 'utf8').trim();
+  res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'denis', displayName: 'Denis', password: 'long-enough-1', setupCode: 'wrong' } });
+  assert.equal(res.statusCode, 403, 'setup needs the one-time code');
+  res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'denis', displayName: 'Denis', password: 'short', setupCode } });
   assert.equal(res.statusCode, 400);
-  res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'denis', displayName: 'Denis', password: 'long-enough-1' } });
+  res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'denis', displayName: 'Denis', password: 'long-enough-1', setupCode } });
   assert.equal(res.statusCode, 302);
   adminCookie = cookieOf(res);
   assert.match(adminCookie, /^dz_session=/);
@@ -146,4 +149,9 @@ test('login throttle cannot be bypassed with a forged X-Forwarded-For', async ()
   }
   const res = await app.inject({ method: 'POST', url: '/login', remoteAddress: '192.168.8.50', headers: { 'x-forwarded-for': '9.9.9.9' }, payload: { username: 'denis', password: 'long-enough-1' } });
   assert.equal(res.statusCode, 429);
+});
+
+test('cross-site sign-in is refused (login CSRF)', async () => {
+  const res = await app.inject({ method: 'POST', url: '/login', headers: { origin: 'https://evil.example', host: 'director.zabelin.design' }, payload: { username: 'denis', password: 'long-enough-1' } });
+  assert.equal(res.statusCode, 403);
 });

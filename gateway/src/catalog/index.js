@@ -11,6 +11,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { providerFetch } from '../providers/http.js';
 import { assertPublicHttpsUrl } from '../net-guard.js';
+import { byteLimit } from '../storage.js';
 import { PROVIDERS, providerById } from '../providers/index.js';
 import { buildAtlasVariant, buildApimartVariants, buildStudioLists, apimartPrice, STUDIO_MODES } from './build.js';
 
@@ -137,9 +138,12 @@ export function createCatalog({ dataDir, providers, log }) {
       const response = await providerFetch(url.href, { proxy: cfg.proxy, timeoutMs: 20_000, redirect: 'error' });
       const mime = (response.headers.get('content-type') || '').split(';')[0].trim();
       if (!response.ok || !/^image\/(png|jpeg|webp|gif|avif)$/.test(mime) || Number(response.headers.get('content-length') || 0) > 5_000_000) return null;
-      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(`${file}.part`));
-      if (fs.statSync(`${file}.part`).size > 5_000_000) { fs.unlinkSync(`${file}.part`); return null; }
-      fs.renameSync(`${file}.part`, file);
+      try {
+        await pipeline(Readable.fromWeb(response.body), byteLimit(5_000_000), fs.createWriteStream(`${file}.part`));
+        fs.renameSync(`${file}.part`, file);
+      } finally {
+        try { fs.unlinkSync(`${file}.part`); } catch { /* moved or never created */ }
+      }
       fs.writeFileSync(metaFile, JSON.stringify({ mime, url: url.href }));
       return { path: file, mime };
     } catch (error) {

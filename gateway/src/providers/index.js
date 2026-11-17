@@ -7,6 +7,15 @@ import { encrypt, decrypt, maskSecret } from '../crypto.js';
 import { now } from '../db.js';
 
 export const PROVIDERS = [apimart, atlas];
+
+// Shows a proxy without its password: socks5h://user:••••@host:port
+function maskProxy(value) {
+  try {
+    const u = new URL(value);
+    if (u.password) u.password = '••••';
+    return u.password || u.username ? u.toString() : value;
+  } catch { return value || ''; }
+}
 export const providerById = (id) => PROVIDERS.find((p) => p.id === id);
 
 export function createProviderSettings({ db, masterKey, envDefaults }) {
@@ -49,7 +58,7 @@ export function createProviderSettings({ db, masterKey, envDefaults }) {
       hasKey: Boolean(c.apiKey),
       keyMask: maskSecret(c.apiKey),
       keySource: c.keySource,
-      proxy: c.proxy,
+      proxy: maskProxy(c.proxy),
       enabled: c.enabled,
     };
   }
@@ -59,7 +68,8 @@ export function createProviderSettings({ db, masterKey, envDefaults }) {
     let apiKeyEnc = current?.api_key_enc ?? null;
     if (clearKey) apiKeyEnc = null;
     else if (apiKey) apiKeyEnc = encrypt(masterKey, apiKey.trim());
-    upsert.run(id, apiKeyEnc, proxy ?? current?.proxy_url ?? '', enabled ? 1 : 0, now());
+    const keepProxy = typeof proxy === 'string' && proxy.includes('••••') && current?.proxy_url;
+    upsert.run(id, apiKeyEnc, keepProxy ? current.proxy_url : (proxy ?? current?.proxy_url ?? ''), enabled ? 1 : 0, now());
   }
 
   return { resolve, publicView, save };

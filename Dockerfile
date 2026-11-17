@@ -11,7 +11,7 @@ COPY . .
 RUN for d in packages/Vibe-Workflow/packages/workflow-builder packages/Open-Poe-AI/packages/agents packages/Open-AI-Design-Agent/packages/design-agent; do \
       [ -f "$d/package.json" ] || { echo "ERROR: $d is missing. Submodules are not initialized. Run: git submodule update --init --recursive (or clone with --recurse-submodules), then rebuild." >&2; exit 1; }; \
     done
-RUN npm install
+RUN npm ci --no-audit --no-fund
 
 # Build sub-packages
 FROM deps AS builder

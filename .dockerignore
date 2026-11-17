@@ -6,3 +6,7 @@ release
 .git
 gateway
 data
+.env
+.env.*
+!.env.example
+compose.local.yml

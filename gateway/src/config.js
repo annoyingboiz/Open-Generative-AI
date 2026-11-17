@@ -22,4 +22,7 @@ export const config = {
   // Reverse proxies whose X-Forwarded-* / cf-connecting-ip headers we believe
   // (cloudflared on the same host connects from loopback).
   trustProxy: env.TRUST_PROXY || '127.0.0.1,::1',
+  maxUploadBytes: Number(env.MAX_UPLOAD_MB || 300) * 1024 * 1024,
+  userUploadQuotaBytes: Number(env.USER_UPLOAD_QUOTA_GB || 10) * 1024 ** 3,
+  maxActiveJobsPerUser: Number(env.MAX_ACTIVE_JOBS_PER_USER || 8),
 };

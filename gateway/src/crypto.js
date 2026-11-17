@@ -12,6 +12,21 @@ export function hashPassword(password) {
   return ['scrypt', SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), hash.toString('base64')].join('$');
 }
 
+export const MAX_PASSWORD_LENGTH = 1024;
+
+// Async variant: does not block the event loop while hashing.
+export function verifyPasswordAsync(password, stored) {
+  return new Promise((resolve) => {
+    if (typeof stored !== 'string' || typeof password !== 'string' || password.length > MAX_PASSWORD_LENGTH) return resolve(false);
+    const [algo, N, r, p, saltB64, hashB64] = stored.split('$');
+    if (algo !== 'scrypt') return resolve(false);
+    const expected = Buffer.from(hashB64, 'base64');
+    crypto.scrypt(password, Buffer.from(saltB64, 'base64'), expected.length, { N: Number(N), r: Number(r), p: Number(p), maxmem: SCRYPT.maxmem }, (err, actual) => {
+      resolve(!err && expected.length === actual.length && crypto.timingSafeEqual(expected, actual));
+    });
+  });
+}
+
 export function verifyPassword(password, stored) {
   if (typeof stored !== 'string') return false;
   const [algo, N, r, p, saltB64, hashB64] = stored.split('$');

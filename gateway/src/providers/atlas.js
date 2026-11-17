@@ -31,7 +31,9 @@ export const atlas = {
   },
 
   async schema({ proxy }, url) {
-    return providerJson(url, { proxy, timeoutMs: 30_000 });
+    const u = new URL(url);
+    if (u.protocol !== 'https:' || !/(^|\.)atlascloud\.ai$/i.test(u.hostname)) throw new Error(`Refusing schema URL outside atlascloud.ai: ${u.hostname}`);
+    return providerJson(u.href, { proxy, timeoutMs: 30_000, redirect: 'error' });
   },
 
   async submit({ apiKey, proxy }, { kind, model, body }) {
@@ -70,7 +72,8 @@ export const atlas = {
 
   async upload({ apiKey, proxy }, { path, mime, name }) {
     const form = new FormData();
-    form.append('file', new Blob([fs.readFileSync(path)], { type: mime }), name || `file.${mime.split('/')[1]}`);
+    // Streamed from disk, not read into memory.
+    form.append('file', await fs.openAsBlob(path, { type: mime }), name || `file.${mime.split('/')[1]}`);
     const response = await providerFetch(`${API}/api/v1/model/uploadMedia`, {
       proxy, method: 'POST', headers: auth(apiKey), body: form, timeoutMs: 10 * 60_000,
     });

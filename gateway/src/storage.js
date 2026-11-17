@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { providerFetch } from './providers/http.js';
 import { assertPublicHttpsUrl } from './net-guard.js';
 
@@ -20,6 +20,19 @@ MIME_BY_EXT.jpeg = 'image/jpeg';
 
 export const mimeForExt = (ext) => MIME_BY_EXT[String(ext).toLowerCase()] || 'application/octet-stream';
 export const extForMime = (mime) => EXT_BY_MIME[String(mime || '').split(';')[0].trim().toLowerCase()];
+// Aborts a stream once more than `max` bytes went through.
+export function byteLimit(max) {
+  let seen = 0;
+  return new Transform({
+    transform(chunk, _enc, cb) {
+      seen += chunk.length;
+      cb(seen > max ? new Error(`File is larger than ${Math.round(max / 1024 / 1024)} MB`) : null, chunk);
+    },
+  });
+}
+
+export const MAX_RESULT_BYTES = 2 * 1024 ** 3;
+
 export const newId = (prefix) => `${prefix}_${crypto.randomBytes(12).toString('base64url')}`;
 
 // Only media types go in. No HTML, SVG, scripts.
@@ -46,6 +59,7 @@ export function createStorage(dataDir, { allowLocalDownloads = false } = {}) {
     if (!allowLocalDownloads) await assertPublicHttpsUrl(url, { viaProxy: Boolean(proxy) });
     const response = await providerFetch(url, { proxy, timeoutMs: 15 * 60_000, redirect: 'error' });
     if (!response.ok || !response.body) throw new Error(`Download failed: HTTP ${response.status}`);
+    if (Number(response.headers.get('content-length') || 0) > MAX_RESULT_BYTES) throw new Error('Result file is too large');
     const headerMime = (response.headers.get('content-type') || '').split(';')[0].trim();
     const urlExt = (new URL(url).pathname.match(/\.([a-z0-9]{2,5})$/i) || [])[1];
     const ext = extForMime(headerMime) || (urlExt ? urlExt.toLowerCase() : 'bin');
@@ -55,8 +69,12 @@ export function createStorage(dataDir, { allowLocalDownloads = false } = {}) {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${generationId}-${index}.${ext}`);
     const tmp = `${file}.part`;
-    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(tmp));
-    fs.renameSync(tmp, file);
+    try {
+      await pipeline(Readable.fromWeb(response.body), byteLimit(MAX_RESULT_BYTES), fs.createWriteStream(tmp));
+      fs.renameSync(tmp, file);
+    } finally {
+      remove(tmp);
+    }
     return { path: file, mime, bytes: fs.statSync(file).size, ext };
   }
 
@@ -68,12 +86,13 @@ export function createStorage(dataDir, { allowLocalDownloads = false } = {}) {
 }
 
 // Sends a file with HTTP Range support (needed for video seeking).
-export function sendFile(req, reply, file, mime, { download = false, name } = {}) {
+export function sendFile(req, reply, file, mime, { download = false, name, cacheControl = 'private, no-store' } = {}) {
   let stat;
   try { stat = fs.statSync(file); } catch { return reply.code(404).send({ error: 'File not found' }); }
   reply.header('content-type', mime);
   reply.header('accept-ranges', 'bytes');
-  reply.header('cache-control', 'private, max-age=31536000, immutable');
+  // Private files: the browser must ask us (and we check the owner) every time.
+  reply.header('cache-control', cacheControl);
   if (download) reply.header('content-disposition', `attachment; filename="${(name || path.basename(file)).replace(/"/g, '')}"`);
   const range = req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
   if (range) {

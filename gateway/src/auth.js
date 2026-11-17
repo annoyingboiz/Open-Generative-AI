@@ -1,5 +1,5 @@
 // Users and sessions. Accounts are created by an admin; there is no open sign-up.
-import { hashPassword, verifyPassword, newToken, sha256 } from './crypto.js';
+import { hashPassword, verifyPassword, verifyPasswordAsync, newToken, sha256, MAX_PASSWORD_LENGTH } from './crypto.js';
 import { now } from './db.js';
 
 export const SESSION_COOKIE = 'dz_session';
@@ -36,6 +36,7 @@ export function createAuth({ db, sessionDays }) {
 
   function validatePassword(password) {
     if (!password || password.length < 8) return 'Password must be at least 8 characters.';
+    if (password.length > MAX_PASSWORD_LENGTH) return 'Password is too long.';
     return null;
   }
 
@@ -46,16 +47,20 @@ export function createAuth({ db, sessionDays }) {
     return q.byId.get(Number(info.lastInsertRowid));
   }
 
-  function login(username, password, userAgent) {
-    const user = q.byUsername.get(String(username || '').trim());
-    // Hash even when the user doesn't exist, so timing doesn't reveal logins.
-    const ok = user ? verifyPassword(password || '', user.pw_hash) : (verifyPassword('x', DUMMY_HASH), false);
-    if (!ok || user.disabled) return null;
+  function startSession(user, userAgent) {
     const token = newToken();
     const t = now();
     q.insertSession.run(sha256(token), user.id, t, t + sessionDays * 86_400_000, String(userAgent || '').slice(0, 200));
     if (Math.random() < 0.05) q.purgeSessions.run(t);
     return { token, user };
+  }
+
+  async function login(username, password, userAgent) {
+    const user = q.byUsername.get(String(username || '').trim().slice(0, 64));
+    // Hash even when the user doesn't exist, so timing doesn't reveal logins.
+    const ok = user ? await verifyPasswordAsync(String(password || ''), user.pw_hash) : (await verifyPasswordAsync('x', DUMMY_HASH), false);
+    if (!ok || user.disabled) return null;
+    return startSession(user, userAgent);
   }
 
   function userFromToken(token) {
@@ -67,21 +72,19 @@ export function createAuth({ db, sessionDays }) {
     if (token) q.deleteSession.run(sha256(token));
   }
 
-  function changePassword(userId, password, { keepToken } = {}) {
+  // Ends every session of the user. With newSession, returns a fresh one
+  // (a new token — the old cookie stops working) so the user stays signed in.
+  function changePassword(userId, password, { newSession = false, userAgent } = {}) {
     const error = validatePassword(password);
     if (error) throw new UserError(error);
     q.setPassword.run(hashPassword(password), userId);
     q.deleteUserSessions.run(userId);
-    if (keepToken) {
-      // Re-create the current session so the user stays signed in.
-      const t = now();
-      q.insertSession.run(sha256(keepToken), userId, t, t + sessionDays * 86_400_000, 'password-change');
-    }
+    return newSession ? startSession(q.byId.get(userId), userAgent) : null;
   }
 
-  function checkPassword(userId, password) {
+  async function checkPassword(userId, password) {
     const user = q.byId.get(userId);
-    return Boolean(user && verifyPassword(password || '', user.pw_hash));
+    return Boolean(user && await verifyPasswordAsync(String(password || ''), user.pw_hash));
   }
 
   function updateUser(id, { displayName, role, monthlyLimitUsd, disabled }) {
@@ -98,13 +101,14 @@ export function createAuth({ db, sessionDays }) {
   }
 
   return {
-    hasUsers, createUser, login, logout, userFromToken, changePassword, checkPassword, updateUser,
+    hasUsers, createUser, login, logout, startSession, userFromToken, changePassword, checkPassword, updateUser,
     listUsers: () => q.list.all(),
     getUser: (id) => q.byId.get(id),
   };
 }
 
 const DUMMY_HASH = hashPassword('dummy-password-for-timing');
+void verifyPassword;
 
 export class UserError extends Error {}
 
@@ -116,7 +120,9 @@ export const publicUser = (u) => u && ({
   monthlyLimitUsd: u.monthly_limit_usd,
 });
 
-// Simple in-memory throttle for login attempts: 10 failures per 15 minutes per IP.
+// In-memory throttle for login attempts: 10 failures per 15 minutes, counted
+// separately per IP and per login name. A success clears only that login's
+// counter, so signing in to one's own account doesn't reset guesses on others.
 export function createLoginThrottle({ max = 10, windowMs = 15 * 60_000 } = {}) {
   const hits = new Map();
   return {

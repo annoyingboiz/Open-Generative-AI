@@ -87,7 +87,8 @@ export const apimart = {
     const bucket = UPLOAD_KIND[kind];
     if (!bucket) throw new Error(`APIMart: cannot upload ${mime}`);
     const form = new FormData();
-    form.append('file', new Blob([fs.readFileSync(path)], { type: mime }), name || `file.${mime.split('/')[1]}`);
+    // Streamed from disk, not read into memory.
+    form.append('file', await fs.openAsBlob(path, { type: mime }), name || `file.${mime.split('/')[1]}`);
     const response = await providerFetch(`${API}/v1/uploads/${bucket}?retention_days=7`, {
       proxy, method: 'POST', headers: auth(apiKey), body: form, timeoutMs: 10 * 60_000,
     });

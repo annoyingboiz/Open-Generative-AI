@@ -7,8 +7,11 @@ import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
 import httpProxy from '@fastify/http-proxy';
 import multipart from '@fastify/multipart';
+import fs from 'node:fs';
+import path from 'node:path';
+import net from 'node:net';
 import { openDatabase } from './db.js';
-import { loadMasterKey } from './crypto.js';
+import { loadMasterKey, newToken } from './crypto.js';
 import { createAuth, createLoginThrottle, publicUser, SESSION_COOKIE, UserError } from './auth.js';
 import { PROVIDERS, providerById, createProviderSettings, fetchBalances } from './providers/index.js';
 import { validateProxyUrl } from './providers/http.js';
@@ -21,6 +24,7 @@ import { toProviderBody, estimateCost } from './catalog/build.js';
 const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico']);
 
 export async function buildApp(config, { logger = true } = {}) {
+  process.umask(0o077); // database, keys and files readable by this user only
   const db = openDatabase(config.dataDir);
   const masterKey = loadMasterKey(config.dataDir, config.appSecret);
   const auth = createAuth({ db, sessionDays: config.sessionDays });
@@ -30,21 +34,24 @@ export async function buildApp(config, { logger = true } = {}) {
   const app = Fastify({
     logger: logger ? { level: config.logLevel } : false,
     trustProxy: config.trustProxy,
-    bodyLimit: 50 * 1024 * 1024,
+    bodyLimit: 2 * 1024 * 1024, // uploads have their own limits (multipart)
   });
   const storage = createStorage(config.dataDir, { allowLocalDownloads: config.testAllowLocalDownloads === true });
   const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log });
-  const generations = createGenerations({ db, storage, providers, catalog, log: app.log });
+  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, maxActiveJobsPerUser: config.maxActiveJobsPerUser });
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);
   await app.register(formbody);
-  await app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024, files: 1 } });
+  await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1, fields: 5 } });
 
   const isHttps = (req) => req.protocol === 'https';
   // Real client IP: Cloudflare's header when the request came through our
   // trusted local tunnel, otherwise the address Fastify resolved.
   const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
-  const clientIp = (req) => (LOOPBACK.has(req.socket.remoteAddress) && req.headers['cf-connecting-ip']) || req.ip;
+  const clientIp = (req) => {
+    const cf = String(req.headers['cf-connecting-ip'] || '').trim();
+    return (LOOPBACK.has(req.socket.remoteAddress) && net.isIP(cf) && cf) || req.ip;
+  };
   const setSessionCookie = (req, reply, token) => reply.setCookie(SESSION_COOKIE, token, {
     path: '/', httpOnly: true, sameSite: 'lax', secure: isHttps(req), maxAge: config.sessionDays * 86_400,
   });
@@ -52,22 +59,23 @@ export async function buildApp(config, { logger = true } = {}) {
   const safeNext = (value) => (typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/studio');
 
   // ── Auth gate ───────────────────────────────────────────────────────────
+  const crossSite = (req) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return false;
+    if (req.headers['sec-fetch-site'] === 'cross-site') return true;
+    const origin = req.headers.origin;
+    if (!origin || origin === 'null') return Boolean(origin);
+    try { return new URL(origin).host !== req.headers.host; } catch { return true; }
+  };
+
   app.addHook('onRequest', async (req, reply) => {
-    const path = req.url.split('?')[0];
+    const urlPath = req.url.split('?')[0];
+    // CSRF guard for every state-changing request, sign-in and setup included.
+    if (crossSite(req)) return reply.code(403).send({ error: 'Cross-origin request blocked' });
     req.user = auth.userFromToken(req.cookies?.[SESSION_COOKIE]);
-    if (PUBLIC_PATHS.has(path)) return;
+    if (PUBLIC_PATHS.has(urlPath)) return;
     if (!auth.hasUsers()) return reply.redirect('/setup');
-    if (req.user) {
-      // Basic CSRF guard for state-changing requests: same-origin only.
-      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-        const origin = req.headers.origin;
-        if (origin && new URL(origin).host !== req.headers.host) {
-          return reply.code(403).send({ error: 'Cross-origin request blocked' });
-        }
-      }
-      return;
-    }
-    if (path.startsWith('/api/') || path.startsWith('/dz/api/') || req.method !== 'GET') {
+    if (req.user) return;
+    if (urlPath.startsWith('/api/') || urlPath.startsWith('/dz/api/') || req.method !== 'GET') {
       return reply.code(401).send({ error: 'Sign in required' });
     }
     return reply.redirect(`/login?next=${encodeURIComponent(req.url)}`);
@@ -109,9 +117,17 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/healthz', { logLevel: 'warn' }, async () => ({ ok: true }));
 
   // ── First start ─────────────────────────────────────────────────────────
-  // The admin can only be created from the local network, never through a
-  // public tunnel (Cloudflare adds cf-connecting-ip to proxied requests).
+  // Creating the admin needs a one-time code printed in the server log and
+  // saved to DATA_DIR/setup-code, so nobody else can claim a fresh install.
+  // Never through a public tunnel (Cloudflare adds cf-connecting-ip).
   const viaPublicTunnel = (req) => Boolean(req.headers['cf-connecting-ip']);
+  const setupCodeFile = path.join(config.dataDir, 'setup-code');
+  let setupCode = null;
+  if (!auth.hasUsers()) {
+    setupCode = fs.existsSync(setupCodeFile) ? fs.readFileSync(setupCodeFile, 'utf8').trim() : newToken().slice(0, 12);
+    fs.writeFileSync(setupCodeFile, setupCode, { mode: 0o600 });
+    app.log.warn(`First start: open /setup and enter this setup code: ${setupCode} (also in ${setupCodeFile})`);
+  }
   app.get('/setup', async (req, reply) => {
     if (auth.hasUsers()) return reply.redirect('/login');
     if (viaPublicTunnel(req)) return html(reply, setupPage({ error: 'Open this page from the local network to create the admin.' }), 403);
@@ -120,14 +136,19 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/setup', async (req, reply) => {
     if (auth.hasUsers()) return reply.redirect('/login');
     if (viaPublicTunnel(req)) return reply.code(403).send({ error: 'Local network only' });
-    const { username, displayName, password } = req.body || {};
+    const { username, displayName, password, setupCode: code } = req.body || {};
+    if (!setupCode || String(code || '').trim() !== setupCode) {
+      return html(reply, setupPage({ error: 'Wrong setup code. It is in the server log and in DATA_DIR/setup-code.', values: req.body }), 403);
+    }
     try {
       auth.createUser({ username, displayName, password, role: 'admin' });
     } catch (error) {
       if (error instanceof UserError) return html(reply, setupPage({ error: error.message, values: req.body }), 400);
       throw error;
     }
-    const session = auth.login(username, password, req.headers['user-agent']);
+    try { fs.unlinkSync(setupCodeFile); } catch { /* already gone */ }
+    setupCode = null;
+    const session = await auth.login(username, password, req.headers['user-agent']);
     setSessionCookie(req, reply, session.token);
     return reply.redirect('/dz/settings?notice=welcome');
   });
@@ -140,15 +161,18 @@ export async function buildApp(config, { logger = true } = {}) {
   });
   app.post('/login', async (req, reply) => {
     const { username, password, next } = req.body || {};
-    if (throttle.blocked(clientIp(req))) {
+    const ipKey = `ip:${clientIp(req)}`;
+    const userKey = `user:${String(username || '').trim().toLowerCase().slice(0, 64)}`;
+    if (throttle.blocked(ipKey) || throttle.blocked(userKey)) {
       return html(reply, loginPage({ error: 'Too many attempts. Try again in 15 minutes.', next: safeNext(next), username }), 429);
     }
-    const session = auth.login(username, password, req.headers['user-agent']);
+    const session = await auth.login(username, password, req.headers['user-agent']);
     if (!session) {
-      throttle.fail(clientIp(req));
+      throttle.fail(ipKey);
+      throttle.fail(userKey);
       return html(reply, loginPage({ error: 'Wrong login or password.', next: safeNext(next), username }), 401);
     }
-    throttle.reset(clientIp(req));
+    throttle.reset(userKey);
     setSessionCookie(req, reply, session.token);
     return reply.redirect(safeNext(next));
   });
@@ -181,11 +205,12 @@ export async function buildApp(config, { logger = true } = {}) {
 
   app.post('/dz/settings/password', async (req, reply) => {
     const { currentPassword, newPassword } = req.body || {};
-    if (!auth.checkPassword(req.user.id, currentPassword)) {
+    if (!(await auth.checkPassword(req.user.id, currentPassword))) {
       return renderSettings(req, reply, { error: 'Current password is wrong.', code: 400 });
     }
     try {
-      auth.changePassword(req.user.id, newPassword, { keepToken: req.cookies[SESSION_COOKIE] });
+      const session = auth.changePassword(req.user.id, newPassword, { newSession: true, userAgent: req.headers['user-agent'] });
+      setSessionCookie(req, reply, session.token);
     } catch (error) {
       if (error instanceof UserError) return renderSettings(req, reply, { error: error.message, code: 400 });
       throw error;
@@ -267,7 +292,10 @@ export async function buildApp(config, { logger = true } = {}) {
     const { role, monthlyLimitUsd, disabled, newPassword, displayName } = req.body || {};
     try {
       auth.updateUser(id, { displayName, role, monthlyLimitUsd: parseLimit(monthlyLimitUsd), disabled: Boolean(disabled) });
-      if (newPassword) auth.changePassword(id, newPassword, id === req.user.id ? { keepToken: req.cookies[SESSION_COOKIE] } : {});
+      if (newPassword) {
+        const session = auth.changePassword(id, newPassword, { newSession: id === req.user.id, userAgent: req.headers['user-agent'] });
+        if (session) setSessionCookie(req, reply, session.token);
+      }
     } catch (error) {
       if (error instanceof UserError) return renderSettings(req, reply, { error: error.message, code: 400 });
       throw error;
@@ -308,6 +336,10 @@ export async function buildApp(config, { logger = true } = {}) {
       file.file.resume();
       return reply.code(400).send({ detail: `File type ${file.mimetype} is not allowed` });
     }
+    if (generations.uploadBytes(req.user.id) > config.userUploadQuotaBytes) {
+      file.file.resume();
+      return reply.code(413).send({ detail: 'Upload quota reached. Delete old references or ask the admin.' });
+    }
     const saved = await generations.saveUpload(req.user, { stream: file.file, mime: file.mimetype, filename: file.filename, truncated: () => file.file.truncated });
     if (!saved) return reply.code(413).send({ detail: 'File is too large (max 500 MB)' });
     return { url: saved.url, file_url: saved.url, id: saved.id };
@@ -321,6 +353,13 @@ export async function buildApp(config, { logger = true } = {}) {
       const modelId = req.params['*'];
       const key = `p/${providerId}/${modelId}${req.query.m ? `?m=${req.query.m}` : ''}`;
       const variant = catalog.variant(key);
+      // Only admins may call a provider model directly (outside the catalog);
+      // everyone else goes through the field allowlist and cost estimate.
+      if (!variant && req.user.role !== 'admin') return reply.code(404).send({ detail: 'Unknown model' });
+      const estCostUsd = variant ? estimateCost(variant, req.body) : null;
+      if (req.user.monthly_limit_usd != null && !Number.isFinite(estCostUsd)) {
+        return reply.code(402).send({ detail: 'This model has no known price, so it is not available with a spending limit.' });
+      }
       const body = variant ? toProviderBody(variant, req.body) : req.body;
       const { id } = await generations.submit(req.user, {
         providerId,
@@ -328,7 +367,7 @@ export async function buildApp(config, { logger = true } = {}) {
         body,
         endpoint: key,
         kind: variant?.kind || null,
-        estCostUsd: variant ? estimateCost(variant, req.body) : null,
+        estCostUsd,
       });
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }
@@ -339,7 +378,7 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/dz/thumb', async (req, reply) => {
     const file = await catalog.thumbnail(String(req.query.u || ''));
     if (!file) return reply.code(404).send({ error: 'Not found' });
-    return sendFile(req, reply, file.path, file.mime);
+    return sendFile(req, reply, file.path, file.mime, { cacheControl: 'private, max-age=86400' });
   });
 
   // Model list for the studio (loaded before the studio code, see app/layout.js).

@@ -14,7 +14,9 @@ export class GenerationError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
-export function createGenerations({ db, storage, providers, catalog, log }) {
+const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an hour of retries
+
+export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8 }) {
   const q = {
     insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, next_poll_at, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, 0, ?, ?)`),
@@ -32,6 +34,8 @@ export function createGenerations({ db, storage, providers, catalog, log }) {
     spentThisMonth: db.prepare(`SELECT COALESCE(SUM(COALESCE(cost_usd, est_cost_usd, 0)), 0) AS usd FROM generations
       WHERE user_id = ? AND created_at >= ? AND status != 'failed'`),
     upload: db.prepare('SELECT * FROM uploads WHERE id = ?'),
+    uploadBytes: db.prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM uploads WHERE user_id = ?'),
+    activeJobs: db.prepare("SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('submitting','submitted','processing','downloading')"),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
   };
@@ -100,6 +104,9 @@ export function createGenerations({ db, storage, providers, catalog, log }) {
         throw new GenerationError(`Monthly limit reached ($${spent.toFixed(2)} of $${user.monthly_limit_usd}). Ask the admin to raise it.`, 402);
       }
     }
+    if (user.role !== 'admin' && q.activeJobs.get(user.id).n >= maxActiveJobsPerUser) {
+      throw new GenerationError(`Too many generations running (${maxActiveJobsPerUser}). Wait for some to finish.`, 429);
+    }
     const { onRequestId: _ignored, ...clean } = body || {};
     const id = newId('gen');
     const t = now();
@@ -128,8 +135,9 @@ export function createGenerations({ db, storage, providers, catalog, log }) {
 
   async function step(row) {
     const kind = row.kind;
-    if (Date.now() - row.created_at > (TIMEOUT_MS[kind] || TIMEOUT_MS.video) && row.status !== 'downloading') {
-      q.setFailed.run('Timed out waiting for the provider.', now(), now(), row.id);
+    const age = Date.now() - row.created_at;
+    if (row.status === 'downloading' ? age > (TIMEOUT_MS[kind] || TIMEOUT_MS.video) + DOWNLOAD_DEADLINE_MS : age > (TIMEOUT_MS[kind] || TIMEOUT_MS.video)) {
+      q.setFailed.run(row.status === 'downloading' ? 'Could not download the result file.' : 'Timed out waiting for the provider.', now(), now(), row.id);
       return;
     }
     if (row.status === 'downloading') {
@@ -141,6 +149,7 @@ export function createGenerations({ db, storage, providers, catalog, log }) {
     const res = await provider.poll(cfg, row.provider_task_id);
     if (res.state === 'completed') {
       if (!res.outputs?.length) { q.setFailed.run('Provider finished without a result file.', now(), now(), row.id); return; }
+      res.outputs = res.outputs.slice(0, 16);
       q.setDownloading.run(JSON.stringify(res.outputs), res.costUsd ?? null, now(), row.id);
       await download({ ...row, status: 'downloading' }, res.outputs);
     } else if (res.state === 'failed') {
@@ -238,6 +247,7 @@ export function createGenerations({ db, storage, providers, catalog, log }) {
   }
 
   return {
+    uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     saveUpload, submit, result, history, trash, mediaFile,
     start() {
       if (!timer) {

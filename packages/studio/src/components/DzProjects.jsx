@@ -253,7 +253,7 @@ export function MoveDialog({ item: request, onOpenChange, projects = [] }) {
   const tree = useMemo(() => folderTree(folders), [folders]);
   const n = items.length;
   const movable = n - theirs;
-  const unchanged = mode === "move" && fromProject !== undefined && target === fromProject && (folder || null) === (fromFolder ?? null);
+  const unchanged = mode === "move" && fromProject !== undefined && fromFolder !== undefined && target === fromProject && (folder || null) === fromFolder;
   const submit = async () => {
     setBusy(true);
     setError("");

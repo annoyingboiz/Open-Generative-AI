@@ -93,6 +93,9 @@ const parsePath = (path) => {
   return { slug: null, tab: TAB_IDS.has(parts[1]) ? parts[1] : DEFAULT_TAB };
 };
 const tabFromPath = (path) => parsePath(path).tab;
+const LIBRARY_ONLY = new Set(DZ_TABS.filter((t) => t.libraryOnly).map((t) => t.id));
+// A Library-only tool has no place in a project: there it is Create.
+const tabIn = (project, tab) => (project && LIBRARY_ONLY.has(tab) ? DEFAULT_TAB : tab);
 const pathFor = (project, tab) => (project ? `/p/${encodeURIComponent(project.slug)}/${tab}` : `/studio/${tab}`);
 const folderKey = (projectId) => `dz_folder_${projectId}`;
 
@@ -156,6 +159,7 @@ export default function DzShell() {
       const details = await dzProjectsApi.details(slug);
       if (seq !== navSeq.current) return;
       applyProject(details);
+      if (LIBRARY_ONLY.has(tab)) { setActiveTab(DEFAULT_TAB); window.history.replaceState(null, '', pathFor(details.project, DEFAULT_TAB)); }
       dzProjectsApi.touch(details.project.id).catch(() => {});
     } catch {
       if (seq !== navSeq.current) return;
@@ -176,8 +180,9 @@ export default function DzShell() {
     setFolder(id);
     try { if (project) { if (id) localStorage.setItem(folderKey(project.id), id); else localStorage.removeItem(folderKey(project.id)); } } catch { /* optional */ }
   };
-  const openProject = async (p, tab = activeTab) => {
+  const openProject = async (p, wanted = activeTab) => {
     const seq = ++navSeq.current;
+    const tab = tabIn(p, wanted);
     setActiveTab(tab);
     if (!p) {
       applyProject(null);

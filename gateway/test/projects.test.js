@@ -242,6 +242,11 @@ test('copy to another place: new item with its own files, free; batch move/trash
   assert.equal(res.json().items.length, 0);
   res = await as('admin', 'GET', `/api/v1/history?project=${project.id}&q=%25`);
   assert.equal(res.json().items.length, 0);
+  // Not only ASCII: Cyrillic in any case.
+  res = await as('admin', 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'Кот в ШЛЯПЕ', _dz: { studio: 'create' } });
+  assert.equal(res.statusCode, 200, res.body);
+  res = await as('admin', 'GET', `/api/v1/history?project=none&q=${encodeURIComponent('шляпе')}`);
+  assert.equal(res.json().items.length, 1);
 });
 
 test('deleting a folder keeps its work (moves up); archive stops new work', async () => {

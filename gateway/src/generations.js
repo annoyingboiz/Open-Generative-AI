@@ -28,6 +28,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   // Personal items: only the author. Project items: every member of the project.
   const isMember = (userId, projectId) => Boolean(projectId && projects?.isMember(userId, projectId));
   // A project item belongs to the project: its author sees it only while still a member.
+  // Unicode-aware lower case for prompt search (SQLite's LOWER() folds ASCII only).
+  try { db.function('dz_fold', { deterministic: true }, (s) => (s == null ? '' : String(s).toLocaleLowerCase())); } catch { /* already registered */ }
   const canSee = (user, row) => Boolean(row && (row.project_id ? isMember(user.id, row.project_id) : row.user_id === user.id));
   const q = {
     insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, studio, meta_json, project_id, folder_id, next_poll_at, created_at, updated_at)
@@ -332,7 +334,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     if (status === 'processing') where.push("status IN ('submitting','submitted','processing','downloading')");
     // Words in the prompt (each one must be there), case-insensitive.
     const words = String(search || '').toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
-    for (const w of words) { where.push("LOWER(COALESCE(prompt, '')) LIKE ? ESCAPE '\\'"); args.push(`%${w.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`)}%`); }
+    for (const w of words) { where.push("dz_fold(prompt) LIKE ? ESCAPE '\\'"); args.push(`%${w.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`)}%`); }
     where.push('created_at < ?');
     args.push(Number(cursor) || Number.MAX_SAFE_INTEGER);
     const rows = db.prepare(`SELECT * FROM generations WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`)
@@ -399,20 +401,21 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     if (!outputs.length) throw new GenerationError('Nothing to copy.', 409);
     const newGen = newId('gen');
     const saved = [];
+    let meta = null;
+    try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
+    // Files and the row together: if anything fails, nothing is left behind.
     try {
       for (let i = 0; i < outputs.length; i += 1) {
         const f = await storage.copyResult({ userId: user.id, generationId: newGen, index: i, from: outputs[i].path, ext: outputs[i].ext });
         saved.push({ ...outputs[i], path: f.path, bytes: f.bytes });
       }
+      const t = now();
+      q.insertCopy.run(newGen, user.id, row.endpoint, row.provider, row.provider_model, row.kind, row.prompt, row.params_json || '{}', row.studio,
+        JSON.stringify({ ...(meta || {}), copiedFrom: row.id }), projectId, folderId, JSON.stringify(saved), t, t, t);
     } catch (error) {
       for (const f of saved) storage.remove(f.path);
       throw error.status ? error : new GenerationError('The file could not be copied.', 500);
     }
-    let meta = null;
-    try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
-    const t = now();
-    q.insertCopy.run(newGen, user.id, row.endpoint, row.provider, row.provider_model, row.kind, row.prompt, row.params_json || '{}', row.studio,
-      JSON.stringify({ ...(meta || {}), copiedFrom: row.id }), projectId, folderId, JSON.stringify(saved), t, t, t);
     return { ok: true, id: newGen, project_id: projectId, folder_id: folderId };
   }
 

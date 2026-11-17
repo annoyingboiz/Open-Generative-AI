@@ -84,8 +84,13 @@ export function createStorage(dataDir, { allowLocalDownloads = false } = {}) {
     const dir = path.join(mediaRoot, `u${userId}`, String(d.getUTCFullYear()), String(d.getUTCMonth() + 1).padStart(2, '0'));
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${generationId}-${index}.${ext}`);
-    await fs.promises.copyFile(from, file, fs.constants.COPYFILE_FICLONE);
-    return { path: file, bytes: fs.statSync(file).size };
+    try {
+      await fs.promises.copyFile(from, file, fs.constants.COPYFILE_FICLONE);
+      return { path: file, bytes: fs.statSync(file).size };
+    } catch (error) {
+      remove(file);
+      throw error;
+    }
   }
 
   function remove(file) {

@@ -954,6 +954,7 @@ export default function DrawModal({
     if (!canvas || !bgCanvas) return;
 
     setGenerating(true);
+    let submitted = false;
 
     try {
       const mergeCanvas = document.createElement("canvas");
@@ -1050,7 +1051,10 @@ export default function DrawModal({
       );
       // DZ: the request is on its way — close the editor; the studio shows the
       // pending card and the result, like any other generation.
+      // The modal is free again right away; this request finishes in the background.
       onClose();
+      setGenerating(false);
+      submitted = true;
       const results = await pending;
 
       results.forEach((res) => {
@@ -1073,7 +1077,7 @@ export default function DrawModal({
       const msg = String(e?.message || e).replace(/^API Request Failed: \d+ [^-]*- /, "");
       if (onError) onError(`Draw to Edit: ${msg}`); else window.alert(`Generation failed: ${msg}`);
     } finally {
-      setGenerating(false);
+      if (!submitted) setGenerating(false);
     }
   };
 

@@ -49,6 +49,20 @@ const MODES = {
   video: { store: "dz_video_v2", title: "Video", text: "Pick a video model — the panel shows its frames, references and settings." },
 };
 
+// Animate: put a picture into a video model — as its start frame, or as a
+// reference (within the slot limit). If the chosen model takes no pictures,
+// switch to the first one that takes a start frame.
+function animateInto(videoEntries, currentKey, attached, url) {
+  const cur = videoEntries.find((e) => e.key === currentKey) || videoEntries[0];
+  const slot = (e, r) => e?.slots.find((sl) => sl.role === r);
+  const target = slot(cur, "first") || slot(cur, "reference") ? cur : videoEntries.find((e) => slot(e, "first")) || cur;
+  const file = { url, name: "result" };
+  if (slot(target, "first")) return { modelKey: target?.key, attached: { ...attached, first: [file] } };
+  const ref = slot(target, "reference");
+  if (ref) return { modelKey: target.key, attached: { ...attached, reference: [file, ...(attached.reference || [])].slice(0, ref.max) } };
+  return { modelKey: target?.key, attached: { ...attached, first: [file] } };
+}
+
 // Image tab → Video tab hand-off (Animate).
 export const DZ_SEND_EVENT = "dz:send-to";
 const fmtUsd = (usd) => `$${usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
@@ -321,6 +335,8 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const [busy, setBusy] = useState(0);
   const [drawOpen, setDrawOpen] = useState(false);
   const promptRef = useRef(null);
+  const attachedRef = useRef(attached);
+  attachedRef.current = attached;
 
   // The catalog script is loaded with the page; read it on the client only.
   const [catalogReady, setCatalogReady] = useState(false);
@@ -441,13 +457,10 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       return;
     }
     if (how === "animate") {
-      // The start frame if the chosen video model has one, else a reference.
-      const videoEntries = createEntries("video");
-      const ve = videoEntries.find((e) => e.key === modelByKind.video) || videoEntries[0];
-      const has = (r) => ve?.slots.some((sl) => sl.role === r);
-      const role = has("first") ? "first" : "reference";
+      const next = animateInto(createEntries("video"), modelByKind.video, attached, item.url);
       setKind("video");
-      setAttached((prev) => ({ ...prev, [role]: role === "first" ? [{ url: item.url, name: "result" }] : [...(prev[role] || []), { url: item.url, name: "result" }] }));
+      if (next.modelKey !== modelByKind.video) setModelByKind((prev) => ({ ...prev, video: next.modelKey }));
+      setAttached(next.attached);
       return;
     }
     setAttached((prev) => ({ ...prev, reference: [...(prev.reference || []), { url: item.url, name: "result" }] }));
@@ -458,13 +471,13 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     const onSend = (e) => {
       const { to, url } = e.detail || {};
       if (to !== "video" || typeof url !== "string") return;
-      const has = (r) => entry?.slots.some((sl) => sl.role === r);
-      const role = has("first") ? "first" : "reference";
-      setAttached((prev) => ({ ...prev, [role]: role === "first" ? [{ url, name: "result" }] : [...(prev[role] || []), { url, name: "result" }] }));
+      const next = animateInto(entries, entry?.key, attachedRef.current, url);
+      if (next.modelKey && next.modelKey !== entry?.key) setModelByKind((prev) => ({ ...prev, video: next.modelKey }));
+      setAttached(next.attached);
     };
     window.addEventListener(DZ_SEND_EVENT, onSend);
     return () => window.removeEventListener(DZ_SEND_EVENT, onSend);
-  }, [mode, entry]);
+  }, [mode, entry, entries]);
 
   const reuse = (item) => {
     const m = item.meta || {};

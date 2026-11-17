@@ -6,6 +6,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import crypto from 'node:crypto';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { providerFetch } from '../providers/http.js';
+import { assertPublicHttpsUrl } from '../net-guard.js';
 import { PROVIDERS, providerById } from '../providers/index.js';
 import { buildAtlasVariant, buildApimartVariants, buildStudioLists, apimartPrice, STUDIO_MODES } from './build.js';
 
@@ -114,6 +119,35 @@ export function createCatalog({ dataDir, providers, log }) {
     return refreshing;
   }
 
+  // Model cover images from Atlas, cached on disk (see /dz/thumb).
+  const thumbDir = path.join(dir, 'thumbs');
+  fs.mkdirSync(thumbDir, { recursive: true });
+  const THUMB_HOST = /(^|\.)atlascloud\.ai$/i;
+  async function thumbnail(rawUrl) {
+    let url;
+    try { url = new URL(rawUrl); } catch { return null; }
+    if (url.protocol !== 'https:' || !THUMB_HOST.test(url.hostname)) return null;
+    const name = crypto.createHash('sha256').update(url.href).digest('hex');
+    const metaFile = path.join(thumbDir, `${name}.json`);
+    const file = path.join(thumbDir, name);
+    if (fs.existsSync(metaFile) && fs.existsSync(file)) return { path: file, mime: readJson(metaFile, {}).mime || 'image/jpeg' };
+    const cfg = providers.resolve('atlas');
+    try {
+      await assertPublicHttpsUrl(url.href, { viaProxy: Boolean(cfg.proxy) });
+      const response = await providerFetch(url.href, { proxy: cfg.proxy, timeoutMs: 20_000, redirect: 'error' });
+      const mime = (response.headers.get('content-type') || '').split(';')[0].trim();
+      if (!response.ok || !/^image\/(png|jpeg|webp|gif|avif)$/.test(mime) || Number(response.headers.get('content-length') || 0) > 5_000_000) return null;
+      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(`${file}.part`));
+      if (fs.statSync(`${file}.part`).size > 5_000_000) { fs.unlinkSync(`${file}.part`); return null; }
+      fs.renameSync(`${file}.part`, file);
+      fs.writeFileSync(metaFile, JSON.stringify({ mime, url: url.href }));
+      return { path: file, mime };
+    } catch (error) {
+      log?.warn(`thumbnail ${url.hostname}: ${error.message}`);
+      return null;
+    }
+  }
+
   loadFromDisk();
   rebuild();
 
@@ -128,6 +162,7 @@ export function createCatalog({ dataDir, providers, log }) {
       return kind ? { id: modelId, kind } : null;
     },
     variant(key) { return built.variants.get(key) || null; },
+    thumbnail,
     clientScript() { return built.js; },
     stats() {
       return {

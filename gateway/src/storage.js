@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { providerFetch } from './providers/http.js';
+import { assertPublicHttpsUrl } from './net-guard.js';
 
 const EXT_BY_MIME = {
   'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif',
@@ -25,7 +26,7 @@ export const newId = (prefix) => `${prefix}_${crypto.randomBytes(12).toString('b
 const ALLOWED_UPLOAD = /^(image\/(png|jpeg|webp|gif|avif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|mp3|wav|x-wav|ogg|aac|mp4|flac))$/;
 export const isAllowedUploadMime = (mime) => ALLOWED_UPLOAD.test(String(mime || '').toLowerCase());
 
-export function createStorage(dataDir) {
+export function createStorage(dataDir, { allowLocalDownloads = false } = {}) {
   const uploadsRoot = path.join(dataDir, 'uploads');
   const mediaRoot = path.join(dataDir, 'media');
   fs.mkdirSync(uploadsRoot, { recursive: true });
@@ -42,7 +43,8 @@ export function createStorage(dataDir) {
 
   // Downloads a provider result to our disk (through the provider's proxy).
   async function downloadResult({ userId, generationId, index, url, proxy }) {
-    const response = await providerFetch(url, { proxy, timeoutMs: 15 * 60_000 });
+    if (!allowLocalDownloads) await assertPublicHttpsUrl(url, { viaProxy: Boolean(proxy) });
+    const response = await providerFetch(url, { proxy, timeoutMs: 15 * 60_000, redirect: 'error' });
     if (!response.ok || !response.body) throw new Error(`Download failed: HTTP ${response.status}`);
     const headerMime = (response.headers.get('content-type') || '').split(';')[0].trim();
     const urlExt = (new URL(url).pathname.match(/\.([a-z0-9]{2,5})$/i) || [])[1];

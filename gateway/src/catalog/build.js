@@ -110,7 +110,8 @@ export function buildAtlasVariant(entry, schemaDoc) {
     model: studioModel({
       provider: 'atlas', mode, slug, endpoint, family, familyName, vendorId: vendor, fields, price,
       description: entry.profile ? String(entry.profile).slice(0, 300) : undefined,
-      cover: entry.coverUrl || entry.avatar || undefined,
+      // Served through our server (/dz/thumb) so the browser never calls Atlas's CDN.
+      cover: (entry.coverUrl || entry.avatar) ? `/dz/thumb?u=${encodeURIComponent(entry.coverUrl || entry.avatar)}` : undefined,
     }),
     server: { rename: toProvider, allowed, fixed: {}, price },
   };

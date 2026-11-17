@@ -29,10 +29,10 @@ export async function buildApp(config, { logger = true } = {}) {
 
   const app = Fastify({
     logger: logger ? { level: config.logLevel } : false,
-    trustProxy: true,
+    trustProxy: config.trustProxy,
     bodyLimit: 50 * 1024 * 1024,
   });
-  const storage = createStorage(config.dataDir);
+  const storage = createStorage(config.dataDir, { allowLocalDownloads: config.testAllowLocalDownloads === true });
   const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log });
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log });
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
@@ -41,6 +41,10 @@ export async function buildApp(config, { logger = true } = {}) {
   await app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024, files: 1 } });
 
   const isHttps = (req) => req.protocol === 'https';
+  // Real client IP: Cloudflare's header when the request came through our
+  // trusted local tunnel, otherwise the address Fastify resolved.
+  const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+  const clientIp = (req) => (LOOPBACK.has(req.socket.remoteAddress) && req.headers['cf-connecting-ip']) || req.ip;
   const setSessionCookie = (req, reply, token) => reply.setCookie(SESSION_COOKIE, token, {
     path: '/', httpOnly: true, sameSite: 'lax', secure: isHttps(req), maxAge: config.sessionDays * 86_400,
   });
@@ -67,6 +71,39 @@ export async function buildApp(config, { logger = true } = {}) {
       return reply.code(401).send({ error: 'Sign in required' });
     }
     return reply.redirect(`/login?next=${encodeURIComponent(req.url)}`);
+  });
+
+  // Security headers on everything we send, including the studio pages.
+  // The CSP keeps the browser from contacting any third party (no Muapi CDN,
+  // no trackers): only this server, inline/eval scripts the studio needs.
+  const CSP = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' data: blob:",
+    "connect-src 'self'",
+    "font-src 'self' data:",
+    "worker-src 'self' blob:",
+    "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+  app.addHook('onSend', async (req, reply, payload) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('referrer-policy', 'same-origin');
+    reply.header('x-frame-options', 'DENY');
+    reply.header('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+    if (req.url.startsWith('/media/')) {
+      // User files: never run as a page, even if someone uploads HTML.
+      reply.header('content-security-policy', "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox");
+    } else {
+      reply.header('content-security-policy', CSP);
+    }
+    if (isHttps(req)) reply.header('strict-transport-security', 'max-age=31536000');
+    return payload;
   });
 
   app.get('/healthz', { logLevel: 'warn' }, async () => ({ ok: true }));
@@ -103,15 +140,15 @@ export async function buildApp(config, { logger = true } = {}) {
   });
   app.post('/login', async (req, reply) => {
     const { username, password, next } = req.body || {};
-    if (throttle.blocked(req.ip)) {
+    if (throttle.blocked(clientIp(req))) {
       return html(reply, loginPage({ error: 'Too many attempts. Try again in 15 minutes.', next: safeNext(next), username }), 429);
     }
     const session = auth.login(username, password, req.headers['user-agent']);
     if (!session) {
-      throttle.fail(req.ip);
+      throttle.fail(clientIp(req));
       return html(reply, loginPage({ error: 'Wrong login or password.', next: safeNext(next), username }), 401);
     }
-    throttle.reset(req.ip);
+    throttle.reset(clientIp(req));
     setSessionCookie(req, reply, session.token);
     return reply.redirect(safeNext(next));
   });
@@ -271,8 +308,8 @@ export async function buildApp(config, { logger = true } = {}) {
       file.file.resume();
       return reply.code(400).send({ detail: `File type ${file.mimetype} is not allowed` });
     }
-    const saved = await generations.saveUpload(req.user, { stream: file.file, mime: file.mimetype, filename: file.filename });
-    if (file.file.truncated) return reply.code(413).send({ detail: 'File is too large (max 500 MB)' });
+    const saved = await generations.saveUpload(req.user, { stream: file.file, mime: file.mimetype, filename: file.filename, truncated: () => file.file.truncated });
+    if (!saved) return reply.code(413).send({ detail: 'File is too large (max 500 MB)' });
     return { url: saved.url, file_url: saved.url, id: saved.id };
   });
 
@@ -295,6 +332,14 @@ export async function buildApp(config, { logger = true } = {}) {
       });
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }
+  });
+
+  // Model thumbnails from Atlas, fetched by the server (through Atlas's proxy)
+  // so the browser never talks to third parties. Cached on disk.
+  app.get('/dz/thumb', async (req, reply) => {
+    const file = await catalog.thumbnail(String(req.query.u || ''));
+    if (!file) return reply.code(404).send({ error: 'Not found' });
+    return sendFile(req, reply, file.path, file.mime);
   });
 
   // Model list for the studio (loaded before the studio code, see app/layout.js).

@@ -46,7 +46,7 @@ before(async () => {
 
   app = await buildApp({
     host: '127.0.0.1', port: 0, studioUrl: 'http://127.0.0.1:9', dataDir, appSecret: 'test', sessionDays: 30, logLevel: 'error',
-    startWorkers: false,
+    startWorkers: false, testAllowLocalDownloads: true,
     providerEnv: { apimart: { apiKey: 'sk-test', proxy: '' }, atlas: { apiKey: '', proxy: '' } },
   }, { logger: false });
   await app.ready();

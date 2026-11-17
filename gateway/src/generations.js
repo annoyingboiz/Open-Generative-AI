@@ -38,8 +38,9 @@ export function createGenerations({ db, storage, providers, catalog, log }) {
   const outputRefCache = new Map(); // `${provider}:${genId}/${n}` -> { url, expiresAt }
 
   // ── Uploads ─────────────────────────────────────────────────────────────
-  async function saveUpload(user, { stream, mime, filename }) {
+  async function saveUpload(user, { stream, mime, filename, truncated = () => false }) {
     const saved = await storage.saveUpload(user.id, stream, mime);
+    if (truncated()) { storage.remove(saved.path); return null; }
     q.insertUpload.run(saved.id, user.id, saved.path, mime, saved.bytes, filename || null, now());
     const ext = saved.path.split('.').pop();
     return { id: saved.id, url: `/media/u/${saved.id}.${ext}` };

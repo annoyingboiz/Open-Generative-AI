@@ -131,3 +131,19 @@ test('last admin cannot be demoted', async () => {
   assert.equal(res.statusCode, 400);
   assert.ok(res.body.includes('At least one active admin'));
 });
+
+test('security headers: strict CSP on pages, sandbox on media', async () => {
+  const res = await app.inject({ url: '/login' });
+  assert.match(res.headers['content-security-policy'], /connect-src 'self'/);
+  assert.match(res.headers['content-security-policy'], /img-src 'self' data: blob:/);
+  assert.equal(res.headers['x-content-type-options'], 'nosniff');
+  assert.equal(res.headers['x-frame-options'], 'DENY');
+});
+
+test('login throttle cannot be bypassed with a forged X-Forwarded-For', async () => {
+  for (let i = 0; i < 10; i += 1) {
+    await app.inject({ method: 'POST', url: '/login', remoteAddress: '192.168.8.50', headers: { 'x-forwarded-for': `1.2.3.${i}` }, payload: { username: 'denis', password: 'bad-password' } });
+  }
+  const res = await app.inject({ method: 'POST', url: '/login', remoteAddress: '192.168.8.50', headers: { 'x-forwarded-for': '9.9.9.9' }, payload: { username: 'denis', password: 'long-enough-1' } });
+  assert.equal(res.statusCode, 429);
+});

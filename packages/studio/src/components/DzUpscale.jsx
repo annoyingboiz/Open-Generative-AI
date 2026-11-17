@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dzUpscale, uploadFile } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
-import { Button, buttonVariants, Segmented, Select, Slider, Switch, Textarea, InfoTip, Tip, SectionLabel, Spinner, cn } from "../ui/index.js";
+import { Button, buttonVariants, Segmented, OptionSelect, Slider, Switch, Textarea, InfoTip, Tip, SectionLabel, Spinner, cn } from "../ui/index.js";
 
 const STORE_KEY = "dz_upscale_settings";
 const fmtUsd = (usd) => `$${usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
@@ -238,7 +238,7 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
 
         <section className="space-y-2">
           <SectionLabel>Model</SectionLabel>
-          <Select
+          <OptionSelect
             aria-label="Model"
             value={model.id}
             onValueChange={(id) => setModelByGroup((prev) => ({ ...prev, [group.id]: id }))}

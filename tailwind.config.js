@@ -24,12 +24,18 @@ module.exports = {
                 popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
                 accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
                 destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
-                'muted-foreground': 'hsl(var(--muted-foreground))',
+                muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
+                secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
                 'app-bg': '#050505',
                 'panel-bg': '#0a0a0a',
                 'card-bg': '#141414',
                 secondary: '#a1a1aa',
                 muted: '#52525b',
+            },
+            borderRadius: {
+                lg: 'var(--radius)',
+                md: 'calc(var(--radius) - 2px)',
+                sm: 'calc(var(--radius) - 4px)',
             },
             fontFamily: {
                 sans: ['var(--font-inter)', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
@@ -59,5 +65,5 @@ module.exports = {
             }
         },
     },
-    plugins: [],
+    plugins: [require('tailwindcss-animate')],
 }

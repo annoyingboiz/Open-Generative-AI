@@ -31,7 +31,7 @@ import {
 import { dzRecommendedEntries, dzFirstModel, dzModelLabel } from "../dzCatalog.js"; // DZ
 import DzPrice from "./DzPrice.jsx"; // DZ
 import { useDzHistory } from "../dzLibrary.js"; // DZ
-import { Logo } from "../ui/index.js"; // DZ
+import { Logo, ScrollTabs } from "../ui/index.js"; // DZ
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx"; // DZ
 import { getSeedanceEndpointResolution, getSeedanceToolConfiguration } from "../seedanceModels.js";
 import { getVeoToolConfiguration } from "../veoModels.js";
@@ -630,25 +630,15 @@ function ModelDropdown({ selectedModel, onSelect, onClose, copy = en }) {
       {/* Right Pane: Search + Lists */}
       <div className="flex-1 flex flex-col gap-2 min-w-0">
         <div className="px-1 pb-2 border-b border-white/5 shrink-0 space-y-2">
-          <div className="flex flex-wrap gap-1.5">
-            {modelCategories.map((category) => (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() => {
-                  setSelectedCategory(category.id);
-                  setSelectedProvider("all");
-                }}
-                className={`shrink-0 rounded-lg px-2.5 py-1.5 text-base font-bold transition-colors border ${
-                  selectedCategory === category.id
-                    ? "bg-primary/15 text-primary border-primary/30"
-                    : "bg-white/[0.02] text-white/50 border-white/[0.04] hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                {category.label}
-              </button>
-            ))}
-          </div>
+          <ScrollTabs
+            aria-label="Model categories"
+            value={selectedCategory}
+            items={modelCategories.map((category) => ({ value: category.id, label: category.label }))}
+            onChange={(id) => {
+              setSelectedCategory(id);
+              setSelectedProvider("all");
+            }}
+          />
           <div className="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-2 border border-white/5 focus-within:border-primary/50 transition-colors">
             <svg
               width="14"
@@ -3007,7 +2997,7 @@ export default function VideoStudio({
                 {openDropdown === "model" && (
                   <PromptPopover
                     onClick={(e) => e.stopPropagation()}
-                    className="w-[calc(100vw-2rem)] md:w-[580px] max-w-md md:max-w-none max-h-[70vh]"
+                    className="w-[calc(100vw-2rem)] md:w-[640px] max-w-md md:max-w-none max-h-[70vh]"
                     fitViewport={Boolean(groupedConfiguration)}
                     solid={Boolean(groupedConfiguration)}
                   >

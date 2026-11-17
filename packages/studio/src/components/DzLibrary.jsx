@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec } from "../dzCatalog.js";
-import { Segmented, Button } from "../ui/index.js";
+import { ScrollTabs, Button } from "../ui/index.js";
 
 const VIEWS = [
   { id: "all", label: "All", filter: {} },
@@ -205,7 +205,7 @@ export default function DzLibrary({ onGenerationError }) {
     <div className="flex h-full w-full flex-col overflow-hidden bg-background">
       <div className="flex flex-shrink-0 flex-wrap items-center gap-x-6 gap-y-3 border-b border-border px-4 py-4 md:px-6">
         <h1 className="text-2xl font-bold text-foreground">Library</h1>
-        <Segmented size="sm" value={view.id} onChange={setViewId} aria-label="Library view" options={VIEWS.map((v) => ({ value: v.id, label: v.label }))} />
+        <ScrollTabs className="min-w-0 max-w-full" value={view.id} onChange={setViewId} aria-label="Library view" items={VIEWS.map((v) => ({ value: v.id, label: v.label }))} />
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-5 md:px-6">
         {view.uploads ? (

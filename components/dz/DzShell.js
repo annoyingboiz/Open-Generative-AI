@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback } from 'react';
-import { ImageStudio, VideoStudio, DzCinemaStudio, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, Sheet, Button } from 'studio';
+import { ImageStudio, VideoStudio, DzCinemaStudio, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
@@ -313,7 +313,7 @@ export default function DzShell() {
 
         {/* Upscale drawer: opens next to the work, from an image's button or menu.
             Non-modal: the page behind stays usable. */}
-        <Sheet
+        <SidePanel
           open={Boolean(upscaleDrawer)}
           onOpenChange={(open) => { if (!open) setUpscaleDrawer(null); }}
           title="Upscale"
@@ -348,7 +348,7 @@ export default function DzShell() {
               </div>
             </div>
           )}
-        </Sheet>
+        </SidePanel>
 
         {imageMenu && (
           <div role="menu" className="fixed z-[210] w-52 overflow-hidden rounded-xl border border-white/[0.08] bg-[#151519] py-1 text-base shadow-[0_12px_32px_rgba(0,0,0,0.6)]" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>

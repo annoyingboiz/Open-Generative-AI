@@ -35,6 +35,9 @@ export async function buildApp(config, { logger = true } = {}) {
     logger: logger ? { level: config.logLevel } : false,
     trustProxy: config.trustProxy,
     bodyLimit: 2 * 1024 * 1024, // uploads have their own limits (multipart)
+    // The studio calls /api/api/v1/* (upstream: a Next.js proxy to Muapi).
+    // We serve those calls ourselves at /api/v1/*.
+    rewriteUrl: (req) => (req.url.startsWith('/api/api/v1/') ? req.url.slice(4) : req.url),
   });
   const storage = createStorage(config.dataDir, { allowLocalDownloads: config.testAllowLocalDownloads === true });
   // Small app-wide settings kept in the meta table (key "setting:<name>", JSON value).

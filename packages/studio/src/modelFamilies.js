@@ -747,6 +747,11 @@ function buildModelPickerEntries(catalog, modes, aliases) {
     for (const mode of modes) {
       for (const variant of family.variants[mode] || []) {
         const identity = pickerIdentity(variant.model, aliases, aliasTargets);
+        // DZ: a family+provider row holds one variant per mode; another variant
+        // of a mode already taken (e.g. Atlas reference-to-video next to
+        // image-to-video) gets a row of its own instead of being dropped.
+        const taken = identity.key.startsWith("dz:") && familyEntries.get(identity.key)?.variantsByMode[mode];
+        if (taken && taken.model.id !== variant.model.id) identity.key = `${identity.key}:${variant.model.id}`;
         const isAlias = identity.key.startsWith("alias:");
         let entry = familyEntries.get(identity.key);
         if (!entry) {

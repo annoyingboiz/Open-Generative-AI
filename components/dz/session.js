@@ -14,6 +14,15 @@ export const DZ_HIDDEN_TABS = new Set([
   'apps',
   'clipping',
   'vibe-motion',
+  // Not wired to our providers yet: they call fixed Muapi models, so every
+  // generation would fail. They come back once remapped to catalog models.
+  'layers',
+  'audio',
+  'motion-control',
+  'lipsync',
+  'body-swap',
+  'marketing',
+  'ai-influencer',
 ]);
 
 export function dzFilterNavigation(tabs, categories) {

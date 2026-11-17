@@ -99,3 +99,10 @@ test('an Atlas tool segment (layer-decomposition) is its own family, ids stay un
   assert.equal(new Set(ids).size, ids.length);
   assert.notEqual(a.model.dzFamily, b.model.dzFamily);
 });
+
+test('Atlas video price without a unit is "from $x/s" and not used for spending estimates', () => {
+  const v = buildAtlasVariant({ ...atlasEntry, type: 'Video', model: 'bytedance/seedance-2.5/text-to-video', categories: ['TEXT-TO-VIDEO'], price: { actual: { base_price: '0.134' } } },
+    { components: { schemas: { Input: { required: ['prompt'], properties: { prompt: { type: 'string' } } } } } });
+  assert.match(v.model.name, /· from \$0\.13\/s$/);
+  assert.equal(estimateCost(v, { duration: 5 }), null);
+});

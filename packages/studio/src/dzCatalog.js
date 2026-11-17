@@ -36,7 +36,7 @@ export function dzModelLabel(id) {
   if (typeof window === "undefined" || !id) return null;
   const lists = window.__DZ_CATALOG__?.lists || {};
   for (const list of Object.values(lists)) {
-    const model = Array.isArray(list) ? list.find((m) => m.id === id) : null;
+    const model = Array.isArray(list) ? list.find((m) => m.id === id || m.endpoint === id) : null;
     if (model) return [model.dzFamilyName, model.dzProviderName].filter(Boolean).join(" · ");
   }
   return null;

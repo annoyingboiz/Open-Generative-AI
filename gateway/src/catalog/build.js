@@ -284,7 +284,9 @@ export function toProviderBody(variant, body) {
 // Rough cost in USD for the history and monthly limits.
 export function estimateCost(variant, body) {
   const p = variant.server.price;
-  if (!p) return null;
+  // A "from" price is a lower bound (resolution and audio cost extra), not an
+  // estimate: treat it as unknown so a spending limit can't be undercounted.
+  if (!p || p.from) return null;
   const res = String(body?.resolution || '').toLowerCase();
   const unitPrice = (p.byResolution && (p.byResolution[res] ?? p.byResolution[res.replace(/p$/, 'p')])) ?? p.usd;
   if (p.unit === 'second') return unitPrice * (Number(body?.duration) || 5);

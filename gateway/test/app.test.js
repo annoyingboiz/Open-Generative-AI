@@ -173,3 +173,11 @@ test('recommended models: admin edits the list, users cannot', async () => {
   res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: cookieOf(res) }, payload: { action: 'reset' } });
   assert.equal(res.statusCode, 403);
 });
+
+test('studio calls under /api/api/v1 reach the gateway API (not the blocked Muapi proxy)', async () => {
+  let res = await app.inject({ url: '/api/api/v1/history', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200);
+  assert.ok(Array.isArray(res.json().items ?? res.json()));
+  res = await app.inject({ url: '/api/workflow/x', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 410);
+});

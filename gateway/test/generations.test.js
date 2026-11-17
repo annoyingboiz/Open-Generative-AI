@@ -13,8 +13,9 @@ let app;
 let dataDir;
 let adminCookie;
 let userCookie;
-const calls = { submit: [], upload: [] };
-const original = { submit: apimart.submit, poll: apimart.poll, upload: apimart.upload };
+const calls = { submit: [], upload: [], quote: [] };
+const original = { submit: apimart.submit, poll: apimart.poll, upload: apimart.upload, quote: apimart.quote, actualCost: apimart.actualCost };
+let nextQuote = null;
 
 const cookieOf = (res) => {
   const raw = res.headers['set-cookie'];
@@ -42,11 +43,13 @@ before(async () => {
   let polls = 0;
   apimart.submit = async (cfg, req) => { calls.submit.push({ cfg, req }); return { taskId: 'task_1' }; };
   apimart.poll = async () => (++polls < 2 ? { state: 'processing' } : { state: 'completed', outputs: [fileUrl], costUsd: 0.02 });
+  apimart.quote = async (cfg, req) => { calls.quote.push(req); return nextQuote; };
+  apimart.actualCost = async () => 0.031;
   apimart.upload = async (cfg, f) => { calls.upload.push(f); return { url: 'https://cdn.apimart.example/ref.png', expiresAt: Date.now() + 86_400_000 }; };
 
   app = await buildApp({
     host: '127.0.0.1', port: 0, studioUrl: 'http://127.0.0.1:9', dataDir, appSecret: 'test', sessionDays: 30, logLevel: 'error',
-    startWorkers: false, testAllowLocalDownloads: true,
+    startWorkers: false, testAllowLocalDownloads: true, testSettleDelaysMs: [0],
     providerEnv: { apimart: { apiKey: 'sk-test', proxy: '' }, atlas: { apiKey: '', proxy: '' } },
   }, { logger: false });
   await app.ready();
@@ -113,6 +116,11 @@ test('server polls, downloads the result, and serves it to the owner only', asyn
   const body = res.json();
   assert.equal(body.status, 'completed', JSON.stringify(body));
   assert.equal(body.cost, 0.02);
+  await app.ctx.generations.settled();
+  res = await app.inject({ url: `/api/v1/predictions/${genId}/result`, headers: { cookie: adminCookie } });
+  assert.equal(res.json().cost, 0.031, 'actual charge from the provider replaces the task cost');
+  assert.equal(res.json().cost_final, true);
+  assert.equal(app.ctx.db.prepare('SELECT cost_source FROM generations WHERE id = ?').get(genId).cost_source, 'provider');
   assert.match(body.outputs[0], new RegExp(`^/media/g/${genId}/0\\.png$`));
   res = await app.inject({ url: body.outputs[0], headers: { cookie: adminCookie } });
   assert.equal(res.statusCode, 200);
@@ -154,4 +162,22 @@ test('monthly limit stops generation', async () => {
   res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image?m=t2i', headers: { cookie: userCookie }, payload: { prompt: 'x' } });
   assert.equal(res.statusCode, 402);
   assert.match(res.json().detail, /Monthly limit/);
+});
+
+test('quote: provider price for our account, media replaced by placeholders, limit uses it', async () => {
+  nextQuote = { usd: 0.05, exact: true };
+  let res = await app.inject({ method: 'POST', url: '/dz/api/quote', headers: { cookie: userCookie },
+    payload: { endpoint: 'p/apimart/test-image?m=t2i', body: { prompt: 'x', image_urls: ['/media/u/up_abc.png'] } } });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(res.json().price, { usd: 0.05, exact: true, source: 'quote' });
+  assert.equal(calls.quote.at(-1).model, 'test-image');
+  res = await app.inject({ method: 'POST', url: '/dz/api/quote', headers: { cookie: userCookie }, payload: { endpoint: 'p/apimart/test-image', body: {} } });
+  assert.equal(res.statusCode, 404, 'outside the catalog only for admins');
+  res = await app.inject({ method: 'POST', url: '/dz/api/quote', headers: { cookie: userCookie }, payload: { endpoint: 'https://evil/x', body: {} } });
+  assert.equal(res.statusCode, 400);
+  // The kid is over the $0.01 limit; the quoted price is what the check uses.
+  res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image?m=t2i', headers: { cookie: userCookie }, payload: { prompt: 'y' } });
+  assert.equal(res.statusCode, 402);
+  assert.match(res.json().detail, /Monthly limit/);
+  nextQuote = null;
 });

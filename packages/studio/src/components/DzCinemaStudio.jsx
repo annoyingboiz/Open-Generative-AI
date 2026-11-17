@@ -13,6 +13,7 @@ import { getModelMediaCapabilities, buildReferenceParams } from "../modelCapabil
 import { createModelParameterValues, getSupplementalModelInputs } from "../modelParameters.js";
 import { getAspectRatioOptions, getImageSizeCapability, T2I_DIMENSION_RATIOS, I2I_DIMENSION_RATIOS } from "../imageSizing.js";
 import { dzRecommendedEntries } from "../dzCatalog.js";
+import DzPrice from "./DzPrice.jsx";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
 import MobileGenerationActions, {
   CopyContentIcon,
@@ -858,6 +859,24 @@ export default function DzCinemaStudio({
 
   // ── Textarea auto-height ──
   // ── Generate ──
+  // The exact request Shoot sends: [generate function, params]. Also used to
+  // ask the provider for the price before shooting (DzPrice).
+  const buildRequest = () => {
+    if (!model) return null;
+    const refs = uploadedImages.slice(0, Math.max(maxRefs, 0));
+    const params = {
+      ...createModelParameterValues(model),
+      model: model.id,
+      prompt: buildCinemaPrompt(settings.prompt.trim() || "scene", settings.camera, settings.lens, settings.focal, settings.aperture),
+      aspect_ratio: effectiveAspect || undefined,
+      resolution: effectiveResolution || undefined,
+      quality: model.inputs?.quality ? (model.inputs.quality.default ?? enumOf(model, "quality")[0]) : undefined,
+    };
+    return variant.mode === "i2i" && refs.length
+      ? [generateI2I, { ...params, ...buildReferenceParams(model, { imageUrls: refs }) }]
+      : [generateImage, params];
+  };
+
   const handleGenerate = useCallback(async () => {
     const basePrompt = settings.prompt.trim();
     if (!basePrompt || isGenerating) return;
@@ -874,19 +893,10 @@ export default function DzCinemaStudio({
     );
 
     try {
-      if (!model) throw new Error("No image model available. Check the providers in Settings.");
-      const refs = uploadedImages.slice(0, Math.max(maxRefs, 0));
-      const params = {
-        ...createModelParameterValues(model),
-        model: model.id,
-        prompt: finalPrompt,
-        aspect_ratio: effectiveAspect || undefined,
-        resolution: effectiveResolution || undefined,
-        quality: model.inputs?.quality ? (model.inputs.quality.default ?? enumOf(model, "quality")[0]) : undefined,
-      };
-      const res = variant.mode === "i2i" && refs.length
-        ? await generateI2I(apiKey, { ...params, ...buildReferenceParams(model, { imageUrls: refs }) })
-        : await generateImage(apiKey, params);
+      const request = buildRequest();
+      if (!request) throw new Error("No image model available. Check the providers in Settings.");
+      const [generate, params] = request;
+      const res = await generate(apiKey, { ...params, prompt: finalPrompt });
 
       if (res && res.url) {
         const historyEntry = {
@@ -905,6 +915,7 @@ export default function DzCinemaStudio({
             provider: providerOf(model),
             refs: uploadedImages.slice(0, Math.max(maxRefs, 0)),
           },
+          cost: Number.isFinite(res.cost) ? res.cost : null,
         };
 
         // Only update internal history if not using prop-driven history
@@ -1249,6 +1260,9 @@ export default function DzCinemaStudio({
                       {entry.settings?.camera && (
                         <span className="text-[10px] text-white/40">{entry.settings.camera} · {entry.settings.lens} · {entry.settings.focal}mm</span>
                       )}
+                      {Number.isFinite(entry.cost) && (
+                        <span className="text-[10px] text-white/40 tabular-nums" title="Charged by the provider">${entry.cost < 0.1 ? entry.cost.toFixed(3) : entry.cost.toFixed(2)}</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1525,11 +1539,15 @@ export default function DzCinemaStudio({
               </button>
             </PromptControls>
 
-            {/* DZ: price of one frame, before you press Shoot */}
+            {/* DZ: price of this exact frame for our account, before you press Shoot */}
             {model && (
-              <span className="hidden sm:inline text-[10px] text-white/40 mr-2 whitespace-nowrap" title="Provider · price">
-                {[providerOf(model), priceOf(model) || "price n/a"].filter(Boolean).join(" · ")}
-              </span>
+              <DzPrice
+                apiKey={apiKey}
+                build={buildRequest}
+                provider={providerOf(model)}
+                fallback={priceOf(model)}
+                className="hidden sm:inline mr-2"
+              />
             )}
             {/* Generate Button */}
             <PromptAction

@@ -31,6 +31,7 @@ import {
   imageModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
 import { dzRecommendedEntries, dzFirstModel, dzModelLabel } from "../dzCatalog.js"; // DZ
+import DzPrice from "./DzPrice.jsx"; // DZ
 import {
   buildReferenceParams,
   getModelMediaCapabilities,
@@ -1334,6 +1335,35 @@ export default function ImageStudio({
   };
 
   // ── Generation ───────────────────────────────────────────────────────────
+  // DZ: the request Generate would send (one of the batch), for the price tag.
+  const dzBuildRequest = () => {
+    if (!selectedVariant?.model) return null;
+    if (imageMode) {
+      if (uploadedImageUrls.length === 0) return null;
+      const genParams = {
+        model: selectedModelId,
+        ...buildSupplementalInputPayload(selectedVariant?.model, modelParameterValues),
+        images_list: uploadedImageUrls,
+        image_url: uploadedImageUrls[0],
+        aspect_ratio: selectedAr,
+      };
+      if (swapImageUrl) genParams.swap_url = swapImageUrl;
+      if (prompt.trim()) genParams.prompt = prompt.trim();
+      if (currentQualityField && selectedQuality) genParams[currentQualityField] = selectedQuality;
+      if (showEffectBtn && selectedEffect) genParams.name = selectedEffect;
+      return [generateI2I, genParams];
+    }
+    const genParams = {
+      model: selectedModelId,
+      ...buildSupplementalInputPayload(selectedVariant?.model, modelParameterValues),
+      ...buildReferenceParams(selectedVariant?.model, { imageUrls: uploadedImageUrls }),
+      prompt: prompt.trim() || "image",
+      aspect_ratio: selectedAr,
+    };
+    if (currentQualityField && selectedQuality) genParams[currentQualityField] = selectedQuality;
+    return [generateImage, genParams];
+  };
+
   const handleGenerate = async () => {
     if (generating) return;
 
@@ -1864,6 +1894,8 @@ export default function ImageStudio({
               </button>
             </PromptControls>
 
+            {/* DZ: price for our account before generating */}
+            <DzPrice apiKey={apiKey} build={dzBuildRequest} count={batchSize} className="hidden sm:inline mr-2 self-center" />
             {/* Generate button */}
             <PromptAction
               onClick={handleGenerate}

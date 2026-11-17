@@ -6,7 +6,9 @@ import { now } from './db.js';
 
 const ACTIVE = ['submitted', 'processing', 'downloading'];
 const POLL_MS = { image: 2500, video: 5000, audio: 4000 };
-const TIMEOUT_MS = { image: 20 * 60_000, video: 90 * 60_000, audio: 30 * 60_000 };
+// How long we wait for a provider. Long on purpose: provider queues can take
+// tens of minutes, and Atlas itself ends (and refunds) jobs that run too long.
+const TIMEOUT_MS = { image: 3 * 3_600_000, video: 6 * 3_600_000, audio: 3 * 3_600_000 };
 const TRASH_KEEP_MS = 7 * 86_400_000;
 const LOCAL_MEDIA_RE = /^(?:https?:\/\/[^/]+)?\/media\/(u|g)\/([A-Za-z0-9_-]+)(?:\.[a-z0-9]+)?(?:\/(\d+)(?:\.[a-z0-9]+)?)?(?:[?#].*)?$/i;
 
@@ -16,14 +18,15 @@ export class GenerationError extends Error {
 
 const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an hour of retries
 
-export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8 }) {
+export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = [5_000, 20_000, 60_000, 180_000] }) {
   const q = {
-    insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, next_poll_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, 0, ?, ?)`),
+    insert: db.prepare(`INSERT INTO generations (id, user_id, endpoint, provider, provider_model, kind, status, prompt, params_json, est_cost_usd, est_source, next_poll_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?, ?, ?, 0, ?, ?)`),
+    setCost: db.prepare('UPDATE generations SET cost_usd = ?, cost_source = ?, updated_at = ? WHERE id = ?'),
     setSubmitted: db.prepare("UPDATE generations SET provider_task_id = ?, status = 'submitted', next_poll_at = ?, updated_at = ? WHERE id = ?"),
     setFailed: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     setPolled: db.prepare('UPDATE generations SET status = ?, next_poll_at = ?, updated_at = ? WHERE id = ?'),
-    setDownloading: db.prepare("UPDATE generations SET status = 'downloading', provider_outputs_json = ?, cost_usd = COALESCE(?, cost_usd), updated_at = ? WHERE id = ?"),
+    setDownloading: db.prepare("UPDATE generations SET status = 'downloading', provider_outputs_json = ?, cost_usd = COALESCE(?, cost_usd), cost_source = CASE WHEN ? IS NOT NULL THEN 'provider' ELSE cost_source END, updated_at = ? WHERE id = ?"),
     setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     byId: db.prepare('SELECT * FROM generations WHERE id = ?'),
     due: db.prepare(`SELECT * FROM generations WHERE status IN ('submitted','processing','downloading') AND next_poll_at <= ? ORDER BY next_poll_at LIMIT 10`),
@@ -91,7 +94,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   }
 
-  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, kind = null }) {
+  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, estSource = null, kind = null }) {
     const provider = providerById(providerId);
     if (!provider) throw new GenerationError(`Unknown provider: ${providerId}`, 404);
     const cfg = providers.resolve(providerId);
@@ -110,7 +113,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const { onRequestId: _ignored, ...clean } = body || {};
     const id = newId('gen');
     const t = now();
-    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 4000), JSON.stringify(clean), estCostUsd, t, t);
+    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 4000), JSON.stringify(clean), estCostUsd, estSource, t, t);
     try {
       const resolved = await resolveMedia(user, providerId, cfg, clean);
       const { taskId } = await provider.submit(cfg, { kind: model.kind, model: modelId, body: resolved });
@@ -131,6 +134,25 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
     q.setCompleted.run(JSON.stringify(saved), now(), now(), row.id);
+    settling.add(settleCost(row).catch((error) => log?.warn(`cost ${row.id}: ${error.message}`)));
+  }
+
+  // The real charge of a finished job: APIMart reports it per task (its log
+  // is written a few seconds later); Atlas's pre-submit quote is exact.
+  const settling = new Set(); // pending cost lookups (tests wait for them)
+  async function settleCost(row) {
+    const provider = providerById(row.provider);
+    if (provider?.actualCost && row.provider_task_id) {
+      for (const delay of settleDelaysMs) {
+        await new Promise((resolve) => { const t = setTimeout(resolve, delay); t.unref?.(); });
+        const usd = await provider.actualCost(providers.resolve(row.provider), row.provider_task_id).catch(() => null);
+        if (Number.isFinite(usd)) { q.setCost.run(usd, 'provider', now(), row.id); return; }
+      }
+    }
+    const fresh = q.byId.get(row.id);
+    if (fresh && fresh.cost_usd == null && fresh.est_source === 'quote' && Number.isFinite(fresh.est_cost_usd)) {
+      q.setCost.run(fresh.est_cost_usd, 'quote', now(), row.id);
+    }
   }
 
   async function step(row) {
@@ -150,7 +172,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     if (res.state === 'completed') {
       if (!res.outputs?.length) { q.setFailed.run('Provider finished without a result file.', now(), now(), row.id); return; }
       res.outputs = res.outputs.slice(0, 16);
-      q.setDownloading.run(JSON.stringify(res.outputs), res.costUsd ?? null, now(), row.id);
+      q.setDownloading.run(JSON.stringify(res.outputs), res.costUsd ?? null, res.costUsd ?? null, now(), row.id);
       await download({ ...row, status: 'downloading' }, res.outputs);
     } else if (res.state === 'failed') {
       q.setFailed.run(String(res.error || 'Generation failed').slice(0, 1000), now(), now(), row.id);
@@ -194,7 +216,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     if (!row || (row.user_id !== user.id && user.role !== 'admin')) throw new GenerationError('Not found', 404);
     if (row.status === 'completed') {
       const outputs = outputUrls(row);
-      return { request_id: row.id, id: row.id, status: 'completed', outputs, url: outputs[0], cost: row.cost_usd ?? row.est_cost_usd };
+      return { request_id: row.id, id: row.id, status: 'completed', outputs, url: outputs[0], cost: row.cost_usd ?? row.est_cost_usd, cost_final: row.cost_usd != null };
     }
     if (row.status === 'failed') return { request_id: row.id, id: row.id, status: 'failed', error: row.error || 'Generation failed' };
     return { request_id: row.id, id: row.id, status: 'processing' };
@@ -215,6 +237,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       kind: row.kind,
       params: JSON.parse(row.params_json || '{}'),
       cost_usd: row.cost_usd ?? row.est_cost_usd,
+      cost_final: row.cost_usd != null,
       error: row.error,
       created_at: row.created_at,
       timestamp: new Date(row.created_at).toISOString(),
@@ -249,6 +272,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     saveUpload, submit, result, history, trash, mediaFile,
+    settled: () => Promise.all([...settling]),
     start() {
       if (!timer) {
         timer = setInterval(tick, 2000);

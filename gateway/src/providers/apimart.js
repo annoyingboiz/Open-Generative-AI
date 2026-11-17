@@ -46,6 +46,44 @@ export const apimart = {
     return data?.success ? data.data : null;
   },
 
+  // Price our account pays for this request (membership/custom pricing
+  // applied). https://docs.apimart.ai/en/api-reference/account/request-logs
+  async quote({ apiKey, proxy }, { model, body }) {
+    const spec = {};
+    if (body.resolution) spec.resolution = body.resolution;
+    if (body.quality) spec.quality = body.quality;
+    if (Number.isFinite(Number(body.duration))) spec.duration = Math.round(Number(body.duration));
+    if (Number.isFinite(Number(body.n)) && Number(body.n) > 1) spec.n = Math.round(Number(body.n));
+    const ask = async (params) => providerJson(`${API}/v1/pricing/model?${new URLSearchParams({ model, ...params })}`, { proxy, headers: auth(apiKey), timeoutMs: 15_000 });
+    let data;
+    try {
+      data = await ask(spec);
+    } catch (error) {
+      // An unsupported tier (e.g. "2K" on a model priced only for 4K) means
+      // the default tier applies: ask again without it.
+      if (!(error instanceof ProviderHttpError) || error.status !== 400 || !spec.resolution) throw error;
+      delete spec.resolution;
+      data = await ask(spec);
+    }
+    const usd = Number(data?.total_usd ?? data?.unit_price_usd);
+    if (!Number.isFinite(usd)) return null;
+    const perSecondWithoutDuration = data?.unit === 'per_second' && spec.duration === undefined;
+    return { usd, exact: data?.estimated !== true && !perSecondWithoutDuration };
+  },
+
+  // What a finished task actually cost (logs appear a few seconds later).
+  async actualCost({ apiKey, proxy }, taskId) {
+    try {
+      const data = await providerJson(`${API}/v1/logs/requests/${encodeURIComponent(taskId)}`, { proxy, headers: auth(apiKey), timeoutMs: 15_000 });
+      const records = (data?.data || []).filter((r) => r.type === 'consume');
+      if (!records.length) return null;
+      return records.reduce((sum, r) => sum + (Number(r.cost_usd) || 0), 0);
+    } catch (error) {
+      if (error instanceof ProviderHttpError && error.status === 404) return null; // not written yet
+      throw error;
+    }
+  },
+
   async submit({ apiKey, proxy }, { kind, model, body }) {
     const pathFor = SUBMIT_PATH[kind];
     if (!pathFor) throw new Error(`APIMart: ${kind} generation is not supported yet`);

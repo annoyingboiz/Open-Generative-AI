@@ -29,6 +29,7 @@ import {
   videoModelMenuEntryByVariantId as videoModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
 import { dzRecommendedEntries, dzFirstModel, dzModelLabel } from "../dzCatalog.js"; // DZ
+import DzPrice from "./DzPrice.jsx"; // DZ
 import { getSeedanceEndpointResolution, getSeedanceToolConfiguration } from "../seedanceModels.js";
 import { getVeoToolConfiguration } from "../veoModels.js";
 import { getGroupedVideoConfiguration, getGroupedVideoCopyKey, getGroupedVideoVariantOptions } from "../groupedVideoModels.js";
@@ -2058,6 +2059,57 @@ export default function VideoStudio({
   }, []);
 
   // ── generate ──────────────────────────────────────────────────────────────
+  // DZ: the request Generate would send, for the price tag (no validation,
+  // no side effects — mirrors the parameter building in handleGenerate).
+  const dzBuildRequest = () => {
+    const currentModel = getCurrentModel();
+    if (!currentModel) return null;
+    const grouped = getGroupedVideoConfiguration(selectedModel);
+    const activeParameterValues = createModelParameterValues(currentModel, modelParameterValues);
+    const generationParameterValues = grouped && currentModel.inputs?.omni_reference_task_type
+      ? { ...activeParameterValues, omni_reference_task_type: "auto" }
+      : activeParameterValues;
+    const commonParams = grouped
+      ? buildVideoCommonPayload(currentModel, {
+          ...generationParameterValues,
+          aspectRatio: selectedAr, duration: selectedDuration,
+          resolution: selectedResolution, quality: selectedQuality,
+        })
+      : {};
+    const trimmedPrompt = promptDisabled ? "" : (prompt.trim() || "video");
+    const workflowMedia = selectedWorkflowId
+      ? activeWorkflowMediaDraft || {}
+      : { imageUrls: uploadedImageUrls, endImageUrl: uploadedEndImageUrl, videoUrls: uploadedVideoUrls, audioUrls: uploadedAudioUrls };
+    const referenceParams = selectedWorkflowId
+      ? buildVideoWorkflowMediaParams(currentModel, selectedWorkflowId, workflowMedia)
+      : buildReferenceParams(currentModel, workflowMedia);
+    const base = {
+      model: selectedModel,
+      ...buildSupplementalInputPayload(currentModel, generationParameterValues),
+      ...commonParams,
+      ...referenceParams,
+    };
+    if (v2vMode) {
+      if (currentModel?.hasPrompt && trimmedPrompt) base.prompt = trimmedPrompt;
+      return [processV2V, base];
+    }
+    if (trimmedPrompt) base.prompt = trimmedPrompt;
+    if (imageMode) {
+      if (!grouped && getAspectRatiosForI2VModel(selectedModel).length > 0) base.aspect_ratio = selectedAr;
+      if (!grouped && getDurationsForI2VModel(selectedModel).length > 0) base.duration = selectedDuration;
+      if (!grouped && getResolutionsForI2VModel(selectedModel).length > 0) base.resolution = selectedResolution;
+      if (!grouped && selectedQuality) base.quality = selectedQuality;
+      if (showEffect && selectedEffect) base.name = selectedEffect;
+      return [generateI2V, base];
+    }
+    if (currentModel?.requiresRequestId) return null; // extend: priced by the source clip
+    if (!grouped) base.aspect_ratio = selectedAr;
+    if (!grouped && getDurationsForModel(selectedModel).length > 0) base.duration = selectedDuration;
+    if (!grouped && getResolutionsForVideoModel(selectedModel).length > 0) base.resolution = selectedResolution;
+    if (!grouped && !selectedVeoTool && selectedQuality) base.quality = selectedQuality;
+    return [generateVideo, base];
+  };
+
   const handleGenerate = useCallback(async () => {
     if (mediaUploading || workflowUploadSlotRef.current) {
       toast.error(copy.errors.waitForCurrentUpload);
@@ -3373,6 +3425,8 @@ export default function VideoStudio({
               )}
             </PromptControls>
 
+            {/* DZ: price for our account before generating */}
+            <DzPrice apiKey={apiKey} build={dzBuildRequest} className="hidden sm:inline mr-2 self-center" />
             {/* Generate button */}
             <PromptAction
               onClick={handleGenerate}

@@ -70,6 +70,12 @@ const MIGRATIONS = [
   CREATE INDEX generations_user ON generations(user_id, created_at DESC);
   CREATE INDEX generations_active ON generations(status, next_poll_at);
   `,
+  // 3: where a cost comes from — 'provider' (actual charge), 'quote' (exact
+  // price from the provider before submit) or 'estimate' (catalog price).
+  `
+  ALTER TABLE generations ADD COLUMN cost_source TEXT;
+  ALTER TABLE generations ADD COLUMN est_source TEXT;
+  `,
 ];
 
 export function openDatabase(dataDir) {

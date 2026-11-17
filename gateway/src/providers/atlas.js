@@ -69,6 +69,21 @@ export const atlas = {
     return { state: 'processing', progress: null };
   },
 
+  // Exact price of a request, without creating a task or charging.
+  // https://atlascloud.ai/docs/en/billing/model-billing
+  async quote({ apiKey, proxy }, { model, body }) {
+    const data = await providerJson(`${API}/api/v1/model/calculate`, {
+      proxy,
+      method: 'POST',
+      headers: { ...auth(apiKey), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, model }),
+      timeoutMs: 15_000,
+    });
+    const usd = Number(data?.data?.price);
+    if (!Number.isFinite(usd)) return null;
+    return { usd, exact: data?.data?.estimated !== true };
+  },
+
   async upload({ apiKey, proxy }, { path, mime, name }) {
     // Streamed from disk, not read into memory.
     const form = await fileForm('file', path, mime, name || `file.${mime.split('/')[1]}`);

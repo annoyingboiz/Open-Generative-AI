@@ -19,7 +19,8 @@ import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
 import { createCatalog, DEFAULT_RECOMMENDED } from './catalog/index.js';
 import { createGenerations, GenerationError } from './generations.js';
-import { toProviderBody, estimateCost } from './catalog/build.js';
+import { createQuoter } from './quotes.js';
+import { toProviderBody } from './catalog/build.js';
 
 const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico']);
 
@@ -50,7 +51,8 @@ export async function buildApp(config, { logger = true } = {}) {
   };
   const getRecommended = () => appSettings.get('recommended', DEFAULT_RECOMMENDED);
   const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended });
-  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, maxActiveJobsPerUser: config.maxActiveJobsPerUser });
+  const quoter = createQuoter({ providers, log: app.log });
+  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, maxActiveJobsPerUser: config.maxActiveJobsPerUser, ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);
   await app.register(formbody);
@@ -386,27 +388,50 @@ export async function buildApp(config, { logger = true } = {}) {
 
   // Submit: /api/v1/p/<provider>/<provider model id>[?m=<studio mode>]
   // Models from the catalog get their fields translated for the provider.
+  // Catalog variant behind a studio endpoint "p/<provider>/<model>[?m=mode]".
+  // Only admins may call a provider model directly (outside the catalog);
+  // everyone else goes through the field allowlist and pricing.
+  function resolveEndpoint(user, providerId, modelId, mode) {
+    const key = `p/${providerId}/${modelId}${mode ? `?m=${mode}` : ''}`;
+    const variant = catalog.variant(key);
+    if (!variant && user.role !== 'admin') return null;
+    return { key, variant };
+  }
+
+  // Price before generating: { usd, exact, source } — shown next to Generate.
+  app.post('/dz/api/quote', async (req, reply) => {
+    const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([a-z0-9]+))?$/i.exec(String(req.body?.endpoint || ''));
+    if (!m) return reply.code(400).send({ error: 'Bad endpoint' });
+    const [, providerId, modelId, mode] = m;
+    const resolved = resolveEndpoint(req.user, providerId, modelId, mode);
+    if (!resolved) return reply.code(404).send({ error: 'Unknown model' });
+    const body = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
+    const providerBody = resolved.variant ? toProviderBody(resolved.variant, body) : body;
+    const price = await quoter.quote({ providerId, modelId, providerBody, variant: resolved.variant });
+    return { price };
+  });
+
   app.post('/api/v1/p/:provider/*', async (req, reply) => {
     try {
       const providerId = req.params.provider;
       const modelId = req.params['*'];
-      const key = `p/${providerId}/${modelId}${req.query.m ? `?m=${req.query.m}` : ''}`;
-      const variant = catalog.variant(key);
-      // Only admins may call a provider model directly (outside the catalog);
-      // everyone else goes through the field allowlist and cost estimate.
-      if (!variant && req.user.role !== 'admin') return reply.code(404).send({ detail: 'Unknown model' });
-      const estCostUsd = variant ? estimateCost(variant, req.body) : null;
-      if (req.user.monthly_limit_usd != null && !Number.isFinite(estCostUsd)) {
+      const resolved = resolveEndpoint(req.user, providerId, modelId, req.query.m);
+      if (!resolved) return reply.code(404).send({ detail: 'Unknown model' });
+      const { key, variant } = resolved;
+      const body = variant ? toProviderBody(variant, req.body) : req.body;
+      // The provider's own price for this exact request, or the catalog price.
+      const price = await quoter.quote({ providerId, modelId, providerBody: body, variant });
+      if (req.user.monthly_limit_usd != null && !Number.isFinite(price?.usd)) {
         return reply.code(402).send({ detail: 'This model has no known price, so it is not available with a spending limit.' });
       }
-      const body = variant ? toProviderBody(variant, req.body) : req.body;
       const { id } = await generations.submit(req.user, {
         providerId,
         modelId,
         body,
         endpoint: key,
         kind: variant?.kind || null,
-        estCostUsd,
+        estCostUsd: price?.usd ?? null,
+        estSource: price ? (price.exact ? 'quote' : 'estimate') : null,
       });
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }

@@ -399,6 +399,12 @@ export function uploadFile(apiKey, file, onProgress) {
     });
 }
 
+// DZ: Topaz upscaling on fal.ai. `endpoint` is a tool endpoint from the
+// catalog (e.g. topaz/upscale/image/precision); the rest goes to the model.
+export async function dzUpscale(apiKey, { endpoint, onRequestId, ...params }) {
+    return submitAndPoll(`p/fal/${endpoint}`, params, apiKey, onRequestId);
+}
+
 export async function upscaleImage(apiKey, { model, image_url, resolution, upscale_factor, onRequestId }) {
     let endpoint = model;
     let payload = { image_url };

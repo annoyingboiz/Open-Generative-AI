@@ -30,7 +30,7 @@ import {
   imageModelPickerEntries,
   imageModelPickerEntryByVariantId,
 } from "../modelFamilies.js";
-import { dzRecommendedEntries, dzFirstModel, dzModelLabel } from "../dzCatalog.js"; // DZ
+import { dzRecommendedEntries, dzFirstModel, dzModelLabel, dzUpscaleSpec, dzOpenUpscale, dzIsOwnImage } from "../dzCatalog.js"; // DZ
 import DzPrice from "./DzPrice.jsx"; // DZ
 import {
   buildReferenceParams,
@@ -1500,6 +1500,17 @@ export default function ImageStudio({
                     imageUrl={entry.url}
                     onCopyError={onGenerationError}
                   />
+                  {dzUpscaleSpec() && dzIsOwnImage(entry.url) && (
+                    <button
+                      type="button"
+                      title="Upscale"
+                      aria-label="Upscale"
+                      onClick={(e) => { e.stopPropagation(); dzOpenUpscale(entry.url); }}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white backdrop-blur-md transition-all hover:bg-[#22d3ee] hover:text-black"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+                    </button>
+                  )}
                   <button
                     type="button"
                     title={copy.gallery.download}
@@ -1539,6 +1550,7 @@ export default function ImageStudio({
                   imageUrl={entry.url}
                   onCopyError={onGenerationError}
                   actions={[
+                    ...(dzUpscaleSpec() && dzIsOwnImage(entry.url) ? [{ kind: "upscale", label: "Upscale", onSelect: () => dzOpenUpscale(entry.url) }] : []),
                     {
                       kind: "download",
                       label: copy.gallery.download,

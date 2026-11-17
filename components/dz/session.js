@@ -23,7 +23,8 @@ export async function dzFetchBalances() {
 }
 
 export function dzFormatBalances(balances) {
-  const shown = (balances || []).filter((b) => b.hasKey && b.enabled);
+  // A provider whose key can't read the balance (fal without billing access) is left out.
+  const shown = (balances || []).filter((b) => b.hasKey && b.enabled && !(b.ok && b.amount == null));
   if (shown.length === 0) return null;
   return shown
     .map((b) => `${b.name} ${b.ok ? `$${Number(b.amount).toFixed(2)}` : '—'}`)

@@ -3,10 +3,11 @@
 // exports the same shape, and list it in PROVIDERS below.
 import { apimart } from './apimart.js';
 import { atlas } from './atlas.js';
+import { fal } from './fal.js';
 import { encrypt, decrypt, maskSecret } from '../crypto.js';
 import { now } from '../db.js';
 
-export const PROVIDERS = [apimart, atlas];
+export const PROVIDERS = [apimart, atlas, fal];
 
 // Shows a proxy without its password: socks5h://user:••••@host:port
 function maskProxy(value) {
@@ -83,7 +84,7 @@ export async function fetchBalances(settings) {
     if (!c.enabled || !c.apiKey) return { ...base, ok: false };
     try {
       const b = await provider.balance(c);
-      return { ...base, ok: true, amount: b.amount, currency: b.currency };
+      return { ...base, ok: true, amount: b.amount, currency: b.currency, note: b.note || null };
     } catch (error) {
       return { ...base, ok: false, error: error.message };
     }

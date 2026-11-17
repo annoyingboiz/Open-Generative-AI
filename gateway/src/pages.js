@@ -58,6 +58,7 @@ export function setupPage({ error, values = {} } = {}) {
 
 function balanceCell(b) {
   if (!b) return '';
+  if (b.ok && b.amount == null) return `<span class="pill ok">key works</span> <span class="muted">${esc(b.note || '')}</span>`;
   if (b.ok) return `<span class="pill ok">$${Number(b.amount).toFixed(2)}</span>`;
   if (!b.hasKey) return '<span class="muted">no key</span>';
   if (!b.enabled) return '<span class="muted">off</span>';

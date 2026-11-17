@@ -12,7 +12,7 @@ import { imageModelCatalog } from "../modelFamilies.js";
 import { getModelMediaCapabilities, buildReferenceParams } from "../modelCapabilities.js";
 import { createModelParameterValues, getSupplementalModelInputs } from "../modelParameters.js";
 import { getAspectRatioOptions, getImageSizeCapability, T2I_DIMENSION_RATIOS, I2I_DIMENSION_RATIOS } from "../imageSizing.js";
-import { dzRecommendedEntries } from "../dzCatalog.js";
+import { dzRecommendedEntries, dzUpscaleSpec, dzOpenUpscale, dzIsOwnImage } from "../dzCatalog.js";
 import DzPrice from "./DzPrice.jsx";
 import { scopedPersistKey, migrateLegacyPersistKey } from "../persistKey.js";
 import MobileGenerationActions, {
@@ -1141,6 +1141,17 @@ export default function DzCinemaStudio({
                       <path d="M3 12a9 9 0 0115.5-6.3L21 8M21 3v5h-5M21 12a9 9 0 01-15.5 6.3L3 16M3 21v-5h5" />
                     </svg>
                   </button>
+                  {dzUpscaleSpec() && dzIsOwnImage(entry.url) && (
+                    <button
+                      type="button"
+                      title="Upscale"
+                      aria-label="Upscale"
+                      onClick={(e) => { e.stopPropagation(); dzOpenUpscale(entry.url); }}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white backdrop-blur-md transition-all hover:bg-[#22d3ee] hover:text-black"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+                    </button>
+                  )}
                   <button
                     type="button"
                     title={copy.actions.download}
@@ -1204,6 +1215,7 @@ export default function DzCinemaStudio({
                       label: "Reuse these settings",
                       onSelect: () => handleReuse(entry.settings),
                     },
+                    ...(dzUpscaleSpec() && dzIsOwnImage(entry.url) ? [{ kind: "upscale", label: "Upscale", onSelect: () => dzOpenUpscale(entry.url) }] : []),
                     {
                       kind: "download",
                       label: copy.actions.download,

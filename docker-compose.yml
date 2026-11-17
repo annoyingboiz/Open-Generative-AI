@@ -32,5 +32,7 @@ services:
       APIMART_PROXY: ${APIMART_PROXY:-}
       ATLAS_API_KEY: ${ATLAS_API_KEY:-}
       ATLAS_PROXY: ${ATLAS_PROXY:-}
+      FAL_KEY: ${FAL_KEY:-}
+      FAL_PROXY: ${FAL_PROXY:-}
     volumes:
       - ${DATA_DIR:-./data}:/data

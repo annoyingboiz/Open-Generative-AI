@@ -17,6 +17,7 @@ export const config = {
   providerEnv: {
     apimart: { apiKey: env.APIMART_API_KEY || '', proxy: env.APIMART_PROXY || '' },
     atlas: { apiKey: env.ATLAS_API_KEY || '', proxy: env.ATLAS_PROXY || '' },
+    fal: { apiKey: env.FAL_KEY || '', proxy: env.FAL_PROXY || '' },
   },
   logLevel: env.LOG_LEVEL || 'info',
   // Reverse proxies whose X-Forwarded-* / cf-connecting-ip headers we believe

@@ -280,9 +280,15 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     return o ? { path: o.path, mime: o.mime || mimeForExt(o.ext) } : null;
   }
 
+  // Same for a /media/... link from a request body (e.g. an upscale input).
+  function mediaFileForUrl(user, url) {
+    const m = typeof url === 'string' && LOCAL_MEDIA_RE.exec(url);
+    return m ? mediaFile(user, m[1].toLowerCase(), m[2], m[3]) : null;
+  }
+
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
-    saveUpload, submit, result, history, trash, mediaFile,
+    saveUpload, submit, result, history, trash, mediaFile, mediaFileForUrl,
     start() {
       if (!timer) {
         timer = setInterval(tick, 2000);

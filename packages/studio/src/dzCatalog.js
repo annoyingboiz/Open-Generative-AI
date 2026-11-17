@@ -41,3 +41,18 @@ export function dzModelLabel(id) {
   }
   return null;
 }
+
+// DZ: the Upscale tool (Topaz on fal.ai), present only when fal has a key.
+export function dzUpscaleSpec() {
+  if (typeof window === 'undefined') return null;
+  return window.__DZ_CATALOG__?.tools?.upscale || null;
+}
+
+// Opens the upscale drawer for an image from anywhere in the app.
+export function dzOpenUpscale(url) {
+  if (typeof window === 'undefined' || !url) return;
+  window.dispatchEvent(new CustomEvent('dz:upscale', { detail: { url } }));
+}
+
+// Only our own files can be upscaled (the server prices them from the file).
+export const dzIsOwnImage = (url) => /^(?:https?:\/\/[^/]+)?\/media\/[ug]\//.test(String(url || ''));

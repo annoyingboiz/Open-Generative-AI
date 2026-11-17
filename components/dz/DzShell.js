@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback } from 'react';
-import { ImageStudio, VideoStudio, DzCinemaStudio } from 'studio';
+import { ImageStudio, VideoStudio, DzCinemaStudio, DzUpscaleStudio, DzUpscalePanel, dzUpscaleSpec, dzIsOwnImage } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
@@ -27,12 +27,18 @@ const ICONS = {
       <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" />
     </svg>
   ),
+  upscale: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+    </svg>
+  ),
 };
 
 export const DZ_TABS = [
   { id: 'cinema', label: 'Cinema' },
   { id: 'image', label: 'Image' },
   { id: 'video', label: 'Video' },
+  { id: 'upscale', label: 'Upscale' },
 ];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
 const DEFAULT_TAB = 'cinema';
@@ -55,6 +61,10 @@ export default function DzShell() {
   const [running, setRunning] = useState({});
   const [dragging, setDragging] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState(null);
+  // Upscale from anywhere: a side drawer next to the work, plus a right-click menu.
+  const [upscaleDrawer, setUpscaleDrawer] = useState(null); // { url, result }
+  const [upscaleTabUrl, setUpscaleTabUrl] = useState(null);
+  const [imageMenu, setImageMenu] = useState(null); // { x, y, url }
 
   // Session check (the gateway already required sign-in) and initial tab.
   useEffect(() => {
@@ -64,6 +74,19 @@ export default function DzShell() {
     const onPop = () => setActiveTab(tabFromPath(window.location.pathname));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  useEffect(() => {
+    const onUpscale = (e) => { if (e.detail?.url) { setImageMenu(null); setUpscaleDrawer({ url: e.detail.url, result: null }); } };
+    const closeMenu = () => setImageMenu(null);
+    window.addEventListener('dz:upscale', onUpscale);
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    return () => {
+      window.removeEventListener('dz:upscale', onUpscale);
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+    };
   }, []);
 
   // Provider balances (admins only), refreshed every minute.
@@ -130,6 +153,33 @@ export default function DzShell() {
     setDragging(false);
     const files = Array.from(e.dataTransfer?.files || []);
     if (files.length) setDroppedFiles(files);
+  };
+
+  // Right-click on any of our images: Upscale, open in the Upscale tab, download.
+  const onContextMenu = (e) => {
+    const img = e.target?.closest?.('img');
+    const url = img?.getAttribute('src');
+    if (!img || !dzIsOwnImage(url)) return;
+    e.preventDefault();
+    setImageMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: Math.min(e.clientY, window.innerHeight - 140), url });
+  };
+  const downloadUrl = async (url) => {
+    try {
+      const blob = await (await fetch(url)).blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = url.split('/').pop().split('?')[0] || 'image';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch { window.open(url, '_blank'); }
+  };
+  const openInUpscaleTab = (url) => {
+    setUpscaleTabUrl(url);
+    setUpscaleDrawer(null);
+    openTab('upscale');
   };
 
   if (!user) return <div className="h-screen bg-[#030303]" />;
@@ -212,7 +262,7 @@ export default function DzShell() {
         </aside>
 
         {/* Studios stay mounted, so running generations survive switching tabs */}
-        <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]">
+        <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]" onContextMenu={onContextMenu}>
           <div className={activeTab === 'cinema' ? 'h-full w-full' : 'hidden'}>
             <DzCinemaStudio {...studioProps} {...callbacks('cinema')} />
           </div>
@@ -222,7 +272,60 @@ export default function DzShell() {
           <div className={activeTab === 'video' ? 'h-full w-full' : 'hidden'}>
             <VideoStudio {...studioProps} {...callbacks('video')} droppedFiles={activeTab === 'video' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
+          <div className={activeTab === 'upscale' ? 'h-full w-full' : 'hidden'}>
+            <DzUpscaleStudio {...studioProps} {...callbacks('upscale')} initialUrl={upscaleTabUrl} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+          </div>
         </main>
+
+        {/* Upscale drawer: opens next to the work, from an image's button or menu */}
+        {upscaleDrawer && (
+          <>
+            <div className="fixed inset-0 z-[60] bg-black/40 md:bg-transparent md:pointer-events-none" onClick={() => setUpscaleDrawer(null)} />
+            <aside aria-label="Upscale" className="fixed top-14 right-0 bottom-0 z-[70] flex w-full max-w-[380px] flex-col border-l border-white/[0.08] bg-[#0d0d10] shadow-[-16px_0_40px_rgba(0,0,0,0.5)] dz-drawer">
+              <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+                <span className="text-[13px] font-bold text-white/90">Upscale</span>
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => openInUpscaleTab(upscaleDrawer.url)} className="rounded-md px-2 py-1 text-[12px] font-semibold text-[#22d3ee] hover:bg-white/5">Open in Upscale tab</button>
+                  <button type="button" onClick={() => setUpscaleDrawer(null)} className="h-7 w-7 rounded-md text-white/45 hover:bg-white/10 hover:text-white" aria-label="Close">✕</button>
+                </div>
+              </div>
+              <div className="flex gap-2 border-b border-white/[0.06] p-3">
+                <img src={upscaleDrawer.url} alt="Original" className="h-24 flex-1 min-w-0 rounded-lg bg-black/40 object-contain" />
+                {upscaleDrawer.result && (
+                  <button type="button" onClick={() => downloadUrl(upscaleDrawer.result)} title="Download the upscaled image" className="relative h-24 flex-1 min-w-0">
+                    <img src={upscaleDrawer.result} alt="Upscaled" className="h-full w-full rounded-lg border border-[#22d3ee]/40 bg-black/40 object-contain" />
+                    <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white/85">Download</span>
+                  </button>
+                )}
+              </div>
+              <div className="min-h-0 flex-1">
+                <DzUpscalePanel
+                  apiKey={DZ_SESSION_PLACEHOLDER}
+                  imageUrl={upscaleDrawer.url}
+                  compact
+                  onStart={() => callbacks('upscale').onGenerationStart()}
+                  onDone={(r) => {
+                    const cb = callbacks('upscale');
+                    cb.onGenerationEnd();
+                    cb.onGenerationComplete({ url: r.url });
+                    setUpscaleDrawer((d) => (d && d.url === r.source ? { ...d, result: r.url } : d));
+                  }}
+                  onError={(msg) => { const cb = callbacks('upscale'); cb.onGenerationEnd(); cb.onGenerationError(msg); }}
+                />
+              </div>
+            </aside>
+          </>
+        )}
+
+        {imageMenu && (
+          <div role="menu" className="fixed z-[210] w-52 overflow-hidden rounded-xl border border-white/[0.08] bg-[#151519] py-1 text-[13px] shadow-[0_12px_32px_rgba(0,0,0,0.6)]" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
+            {dzUpscaleSpec() && (
+              <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-white/85 hover:bg-white/[0.06]" onClick={() => { setUpscaleDrawer({ url: imageMenu.url, result: null }); setImageMenu(null); }}>Upscale…</button>
+            )}
+            <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-white/85 hover:bg-white/[0.06]" onClick={() => { openInUpscaleTab(imageMenu.url); setImageMenu(null); }}>Open in Upscale tab</button>
+            <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-white/85 hover:bg-white/[0.06]" onClick={() => { downloadUrl(imageMenu.url); setImageMenu(null); }}>Download</button>
+          </div>
+        )}
       </div>
 
       {/* Notifications: dark cards, bottom-right */}
@@ -255,7 +358,7 @@ export default function DzShell() {
           ))}
         </div>
       )}
-      <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.16,1,.3,1)}@keyframes dzToastIn{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}`}</style>
+      <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.16,1,.3,1)}@keyframes dzToastIn{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}.dz-drawer{animation:dzDrawerIn 240ms cubic-bezier(.16,1,.3,1)}@keyframes dzDrawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>
     </div>
   );
 }

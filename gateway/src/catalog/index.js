@@ -13,6 +13,7 @@ import { providerFetch } from '../providers/http.js';
 import { assertPublicHttpsUrl } from '../net-guard.js';
 import { byteLimit } from '../storage.js';
 import { PROVIDERS, providerById } from '../providers/index.js';
+import { FAL_UPSCALE } from '../providers/fal-tools.js';
 import { buildAtlasVariant, buildApimartVariants, buildStudioLists, apimartPrice, STUDIO_MODES } from './build.js';
 
 const require = createRequire(import.meta.url);
@@ -82,11 +83,14 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
       }
     }
     const lists = buildStudioLists(variants, { recommended: getRecommended() || [] });
+    // Tools on fal.ai (upscaling): shown only when fal has a key.
+    const tools = enabled('fal') ? { upscale: { provider: 'fal', ...FAL_UPSCALE } } : {};
     built = {
       variants: new Map(variants.map((v) => [v.key, v])),
       lists,
+      tools,
       builtAt: Date.now(),
-      js: `window.__DZ_CATALOG__=${JSON.stringify({ builtAt: Date.now(), lists }).replace(/</g, '\\u003c')};\n`,
+      js: `window.__DZ_CATALOG__=${JSON.stringify({ builtAt: Date.now(), lists, tools }).replace(/</g, '\\u003c')};\n`,
     };
     log?.info(`catalog: built ${variants.length} studio models (${STUDIO_MODES.map((m) => `${m} ${lists[m].length}`).join(', ')})`);
   }
@@ -193,10 +197,11 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     model(providerId, modelId) {
       const entry = raw[providerId]?.list?.find((m) => (providerId === 'atlas' ? m.model : m.id) === modelId);
       if (!entry) return null;
-      const kind = providerId === 'atlas' ? KIND_ATLAS[entry.type] : KIND_APIMART[entry.category];
+      const kind = providerId === 'atlas' ? KIND_ATLAS[entry.type] : providerId === 'fal' ? entry.kind : KIND_APIMART[entry.category];
       return kind ? { id: modelId, kind } : null;
     },
     variant(key) { return built.variants.get(key) || null; },
+    hasTool(id) { return Boolean(built.tools?.[id]); },
     // Families for the "Recommended" editor in Settings: key, name, image/video.
     families() {
       const out = new Map();

@@ -21,6 +21,8 @@ import { createCatalog, DEFAULT_RECOMMENDED } from './catalog/index.js';
 import { createGenerations, GenerationError } from './generations.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
+import { falTool, falBody, falPrice } from './providers/fal-tools.js';
+import { imageSize } from './imagesize.js';
 
 const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico']);
 
@@ -253,7 +255,7 @@ export async function buildApp(config, { logger = true } = {}) {
       return renderSettings(req, reply, { error: `${provider.name}: saved, but the check failed — ${balance.error}` });
     }
     return renderSettings(req, reply, {
-      notice: balance?.ok ? `${provider.name}: saved, key works — balance $${balance.amount.toFixed(2)}.` : `${provider.name}: saved.`,
+      notice: !balance?.ok ? `${provider.name}: saved.` : balance.amount == null ? `${provider.name}: saved, key works.` : `${provider.name}: saved, key works — balance $${balance.amount.toFixed(2)}.`,
     });
   });
 
@@ -393,9 +395,33 @@ export async function buildApp(config, { logger = true } = {}) {
   // everyone else goes through the field allowlist and pricing.
   function resolveEndpoint(user, providerId, modelId, mode) {
     const key = `p/${providerId}/${modelId}${mode ? `?m=${mode}` : ''}`;
+    // Tools on fal.ai (upscaling): their own field list and price rules.
+    if (providerId === 'fal') {
+      const tool = falTool(modelId);
+      return tool && !mode && catalog.hasTool(tool.tool.id) ? { key, tool } : null;
+    }
     const variant = catalog.variant(key);
     if (!variant && user.role !== 'admin') return null;
     return { key, variant };
+  }
+
+  function providerBodyFor(resolved, providerId, modelId, body) {
+    if (resolved.tool) return falBody(modelId, body);
+    return resolved.variant ? toProviderBody(resolved.variant, body) : body;
+  }
+
+  // Upscale prices depend on the input size: read it from our copy of the file.
+  function toolQuote(user, modelId, providerBody) {
+    const file = generations.mediaFileForUrl(user, providerBody.image_url);
+    let dims = null;
+    try { dims = file && /^image\//.test(file.mime) ? imageSize(file.path) : null; } catch { dims = null; }
+    const price = falPrice(modelId, providerBody, dims);
+    return price ? { usd: price.usd, exact: price.exact, source: 'quote', output_mp: Math.round(price.outputMp * 10) / 10, input: dims } : null;
+  }
+
+  async function priceFor(user, resolved, providerId, modelId, providerBody) {
+    if (resolved.tool) return toolQuote(user, modelId, providerBody);
+    return quoter.quote({ providerId, modelId, providerBody, variant: resolved.variant });
   }
 
   // Price before generating: { usd, exact, source } — shown next to Generate.
@@ -412,8 +438,8 @@ export async function buildApp(config, { logger = true } = {}) {
     const resolved = resolveEndpoint(req.user, providerId, modelId, mode);
     if (!resolved) return reply.code(404).send({ error: 'Unknown model' });
     const body = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
-    const providerBody = resolved.variant ? toProviderBody(resolved.variant, body) : body;
-    const price = await quoter.quote({ providerId, modelId, providerBody, variant: resolved.variant });
+    const providerBody = providerBodyFor(resolved, providerId, modelId, body);
+    const price = await priceFor(req.user, resolved, providerId, modelId, providerBody);
     return { price };
   });
 
@@ -424,9 +450,12 @@ export async function buildApp(config, { logger = true } = {}) {
       const resolved = resolveEndpoint(req.user, providerId, modelId, req.query.m);
       if (!resolved) return reply.code(404).send({ detail: 'Unknown model' });
       const { key, variant } = resolved;
-      const body = variant ? toProviderBody(variant, req.body) : req.body;
+      const body = providerBodyFor(resolved, providerId, modelId, req.body);
+      if (resolved.tool && !generations.mediaFileForUrl(req.user, body.image_url)) {
+        return reply.code(400).send({ detail: 'Choose an image to upscale.' });
+      }
       // The provider's own price for this exact request, or the catalog price.
-      const price = await quoter.quote({ providerId, modelId, providerBody: body, variant });
+      const price = await priceFor(req.user, resolved, providerId, modelId, body);
       if (req.user.monthly_limit_usd != null && !Number.isFinite(price?.usd)) {
         return reply.code(402).send({ detail: 'This model has no known price, so it is not available with a spending limit.' });
       }
@@ -435,7 +464,7 @@ export async function buildApp(config, { logger = true } = {}) {
         modelId,
         body,
         endpoint: key,
-        kind: variant?.kind || null,
+        kind: variant?.kind || resolved.tool?.kind || null,
         estCostUsd: price?.usd ?? null,
         estSource: !price ? null : price.source === 'quote' ? (price.exact ? 'quote' : 'quote~') : 'estimate',
       });

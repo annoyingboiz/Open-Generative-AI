@@ -1,0 +1,76 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildAtlasVariant, buildApimartVariants, buildStudioLists, toProviderBody, estimateCost, priceLabel } from '../src/catalog/build.js';
+import { familyFor } from '../src/catalog/families.js';
+
+const atlasEntry = {
+  model: 'kwaivgi/kling-v4.0/image-to-video', type: 'Video', categories: ['IMAGE-TO-VIDEO'],
+  displayName: 'Kling Video 4.0 Image-to-Video', price: { actual: { base_price: '0.11', unit: 'second' } },
+};
+const atlasSchema = { components: { schemas: { Input: {
+  required: ['model', 'image'],
+  properties: {
+    model: { type: 'string', enum: ['kwaivgi/kling-v4.0/image-to-video'] },
+    prompt: { type: 'string', default: 'A very long sample prompt that should never be prefilled in the UI field' },
+    image: { type: 'string', 'x-format': 'image', 'x-ui-component': 'uploader' },
+    last_image: { type: 'string', 'x-format': 'image' },
+    duration: { type: 'integer', minimum: 3, maximum: 30, default: 5 },
+    ratio: { type: 'string', enum: ['16:9', '9:16'], default: '16:9' },
+    enable_sync_mode: { type: 'boolean' },
+  },
+} } } };
+
+test('family keys merge provider names', () => {
+  assert.equal(familyFor('atlas', 'kwaivgi/kling-v4.0/text-to-video'), 'kling-4');
+  assert.equal(familyFor('apimart', 'kling-v4'), 'kling-4');
+  assert.equal(familyFor('apimart', 'seedance-2-5-flash'), familyFor('atlas', 'bytedance/seedance-2.5-flash/text-to-video'));
+  assert.equal(familyFor('apimart', 'gemini-3-pro-image-preview'), familyFor('atlas', 'google/nano-banana-pro/edit'));
+  assert.notEqual(familyFor('atlas', 'google/nano-banana-pro/edit-ultra'), familyFor('atlas', 'google/nano-banana-pro/edit'));
+});
+
+test('Atlas schema becomes a studio model', () => {
+  const v = buildAtlasVariant(atlasEntry, atlasSchema);
+  assert.equal(v.mode, 'i2v');
+  assert.equal(v.kind, 'video');
+  assert.equal(v.model.imageField, 'image');
+  assert.equal(v.model.lastImageField, 'last_image');
+  assert.equal(v.model.endpoint, 'p/atlas/kwaivgi/kling-v4.0/image-to-video');
+  assert.deepEqual(v.model.inputs.duration, { name: 'duration', title: 'Duration', type: 'int', minValue: 3, maxValue: 30, step: 1, default: 5 });
+  assert.deepEqual(v.model.inputs.aspect_ratio.enum, ['16:9', '9:16']);
+  assert.equal(v.model.inputs.prompt.default, undefined, 'sample prompt is not prefilled');
+  assert.ok(!v.model.inputs.enable_sync_mode);
+  assert.match(v.model.name, /Atlas · \$0\.11\/s/);
+  // Studio request → provider request: renamed, unknown fields dropped.
+  const body = toProviderBody(v, { prompt: 'go', image: '/media/u/up_1.png', aspect_ratio: '9:16', duration: 6, images_list: ['x'], foo: 1 });
+  assert.deepEqual(body, { prompt: 'go', image: '/media/u/up_1.png', ratio: '9:16', duration: 6 });
+  assert.equal(estimateCost(v, { duration: 10 }), 1.1);
+});
+
+test('APIMart model with curated fields; image aspect ratio is called size', () => {
+  const model = { id: 'gemini-3-pro-image-preview', category: 'image', capability_tags: ['Text to Image'] };
+  const override = {
+    rename: { aspect_ratio: 'size' },
+    common: { inputs: { aspect_ratio: { name: 'aspect_ratio', type: 'string', enum: ['1:1', '16:9'], default: '1:1' } } },
+    modes: { t2i: { inputs: {} }, i2i: { inputs: {}, media: { image: { field: 'image_urls', max: 14 } } } },
+  };
+  const price = { usd: 0.02, unit: 'image', byResolution: { '1k': 0.02, '4k': 0.03 } };
+  const vs = buildApimartVariants(model, override, price);
+  assert.deepEqual(vs.map((v) => v.mode), ['t2i', 'i2i'], 'docs add image editing even though tags say text-to-image');
+  const i2i = vs[1];
+  assert.equal(i2i.model.endpoint, 'p/apimart/gemini-3-pro-image-preview?m=i2i');
+  assert.equal(i2i.model.imageField, 'image_urls');
+  assert.equal(i2i.model.maxImages, 14);
+  assert.equal(priceLabel(price), '$0.02–0.03');
+  assert.deepEqual(toProviderBody(i2i, { prompt: 'p', aspect_ratio: '16:9', image_urls: ['a'], image_url: 'a' }), { prompt: 'p', size: '16:9', image_urls: ['a'] });
+  assert.equal(estimateCost(i2i, { resolution: '4K' }), 0.03);
+});
+
+test('cheaper provider is listed last (the studio picks it by default)', () => {
+  const atlasT2V = buildAtlasVariant({ ...atlasEntry, model: 'kwaivgi/kling-v4.0/text-to-video', categories: ['TEXT-TO-VIDEO'] },
+    { components: { schemas: { Input: { required: ['prompt'], properties: { prompt: { type: 'string' } } } } } });
+  const [apimartT2V] = buildApimartVariants({ id: 'kling-v4', category: 'video', capability_tags: ['Text to Video'] }, null, { usd: 0.14, unit: 'second' });
+  const lists = buildStudioLists([atlasT2V, apimartT2V]);
+  assert.deepEqual(lists.t2v.map((m) => m.dzProvider), ['apimart', 'atlas']);
+  assert.ok(lists.t2v.every((m) => m.dzFamily === 'dz-kling-4' && m.dzFamilyName === 'Kling Video 4.0'));
+  assert.match(lists.t2v[0].name, /^Kling Video 4\.0 · APIMart · \$0\.14\/s · basic$/);
+});

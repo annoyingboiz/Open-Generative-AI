@@ -86,12 +86,12 @@ export function createGenerations({ db, storage, providers, catalog, log }) {
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   }
 
-  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null }) {
+  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, kind = null }) {
     const provider = providerById(providerId);
     if (!provider) throw new GenerationError(`Unknown provider: ${providerId}`, 404);
     const cfg = providers.resolve(providerId);
     if (!cfg.enabled || !cfg.apiKey) throw new GenerationError(`${provider.name} is not configured. Add its key in Settings.`, 409);
-    const model = catalog.model(providerId, modelId);
+    const model = kind ? { id: modelId, kind } : catalog.model(providerId, modelId);
     if (!model) throw new GenerationError(`${provider.name} has no model "${modelId}" (catalog may need a refresh).`, 404);
     if (user.monthly_limit_usd != null) {
       const spent = q.spentThisMonth.get(user.id, monthStart()).usd;

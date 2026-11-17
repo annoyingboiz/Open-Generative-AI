@@ -23,6 +23,9 @@ export default async function RootLayout({ children }) {
   return (
     <html lang={htmlLang} suppressHydrationWarning>
       <head>
+        {/* DZ: model list from your providers; must load before the studio code. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="/dz/catalog.js" />
         {/* Apply the saved theme before first paint to avoid a dark flash. */}
         <script dangerouslySetInnerHTML={{ __html: "try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}" }} />
       </head>

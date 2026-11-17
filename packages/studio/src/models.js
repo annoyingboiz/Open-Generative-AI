@@ -39170,3 +39170,8 @@ export const audioModels = [
 ];
 
 export const getAudioModelById = (id) => audioModels.find(m => m.id === id);
+
+// DZ: models come from your providers (see dzCatalog.js). Must stay at the end
+// of this file so the lists are replaced before other modules read them.
+import { dzApplyProviderCatalog } from "./dzCatalog.js";
+dzApplyProviderCatalog({ t2i: t2iModels, i2i: i2iModels, t2v: t2vModels, i2v: i2vModels, v2v: v2vModels });

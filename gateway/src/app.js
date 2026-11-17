@@ -16,6 +16,7 @@ import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
 import { createCatalog } from './catalog/index.js';
 import { createGenerations, GenerationError } from './generations.js';
+import { toProviderBody, estimateCost } from './catalog/build.js';
 
 const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico']);
 
@@ -168,6 +169,7 @@ export async function buildApp(config, { logger = true } = {}) {
       proxy: String(proxy || '').trim(),
       enabled: Boolean(enabled),
     });
+    catalog.refreshAll({ force: true }).catch(() => {}); // keys changed → rebuild the model list
     const [balance] = (await fetchBalances(providers)).filter((b) => b.id === provider.id);
     if (balance?.hasKey && balance.enabled && !balance.ok) {
       return renderSettings(req, reply, { error: `${provider.name}: saved, but the check failed — ${balance.error}` });
@@ -274,18 +276,32 @@ export async function buildApp(config, { logger = true } = {}) {
     return { url: saved.url, file_url: saved.url, id: saved.id };
   });
 
-  // Submit: /api/v1/p/<provider>/<provider model id>
+  // Submit: /api/v1/p/<provider>/<provider model id>[?m=<studio mode>]
+  // Models from the catalog get their fields translated for the provider.
   app.post('/api/v1/p/:provider/*', async (req, reply) => {
     try {
+      const providerId = req.params.provider;
+      const modelId = req.params['*'];
+      const key = `p/${providerId}/${modelId}${req.query.m ? `?m=${req.query.m}` : ''}`;
+      const variant = catalog.variant(key);
+      const body = variant ? toProviderBody(variant, req.body) : req.body;
       const { id } = await generations.submit(req.user, {
-        providerId: req.params.provider,
-        modelId: req.params['*'],
-        body: req.body,
-        endpoint: `p/${req.params.provider}/${req.params['*']}`,
+        providerId,
+        modelId,
+        body,
+        endpoint: key,
+        kind: variant?.kind || null,
+        estCostUsd: variant ? estimateCost(variant, req.body) : null,
       });
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }
   });
+
+  // Model list for the studio (loaded before the studio code, see app/layout.js).
+  app.get('/dz/catalog.js', async (req, reply) => reply
+    .type('application/javascript; charset=utf-8')
+    .header('cache-control', 'no-cache')
+    .send(catalog.clientScript()));
 
   app.get('/api/v1/predictions/:id/result', async (req, reply) => {
     try { return generations.result(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
@@ -316,7 +332,7 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/dz/api/catalog/refresh', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     await catalog.refreshAll({ force: true });
-    return { ok: true, apimart: catalog.models('apimart').length, atlas: catalog.models('atlas').length };
+    return { ok: true, ...catalog.stats() };
   });
 
   // ── Everything else → studio ────────────────────────────────────────────

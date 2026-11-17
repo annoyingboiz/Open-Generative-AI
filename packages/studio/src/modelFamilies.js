@@ -235,6 +235,7 @@ function normalizeVersion(value) {
 }
 
 function imageFamilyId(model) {
+  if (model.dzFamily) return model.dzFamily; // DZ: provider catalog families
   return (IMAGE_FAMILY_ALIASES[model.id] || model.id)
     .toLowerCase()
     .replace(/-(text-to-image|image-to-image|image-edit)(?=-|$)/g, "")
@@ -245,6 +246,7 @@ function imageFamilyId(model) {
 }
 
 function videoFamilyId(model) {
+  if (model.dzFamily) return model.dzFamily; // DZ: provider catalog families
   const grouped = getGroupedVideoConfiguration(model.id);
   if (grouped) return grouped.familyId;
   const modelId = model.id.toLowerCase();
@@ -436,7 +438,7 @@ function buildCatalog(modeLists, config) {
     const namingEntry = [...family.rawVariants[preferredMode]].sort(
       (a, b) => b.freshness - a.freshness,
     )[0];
-    family.name = config.familyName(family.id, namingEntry.model.name);
+    family.name = namingEntry.model.dzFamilyName || config.familyName(family.id, namingEntry.model.name); // DZ
     family.provider = namingEntry.model.provider || family.provider;
     family.provider_name = namingEntry.model.provider_name || family.provider_name;
     family.variants = {};

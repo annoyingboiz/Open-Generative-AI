@@ -1,0 +1,8847 @@
+{
+  "flux-2-flex": {
+    "source": "images__flux-2__generation.md",
+    "docTitle": "FLUX.2 Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "default": "jpeg"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "flux-2-pro": {
+    "source": "images__flux-2__generation.md",
+    "docTitle": "FLUX.2 Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "default": "jpeg"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "flux-2-max": {
+    "source": "images__flux-2__generation.md",
+    "docTitle": "FLUX.2 Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "default": "jpeg"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "flux-3-image-klein": {
+    "source": "images__flux-3-image-klein__generation.md",
+    "docTitle": "FLUX 3 Image Klein Generation",
+    "score": 4,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "1.5k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "jpg",
+            "webp"
+          ],
+          "default": "jpeg"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "flux-3-image": {
+    "source": "images__flux-3-image__generation.md",
+    "docTitle": "FLUX 3 Image Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "1.5k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "flux-kontext-pro": {
+    "source": "images__flux-kontext__generation.md",
+    "docTitle": "FLUX Kontext Image Generation and Editing",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp"
+          ],
+          "default": "png"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "flux-kontext-max": {
+    "source": "images__flux-kontext__generation.md",
+    "docTitle": "FLUX Kontext Image Generation and Editing",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp"
+          ],
+          "default": "png"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "gemini-2.5-flash-image-preview": {
+    "source": "images__gemini-2.5-flash__generation.md",
+    "docTitle": "Nano banana Image Generation",
+    "score": 3,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ],
+          "default": "1:1"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        }
+      }
+    }
+  },
+  "nano-banana-ext": {
+    "source": "images__gemini-2.5-flash__generation.md",
+    "docTitle": "Nano banana Image Generation",
+    "score": 3,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ],
+          "default": "1:1"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        }
+      }
+    }
+  },
+  "gemini-2.5-flash-image-preview-official": {
+    "source": "images__gemini-2.5-flash__generation.md",
+    "docTitle": "Nano banana Image Generation",
+    "score": 3,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ],
+          "default": "1:1"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        }
+      }
+    }
+  },
+  "nano-banana": {
+    "source": "images__gemini-2.5-flash__generation.md",
+    "docTitle": "Nano banana Image Generation",
+    "score": 3,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ],
+          "default": "1:1"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        }
+      }
+    }
+  },
+  "gemini-3-pro-image-preview": {
+    "source": "images__gemini-3-pro__generation.md",
+    "docTitle": "Nano banana Pro Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        }
+      }
+    }
+  },
+  "nano-banana-pro-ext": {
+    "source": "images__gemini-3-pro__generation.md",
+    "docTitle": "Nano banana Pro Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        }
+      }
+    }
+  },
+  "gemini-3-pro-image-preview-official": {
+    "source": "images__gemini-3-pro__generation.md",
+    "docTitle": "Nano banana Pro Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        }
+      }
+    }
+  },
+  "nano-banana-pro": {
+    "source": "images__gemini-3-pro__generation.md",
+    "docTitle": "Nano banana Pro Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        }
+      }
+    }
+  },
+  "gemini-3.1-flash-lite-image": {
+    "source": "images__gemini-3.1-flash__generation-lite.md",
+    "docTitle": "Nano Banana Lite Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "nano-banana-2-lite": {
+    "source": "images__gemini-3.1-flash__generation-lite.md",
+    "docTitle": "Nano Banana Lite Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "gemini-3.1-flash-lite-image-ext": {
+    "source": "images__gemini-3.1-flash__generation-lite.md",
+    "docTitle": "Nano Banana Lite Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "nano-banana-2-lite-ext": {
+    "source": "images__gemini-3.1-flash__generation-lite.md",
+    "docTitle": "Nano Banana Lite Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "google_search": {
+    "source": "images__gemini-3.1-flash__generation-lite.md",
+    "docTitle": "Nano Banana Lite Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "official_fallback": {
+    "source": "images__gemini-3.1-flash__generation-lite.md",
+    "docTitle": "Nano Banana Lite Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "-official": {
+    "source": "images__gemini-3.1-flash__generation-lite.md",
+    "docTitle": "Nano Banana Lite Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "gemini-3.1-flash-image-preview": {
+    "source": "images__gemini-3.1-flash__generation.md",
+    "docTitle": "Nano banana2 Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9",
+            "1:4",
+            "1:8"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "0.5K",
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "nano-banana-2-ext": {
+    "source": "images__gemini-3.1-flash__generation.md",
+    "docTitle": "Nano banana2 Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9",
+            "1:4",
+            "1:8"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "0.5K",
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "gemini-3.1-flash-image-preview-official": {
+    "source": "images__gemini-3.1-flash__generation.md",
+    "docTitle": "Nano banana2 Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9",
+            "1:4",
+            "1:8"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "0.5K",
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "nano-banana-2": {
+    "source": "images__gemini-3.1-flash__generation.md",
+    "docTitle": "Nano banana2 Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "4:3",
+            "16:9",
+            "5:4",
+            "21:9",
+            "1:4",
+            "1:8"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "0.5K",
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "gemini-nano-banana-2.1": {
+    "source": "images__gemini-nano-banana-2.1__generation.md",
+    "docTitle": "Nano banana 2.1 Image Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 20
+          }
+        }
+      }
+    }
+  },
+  "gemini-nano-banana-2.1-ext": {
+    "source": "images__gemini-nano-banana-2.1__generation.md",
+    "docTitle": "Nano banana 2.1 Image Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 20
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-1-official": {
+    "source": "images__gpt-image-1__generation.md",
+    "docTitle": "GPT-Image(1/1.5) Image Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "3:2",
+            "2:3"
+          ],
+          "default": "1:1"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "auto",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "auto"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg"
+          ],
+          "default": "png"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "auto",
+            "opaque",
+            "transparent"
+          ],
+          "default": "auto"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 15
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-1.5-official": {
+    "source": "images__gpt-image-1__generation.md",
+    "docTitle": "GPT-Image(1/1.5) Image Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "3:2",
+            "2:3"
+          ],
+          "default": "1:1"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "auto",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "auto"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg"
+          ],
+          "default": "png"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "auto",
+            "opaque",
+            "transparent"
+          ],
+          "default": "auto"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 15
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2.5-ext": {
+    "source": "images__gpt-image-2.5-ext__generation.md",
+    "docTitle": "GPT-Image-2.5 Ext Image Generation",
+    "score": 4,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2.5-flare": {
+    "source": "images__gpt-image-2.5__generation.md",
+    "docTitle": "GPT-Image-2.5 Image Generation",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "5:4",
+            "4:5",
+            "16:9",
+            "9:16",
+            "2:1",
+            "1:2",
+            "21:9",
+            "9:21",
+            "3:1",
+            "1:3"
+          ],
+          "default": "auto"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "auto"
+          ],
+          "default": "auto"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp"
+          ],
+          "default": "png"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "transparent",
+            "opaque",
+            "auto"
+          ],
+          "default": "transparent"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2.5-sunburst": {
+    "source": "images__gpt-image-2.5__generation.md",
+    "docTitle": "GPT-Image-2.5 Image Generation",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "5:4",
+            "4:5",
+            "16:9",
+            "9:16",
+            "2:1",
+            "1:2",
+            "21:9",
+            "9:21",
+            "3:1",
+            "1:3"
+          ],
+          "default": "auto"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "auto"
+          ],
+          "default": "auto"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp"
+          ],
+          "default": "png"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "transparent",
+            "opaque",
+            "auto"
+          ],
+          "default": "transparent"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2.6-ext": {
+    "source": "images__gpt-image-2.6-ext__generation.md",
+    "docTitle": "GPT-Image-2.6 Ext Image Generation",
+    "score": 5,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k",
+            "1K",
+            "2K",
+            "4K",
+            "hd",
+            "8k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "auto",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "auto"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp",
+            "gif",
+            "jpg"
+          ],
+          "default": "png"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "gpt-4.1-mini": {
+    "source": "images__gpt-image-2.6-ext__generation.md",
+    "docTitle": "GPT-Image-2.6 Ext Image Generation",
+    "score": 5,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k",
+            "1K",
+            "2K",
+            "4K",
+            "hd",
+            "8k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "auto",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "auto"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp",
+            "gif",
+            "jpg"
+          ],
+          "default": "png"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2.6-flare": {
+    "source": "images__gpt-image-2.6__generation.md",
+    "docTitle": "GPT-Image-2.6 Image Generation",
+    "score": 7,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "auto"
+          ],
+          "default": "auto"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp",
+            "gif"
+          ],
+          "default": "png"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "transparent",
+            "opaque",
+            "auto",
+            "png",
+            "webp"
+          ],
+          "default": "transparent"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2.6-sunburst": {
+    "source": "images__gpt-image-2.6__generation.md",
+    "docTitle": "GPT-Image-2.6 Image Generation",
+    "score": 7,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "auto"
+          ],
+          "default": "auto"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp",
+            "gif"
+          ],
+          "default": "png"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "transparent",
+            "opaque",
+            "auto",
+            "png",
+            "webp"
+          ],
+          "default": "transparent"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "gpt-5.4-mini": {
+    "source": "images__gpt-image-2.6__generation.md",
+    "docTitle": "GPT-Image-2.6 Image Generation",
+    "score": 7,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "auto"
+          ],
+          "default": "auto"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp",
+            "gif"
+          ],
+          "default": "png"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "transparent",
+            "opaque",
+            "auto",
+            "png",
+            "webp"
+          ],
+          "default": "transparent"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2": {
+    "source": "images__gpt-image-2__generation.md",
+    "docTitle": "GPT-Image-2 Image Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 15
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2-ext": {
+    "source": "images__gpt-image-2__generation.md",
+    "docTitle": "GPT-Image-2 Image Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 15
+          }
+        }
+      }
+    }
+  },
+  "gpt-image-2-official": {
+    "source": "images__gpt-image-2__official.md",
+    "docTitle": "GPT-Image-2 Official Channel Image Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "5:4",
+            "4:5",
+            "16:9",
+            "9:16",
+            "2:1",
+            "1:2",
+            "3:1",
+            "1:3",
+            "21:9",
+            "9:21"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "auto",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "auto"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 4,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp"
+          ],
+          "default": "png"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 20
+          }
+        }
+      }
+    }
+  },
+  "grok-imagine-2.0-ext": {
+    "source": "images__grok-imagine-2.0-ext__generation.md",
+    "docTitle": "Grok Imagine 2.0 Ext Image Generation",
+    "score": 2,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 12,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      }
+    }
+  },
+  "grok-imagine-image-2.0": {
+    "source": "images__grok-imagine-2.0-ext__official.md",
+    "docTitle": "Grok Imagine Image 2.0 Official Generation and Editing",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "3:4",
+            "4:3",
+            "9:16",
+            "16:9",
+            "2:3",
+            "3:2",
+            "9:20",
+            "20:9",
+            "1:2",
+            "2:1",
+            "auto"
+          ],
+          "default": "auto"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1k",
+            "2k"
+          ],
+          "default": "1k"
+        },
+        "quality": {
+          "name": "quality",
+          "title": "Quality",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium"
+          ],
+          "default": "low"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 10,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "grok-imagine-1.5-apimart": {
+    "source": "images__grok-imagine__generation.md",
+    "docTitle": "Grok Imagine Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 10,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "grok-imagine-1.5-ext": {
+    "source": "images__grok-imagine__generation.md",
+    "docTitle": "Grok Imagine Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 10,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "grok-imagine-image": {
+    "source": "images__grok-imagine__generation.md",
+    "docTitle": "Grok Imagine Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3"
+          ],
+          "default": "1:1"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 10,
+          "step": 1,
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "hy-image-v3.5-preview": {
+    "source": "images__hy-image-v3.5-preview__generation.md",
+    "docTitle": "Hy-Image-3.5 Preview Image Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9",
+            "auto"
+          ],
+          "default": "auto"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 5
+          }
+        }
+      }
+    }
+  },
+  "imagen-4.0-apimart": {
+    "source": "images__imagen-4.0-apimart__generation.md",
+    "docTitle": "Imagen 4.0 Apimart Image Generation",
+    "score": 2,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      }
+    }
+  },
+  "mai-image-2.6": {
+    "source": "images__mai-image-2.6__generation.md",
+    "docTitle": "MAI-Image-2.6 Image Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 5
+          }
+        }
+      }
+    }
+  },
+  "mai-image-2.6-flash": {
+    "source": "images__mai-image-2.6__generation.md",
+    "docTitle": "MAI-Image-2.6 Image Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 5
+          }
+        }
+      }
+    }
+  },
+  "midjourney": {
+    "source": "images__midjourney__inpaint.md",
+    "docTitle": "Inpaint",
+    "score": 1,
+    "rename": {},
+    "common": {
+      "inputs": {}
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      }
+    }
+  },
+  "minimax-h3-image-highspeed": {
+    "source": "images__minimax-h3-image-highspeed__generation.md",
+    "docTitle": "MiniMax-H3-Image-Highspeed Image Generation",
+    "score": 7,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "4K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 10,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "default": "jpeg"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "minimax-h3-image": {
+    "source": "images__minimax-h3-image__generation.md",
+    "docTitle": "MiniMax-H3-Image Image Generation",
+    "score": 7,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "4K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 10,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "default": "jpeg"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 16
+          }
+        }
+      }
+    }
+  },
+  "muse-image-ext": {
+    "source": "images__muse-image-ext__generation.md",
+    "docTitle": "Muse Image Ext Image Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "enum": [
+            1,
+            0
+          ],
+          "default": 1
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      }
+    }
+  },
+  "qwen-image-3.0": {
+    "source": "images__qwen-image-3.0__generation.md",
+    "docTitle": "Qwen Image 3.0 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "16:9",
+            "3:2"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K"
+          ],
+          "default": "1K"
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": false
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "qwen-image-3.0-pro": {
+    "source": "images__qwen-image-3.0__generation.md",
+    "docTitle": "Qwen Image 3.0 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "16:9",
+            "3:2"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K"
+          ],
+          "default": "1K"
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": false
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "qwen-image-2.0": {
+    "source": "images__qwen-image__generation.md",
+    "docTitle": "Qwen Image 2.0 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K"
+          ],
+          "default": "1K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 6,
+          "step": 1,
+          "default": 1
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "qwen-image-2.0-pro": {
+    "source": "images__qwen-image__generation.md",
+    "docTitle": "Qwen Image 2.0 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K"
+          ],
+          "default": "1K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 6,
+          "step": 1,
+          "default": 1
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "seedream-4.5": {
+    "source": "images__seedream-4.5__generation.md",
+    "docTitle": "Seedream-4.5 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "2K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "Seedream-4.5": {
+    "source": "images__seedream-4.5__generation.md",
+    "docTitle": "Seedream-4.5 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "2K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "seedream-4-5": {
+    "source": "images__seedream-4.5__generation.md",
+    "docTitle": "Seedream-4.5 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "2K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "seedream-4.0": {
+    "source": "images__seedream-4__generation.md",
+    "docTitle": "Seedream-4.0 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "seedream-4-0": {
+    "source": "images__seedream-4__generation.md",
+    "docTitle": "Seedream-4.0 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "Seedream-4.0": {
+    "source": "images__seedream-4__generation.md",
+    "docTitle": "Seedream-4.0 Image Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "9:21",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "seedream-5-0-flash": {
+    "source": "images__seedream-5-0-flash__generation.md",
+    "docTitle": "Seedream-5.0-Flash Image Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "1.5K",
+            "2K"
+          ],
+          "default": "1K"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png"
+          ],
+          "default": "jpeg"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "opaque",
+            "transparent"
+          ],
+          "default": "opaque"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "seedream-5.0-pro": {
+    "source": "images__seedream-5-0-flash__generation.md",
+    "docTitle": "Seedream-5.0-Flash Image Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "1.5K",
+            "2K"
+          ],
+          "default": "1K"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png"
+          ],
+          "default": "jpeg"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "opaque",
+            "transparent"
+          ],
+          "default": "opaque"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "seedream-5-0-pro": {
+    "source": "images__seedream-5-0-pro__generation.md",
+    "docTitle": "Seedream-5.0-Pro Image Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "1.5K",
+            "2K"
+          ],
+          "default": "1K"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png"
+          ],
+          "default": "jpeg"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "opaque",
+            "transparent"
+          ],
+          "default": "opaque"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "seedream-5-5": {
+    "source": "images__seedream-5-5__generation.md",
+    "docTitle": "Seedream 5.5 Image Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "1.5K",
+            "2K",
+            "3K",
+            "4K"
+          ],
+          "default": "1K"
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg"
+          ],
+          "default": "png"
+        },
+        "background": {
+          "name": "background",
+          "title": "Background",
+          "type": "string",
+          "enum": [
+            "auto",
+            "transparent",
+            "opaque"
+          ],
+          "default": "transparent"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "seedream-5-0-lite": {
+    "source": "images__seedream-5-lite__generation.md",
+    "docTitle": "Seedream-5.0-Lite Image Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "2K",
+            "3K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png"
+          ],
+          "default": "jpeg"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "seedream-5.0-lite": {
+    "source": "images__seedream-5-lite__generation.md",
+    "docTitle": "Seedream-5.0-Lite Image Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "2K",
+            "3K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png"
+          ],
+          "default": "jpeg"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "Seedream-5.0-lite": {
+    "source": "images__seedream-5-lite__generation.md",
+    "docTitle": "Seedream-5.0-Lite Image Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "2:1",
+            "1:2",
+            "21:9",
+            "auto"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "2K",
+            "3K",
+            "4K"
+          ],
+          "default": "2K"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 1
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png"
+          ],
+          "default": "jpeg"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "wan2.7-image-pro": {
+    "source": "images__wan2.7-image__generation.md",
+    "docTitle": "wan2.7 Image Generation & Editing",
+    "score": 5,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      }
+    }
+  },
+  "wan2.7-image": {
+    "source": "images__wan2.7-image__generation.md",
+    "docTitle": "wan2.7 Image Generation & Editing",
+    "score": 5,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "default": "1K"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      },
+      "i2i": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      }
+    }
+  },
+  "z-image-turbo": {
+    "source": "images__z-image-turbo__generation.md",
+    "docTitle": "Z-Image-Turbo Image Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3"
+          ],
+          "default": "1:1"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "1K",
+            "2K"
+          ],
+          "default": "1K"
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2i": {
+        "inputs": {}
+      }
+    }
+  },
+  "apimart-zoe": {
+    "source": "videos__apimart-zoe__generation.md",
+    "docTitle": "apimart-zoe Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "adaptive"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "2k",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "mp4",
+            "mov"
+          ],
+          "default": "mov"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 10
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "seedance-1-0-pro-fast": {
+    "source": "videos__doubao__generation.md",
+    "docTitle": "seedance-1-0-pro Video Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default": "1080p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 2,
+          "maxValue": 12,
+          "step": 1,
+          "default": 5
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      }
+    }
+  },
+  "seedance-1-0-pro-quality": {
+    "source": "videos__doubao__generation.md",
+    "docTitle": "seedance-1-0-pro Video Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default": "1080p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 2,
+          "maxValue": 12,
+          "step": 1,
+          "default": 5
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      }
+    }
+  },
+  "flux-3-video": {
+    "source": "videos__flux-3-video__generation.md",
+    "docTitle": "FLUX 3 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "21:9",
+            "2:1",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "auto"
+          ],
+          "default": "auto"
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "gemini-omni-1.1-flash": {
+    "source": "videos__gemini-omni-1.1-flash__generation.md",
+    "docTitle": "Gemini Omni 1.1 Flash Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "360p",
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "gemini-omni-1.2-flash-ext": {
+    "source": "videos__gemini-omni-1.2-flash-ext__generation.md",
+    "docTitle": "gemini-omni-1.2-flash-ext Video Generation",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "360p",
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 15,
+          "step": 1,
+          "default": 10
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "image_to_video",
+            "reference",
+            "edit",
+            "extend"
+          ],
+          "default": "frame"
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 15
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "gemini-omni-1.2-flash": {
+    "source": "videos__gemini-omni-1.2-flash__generation.md",
+    "docTitle": "Gemini Omni 1.2 Flash Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "360p",
+            "720p",
+            "1080p",
+            "4k",
+            "2160p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 15,
+          "step": 1,
+          "default": 10
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "gemini-omni-flash-preview": {
+    "source": "videos__gemini-omni-flash-preview__generation.md",
+    "docTitle": "Gemini Omni Flash Video Generation",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "grok-imagine-1.5-video-ext": {
+    "source": "videos__grok-imagine__generation.md",
+    "docTitle": "Grok Imagine 1.5 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "3:2",
+            "2:3"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p"
+          ],
+          "default": "480p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 6,
+          "maxValue": 15,
+          "step": 1,
+          "default": 6
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 7
+          }
+        }
+      }
+    }
+  },
+  "grok-imagine-video": {
+    "source": "videos__grok-imagine__official.md",
+    "docTitle": "Grok Official Video Models",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3"
+          ],
+          "default": "1:1"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 8
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "grok-imagine-video-1.5": {
+    "source": "videos__grok-imagine__official.md",
+    "docTitle": "Grok Official Video Models",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "4:3"
+          ],
+          "default": "1:1"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 8
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "happyhorse-1.0": {
+    "source": "videos__happyhorse-1.0__generation.md",
+    "docTitle": "HappyHorse 1.0 Video Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_url",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "happyhorse-1.1": {
+    "source": "videos__happyhorse-1.1__generation.md",
+    "docTitle": "HappyHorse 1.1 Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "kling-3.0-turbo": {
+    "source": "videos__kling-3.0-turbo__generation.md",
+    "docTitle": "Kling 3.0 Turbo Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "kling-v2-6": {
+    "source": "videos__kling-v2-6__generation.md",
+    "docTitle": "Kling 2.6 Video Generation",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            5,
+            10
+          ],
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "mode": {
+          "name": "mode",
+          "title": "Mode",
+          "type": "string",
+          "enum": [
+            "std",
+            "pro"
+          ],
+          "default": "std"
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 2
+          }
+        }
+      }
+    }
+  },
+  "kling-v3-motion-control": {
+    "source": "videos__kling-v2-6__kling-v2-6-motion-control-generation.md",
+    "docTitle": "Kling v2.6 Motion Control Video Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "mode": {
+          "name": "mode",
+          "title": "Mode",
+          "type": "string",
+          "enum": [
+            "std",
+            "pro"
+          ],
+          "default": "std"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_url",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "kling-v2-6-motion-control": {
+    "source": "videos__kling-v2-6__kling-v2-6-motion-control-generation.md",
+    "docTitle": "Kling v2.6 Motion Control Video Generation",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "mode": {
+          "name": "mode",
+          "title": "Mode",
+          "type": "string",
+          "enum": [
+            "std",
+            "pro"
+          ],
+          "default": "std"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_url",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "kling-v3-omni": {
+    "source": "videos__kling-v3-omni__generation.md",
+    "docTitle": "Kling v3 Omni Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "mode": {
+          "name": "mode",
+          "title": "Mode",
+          "type": "string",
+          "enum": [
+            "std",
+            "pro",
+            "4k"
+          ],
+          "default": "std"
+        },
+        "shot_type": {
+          "name": "shot_type",
+          "title": "Shot Type",
+          "type": "string",
+          "enum": [
+            "customize",
+            "intelligence"
+          ],
+          "default": "customize"
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "kling-v3": {
+    "source": "videos__kling-v3__generation.md",
+    "docTitle": "Kling v3 Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "mode": {
+          "name": "mode",
+          "title": "Mode",
+          "type": "string",
+          "enum": [
+            "std",
+            "pro",
+            "4k"
+          ],
+          "default": "std"
+        },
+        "shot_type": {
+          "name": "shot_type",
+          "title": "Shot Type",
+          "type": "string",
+          "enum": [
+            "customize",
+            "intelligence"
+          ],
+          "default": "customize"
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 2
+          }
+        }
+      }
+    }
+  },
+  "kling-v4-flash": {
+    "source": "videos__kling-v4-flash__generation.md",
+    "docTitle": "Kling V4 Flash Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "21:9",
+            "auto"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 20,
+          "step": 1,
+          "default": 5
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 5
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "kling-v4": {
+    "source": "videos__kling-v4__generation.md",
+    "docTitle": "Kling V4 Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "21:9",
+            "auto"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 5
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "kling-video-o1": {
+    "source": "videos__kling-video-o1__generation.md",
+    "docTitle": "Kling Video O1 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            5,
+            10
+          ],
+          "default": 5
+        },
+        "mode": {
+          "name": "mode",
+          "title": "Mode",
+          "type": "string",
+          "enum": [
+            "std",
+            "pro"
+          ],
+          "default": "std"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "MiniMax-H3-Context-IR": {
+    "source": "videos__minimax-h3__context-ir.md",
+    "docTitle": "MiniMax-H3 Context-IR Prompt Enhancement",
+    "score": 3,
+    "rename": {},
+    "common": {
+      "inputs": {}
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "MiniMax-H3": {
+    "source": "videos__minimax-h3__generation.md",
+    "docTitle": "MiniMax-H3 Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "2K",
+            "768P"
+          ],
+          "default": "2K"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "model": {
+    "source": "videos__minimax-h3__generation.md",
+    "docTitle": "MiniMax-H3 Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "2K",
+            "768P"
+          ],
+          "default": "2K"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "MiniMax-H3-Max": {
+    "source": "videos__minimax-h3__max.md",
+    "docTitle": "MiniMax-H3-Max Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480P",
+            "768P",
+            "1080P"
+          ],
+          "default": "768P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 5,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 3
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "minimax-h3-max": {
+    "source": "videos__minimax-h3__max.md",
+    "docTitle": "MiniMax-H3-Max Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480P",
+            "768P",
+            "1080P"
+          ],
+          "default": "768P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 5,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 3
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "MiniMax-H3-Regeneration": {
+    "source": "videos__minimax-h3__regeneration.md",
+    "docTitle": "MiniMax-H3 Regeneration",
+    "score": 1,
+    "rename": {},
+    "common": {
+      "inputs": {}
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      }
+    }
+  },
+  "MiniMax-Hailuo-2.3": {
+    "source": "videos__minimax-hailuo-2.3__generation.md",
+    "docTitle": "MiniMax-Hailuo-2.3 Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "768p",
+            "1080p"
+          ],
+          "default": "768p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            6,
+            10
+          ],
+          "default": 6
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "MiniMax-Hailuo-2.3-Fast": {
+    "source": "videos__minimax-hailuo-2.3__generation.md",
+    "docTitle": "MiniMax-Hailuo-2.3 Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "768p",
+            "1080p"
+          ],
+          "default": "768p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            6,
+            10
+          ],
+          "default": 6
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "first_frame_image": {
+    "source": "videos__minimax-hailuo-2.3__generation.md",
+    "docTitle": "MiniMax-Hailuo-2.3 Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "768p",
+            "1080p"
+          ],
+          "default": "768p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            6,
+            10
+          ],
+          "default": 6
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "MiniMax-Hailuo-02": {
+    "source": "videos__minimax-hailuo__generation.md",
+    "docTitle": "MiniMax-Hailuo-02 Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "512p",
+            "768p",
+            "1080p"
+          ],
+          "default": "768p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            5,
+            10
+          ],
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      }
+    }
+  },
+  "muse-video-ext": {
+    "source": "videos__muse-video-ext__generation.md",
+    "docTitle": "Muse Video Ext Video Generation",
+    "score": 6,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "string",
+          "enum": [
+            "10",
+            "2",
+            "\"2\"",
+            "\"2s\"",
+            "seconds",
+            "duration_seconds"
+          ],
+          "default": "10"
+        },
+        "n": {
+          "name": "n",
+          "title": "N",
+          "type": "int",
+          "enum": [
+            1,
+            0
+          ],
+          "default": 1
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      }
+    }
+  },
+  "gemini-omni-1.1-flash-ext": {
+    "source": "videos__omni-flash-ext__generation.md",
+    "docTitle": "gemini-omni-1.1-flash-ext Video Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "360p",
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            4,
+            6,
+            8,
+            10
+          ],
+          "default": 6
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "pixverse-v6-max": {
+    "source": "videos__pixverse-v6-max__generation.md",
+    "docTitle": "PixVerse V6 Max Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1",
+            "2:3",
+            "3:2",
+            "21:9"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "360p",
+            "540p",
+            "720p",
+            "1080p"
+          ],
+          "default": "540p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "pixverse-v6": {
+    "source": "videos__pixverse-v6__generation.md",
+    "docTitle": "Pixverse v6 Video Generation",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "2:3",
+            "3:2",
+            "21:9"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "360p",
+            "540p",
+            "720p",
+            "1080p"
+          ],
+          "default": "540p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      }
+    }
+  },
+  "seedance-1-5-pro": {
+    "source": "videos__seedance-1-5-pro__generation.md",
+    "docTitle": "seedance-1-5-pro Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 12,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "seedance-2.0": {
+    "source": "videos__seedance-2-0__generation.md",
+    "docTitle": "seedance-2.0 Video Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 3
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      }
+    }
+  },
+  "seedance-2.0-fast": {
+    "source": "videos__seedance-2-0__generation.md",
+    "docTitle": "seedance-2.0 Video Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 3
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      }
+    }
+  },
+  "seedance-2.0-mini": {
+    "source": "videos__seedance-2-0__generation.md",
+    "docTitle": "seedance-2.0 Video Generation",
+    "score": 7,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 3
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          }
+        }
+      }
+    }
+  },
+  "seedance-2-5-flash": {
+    "source": "videos__seedance-2-5-flash__generation.md",
+    "docTitle": "Seedance 2.5 Flash Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "2k",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "mp4",
+            "mov"
+          ],
+          "default": "mp4"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 5
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "doubao-seedance-2-5-flash": {
+    "source": "videos__seedance-2-5-flash__generation.md",
+    "docTitle": "Seedance 2.5 Flash Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "2k",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "mp4",
+            "mov"
+          ],
+          "default": "mp4"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 5
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "seedance-2.5-flash": {
+    "source": "videos__seedance-2-5-flash__generation.md",
+    "docTitle": "Seedance 2.5 Flash Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "2k",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "mp4",
+            "mov"
+          ],
+          "default": "mp4"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 5
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      }
+    }
+  },
+  "seedance-2.5": {
+    "source": "videos__seedance-2-5__generation.md",
+    "docTitle": "seedance-2.5 Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "mp4",
+            "mov"
+          ],
+          "default": "mp4"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        },
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "skyreels-v4-fast": {
+    "source": "videos__skyreels-v4__generation.md",
+    "docTitle": "SkyReels V4 Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "9:16",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default": "1080p"
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_url",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "skyreels-v4-std": {
+    "source": "videos__skyreels-v4__generation.md",
+    "docTitle": "SkyReels V4 Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "9:16",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default": "1080p"
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_url",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "ref_videos": {
+    "source": "videos__skyreels-v4__generation.md",
+    "docTitle": "SkyReels V4 Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "9:16",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default": "1080p"
+        },
+        "prompt_optimizer": {
+          "name": "prompt_optimizer",
+          "title": "Prompt Optimizer",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_url",
+            "max": 1
+          },
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "veo3.1-fast-official": {
+    "source": "videos__veo3__generation-official.md",
+    "docTitle": "VEO3 Official Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4K"
+          ],
+          "default": "720p"
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      }
+    }
+  },
+  "veo3.1-quality-official": {
+    "source": "videos__veo3__generation-official.md",
+    "docTitle": "VEO3 Official Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4K"
+          ],
+          "default": "720p"
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        }
+      }
+    }
+  },
+  "veo3.1-fast": {
+    "source": "videos__veo3__generation.md",
+    "docTitle": "VEO3 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 3
+          }
+        }
+      }
+    }
+  },
+  "veo3.1-fast-ext": {
+    "source": "videos__veo3__generation.md",
+    "docTitle": "VEO3 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 3
+          }
+        }
+      }
+    }
+  },
+  "veo3.1-quality": {
+    "source": "videos__veo3__generation.md",
+    "docTitle": "VEO3 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 3
+          }
+        }
+      }
+    }
+  },
+  "veo3.1-quality-ext": {
+    "source": "videos__veo3__generation.md",
+    "docTitle": "VEO3 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 3
+          }
+        }
+      }
+    }
+  },
+  "veo3.1-lite": {
+    "source": "videos__veo3__generation.md",
+    "docTitle": "VEO3 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 3
+          }
+        }
+      }
+    }
+  },
+  "veo3.1-lite-ext": {
+    "source": "videos__veo3__generation.md",
+    "docTitle": "VEO3 Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 3
+          }
+        }
+      }
+    }
+  },
+  "viduq3-pro": {
+    "source": "videos__vidu-q3-pro__generation.md",
+    "docTitle": "Vidu Q3(pro/turbo) Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "540p",
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 16,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 2
+          }
+        }
+      }
+    }
+  },
+  "viduq3-turbo": {
+    "source": "videos__vidu-q3-pro__generation.md",
+    "docTitle": "Vidu Q3(pro/turbo) Video Generation",
+    "score": 6,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "540p",
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 16,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 2
+          }
+        }
+      }
+    }
+  },
+  "viduq3-mix": {
+    "source": "videos__vidu-q3__generation.md",
+    "docTitle": "Vidu Q3(mix/standard) Reference-to-Video",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 16,
+          "step": 1,
+          "default": 5
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "viduq3": {
+    "source": "videos__vidu-q3__generation.md",
+    "docTitle": "Vidu Q3(mix/standard) Reference-to-Video",
+    "score": 4,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1"
+          ],
+          "default": "16:9"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 16,
+          "step": 1,
+          "default": 5
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "viduq4-preview": {
+    "source": "videos__vidu-q4-preview__generation.md",
+    "docTitle": "Vidu Q4 Preview Video Generation",
+    "score": 5,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "1:1",
+            "9:16",
+            "16:9",
+            "3:4",
+            "4:3"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "540p",
+            "720p",
+            "1080p",
+            "2K",
+            "4K"
+          ],
+          "default": "720p"
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "wan2.5-preview": {
+    "source": "videos__wan2.5__generation.md",
+    "docTitle": "wan2.5-preview Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            5,
+            10
+          ],
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "wan2.6": {
+    "source": "videos__wan2.6__generation.md",
+    "docTitle": "Wan2.6 Video Generation",
+    "score": 10,
+    "rename": {
+      "aspect_ratio": "aspect_ratio"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "enum": [
+            5,
+            10,
+            15
+          ],
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": false
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": false
+        },
+        "shot_type": {
+          "name": "shot_type",
+          "title": "Shot Type",
+          "type": "string",
+          "enum": [
+            "single",
+            "multi"
+          ],
+          "default": "single"
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "wan2.6-i2v-flash": {
+    "source": "videos__wan2.6__i2v-flash-generation.md",
+    "docTitle": "wan2.6-i2v-flash Image-to-Video",
+    "score": 9,
+    "rename": {},
+    "common": {
+      "inputs": {
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720p",
+            "1080p"
+          ],
+          "default": "1080p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 2,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "shot_type": {
+          "name": "shot_type",
+          "title": "Shot Type",
+          "type": "string",
+          "enum": [
+            "single",
+            "multi"
+          ],
+          "default": "single"
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "wan2.7-r2v": {
+    "source": "videos__wan2.7-r2v__generation.md",
+    "docTitle": "Wan2.7-R2V Reference-to-Video",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 2,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 5
+          }
+        }
+      }
+    }
+  },
+  "wan2.7-videoedit": {
+    "source": "videos__wan2.7-videoedit__generation.md",
+    "docTitle": "Wan2.7-VideoEdit Video Editing",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 100
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "wan2.7": {
+    "source": "videos__wan2.7__generation.md",
+    "docTitle": "Wan2.7 Video Generation",
+    "score": 9,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 2,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 100
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "wan3.0-video": {
+    "source": "videos__wan3.0-video__generation.md",
+    "docTitle": "Wan3.0 Video Generation",
+    "score": 10,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "adaptive",
+            "21:9"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480P",
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 2,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  },
+  "wan3.0-video-prime": {
+    "source": "videos__wan3.0-video__generation.md",
+    "docTitle": "Wan3.0 Video Generation",
+    "score": 10,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "adaptive",
+            "21:9"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480P",
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 2,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "audio": {
+          "name": "audio",
+          "title": "Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "generation_type": {
+          "name": "generation_type",
+          "title": "Generation Type",
+          "type": "string",
+          "enum": [
+            "frame",
+            "reference"
+          ],
+          "default": "frame"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          },
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          }
+        }
+      }
+    }
+  }
+}

@@ -101,7 +101,7 @@ const optLabel = (p, v) => {
 
 // ── Small controls ─────────────────────────────────────────────────────────
 
-function ParamControl({ p, value, onChange, compact }) {
+export function ParamControl({ p, value, onChange, compact }) {
   const current = value ?? p.default;
   if (Array.isArray(p.enum)) {
     return (
@@ -165,7 +165,7 @@ function ParamControl({ p, value, onChange, compact }) {
   );
 }
 
-function ModelPicker({ entries, entry, onPick }) {
+export function ModelPicker({ entries, entry, onPick }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("recommended");
@@ -262,7 +262,7 @@ function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKey, onEr
   );
 }
 
-function CameraPanel({ camera, setCamera }) {
+export function CameraPanel({ camera, setCamera }) {
   const set = (k, v) => setCamera((c) => ({ ...c, [k]: v }));
   const Pick = ({ label, k, options, assets }) => (
     <div className="space-y-2">

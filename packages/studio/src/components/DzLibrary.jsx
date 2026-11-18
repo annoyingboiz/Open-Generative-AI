@@ -30,7 +30,7 @@ const TOOLS = [
   { value: "cinema", label: "Cinema (old)" },
 ];
 const SECTION_TITLE = { all: "All work", liked: "Liked", trash: "Trash" };
-const STUDIO_LABEL = { create: "Create", cinema: "Cinema", image: "Image", video: "Video", upscale: "Upscale" };
+const STUDIO_LABEL = { create: "Create", cinema: "Cinema", image: "Image", video: "Video", upscale: "Upscale", director: "Director" };
 
 async function download(url, name) {
   try {

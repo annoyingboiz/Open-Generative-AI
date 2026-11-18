@@ -196,6 +196,29 @@ const MIGRATIONS = [
   );
   CREATE INDEX llm_calls_user ON llm_calls(user_id, created_at);
   `,
+  // 12: storyboards (AI Director) — a scene, its shots (edited, with a revision
+  // number) and per-shot media (frames, videos, the picked ones; set by the server).
+  `
+  CREATE TABLE storyboards (
+    id TEXT PRIMARY KEY,
+    workspace_id INTEGER NOT NULL DEFAULT 1,
+    owner_id INTEGER NOT NULL REFERENCES users(id),
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    scene TEXT NOT NULL DEFAULT '',
+    look_json TEXT NOT NULL DEFAULT '{}',
+    settings_json TEXT NOT NULL DEFAULT '{}',
+    shots_json TEXT NOT NULL DEFAULT '[]',
+    media_json TEXT NOT NULL DEFAULT '{}',
+    rev INTEGER NOT NULL DEFAULT 1,
+    updated_by INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE INDEX storyboards_owner ON storyboards(owner_id, updated_at DESC) WHERE project_id IS NULL;
+  CREATE INDEX storyboards_project ON storyboards(project_id, updated_at DESC) WHERE project_id IS NOT NULL;
+  `,
 ];
 
 export function openDatabase(dataDir) {

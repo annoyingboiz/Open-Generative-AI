@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DzCinemaStudio, DzCreateStudio, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
+import { DzCinemaStudio, DzCreateStudio, DzDirector, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
   DzProjectsPage, DzElementsPage, ToElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
@@ -44,6 +44,11 @@ const ICONS = {
   projects: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
   ),
+  director: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" /><path d="M4 11l-.6-3.2a1 1 0 0 1 .8-1.2l13.8-2.5a1 1 0 0 1 1.2.8L19.6 8 4 11z" /><path d="M8.5 6.2l2.4 3.6M13.5 5.3l2.4 3.6" />
+    </svg>
+  ),
   upscale: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
@@ -67,6 +72,8 @@ export const DZ_TABS = [
   { id: 'image', label: 'Image', tool: true },
   { id: 'video', label: 'Video', tool: true },
   { id: 'upscale', label: 'Upscale', tool: true },
+  // AI Director: scene → shots → start frames → videos (storyboards).
+  { id: 'director', label: 'Director', tool: true },
   // The old Cinema stays for now, in the Library only.
   { id: 'cinema', label: 'Cinema (old)', tool: true, libraryOnly: true },
   { id: 'library', label: 'All work' },
@@ -572,6 +579,9 @@ export default function DzShell() {
               <DzProjectsPage ctx={{ project, folder }} projects={projects} colors={colors} userId={user.id} onOpen={(p) => openProject(p, p ? 'create' : 'projects')} onNew={() => setNewProjectOpen(true)} onChanged={refreshProject}
                 onError={(message) => push({ type: 'error', tabId: 'projects', message })} />
             )}
+          </div>
+          <div className={activeTab === 'director' ? 'h-full w-full' : 'hidden'}>
+            <DzDirector key={project?.id || 'library'} {...studioProps} {...callbacks('director')} />
           </div>
           <div className={activeTab === 'cinema' ? 'h-full w-full' : 'hidden'}>
             <DzCinemaStudio {...studioProps} {...callbacks('cinema')} />

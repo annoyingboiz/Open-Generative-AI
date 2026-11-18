@@ -29,6 +29,8 @@ import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
 import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
+import { createStoryboards, StoryboardError } from './storyboards.js';
+import { createDirector, DirectorError } from './director.js';
 import { createThumbs } from './thumbs.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
@@ -82,7 +84,11 @@ export async function buildApp(config, { logger = true } = {}) {
   const projects = createProjects({ db });
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations, log: app.log });
-  generations.setOnCompleted((row) => elements.attachGenerated(row));
+  const storyboards = createStoryboards({ db, projects, generations, log: app.log });
+  generations.setOnCompleted(async (row) => {
+    try { storyboards.attachGenerated(row); } catch (error) { app.log.warn(`storyboard ${row?.id}: ${error.message}`); }
+    await elements.attachGenerated(row);
+  });
   // Most video upscalers drop the sound: put the original's back in. The sound
   // was copied aside when the job started (job-owned, survives deleting the source).
   const audioDir = path.join(config.dataDir, 'upscale-audio');
@@ -121,13 +127,18 @@ export async function buildApp(config, { logger = true } = {}) {
   const adapter = createPromptAdapter({ llm, log: app.log, familyName: (key) => familyNames().get(key) || null });
   // Adapting costs a text-model call: at most 2 at once and 20 a minute per person.
   const adaptLoad = new Map(); // userId -> { running, times[] }
+  const director = createDirector({ llm, adapter, familyName: (key) => familyNames().get(key) || null });
+  // Planning a scene: one text-model call at a time and 6 a minute per person.
+  const planLoad = new Map(); // userId -> { running, times[] }
   const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
   if (config.startWorkers !== false) setInterval(() => { try { thumbs.prune(); pruneAudio(); } catch { /* ignore */ } }, 24 * 3600_000).unref?.();
   if (config.startWorkers !== false) {
     setTimeout(() => elements.attachPending().catch(() => {}), 30_000).unref?.();
     setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
+    setTimeout(() => { try { storyboards.attachPending(); } catch { /* logged inside */ } }, 30_000).unref?.();
+    setInterval(() => { try { storyboards.attachPending(); } catch { /* logged inside */ } }, 10 * 60_000).unref?.();
   }
-  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, llm, chatgpt, adapter });
+  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, storyboards, director, llm, chatgpt, adapter });
   await app.register(cookie);
   await app.register(formbody);
   await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1, fields: 5 } });
@@ -562,7 +573,8 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/api/v1/account/balance', async () => ({ balance: null }));
 
   const sendGenError = (reply, error) => {
-    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError || error instanceof VideoUpscaleError) return reply.code(error.status).send({ detail: error.message, error: error.message });
+    if (error instanceof StoryboardError && error.storyboard) return reply.code(error.status).send({ detail: error.message, error: error.message, storyboard: error.storyboard });
+    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError || error instanceof VideoUpscaleError || error instanceof StoryboardError || error instanceof DirectorError) return reply.code(error.status).send({ detail: error.message, error: error.message });
     throw error;
   };
   // Where new work goes: ?project=&folder= (or _dz.project/_dz.folder) → checked ids.
@@ -702,7 +714,7 @@ export async function buildApp(config, { logger = true } = {}) {
       // `_dz`: our own data about the request (which studio, its settings) —
       // stored with the history item, never sent to the provider.
       const { _dz: dz, ...requestBody } = req.body || {};
-      const studio = ['create', 'cinema', 'image', 'video', 'upscale'].includes(dz?.studio) ? dz.studio : null;
+      const studio = ['create', 'cinema', 'image', 'video', 'upscale', 'director'].includes(dz?.studio) ? dz.studio : null;
       const metaText = dz?.meta && typeof dz.meta === 'object' ? JSON.stringify(dz.meta) : null;
       const meta = metaText && metaText.length <= 65_536 ? { ...dz.meta } : null;
       if (meta) delete meta.upscale; // ours, set by the server for video upscales only
@@ -825,6 +837,33 @@ export async function buildApp(config, { logger = true } = {}) {
   app.patch('/dz/api/folders/:id', projectRoute((req) => projects.updateFolder(req.user, req.params.id, req.body || {})));
   app.delete('/dz/api/folders/:id', projectRoute((req) => projects.deleteFolder(req.user, req.params.id)));
   // ── Elements (Library or project; copies between them) ────────────────
+  // Storyboards (AI Director).
+  app.get('/dz/api/storyboards', projectRoute((req) => storyboards.list(req.user, req.query)));
+  app.post('/dz/api/storyboards', projectRoute((req) => storyboards.create(req.user, req.body || {})));
+  app.get('/dz/api/storyboards/:id', projectRoute((req) => storyboards.get(req.user, req.params.id)));
+  app.patch('/dz/api/storyboards/:id', projectRoute((req) => storyboards.update(req.user, req.params.id, req.body || {})));
+  app.delete('/dz/api/storyboards/:id', projectRoute((req) => storyboards.remove(req.user, req.params.id)));
+  app.post('/dz/api/storyboards/:id/media', projectRoute((req) => storyboards.media(req.user, req.params.id, req.body || {})));
+  // The AI Director plans the shots and saves them into the storyboard.
+  app.post('/dz/api/storyboards/:id/plan', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    const load = planLoad.get(req.user.id) || { running: 0, times: [] };
+    load.times = load.times.filter((t) => Date.now() - t < 60_000);
+    if (load.running >= 1 || load.times.length >= 6) return reply.code(429).send({ error: 'A plan is already being written — wait a moment.' });
+    load.running += 1;
+    load.times.push(Date.now());
+    planLoad.set(req.user.id, load);
+    try {
+      const body = req.body || {};
+      storyboards.editable(req.user, req.params.id); // before spending a text-model call
+      const plan = await director.plan(req.user, body);
+      const { storyboard } = storyboards.applyPlan(req.user, req.params.id, Number(body.rev), plan);
+      return { storyboard, plan: { memos: plan.memos, llm: plan.llm, costUsd: plan.costUsd, ms: plan.ms } };
+    } catch (error) {
+      if (error instanceof LlmError) return llmError(reply, error);
+      return sendGenError(reply, error);
+    } finally { load.running -= 1; }
+  });
   app.get('/dz/api/elements', projectRoute((req) => elements.list(req.user, req.query)));
   app.post('/dz/api/elements', projectRoute((req) => elements.create(req.user, req.body || {})));
   app.patch('/dz/api/elements/:id', projectRoute((req) => elements.update(req.user, req.params.id, req.body || {})));

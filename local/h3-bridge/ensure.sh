@@ -5,12 +5,19 @@
 #   ensure.sh stop     stop it (and it stays stopped until "start": the cron line checks the off-switch)
 #   ensure.sh start    clear the off-switch and start
 set -uo pipefail
+umask 007
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BRIDGE_DIR="${BRIDGE_DIR:-/mnt/ml-data/ai-video-platform/h3-bridge}"
 mkdir -p "$BRIDGE_DIR"
 PIDFILE="$BRIDGE_DIR/bridge.pid"
 OFF="$BRIDGE_DIR/OFF"
-running() { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+# Only our bridge counts (a reused PID after a reboot is someone else's process).
+running() {
+  [ -f "$PIDFILE" ] || return 1
+  local pid; pid="$(cat "$PIDFILE")"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "h3_bridge.py"
+}
 stop() { if running; then kill "$(cat "$PIDFILE")"; for _ in $(seq 20); do running || break; sleep 0.5; done; fi; rm -f "$PIDFILE"; }
 start() { running && return 0; nohup setsid "$HERE/run.sh" > /dev/null 2>&1 < /dev/null & echo $! > "$PIDFILE"; }
 exec 9> "$BRIDGE_DIR/ensure.lock"

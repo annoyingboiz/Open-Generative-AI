@@ -23,6 +23,7 @@ import json, os, shutil, urllib.request
 from pathlib import Path
 COMFY = os.environ["FAKE_COMFY"]
 QUEUE = Path(os.environ["FAKE_QUEUE"])
+COMFY_IN = Path(os.environ["FAKE_COMFY_IN"])
 OUT = Path(os.environ["FAKE_OUT"])
 RES = {"h3": {"480p": (864, 480), "576p": (1024, 576), "720p": (1248, 704), "768p": (1344, 768)},
        "wan": {"480p": (832, 480), "576p": (1024, 576), "720p": (1280, 720)}}
@@ -39,7 +40,13 @@ def preflight(engine, force=False):
     if f.exists(): raise SystemExit("PREFLIGHT STOP — " + f.read_text())
     return {}, []
 def h3_frames(seconds): return 121
+def stage_image(p):
+    COMFY_IN.mkdir(parents=True, exist_ok=True)
+    dst = COMFY_IN / ("pv_123_" + Path(p).name)
+    shutil.copy2(p, dst)
+    return dst.name
 def graph_h3(prompt, w, h, length, seed, steps, refs, image, mode, turbo, prefix, *a, **k):
+    for x in ([image] if image else []) + list(refs): stage_image(x)
     return {"kind": "h3", "prompt": prompt, "w": w, "h": h, "steps": steps, "refs": refs, "image": image, "mode": mode, "prefix": prefix}
 def graph_wan(prompt, w, h, length, seed, steps, image, turbo, prefix):
     return {"kind": "wan", "prompt": prompt, "steps": steps, "image": image, "prefix": prefix}
@@ -56,6 +63,7 @@ class FakeComfy(http.server.BaseHTTPRequestHandler):
     graphs = []
     hold = threading.Event()   # set → prompts stay running
     interrupted = []
+    foreign = False
 
     def log_message(self, *a):
         pass
@@ -71,7 +79,7 @@ class FakeComfy(http.server.BaseHTTPRequestHandler):
         if self.path == "/system_stats":
             return self.send({"ok": True})
         if self.path == "/queue":
-            running = [[0, pid, {}] for pid, p in self.prompts.items() if not p["done"]]
+            running = [[0, pid, {}] for pid, p in self.prompts.items() if not p["done"]] + ([[0, "foreign", {}]] if self.foreign else [])
             return self.send({"queue_running": running, "queue_pending": []})
         if self.path.startswith("/history/"):
             pid = self.path.split("/")[-1]
@@ -104,6 +112,10 @@ class FakeComfy(http.server.BaseHTTPRequestHandler):
         self.send({})
 
 
+def read_json(p):
+    return json.loads(Path(p).read_text())
+
+
 class UnixConn(http.client.HTTPConnection):
     def __init__(self, path):
         super().__init__("localhost", timeout=10)
@@ -129,9 +141,14 @@ class BridgeTest(unittest.TestCase):
         cls.bridge_dir = cls.tmp / "bridge"
         env = {**os.environ, "PREVIZ_FILE": str(cls.tmp / "previz.py"), "BRIDGE_DIR": str(cls.bridge_dir),
                "QC_GPU_LOCK_FILE": str(cls.tmp / "qc_gpu.lock"), "FAKE_COMFY": f"http://127.0.0.1:{cls.comfy.server_port}",
-               "FAKE_QUEUE": str(cls.queue), "FAKE_OUT": str(cls.out), "FAKE_BUSY": str(cls.busy),
+               "FAKE_QUEUE": str(cls.queue), "FAKE_OUT": str(cls.out), "FAKE_BUSY": str(cls.busy), "FAKE_COMFY_IN": str(cls.tmp / "comfy-in"),
                "BRIDGE_WAIT_POLL_S": "0.3", "BRIDGE_IDLE_POLL_S": "0.2", "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"}
-        cls.proc = subprocess.Popen([sys.executable, str(HERE / "h3_bridge.py")], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        cls.env = env
+        cls.start_bridge()
+
+    @classmethod
+    def start_bridge(cls):
+        cls.proc = subprocess.Popen([sys.executable, str(HERE / "h3_bridge.py")], env=cls.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         sock = cls.bridge_dir / "bridge.sock"
         for _ in range(100):
             if sock.exists():
@@ -198,6 +215,9 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual((g["mode"], g["steps"], g["w"]), ("i2v", 8, 1248))
         self.assertTrue(g["image"].endswith("frame_aaaaaa.png"))
         self.assertEqual(g["prefix"], "aivp/job_i2v_1/clip")
+        self.assertEqual(list((self.tmp / "comfy-in").glob("*frame_aaaaaa.png")), [], "the stand's staged copy is removed")
+        self.assertEqual(os.stat(self.bridge_dir / "jobs/job_i2v_1/clip.mp4").st_mode & 0o007, 0, "no access for others")
+        self.assertEqual(read_json(self.bridge_dir / "jobs/job_i2v_1/job.json")["prompt_id"].startswith("p"), True)
         # Sent twice: the same job, not a second one.
         code, again = self.call("POST", "/jobs", {"id": "job_i2v_1", "engine": "h3", "prompt": "She turns.", "image": img})
         self.assertEqual(again["state"], "done")
@@ -227,6 +247,32 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(j["state"], "cancelled", j)
         self.assertTrue(FakeComfy.interrupted)
 
+    def test_6_foreign_prompt_makes_it_wait(self):
+        FakeComfy.foreign = True
+        try:
+            self.call("POST", "/jobs", {"id": "job_foreign", "engine": "wan", "prompt": "Rain."})
+            j = self.wait_state("job_foreign", ["waiting"])
+            self.assertIn("ComfyUI is working on another job", j["reason"])
+        finally:
+            FakeComfy.foreign = False
+        self.wait_state("job_foreign", ["done"])
+
+    def test_7_restart_picks_up_the_render(self):
+        FakeComfy.hold.set()
+        self.call("POST", "/jobs", {"id": "job_resume", "engine": "wan", "prompt": "Rain."})
+        self.wait_state("job_resume", ["running"])
+        for _ in range(50):
+            if read_json(self.bridge_dir / "jobs/job_resume/job.json").get("prompt_id"):
+                break
+            time.sleep(0.1)
+        self.proc.terminate()
+        self.proc.wait(10)
+        self.assertEqual(read_json(self.bridge_dir / "jobs/job_resume/job.json")["state"], "running")
+        self.start_bridge()
+        FakeComfy.hold.clear()
+        j = self.wait_state("job_resume", ["done", "failed"], timeout=15)
+        self.assertEqual(j["state"], "done", j)
+
     def test_5_qc_lock_makes_it_wait(self):
         import fcntl
         fd = os.open(self.tmp / "qc_gpu.lock", os.O_RDWR | os.O_CREAT)
@@ -239,6 +285,10 @@ class BridgeTest(unittest.TestCase):
             fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
         self.wait_state("job_qc_wait", ["done"])
+
+
+class ForeignTest(unittest.TestCase):
+    pass
 
 
 if __name__ == "__main__":

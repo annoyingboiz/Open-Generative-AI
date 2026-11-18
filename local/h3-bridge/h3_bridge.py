@@ -26,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import socketserver
 import sys
@@ -97,6 +98,27 @@ def update_job(jid, **changes):
     with LOCK:
         job = read_job(jid)
         if not job:
+            return None
+        job.update(changes)
+        job["updated"] = time.time()
+        write_job(job)
+        return job
+
+
+TERMINAL = {"done", "failed", "cancelled"}
+
+
+def transition(jid, allowed, **changes):
+    """Change a job only from one of `allowed` states and never once it is cancelled
+    (a cancel can land at any moment from the HTTP thread). -> the job, or None."""
+    with LOCK:
+        job = read_job(jid)
+        if not job or job.get("state") not in allowed:
+            return None
+        if job.get("cancel") and changes.get("state") not in ("cancelled",):
+            job.update(state="cancelled", finished=time.time(), reason=None)
+            job["updated"] = time.time()
+            write_job(job)
             return None
         job.update(changes)
         job["updated"] = time.time()
@@ -234,13 +256,37 @@ def busy_reason(engine):
 CURRENT = {"id": None, "prompt_id": None, "cancel": False}
 
 
-def comfy_run(graph, jid):
+class Busy(Exception):
+    """Someone else's prompt got into ComfyUI first: back to waiting."""
+
+
+def comfy_submit(graph, jid):
     cid = uuid.uuid4().hex
     try:
         r = PV.http("POST", "/prompt", {"prompt": graph, "client_id": cid})
     except urllib.error.HTTPError as e:
         raise RuntimeError("ComfyUI rejected the graph: " + e.read().decode()[:1500])
     pid = r["prompt_id"]
+    with LOCK:
+        CURRENT["prompt_id"] = pid
+    update_job(jid, prompt_id=pid)
+    # ComfyUI has no reservation: if another prompt slipped in between our check and
+    # this submit, take ours back out (it is still pending, so this touches only ours).
+    q = comfy_queue() or {}
+    if any(len(x) > 1 and x[1] != pid for x in q.get("queue_running") or []):
+        try:
+            PV.http("POST", "/queue", {"delete": [pid]}, timeout=10)
+        except Exception as e:
+            log(f"{jid}: could not take back prompt {pid}: {e}")
+        if not prompt_in_queue(pid):   # taken back: wait and check everything again
+            update_job(jid, prompt_id=None)
+            raise Busy("ComfyUI is working on another job")
+        # Still there: it had already started (the other one ended meanwhile) — go on.
+    return pid
+
+
+def comfy_run(graph, jid, pid=None):
+    pid = pid or comfy_submit(graph, jid)
     with LOCK:
         CURRENT["prompt_id"] = pid
     t0 = time.time()
@@ -271,13 +317,12 @@ def prompt_in_queue(pid):
 
 
 def cancel_prompt(pid):
-    """Stop only our own prompt: drop it from the queue, or interrupt it if it is the one running."""
-    q = comfy_queue() or {}
+    """Stop only our own prompt: drop it from the queue, or interrupt it if it is running.
+    ComfyUI (0.40, server.py post_interrupt) checks the prompt_id itself and interrupts
+    only when that prompt is the one executing, so another job is never stopped."""
     try:
-        if any(len(x) > 1 and x[1] == pid for x in q.get("queue_pending") or []):
-            PV.http("POST", "/queue", {"delete": [pid]}, timeout=10)
-        if any(len(x) > 1 and x[1] == pid for x in q.get("queue_running") or []):
-            PV.http("POST", "/interrupt", {"prompt_id": pid}, timeout=10)
+        PV.http("POST", "/queue", {"delete": [pid]}, timeout=10)
+        PV.http("POST", "/interrupt", {"prompt_id": pid}, timeout=10)
     except Exception as e:
         log(f"cancel {pid}: {e}")
 
@@ -299,26 +344,41 @@ def build_graph(job, prefix):
     return PV.graph_wan(prompt, w, h, frames, job["seed"], steps, image, job["turbo"], prefix), prompt
 
 
-def run_job(job):
+def unstage(job):
+    """previz.stage_image copies inputs into the stand's ComfyUI input folder as
+    pv_<hash>_<name>; our names are unique random tokens, so their copies go after the job."""
+    for name in ([job.get("image")] if job.get("image") else []) + list(job.get("refs") or []):
+        for f in PV.COMFY_IN.glob(f"pv_*_{name}"):
+            with contextlib.suppress(OSError):
+                f.unlink()
+
+
+def run_job(job, resume_pid=None):
     jid = job["id"]
     out = job_dir(jid)
     prefix = f"aivp/{jid}/clip"
-    graph, prompt = build_graph(job, prefix)
-    (out / "prompt_used.txt").write_text(prompt)
     t0 = time.time()
     try:
-        hist = comfy_run(graph, jid)
+        if resume_pid:
+            hist = comfy_run(None, jid, pid=resume_pid)
+        else:
+            graph, prompt = build_graph(job, prefix)
+            (out / "prompt_used.txt").write_text(prompt)
+            hist = comfy_run(graph, jid)
     finally:
         try:
             PV.comfy_free()   # release the cards for meetbot / others, as previz does
         except Exception:
             pass
+        if not resume_pid:
+            unstage(job)
     src = PV.comfy_output_file(hist)
     dst = out / "clip.mp4"
     if job["engine"] == "h3" and job.get("sound"):
-        shutil.copy2(src, dst)
+        shutil.copyfile(src, dst)
     else:
         PV.strip_audio(src, dst)
+    os.chmod(dst, 0o660)
     try:
         info = PV.probe(dst)
     except Exception:
@@ -333,9 +393,45 @@ def next_job():
     return None
 
 
+RESUME = []   # jobs that were rendering when the bridge stopped: their ComfyUI prompt is picked up again
+
+
+def finish(jid, fn):
+    """Run a job's render (fresh or resumed) and record how it ended."""
+    try:
+        res = fn()
+        if not transition(jid, {"running"}, state="done", finished=time.time(), **res):
+            log(f"{jid} finished after a cancel — result kept on disk, job stays cancelled")
+        else:
+            log(f"{jid} done in {res['seconds_wall']} s")
+    except Busy as e:
+        transition(jid, {"running"}, state="waiting", reason=str(e), started=None)
+        log(f"{jid} back to waiting: {e}")
+        return "busy"
+    except Exception as e:
+        job = read_job(jid) or {}
+        if CURRENT["cancel"] or job.get("cancel"):
+            transition(jid, {"running", "cancelled"}, state="cancelled", finished=time.time())
+            log(f"{jid} cancelled")
+        else:
+            transition(jid, {"running"}, state="failed", error=str(e)[:1500], finished=time.time())
+            log(f"{jid} failed: {str(e)[:300]}")
+    return None
+
+
 def worker():
     while True:
+        fd = None
         try:
+            if RESUME:
+                job = RESUME.pop(0)
+                jid = job["id"]
+                fd = take_gpu_lock()   # hold it again while the picked-up render runs
+                with LOCK:
+                    CURRENT.update(id=jid, prompt_id=job["prompt_id"], cancel=bool(job.get("cancel")))
+                log(f"{jid} resumes ComfyUI prompt {job['prompt_id']}")
+                finish(jid, lambda: run_job(job, resume_pid=job["prompt_id"]))
+                continue
             job = next_job()
             if not job:
                 WAKE.wait(IDLE_POLL_S)
@@ -343,7 +439,7 @@ def worker():
                 continue
             jid = job["id"]
             if time.time() - job.get("created", time.time()) > MAX_WAIT_S:
-                update_job(jid, state="failed", error="Waited too long for the GPU.", finished=time.time())
+                transition(jid, {"queued", "waiting"}, state="failed", error="Waited too long for the GPU.", finished=time.time())
                 continue
             reason = busy_reason(job["engine"])
             fd = None if reason else take_gpu_lock()
@@ -352,31 +448,30 @@ def worker():
             if reason:
                 if job.get("reason") != reason or job.get("state") != "waiting":
                     log(f"{jid} waits: {reason}")
-                update_job(jid, state="waiting", reason=reason)
+                transition(jid, {"queued", "waiting"}, state="waiting", reason=reason)
                 WAKE.wait(WAIT_POLL_S)
                 WAKE.clear()
                 continue
-            try:
-                with LOCK:
-                    if (read_job(jid) or {}).get("cancel"):
-                        raise RuntimeError("Cancelled.")
+            with LOCK:
+                started = transition(jid, {"queued", "waiting"}, state="running", reason=None, started=time.time())
+                if started:
                     CURRENT.update(id=jid, prompt_id=None, cancel=False)
-                    update_job(jid, state="running", reason=None, started=time.time())
-                log(f"{jid} runs: {job['engine']} {job['mode']} {job['res']} {job['seconds']}s turbo={job['turbo']}")
-                res = run_job(job)
-                update_job(jid, state="done", finished=time.time(), **res)
-                log(f"{jid} done in {res['seconds_wall']} s")
-            except Exception as e:
-                cancelled = CURRENT["cancel"] or (read_job(jid) or {}).get("cancel")
-                update_job(jid, state="cancelled" if cancelled else "failed", error=None if cancelled else str(e)[:1500], finished=time.time())
-                log(f"{jid} {'cancelled' if cancelled else 'failed'}: {str(e)[:300]}")
-            finally:
-                with LOCK:
-                    CURRENT.update(id=None, prompt_id=None, cancel=False)
+            if not started:
+                continue   # cancelled meanwhile
+            log(f"{jid} runs: {job['engine']} {job['mode']} {job['res']} {job['seconds']}s turbo={job['turbo']}")
+            if finish(jid, lambda: run_job(job)) == "busy":
                 os.close(fd)
+                fd = None
+                WAKE.wait(WAIT_POLL_S)
+                WAKE.clear()
         except Exception:
             log("worker error: " + traceback.format_exc()[-1500:])
             time.sleep(10)
+        finally:
+            with LOCK:
+                CURRENT.update(id=None, prompt_id=None, cancel=False)
+            if fd is not None:
+                os.close(fd)
 
 
 def janitor():
@@ -483,14 +578,20 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
 
 def main():
     global PV
+    os.umask(0o007)   # job files, pictures, videos: owner and group only
     PV = load_previz()
     for d in (BRIDGE_DIR, JOBS, INBOX):
         d.mkdir(parents=True, exist_ok=True)
     # A job that was running when the bridge stopped: ComfyUI may still have it — it is not
     # resumed (its result could not be collected reliably); it is reported as failed.
+    # A job that was rendering when the bridge stopped: its ComfyUI prompt keeps going;
+    # it is picked up again (the GPU lock is taken back) — or failed if it never got one.
     for j in all_jobs():
         if j.get("state") == "running":
-            update_job(j["id"], state="failed", error="The bridge restarted during this job.", finished=time.time())
+            if j.get("prompt_id"):
+                RESUME.append(j)
+            else:
+                update_job(j["id"], state="failed", error="The bridge restarted during this job.", finished=time.time())
     if SOCKET.exists():
         with contextlib.suppress(OSError):
             s = socket.socket(socket.AF_UNIX)
@@ -507,6 +608,11 @@ def main():
         server = UnixHTTPServer(str(SOCKET), Handler)
     finally:
         os.umask(old)
+    with contextlib.suppress(OSError):
+        os.chmod(BRIDGE_DIR, 0o2770)
+    # Stopping (ensure.sh stop / restart): a render in ComfyUI is left running and
+    # picked up by the next start (its prompt id is saved with the job).
+    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
     threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=janitor, daemon=True).start()
     log(f"h3-bridge listening on {SOCKET} (previz: {PREVIZ_FILE})")

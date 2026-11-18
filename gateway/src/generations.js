@@ -42,7 +42,11 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     setFailed: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     setPolled: db.prepare('UPDATE generations SET status = ?, next_poll_at = ?, poll_errors = 0, updated_at = ? WHERE id = ?'),
     setNote: db.prepare('UPDATE generations SET note = ? WHERE id = ?'),
-    setDownloading: db.prepare("UPDATE generations SET status = 'downloading', provider_outputs_json = ?, cost_usd = COALESCE(?, cost_usd), cost_source = CASE WHEN ? IS NOT NULL THEN 'provider' ELSE cost_source END, updated_at = ? WHERE id = ?"),
+    // Poll results apply only to a job still waiting for the provider (not one cancelled meanwhile).
+    setDownloading: db.prepare("UPDATE generations SET status = 'downloading', provider_outputs_json = ?, cost_usd = COALESCE(?, cost_usd), cost_source = CASE WHEN ? IS NOT NULL THEN 'provider' ELSE cost_source END, updated_at = ? WHERE id = ? AND status IN ('submitted', 'processing')"),
+    setProcessing: db.prepare("UPDATE generations SET status = 'processing', next_poll_at = ?, poll_errors = 0, updated_at = ? WHERE id = ? AND status IN ('submitted', 'processing')"),
+    setFailedIfActive: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ? AND status IN ('submitted', 'processing')"),
+    pollRetry: db.prepare('UPDATE generations SET next_poll_at = ?, updated_at = ? WHERE id = ?'),
     setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, settle_next_at = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     settleDue: db.prepare('SELECT * FROM generations WHERE settle_next_at IS NOT NULL AND settle_next_at <= ? ORDER BY settle_next_at LIMIT 10'),
     settleLater: db.prepare('UPDATE generations SET settle_attempts = settle_attempts + 1, settle_next_at = ? WHERE id = ?'),
@@ -261,13 +265,13 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     if (res.state === 'completed') {
       if (!res.outputs?.length) { q.setFailed.run('Provider finished without a result file.', now(), now(), row.id); return; }
       res.outputs = res.outputs.slice(0, 16);
-      q.setDownloading.run(JSON.stringify(res.outputs), res.costUsd ?? null, res.costUsd ?? null, now(), row.id);
+      if (!q.setDownloading.run(JSON.stringify(res.outputs), res.costUsd ?? null, res.costUsd ?? null, now(), row.id).changes) return;
       await download({ ...row, status: 'downloading' }, res.outputs);
     } else if (res.state === 'failed') {
-      q.setFailed.run(String(res.error || 'Generation failed').slice(0, 1000), now(), now(), row.id);
+      q.setFailedIfActive.run(String(res.error || 'Generation failed').slice(0, 1000), now(), now(), row.id);
     } else {
       const wait = row.provider === 'local' ? 10_000 : age > SLOW_POLL_AFTER_MS ? SLOW_POLL_MS : (POLL_MS[kind] || 3000);
-      q.setPolled.run('processing', now() + wait, now(), row.id);
+      if (!q.setProcessing.run(now() + wait, now(), row.id).changes) return;
       if ((res.note || null) !== (row.note || null)) q.setNote.run(res.note ? String(res.note).slice(0, 300) : null, row.id);
     }
   }
@@ -283,6 +287,12 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
           await step(row);
         } catch (error) {
           log?.warn(`generation ${row.id}: ${error.message}`);
+          // This server offline (the bridge restarting, the host rebooting): its queue
+          // survives, so keep asking — for up to two days — instead of giving up.
+          if (row.provider === 'local' && error.status === 503 && Date.now() - row.created_at < 2 * 86_400_000) {
+            q.pollRetry.run(now() + 60_000, now(), row.id);
+            continue;
+          }
           // Retry later; many errors in a row mean the job is lost.
           if (row.poll_errors + 1 >= MAX_POLL_ERRORS) {
             q.setFailed.run(row.status === 'downloading' ? 'Could not download the result file.' : `Lost contact with the provider: ${error.message}`.slice(0, 1000), now(), now(), row.id);
@@ -436,8 +446,10 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const provider = providerById(row.provider);
     if (!provider?.cancel) throw new GenerationError('This provider can\'t stop a job once it is sent.', 409);
     if (!['submitted', 'processing'].includes(row.status) || !row.provider_task_id) throw new GenerationError('It is not running any more.', 409);
-    await provider.cancel(providers.resolve(row.provider), row.provider_task_id);
-    q.setFailed.run('Cancelled.', now(), now(), row.id);
+    const job = await provider.cancel(providers.resolve(row.provider), row.provider_task_id);
+    // Finished just before the click: its result is on the way, nothing to cancel.
+    if (job?.state === 'done') throw new GenerationError('It has just finished — the result appears in a moment.', 409);
+    if (!q.setFailedIfActive.run('Cancelled.', now(), now(), row.id).changes) throw new GenerationError('It is not running any more.', 409);
     q.setNote.run(null, row.id);
     return { ok: true };
   }

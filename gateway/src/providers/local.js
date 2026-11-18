@@ -81,6 +81,9 @@ export const local = {
     if (!spec) throw Object.assign(new Error(`Unknown local model ${model}`), { status: 404 });
     const name = (v) => { const m = IN_REF.exec(String(v || '')); if (!m) throw Object.assign(new Error('A picture did not reach this server.'), { status: 400 }); return m[1]; };
     const refs = Array.isArray(body.reference_images) ? body.reference_images.map(name) : [];
+    // Each endpoint runs one way: the start-frame model needs its frame, the reference model takes no frame.
+    if (model === 'minimax-h3-i2v' && (!body.image || refs.length)) throw Object.assign(new Error('This model needs a start frame (and no references).'), { status: 409 });
+    if (model === 'minimax-h3-r2v' && body.image) throw Object.assign(new Error('Use the start-frame model for a start frame.'), { status: 409 });
     const id = `dz_${crypto.randomBytes(12).toString('base64url')}`;
     await call('POST', '/jobs', {
       id,

@@ -392,7 +392,10 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   const createBoard = async () => {
     try {
       if (draftRef.current && !(await flush())) return;
-      const r = await dzStoryboards.create({ project: scope || null, name: "Untitled scene", settings: imageEntry && videoEntry ? { image: imageEntry.key, video: videoEntry.key, frames: 1 } : {} });
+      // Frames in the film's shape: 16:9 when the image model has it (the video takes the frame's shape).
+      const ar = imageParams.find((p) => p.key === "aspect_ratio" || p.key === "ratio");
+      const imageValues = ar && Array.isArray(ar.enum) && ar.enum.map(String).includes("16:9") ? { [ar.key]: "16:9" } : {};
+      const r = await dzStoryboards.create({ project: scope || null, name: "Untitled scene", settings: imageEntry && videoEntry ? { image: imageEntry.key, video: videoEntry.key, frames: 1, imageValues } : {} });
       setBoards((list) => [{ id: r.storyboard.id, name: r.storyboard.name, shots: 0, cover: null, mine: true }, ...list]);
       open(r.storyboard.id);
     } catch (e) { onGenerationError?.(errText(e)); }

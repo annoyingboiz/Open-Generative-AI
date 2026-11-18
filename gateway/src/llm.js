@@ -112,9 +112,17 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
     return entry;
   }
   // What is known right now, without asking anyone (for pages that must not wait).
-  function cachedList(user) {
+  function cachedList(user, gpt = []) {
     const get = (id) => cache.get(id) || { status: 'unknown', note: 'Checking…', models: lastGood.get(id) || [] };
-    return assemble(user, get('local'), get('apimart'), get('atlas'));
+    return assemble(user, get('local'), get('apimart'), get('atlas'), gpt);
+  }
+  // For a person's Settings: provider lists from memory (refreshed in the
+  // background, once), only their own ChatGPT models asked (≤ 4 s).
+  let bgRefresh = null;
+  async function quickList(user) {
+    if (!bgRefresh) bgRefresh = Promise.all(['local', 'apimart', 'atlas'].map((s) => sourceList(s).catch(() => null))).finally(() => { bgRefresh = null; });
+    const gpt = await Promise.race([chatgptModels(user).catch(() => []), new Promise((r) => setTimeout(() => r([]), 4000))]);
+    return cachedList(user, gpt);
   }
 
   // APIMart's price for our account, per 1M tokens (asked per model, kept a day).
@@ -179,7 +187,8 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   // the first recommended. A ChatGPT default counts only while it is usable.
   const globalDefault = () => q.getMeta.get('llm_default')?.value || '';
   function defaultFor(user, all) {
-    const usable = (id) => id && (!id.startsWith('chatgpt:') || chatgpt?.canUse(user));
+    // A ChatGPT model counts only if this person's plan really offers it.
+    const usable = (id) => id && (!id.startsWith('chatgpt:') || all.some((m) => m.id === id));
     const mine = user ? q.getMeta.get(`llm_default:${user.id}`)?.value || '' : '';
     if (usable(mine)) return mine;
     const g = globalDefault();
@@ -383,5 +392,5 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   db.prepare("UPDATE llm_calls SET status = 'failed', cost_usd = 0, error = 'Interrupted (server restart).' WHERE status = 'running'").run();
 
   const defaultId = () => q.getMeta.get('llm_default')?.value || '';
-  return { list, cachedList, chat, setDefault, setUserDefault, dropUnusableDefaults, defaultId, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
+  return { list, cachedList, quickList, chat, setDefault, setUserDefault, dropUnusableDefaults, defaultId, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
 }

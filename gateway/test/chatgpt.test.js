@@ -22,6 +22,7 @@ const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', u
 const b64u = (v) => Buffer.from(typeof v === 'string' ? v : JSON.stringify(v)).toString('base64url');
 const codes = new Map(); // code -> { challenge, nonce, clientId }
 let revoked = [];
+let scopeOverride = null;
 function idToken(claims) {
   const head = b64u({ alg: 'RS256', kid: 'k1', typ: 'JWT' });
   const body = b64u(claims);
@@ -54,7 +55,7 @@ before(async () => {
         codes.delete(f.get('code'));
         accessGen += 1;
         validAccess = `acc-${accessGen}`;
-        res.end(JSON.stringify({ access_token: validAccess, refresh_token: `ref-${accessGen}`, expires_in: 3600, scope: 'openid email offline_access chatgpt.tokens.use.direct',
+        res.end(JSON.stringify({ access_token: validAccess, refresh_token: `ref-${accessGen}`, expires_in: 3600, scope: scopeOverride || 'openid email offline_access chatgpt.tokens.use.direct',
           id_token: idToken({ iss: `${base}/auth`, aud: c.clientId, sub: c.sub, email: c.email, nonce: c.nonce, exp: Math.floor(Date.now() / 1000) + 600 }) }));
         return;
       }
@@ -182,10 +183,15 @@ test('connect from Settings: link with PKCE, pasted address finishes, ID token c
   const again = new URL(cg.startConnect(kid).url);
   assert.equal(again.searchParams.get('client_id'), 'oaiapp_new');
   assert.equal(again.searchParams.get('login_hint'), 'wife@example.com');
+  // Reconnect with the saved registration but another account: refused.
+  await assert.rejects(cg.finishConnect(kid, signIn(cg.startConnect(kid).url, { sub: 'someone-else', email: 'x@y' })), /another ChatGPT account/);
   // A forged ID token (wrong nonce) is refused.
   const bad = signIn(cg.startConnect(kid).url);
   codes.get(new URL(bad).searchParams.get('code')).nonce = 'other';
   await assert.rejects(cg.finishConnect(kid, bad), /nonce/);
+  // Refused sign-ins have their tokens revoked right away.
+  await new Promise((r) => setTimeout(r, 150));
+  assert.ok(revoked.length >= 1, 'the other account’s tokens were revoked');
   // Disconnect revokes at OpenAI first; the registration stays for later.
   revoked = [];
   const d = await cg.disconnect(2);
@@ -193,6 +199,18 @@ test('connect from Settings: link with PKCE, pasted address finishes, ID token c
   assert.equal(revoked.length, 1);
   assert.equal(cg.status(kid).connected, false);
   assert.ok(db.prepare("SELECT 1 FROM meta WHERE key = 'chatgpt_reg:2'").get());
+});
+
+test('plan use not allowed: the registration is kept, nothing usable stored', async () => {
+  const { cg, db } = setup();
+  const kid = { id: 2, username: 'kid', role: 'user' };
+  const landed = signIn(cg.startConnect(kid).url);
+  scopeOverride = 'openid email offline_access';
+  await assert.rejects(cg.finishConnect(kid, landed), /was not allowed/);
+  scopeOverride = null;
+  assert.equal(JSON.parse(db.prepare("SELECT value FROM meta WHERE key = 'chatgpt_reg:2'").get().value).client_id, 'oaiapp_new');
+  assert.equal(cg.status(kid).connected, false);
+  assert.equal(new URL(cg.startConnect(kid).url).searchParams.get('client_id'), 'oaiapp_new', 'the next try reuses it');
 });
 
 test('same computer: Director catches the callback itself', async () => {

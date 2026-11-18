@@ -76,13 +76,17 @@ export function createChatGpt({ db, masterKey, config, log }) {
     const boxed = q.get.get('chatgpt_creds')?.value;
     if (!boxed) return;
     const c = unbox(boxed);
-    if (c?.owner_id) {
+    if (!c?.owner_id) return; // unreadable (e.g. another key): kept as it is, nothing lost
+    db.exec('BEGIN IMMEDIATE');
+    try {
       const shared = q.get.get('chatgpt_sharing')?.value === 'all';
       q.set.run(credsKey(c.owner_id), encrypt(masterKey, JSON.stringify({ ...c, shared })));
+      if (load(credsKey(c.owner_id))?.access_token !== c.access_token) throw new Error('moved record does not read back');
       saveReg(c.owner_id, c);
-    }
-    q.del.run('chatgpt_creds');
-    q.del.run('chatgpt_sharing');
+      q.del.run('chatgpt_creds');
+      q.del.run('chatgpt_sharing');
+      db.exec('COMMIT');
+    } catch (error) { try { db.exec('ROLLBACK'); } catch { /* closed */ } log?.warn?.(`chatgpt migration: ${error.message}`); }
   })();
 
   // Compare-and-save: only replaces the record it started from, so a refresh
@@ -100,19 +104,20 @@ export function createChatGpt({ db, masterKey, config, log }) {
   }
 
   const records = () => q.list.all().map((r) => ({ key: r.key, uid: Number(r.key.split(':')[1]), c: unbox(r.value) })).filter((r) => r.c);
-  const sharedRecord = () => records().filter((r) => r.c.shared && !r.c.lost).sort((a, b) => a.c.saved_at - b.c.saved_at)[0] || null;
+  const sharedRecord = () => records().filter((r) => r.c.shared && usableRec(r.c)).sort((a, b) => a.c.saved_at - b.c.saved_at)[0] || null;
 
   // Which plan this person uses: their own (working) one, else the shared one.
   function recordFor(user) {
     if (!user) return null;
     const key = credsKey(user.id);
     const own = load(key);
-    if (own && !own.lost) return { key, c: own, own: true };
+    if (usableRec(own)) return { key, c: own, own: true };
     const shared = sharedRecord();
     if (shared) return { key: shared.key, c: shared.c, own: false };
     return own ? { key, c: own, own: true } : null; // own but lost: shows "reconnect"
   }
-  const canUse = (user) => { const r = recordFor(user); return Boolean(r && !r.c.lost); };
+  const usableRec = (c) => Boolean(c && !c.lost && (c.scopes || []).includes(PLAN_SCOPE));
+  const canUse = (user) => usableRec(recordFor(user)?.c);
 
   function store(user, tok, { clientId, claims, issuer }) {
     const scopes = Array.isArray(tok.scopes) ? tok.scopes : String(tok.scope || '').split(/\s+/).filter(Boolean);
@@ -196,6 +201,15 @@ export function createChatGpt({ db, masterKey, config, log }) {
     const tok = await r.json().catch(() => ({}));
     if (!r.ok || !tok.access_token) throw new ChatGptError(`OpenAI did not accept the sign-in code (${tok.error || `HTTP ${r.status}`}). Codes live a few minutes — press “Connect ChatGPT” again.`, 424);
     const { claims, issuer } = await verifyIdToken(tok.id_token, { clientId: issued, nonce: p.nonce });
+    const reject = (msg) => { if (tok.refresh_token) revoke({ refresh_token: tok.refresh_token, client_id: issued }).catch(() => {}); return new ChatGptError(msg); };
+    if (!claims.sub) throw reject('OpenAI did not say which account this is. Try again.');
+    // A saved registration belongs to one ChatGPT account: another account needs its own.
+    if (p.expectSub && claims.sub !== p.expectSub) throw reject(`You signed in with another ChatGPT account (${claims.email || 'different'}). Use “Connect a different account” for it.`);
+    // The registration is this account's even if plan use was not allowed this time.
+    const regNow = reg(user.id);
+    if (!regNow || regNow.client_id !== issued) saveReg(user.id, { client_id: issued, sub: claims.sub, email: claims.email });
+    const scopes = String(tok.scope || '').split(/\s+/).filter(Boolean);
+    if (!scopes.includes(PLAN_SCOPE)) throw reject('Signed in, but “Use your ChatGPT plan” was not allowed. Press Reconnect and keep it on.');
     const creds = store(q.userById.get(user.id) || user, tok, { clientId: issued, claims, issuer });
     return { ok: true, email: creds.email };
   }
@@ -233,7 +247,15 @@ export function createChatGpt({ db, masterKey, config, log }) {
   let listenerTimer = null;
   function ensureListener() {
     clearTimeout(listenerTimer);
-    listenerTimer = setTimeout(() => { if (!pending.size && listener) { listener.close(); listener = null; } }, PENDING_MS).unref?.();
+    // Closes once no live attempt is left (checked again until then).
+    const check = () => {
+      prune();
+      if (!pending.size) { listener?.close(); listener = null; return; }
+      listenerTimer = setTimeout(check, 60_000);
+      listenerTimer.unref?.();
+    };
+    listenerTimer = setTimeout(check, PENDING_MS);
+    listenerTimer.unref?.();
     if (listener) return;
     listener = http.createServer(async (req, res) => {
       const u = new URL(req.url, REDIRECT);
@@ -473,15 +495,29 @@ export function createChatGpt({ db, masterKey, config, log }) {
   }
 
   // Revoke at OpenAI first, then forget the tokens (the registration stays).
+  // Holds the refresh lease, so no refresh rotates the token meanwhile; a new
+  // sign-in that lands meanwhile is kept (only the version revoked is deleted).
   async function disconnect(userId) {
     const key = credsKey(userId);
-    const c = load(key);
-    if (!c) return { ok: true, revoked: true };
-    let revoked = false;
-    try { revoked = await revoke(c); } catch (error) { log?.warn?.(`chatgpt revoke: ${error.message}`); }
-    q.del.run(key);
-    modelsCache.delete(key);
-    return { ok: true, revoked };
+    if (!load(key)) return { ok: true, revoked: true };
+    const deadline = Date.now() + 30_000;
+    while (!takeLease(key)) {
+      if (Date.now() > deadline) throw new ChatGptError('The connection is busy refreshing. Try again in a moment.', 503);
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    try {
+      const c = load(key);
+      if (!c) return { ok: true, revoked: true };
+      let revoked = false;
+      try { revoked = await revoke(c); } catch (error) { log?.warn?.(`chatgpt revoke: ${error.message}`); }
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        if (load(key)?.version === c.version) q.del.run(key);
+        db.exec('COMMIT');
+      } catch (error) { try { db.exec('ROLLBACK'); } catch { /* closed */ } throw error; }
+      modelsCache.delete(key);
+      return { ok: true, revoked };
+    } finally { dropLease(key); }
   }
 
   return { status, accounts, models, chat, importCredentials, startConnect, finishConnect, disconnect, hostId, sharing, setShared, canUse, closeListener: () => { listener?.close(); listener = null; } };

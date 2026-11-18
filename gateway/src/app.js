@@ -279,7 +279,9 @@ export async function buildApp(config, { logger = true } = {}) {
     const balancesP = isAdmin ? fetchBalances(providers) : Promise.resolve([]);
     // Everyone gets their ChatGPT box and own default; admins also the sources and tests.
     // The page never waits long for providers: after 4 s it shows what is known.
-    const lists = await Promise.race([llm.list(req.user).catch(() => null), new Promise((r) => setTimeout(() => r(null), 4000))]);
+    const lists = isAdmin
+      ? await Promise.race([llm.list(req.user).catch(() => null), new Promise((r) => setTimeout(() => r(null), 4000))])
+      : await llm.quickList(req.user).catch(() => null);
     const llmInfo = {
       ...(lists || llm.cachedList(req.user)), try: llmTry, chatgpt: chatgpt.status(req.user), username: req.user.username, isAdmin,
       ...(isAdmin ? { recent: llm.recent(10), accounts: chatgpt.accounts() } : {}),
@@ -339,6 +341,7 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/dz/settings/chatgpt/finish', async (req, reply) => {
     try {
       const r = await chatgpt.finishConnect(req.user, req.body?.callback);
+      llm.dropUnusableDefaults();
       return renderSettings(req, reply, { notice: `ChatGPT connected${r.email ? `: ${r.email}` : ''}.` });
     } catch (error) { return chatgptError(req, reply, error); }
   });

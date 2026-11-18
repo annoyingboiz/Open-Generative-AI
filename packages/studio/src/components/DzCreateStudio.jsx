@@ -11,6 +11,7 @@ import { useDzQuote } from "./DzPrice.jsx";
 import { useDzHistory } from "../dzLibrary.js";
 import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
+import { DzAdaptButton } from "./DzAdapt.jsx";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
@@ -445,6 +446,22 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     return tags.filter((t) => names.has(t.tag.toLowerCase()));
   }, [prompt, tags]);
   const jsonPrompt = useMemo(() => parseJsonPrompt(prompt), [prompt]);
+  // What "Adapt to model" needs to know: the model, what's attached, the settings.
+  const adaptModel = entry ? { family: entry.family, name: entry.familyName, kind } : null;
+  const adaptContext = useMemo(() => {
+    const a = merged.attached || {};
+    const has = (r) => (a[r] || []).length > 0;
+    const mode = kind === "video"
+      ? (has("first") ? `image-to-video (start frame${has("last") ? " and end frame" : ""} attached)` : has("source") ? "video editing" : has("reference") || has("video") || elementsUsed ? "reference-to-video" : "text-to-video")
+      : (has("reference") || elementsUsed ? "image with reference images / editing" : "text-to-image");
+    const audio = [values.generate_audio, values.audio, values.sound, values.enable_audio].find((v) => typeof v === "boolean");
+    const cameraText = composePrompt("", { kind, camera, move }).trim();
+    return {
+      mode, duration: values.duration, aspect: values.aspect_ratio || values.ratio, audio,
+      camera: cameraText || undefined,
+      tags: tags.map((t) => ({ tag: t.tag, label: `${t.label || t.kind}${t.to ? ` (sent to the model as ${t.to})` : ""}` })),
+    };
+  }, [merged.attached, kind, values, camera, move, tags, elementsUsed]); // eslint-disable-line react-hooks/exhaustive-deps
   const needsPrompt = variant?.model.promptRequired;
   const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
   const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
@@ -769,6 +786,11 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
             <p className="text-muted-foreground">
               This model gets: {usedTags.map((t) => `@${t.tag} → ${t.to}`).join(" · ")}
             </p>
+          )}
+          {adaptModel && prompt.trim() && (
+            <div className="flex justify-end">
+              <DzAdaptButton prompt={prompt} model={adaptModel} context={adaptContext} onUse={(p) => setPrompt(p)} />
+            </div>
           )}
           {jsonPrompt.json && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

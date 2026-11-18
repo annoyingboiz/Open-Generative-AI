@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { generateImage, generateI2I, uploadFile, dzWithMeta } from "../api.js";
+import { DzAdaptButton } from "./DzAdapt.jsx";
 import { useDzHistory } from "../dzLibrary.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import { imageModelCatalog } from "../modelFamilies.js";
@@ -1455,6 +1456,22 @@ export default function DzCinemaStudio({
               }
               placeholder={copy.prompt.placeholder}
             />
+            {/* DZ: rewrite by this model's prompting notes (camera and lens are added by Cinema). */}
+            {model && settings.prompt.trim() && (
+              <div className="flex justify-end px-1 pb-1">
+                <DzAdaptButton
+                  prompt={settings.prompt}
+                  model={{ family: model.dzFamily || entry?.family?.id || "", name: entry?.family?.name || model.name, kind: "image" }}
+                  context={{
+                    mode: hasRefs ? "image with reference images" : "text-to-image",
+                    aspect: effectiveAspect || undefined,
+                    camera: buildCinemaPrompt("", settings.camera, settings.lens, settings.focal, settings.aperture).replace(/^[\s,]+/, ""),
+                    tags: uploadedImages.slice(0, maxRefs || 0).map((_, i) => ({ tag: `image${i + 1}`, label: "Reference image" })),
+                  }}
+                  onUse={(p) => setSettings((prev) => ({ ...prev, prompt: p }))}
+                />
+              </div>
+            )}
             </div>
           </div>
 

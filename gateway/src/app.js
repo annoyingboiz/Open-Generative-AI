@@ -28,6 +28,7 @@ import { createProjects, ProjectError } from './projects.js';
 import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
 import { createChatGpt } from './chatgpt.js';
+import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
 import { createThumbs } from './thumbs.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
@@ -116,13 +117,14 @@ export async function buildApp(config, { logger = true } = {}) {
   };
   const chatgpt = createChatGpt({ db, masterKey, config, log: app.log });
   const llm = createLlm({ db, providers, generations, config, log: app.log, chatgpt });
+  const adapter = createPromptAdapter({ llm, log: app.log });
   const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
   if (config.startWorkers !== false) setInterval(() => { try { thumbs.prune(); pruneAudio(); } catch { /* ignore */ } }, 24 * 3600_000).unref?.();
   if (config.startWorkers !== false) {
     setTimeout(() => elements.attachPending().catch(() => {}), 30_000).unref?.();
     setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
   }
-  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, llm, chatgpt });
+  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, llm, chatgpt, adapter });
   await app.register(cookie);
   await app.register(formbody);
   await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1, fields: 5 } });
@@ -320,6 +322,18 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/dz/api/llm/models', async (req, reply) => {
     reply.header('cache-control', 'private, no-store');
     try { return await llm.list(req.user, { force: req.query?.refresh === '1' && req.user.role === 'admin' }); } catch (error) { return llmError(reply, error); }
+  });
+  // Adapt a prompt to an image/video model by its prompting notes.
+  app.post('/dz/api/prompt/adapt', async (req, reply) => {
+    try { return await adapter.adapt(req.user, req.body || {}); } catch (error) {
+      if (error instanceof AdaptError) return reply.code(error.status).send({ error: error.message });
+      return llmError(reply, error);
+    }
+  });
+  app.get('/dz/api/prompt/notes', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    const n = adapter.notes(String(req.query?.family || ''), req.query?.kind === 'image' ? 'image' : 'video');
+    return n || reply.code(404).send({ error: 'No notes' });
   });
   app.post('/dz/api/llm/chat', async (req, reply) => {
     try { return await llm.chat(req.user, req.body || {}); } catch (error) { return llmError(reply, error); }

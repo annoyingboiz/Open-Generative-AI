@@ -52,15 +52,41 @@ export function usePresence(open, ms = 260) {
 
 // Side panel (§5.9): full window height over the header, scrim behind, glass;
 // head 56 px (title, ×), body padding 20, foot: Reset on the left, Done on the right.
+// Focus goes into a dialog when it opens, stays in it (Tab wraps) and returns to the opener.
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
+export function useDialogFocus(open, ref, { trap = true } = {}) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const opener = document.activeElement;
+    const t = setTimeout(() => {
+      const el = ref.current;
+      if (!el || el.contains(document.activeElement)) return;
+      (el.querySelector("[autofocus]") || el).focus({ preventScroll: true });
+    }, 30);
+    return () => { clearTimeout(t); if (opener && opener.isConnected && typeof opener.focus === "function") opener.focus({ preventScroll: true }); };
+  }, [open, ref]);
+  return trap ? (e) => {
+    if (e.key !== "Tab" || !ref.current) return;
+    const list = [...ref.current.querySelectorAll(FOCUSABLE)].filter((x) => x.offsetParent !== null);
+    if (!list.length) return;
+    const first = list[0];
+    const last = list[list.length - 1];
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  } : undefined;
+}
+
 export function StudioPanel({ open, onClose, title, aside, width = 640, onReset, resetLabel = "Reset", foot, children, bodyClassName }) {
   const { mounted, shown } = usePresence(open, 260);
   useEscLayer(open, onClose);
+  const box = useRef(null);
+  const onKeyDown = useDialogFocus(open && mounted, box);
   if (!mounted || typeof document === "undefined") return null;
   return createPortal(
     <div className="fixed inset-0 z-[150]">
       <div className={cn("absolute inset-0 bg-scrim transition-opacity duration-200 ease-out", shown ? "opacity-100" : "opacity-0")} onClick={onClose} aria-hidden="true" />
-      <aside role="dialog" aria-label={title} style={{ width: `min(${width}px, 100vw)` }}
-        className={cn("glass absolute inset-y-0 right-0 flex flex-col border-l border-border shadow-float transition-transform duration-sheet ease-soft", shown ? "translate-x-0" : "translate-x-full")}>
+      <aside ref={box} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onKeyDown={onKeyDown} style={{ width: `min(${width}px, 100vw)` }}
+        className={cn("glass absolute inset-y-0 right-0 flex flex-col border-l border-border shadow-float outline-none transition-transform duration-sheet ease-soft", shown ? "translate-x-0" : "translate-x-full")}>
         <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-border px-5">
           <h2 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h2>
           {aside}

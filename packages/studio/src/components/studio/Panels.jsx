@@ -99,13 +99,19 @@ export function CameraLookPanel({ open, onClose, look, setLook, hints = [] }) {
   const set = (k, v) => setLook((prev) => ({ ...autoLook(prev), [k]: v }));
   return (
     <StudioPanel open={open} onClose={onClose} title="Camera" resetLabel="Reset to Auto"
-      onReset={() => setLook((prev) => ({ ...autoLook(prev), camera: null, lens: null, aperture: null, focal: null }))}>
+      onReset={() => setLook((prev) => ({ ...autoLook(prev), camera: null, lens: null, aperture: null, focal: null, filter: null }))}>
       <div className="grid grid-cols-3 gap-3">
         <Wheel title="Camera" icon={Camera} options={d.cameras} value={a.camera} onChange={(v) => set("camera", v)} />
         <Wheel title="Lens" icon={Aperture} options={d.lenses} value={a.lens} onChange={(v) => set("lens", v)} />
         <Wheel title="Aperture" icon={CircleDashed} options={(d.apertures || []).map((f) => ({ id: f, label: f }))} value={a.aperture} onChange={(v) => set("aperture", v)} />
       </div>
       <div className="mt-6"><FocalTrack value={a.focal} onChange={(v) => set("focal", v)} /></div>
+      {(d.filters || []).map((f) => (
+        <label key={f.id} className="mt-5 flex items-center justify-between gap-3">
+          <span><span className="text-base font-medium">{f.label}</span> <span className="text-sm text-muted-foreground">· {f.note}</span></span>
+          <Switch checked={a.filter === f.id} onCheckedChange={(v) => set("filter", v ? f.id : null)} />
+        </label>
+      ))}
       <p className="mt-6 text-sm text-muted-foreground">Scroll a wheel, or click the option above or below. Drag the focal handle. Anything left on Auto is chosen by the model.</p>
       {hints.length > 0 && <ul className="mt-3 space-y-1 text-sm text-warning">{hints.map((h, i) => <li key={i}>{h}</li>)}</ul>}
     </StudioPanel>
@@ -321,7 +327,7 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
         <div className="flex h-8 items-center rounded-md bg-muted p-0.5" role="group" aria-label="Answer as">
           {[["text", "Text"], ["json", "JSON"]].map(([v, l]) => (
             <button key={v} type="button" aria-pressed={as === v} onClick={() => { if (as !== v) { setAs(v); if (loaded) run(v); } }}
-              className={cn("h-7 rounded-[6px] px-3 text-sm font-medium transition-colors duration-state", as === v ? "bg-background text-foreground shadow-popover" : "text-muted-foreground hover:text-foreground")}>{l}</button>
+              className={cn("h-7 rounded-[6px] px-3 text-sm font-medium transition-colors duration-state", as === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
           ))}
         </div>
         <button type="button" onClick={showNotes} className="ml-auto flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"><BookOpen size={16} /> {notes ? "Hide notes" : "Model notes"}</button>

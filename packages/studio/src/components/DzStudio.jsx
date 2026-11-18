@@ -259,7 +259,8 @@ function Strip({ groups, unused, attached, setAttached, activeGroup, openLibrary
     e.preventDefault();
     const from = groups.find((x) => x.id === d.group);
     if (!from || from.kind !== g.kind) return;
-    setAttached((a) => addToGroup(removeFromGroup(a, from, d.item.url), g, [d.item]));
+    // Only when the target has room: a full group leaves the item where it was.
+    setAttached((a) => (groupItems(a, g).length >= g.max ? a : addToGroup(removeFromGroup(a, from, d.item.url), g, [d.item])));
   };
   const tagText = (item, fallback) => { const t = tagOf(item.url); return t ? `@${t.tag} · ${t.label || fallback}` : fallback; };
   const thumb = (g, item, label) => (
@@ -546,7 +547,7 @@ export default function DzStudio(props) {
   // Block values: only what is not Auto.
   const d = lookData();
   const name = (list, id) => (list || []).find((x) => x.id === id)?.label || "";
-  const camParts = [name(d.cameras, a.camera), name(d.lenses, a.lens), a.focal ? `${a.focal}mm` : "", a.aperture || ""].filter(Boolean);
+  const camParts = [name(d.cameras, a.camera), name(d.lenses, a.lens), a.focal ? `${a.focal}mm` : "", a.aperture || "", a.filter ? name(d.filters, a.filter).split(" /")[0] : ""].filter(Boolean);
   const lookParts = [name(d.palettes, a.palette), name(d.lights, a.light), name(d.genres, a.genre), name(d.eras, a.era)].filter(Boolean);
   const moveLabel = move ? name(d.moves, move) : "";
 
@@ -675,7 +676,7 @@ export default function DzStudio(props) {
                 {sentPreview.data?.hints?.length > 0 && <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warning"><Info size={14} className="mt-px flex-shrink-0" />{sentPreview.data.hints[0]}</p>}
 
                 {/* 4. Bottom row — never wraps */}
-                <div className="mt-3 flex items-center gap-1.5 overflow-visible whitespace-nowrap">
+                <div className="mt-3 flex items-center gap-1.5 whitespace-nowrap max-[1000px]:flex-wrap max-[1000px]:gap-y-2">
                   <button type="button" onClick={() => openLibrary()} aria-label="Add from the library" disabled={!groups.length}
                     className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={18} /></button>
                   <div className="relative" ref={atAnchor}>
@@ -686,7 +687,7 @@ export default function DzStudio(props) {
                   <div className="flex h-8 flex-shrink-0 items-center rounded-md bg-muted p-0.5" role="group" aria-label="Image or video">
                     {[["image", "Image"], ["video", "Video"]].map(([v, l]) => (
                       <button key={v} type="button" aria-pressed={kind === v} onClick={() => setKind(v)}
-                        className={cn("h-7 rounded-[6px] px-2.5 text-sm font-medium transition-colors duration-state", kind === v ? "bg-background text-foreground shadow-popover" : "text-muted-foreground hover:text-foreground")}>{l}</button>
+                        className={cn("h-7 rounded-[6px] px-2.5 text-sm font-medium transition-colors duration-state", kind === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
                     ))}
                   </div>
                   <div className="relative" ref={modelAnchor}>

@@ -64,3 +64,16 @@ test('look: planner answers and old shots keep their look', async () => {
   const s = cleanShot({ camera: 'film-35 (Classic film grain and color)', lens: 'Halation Diffusion', focal: '14mm', aperture: 'f/4' }, { id: 's1' });
   assert.deepEqual([s.camera, s.lens, s.filter, s.focal, s.aperture], ['film-35', 'clean', 'diffusion', 16, 'f/4']);
 });
+
+test('palette and genre (Studio Look panel) are cleaned and written into the prompt', () => {
+  const look = cleanLook({ palette: 'noir', genre: 'thriller', palette_bad: 'x' });
+  assert.equal(look.palette, 'noir');
+  assert.equal(look.genre, 'thriller');
+  assert.equal(cleanLook({ palette: 'nope' }), null);
+  const out = renderLook('A man waits at a bus stop.', look, { kind: 'video' });
+  assert.match(out, /black-and-white noir grade/);
+  assert.match(out, /thriller tone/);
+  const json = JSON.parse(renderLook('{"scene":"a man waits"}', look, { kind: 'video' }));
+  assert.match(json.color, /noir/);
+  assert.match(json.genre, /thriller/);
+});

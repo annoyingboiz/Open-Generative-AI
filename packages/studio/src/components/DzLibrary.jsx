@@ -78,12 +78,12 @@ export function Viewer({ item, onClose }) {
   const isVideo = item.kind === "video" || /\.(mp4|mov|webm)$/i.test(item.url || "");
   return (
     <div className="fixed inset-0 z-[150] flex flex-col bg-overlay/90 backdrop-blur-sm" onClick={onClose} role="dialog" aria-label="Preview">
-      <div className="flex items-center justify-between gap-4 px-5 py-3 text-base text-foreground/90" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between gap-4 px-5 py-3 text-base text-overlay-foreground/90" onClick={(e) => e.stopPropagation()}>
         <span className="min-w-0 truncate">{item.prompt || item.name || ""}</span>
         {isVideo && dzVideoUpscaleSpec() && /\/media\/[ug]\//.test(item.url || "") && (
-          <button type="button" onClick={() => { onClose(); dzOpenVideoUpscale(item.url); }} className="ml-auto flex-shrink-0 rounded-lg border border-input px-3 py-1.5 text-foreground hover:bg-accent">Upscale video</button>
+          <button type="button" onClick={() => { onClose(); dzOpenVideoUpscale(item.url); }} className="ml-auto flex-shrink-0 rounded-lg border border-overlay-foreground/30 px-3 py-1.5 text-overlay-foreground hover:bg-overlay-foreground/10">Upscale video</button>
         )}
-        <button type="button" onClick={onClose} className="h-9 w-9 flex-shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close">✕</button>
+        <button type="button" onClick={onClose} className="h-9 w-9 flex-shrink-0 rounded-lg text-overlay-foreground/70 hover:bg-overlay-foreground/10 hover:text-overlay-foreground" aria-label="Close">✕</button>
       </div>
       {/* A click on the empty dark area closes; on the picture or video it doesn't. */}
       <div className="flex min-h-0 flex-1 items-center justify-center p-4">
@@ -127,7 +127,7 @@ function Card({ item, view, onOpen, actions, sel }) {
         ) : (
           <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || item.name || "Image"} loading="lazy" decoding="async" className="aspect-square w-full bg-overlay/40 object-cover" />
         )}
-        {isVideo && item.url && <span className="absolute bottom-2 left-2 rounded-md bg-overlay/70 px-2 py-0.5 text-base font-semibold text-foreground">Video</span>}
+        {isVideo && item.url && <span className="absolute bottom-2 left-2 rounded-md bg-overlay/70 px-2 py-0.5 text-base font-semibold text-overlay-foreground">Video</span>}
       </button>
       {(item.url || item.status === "failed") && actions && !sel?.selecting && (
         <div className={cn("absolute right-2 top-2 flex flex-col gap-2 transition-opacity", item.url ? "opacity-100 md:opacity-0 md:group-hover:opacity-100" : "opacity-100")}>

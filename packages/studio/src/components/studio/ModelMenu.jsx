@@ -101,7 +101,9 @@ export default function ModelMenu({ entries, entry, onPick, onClose }) {
                 <button type="button" role="option" aria-selected={chosen}
                   onClick={() => {
                     setOpenFamily(f.family);
-                    const keep = f.providers.find((p) => p.entry.key === entry?.key) || f.providers.find((p) => p.entry.key === localStorage.getItem(`dz_studio_provider_${f.family}`)) || f.providers[0];
+                    let saved = null;
+                    try { saved = localStorage.getItem(`dz_studio_provider_${f.family}`); } catch { /* storage is optional */ }
+                    const keep = f.providers.find((p) => p.entry.key === entry?.key) || f.providers.find((p) => p.entry.key === saved) || f.providers[0];
                     onPick(keep.entry.key, { close: f.providers.length === 1 });
                   }}
                   className={cn("flex h-11 w-full items-center gap-2.5 rounded-slot border px-2.5 text-left transition-colors duration-state",

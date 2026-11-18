@@ -10,7 +10,7 @@ import { useDzContext } from "../../dzContext.js";
 import { usePaged } from "../DzMedia.jsx";
 import { useDzElements } from "../DzElements.jsx";
 import { Spinner, cn } from "../../ui/index.js";
-import { StudioPanel, Overline, ChipMenu, MenuRow, usePresence, useEscLayer } from "./ui.jsx";
+import { StudioPanel, Overline, ChipMenu, MenuRow, usePresence, useEscLayer, useDialogFocus } from "./ui.jsx";
 import { groupItems, addToGroup, removeFromGroup, clearGroup, reorderGroup, GROUPS } from "./attachments.js";
 
 const SOURCES = [["uploads", "Uploads"], ["generations", "Generations"], ["liked", "Liked"], ["elements", "Elements"]];
@@ -135,12 +135,14 @@ const hintFor = (group, full) => (full ? "Full. Remove one to pick another." : g
 export function LibraryWindow({ open, groups, groupId, setGroupId, attached, setAttached, onClose, onError, onUploading }) {
   const { mounted, shown } = usePresence(open, 240);
   useEscLayer(open, onClose);
+  const box = useRef(null);
+  useDialogFocus(open && mounted, box, { trap: false });
   const group = groups.find((g) => g.id === groupId) || groups[0];
   if (!mounted || !group) return null;
   const chosen = groupItems(attached, group);
   const full = chosen.length >= group.max;
   return (
-    <div className={cn("glass absolute inset-x-0 bottom-[calc(100%+12px)] z-20 flex h-[min(640px,calc(100vh-260px))] flex-col rounded-2xl border border-border p-4 shadow-float transition-[opacity,transform] duration-[240ms] ease-soft",
+    <div ref={box} tabIndex={-1} className={cn("glass absolute inset-x-0 bottom-[calc(100%+12px)] z-20 flex outline-none h-[min(640px,calc(100vh-260px))] flex-col rounded-2xl border border-border p-4 shadow-float transition-[opacity,transform] duration-[240ms] ease-soft",
       shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-4 scale-[.985] opacity-0")} role="dialog" aria-label="Library">
       <div className="mb-3 flex h-8 flex-shrink-0 items-center gap-5">
         {groups.map((g) => {

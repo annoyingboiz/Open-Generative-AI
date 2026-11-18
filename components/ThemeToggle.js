@@ -15,12 +15,18 @@ function readStoredTheme() {
 // Dark is the default; light is data-theme="light" on <html> (set before first paint in layout.js).
 export function useTheme() {
   const [theme, setThemeState] = useState('dark');
-  useEffect(() => { setThemeState(readStoredTheme()); }, []);
+  // One theme for every place that shows it (account menu, ⌘K, …).
+  useEffect(() => {
+    setThemeState(readStoredTheme());
+    const on = (e) => setThemeState(e.detail === 'light' ? 'light' : 'dark');
+    window.addEventListener('dz:theme', on);
+    return () => window.removeEventListener('dz:theme', on);
+  }, []);
   const setTheme = useCallback((next) => {
-    setThemeState(next);
     if (next === 'light') document.documentElement.setAttribute('data-theme', 'light');
     else document.documentElement.removeAttribute('data-theme');
     try { localStorage.setItem(STORAGE_KEY, next); } catch { /* storage is optional */ }
+    window.dispatchEvent(new CustomEvent('dz:theme', { detail: next }));
   }, []);
   return [theme, setTheme];
 }

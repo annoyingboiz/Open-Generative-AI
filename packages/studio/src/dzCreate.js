@@ -434,22 +434,22 @@ export const DEFAULT_CAMERA = { on: false, camera: "digital", lens: "clean", foc
 const LEGACY_CAMERA = { "Modular 8K Digital": "digital", "Full-Frame Cine Digital": "digital", "Studio Digital S35": "digital", "Grand Format 70mm Film": "imax-70", "Classic 16mm Film": "film-16", "Premium Large Format Digital": "large-format" };
 const LEGACY_LENS = { "Premium Modern Prime": "clean", "Clinical Sharp Prime": "clean", "Classic Anamorphic": "anamorphic", "Compact Anamorphic": "anamorphic", "70s Cinema Prime": "vintage-prime", "Warm Cinema Prime": "vintage-prime", "Vintage Prime": "vintage-prime", "Swirl Bokeh Portrait": "petzval", "Halation Diffusion": "clean", "Creative Tilt Lens": "tilt-shift", "Extreme Macro": "macro" };
 // Studio (redesign 01): every part of the look is its own choice, Auto (null) by default.
-export const AUTO_LOOK = { auto: true, camera: null, lens: null, focal: null, aperture: null, palette: null, light: null, genre: null, era: null };
+export const AUTO_LOOK = { auto: true, camera: null, lens: null, focal: null, aperture: null, filter: null, palette: null, light: null, genre: null, era: null };
 const strOrNull = (x) => (typeof x === "string" && x ? x : null);
 export function autoLook(c) {
   const v = c && typeof c === "object" ? c : {};
   if (v.auto) {
     const focal = Number(v.focal);
-    return { ...AUTO_LOOK, camera: strOrNull(v.camera), lens: strOrNull(v.lens), focal: Number.isFinite(focal) && focal > 0 ? focal : null, aperture: strOrNull(v.aperture),
+    return { ...AUTO_LOOK, camera: strOrNull(v.camera), lens: strOrNull(v.lens), focal: Number.isFinite(focal) && focal > 0 ? focal : null, aperture: strOrNull(v.aperture), filter: strOrNull(v.filter),
       palette: strOrNull(v.palette), light: strOrNull(v.light), genre: strOrNull(v.genre), era: strOrNull(v.era) };
   }
   const old = normalizeCamera(v);
-  return { ...AUTO_LOOK, ...(old.on ? { camera: old.camera, lens: old.lens, focal: old.focal, aperture: old.aperture } : {}), era: old.era, light: old.light };
+  return { ...AUTO_LOOK, ...(old.on ? { camera: old.camera, lens: old.lens, focal: old.focal, aperture: old.aperture } : {}), filter: old.filter || null, era: old.era, light: old.light };
 }
 export function normalizeCamera(c, { auto = false } = {}) {
   const v = c && typeof c === "object" ? c : {};
   if (auto) return autoLook(v);
-  if (v.auto) { const a = autoLook(v); return normalizeCamera({ on: Boolean(a.camera || a.lens || a.focal || a.aperture), camera: a.camera, lens: a.lens, focal: a.focal, aperture: a.aperture, era: a.era, light: a.light }); }
+  if (v.auto) { const a = autoLook(v); return normalizeCamera({ on: Boolean(a.camera || a.lens || a.focal || a.aperture), camera: a.camera, lens: a.lens, focal: a.focal, aperture: a.aperture, filter: a.filter, era: a.era, light: a.light }); }
   const focal = { 8: 12, 14: 16 }[Number(v.focal)] || Number(v.focal) || DEFAULT_CAMERA.focal;
   return {
     ...DEFAULT_CAMERA,
@@ -467,9 +467,9 @@ export function normalizeCamera(c, { auto = false } = {}) {
 export function lookOf(camera, move = "") {
   if (camera?.auto) {
     const a = autoLook(camera);
-    const look = { on: Boolean(a.camera || a.lens || a.focal || a.aperture), camera: a.camera, lens: a.lens, focal: a.focal, aperture: a.aperture, filter: null,
+    const look = { on: Boolean(a.camera || a.lens || a.focal || a.aperture), camera: a.camera, lens: a.lens, focal: a.focal, aperture: a.aperture, filter: a.filter,
       era: a.era, light: a.light, palette: a.palette, genre: a.genre, move: move || null };
-    return look.on || look.era || look.light || look.palette || look.genre || look.move ? look : null;
+    return look.on || look.filter || look.era || look.light || look.palette || look.genre || look.move ? look : null;
   }
   const c = normalizeCamera(camera);
   const look = { ...(c.on ? { on: true, camera: c.camera, lens: c.lens, focal: c.focal, aperture: c.aperture } : { on: false }), filter: c.filter, era: c.era, light: c.light, move: move || null };

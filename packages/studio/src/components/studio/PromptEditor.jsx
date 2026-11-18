@@ -20,7 +20,8 @@ function serialize(root) {
       if (c.nodeType === 3) out += c.nodeValue.replace(/\u00a0/g, " ");
       else if (c.nodeType === 1) {
         if (c.dataset?.tag) { out += `@${c.dataset.tag}`; continue; }
-        if (c.tagName === "BR") { if (!c.dataset?.end) out += "\n"; continue; }
+        // Our end marker, and the line break the browser keeps at the very end to hold the caret, are not text.
+        if (c.tagName === "BR") { if (!c.dataset?.end && !(node === root && c === node.lastChild)) out += "\n"; continue; }
         if (/^(DIV|P)$/.test(c.tagName) && out && !out.endsWith("\n")) out += "\n";
         walk(c);
       }
@@ -29,7 +30,7 @@ function serialize(root) {
   walk(root);
   return out;
 }
-const lenOf = (n) => (n.nodeType === 3 ? n.nodeValue.length : n.dataset?.tag ? n.dataset.tag.length + 1 : n.tagName === "BR" ? (n.dataset?.end ? 0 : 1) : null);
+const lenOf = (n) => (n.nodeType === 3 ? n.nodeValue.length : n.dataset?.tag ? n.dataset.tag.length + 1 : n.tagName === "BR" ? (n.dataset?.end || n === n.parentNode?.lastChild ? 0 : 1) : null);
 
 // Caret ⇄ offset in the prompt string.
 function getOffset(root) {
@@ -203,7 +204,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
         inputs.current += 1;
         let next = serialize(el);
         // Blocks or line breaks the browser made (drop, autocorrect): back to flat text + chips.
-        const messy = [...el.childNodes].some((c) => c.nodeType === 1 && !c.dataset?.tag && !c.dataset?.end);
+        const messy = [...el.childNodes].some((c) => c.nodeType === 1 && !c.dataset?.tag && !c.dataset?.end && !(c.tagName === "BR" && c === el.lastChild));
         if (!e.nativeEvent.isComposing && !composing.current && (messy || hasLooseTag(el, tagMap))) {
           const off = getOffset(el);
           render(el, next, tagMap);

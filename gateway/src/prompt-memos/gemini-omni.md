@@ -6,6 +6,7 @@ match: "^gemini-omni"
 sources:
   - https://runware.ai/docs/models/google-gemini-omni-flash-1-2/guides/prompting
   - Google AI "Mastering Gemini Omni" video prompting tips (May 2026)
+blocks: [Subject, Action, Setting, Camera, Lighting, Audio, Exclusions]
 ---
 # Gemini Omni Flash — prompt notes
 
@@ -18,5 +19,10 @@ sources:
 - **Exclusions** as sentences: "No music.", "No dialogue.", "No subtitles.", "No on-screen text." — never contradicting a layer you asked for.
 - References: describe what each reference is in plain words (the woman from the first image, the red sneaker), keep the @tags the user wrote.
 - Real-world knowledge works: name real places, objects, techniques.
+
+
+## Output format
+Sentences in this order: subject, action, setting, camera (with "Single continuous shot" or "Cut to" markers), lighting, audio, then exclusions as short sentences ("No subtitles."). Timecodes "[0-3s] …" on their own lines when timing matters.
+JSON prompts: keys subject, action, setting, camera, lighting, audio, exclusions.
 
 **Example:** A barista in a white apron steams milk at a café counter. Single continuous shot, slow push-in at waist height, morning window light. Audio: the hiss of the steam wand over soft jazz. No dialogue. No on-screen text.

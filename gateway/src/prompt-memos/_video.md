@@ -4,6 +4,7 @@ name: Any video model
 kind: video
 match: ""
 sources: [Google Veo, Kling, Seedance, Wan, MiniMax official prompt guides (common ground)]
+blocks: [Subject, Action, Setting, Camera, Look, Sound]
 ---
 # Video — general prompt notes
 
@@ -17,3 +18,7 @@ sources: [Google Veo, Kling, Seedance, Wan, MiniMax official prompt guides (comm
 - Sound (if the model makes audio): ambience first, then effects, then music; dialogue in quotes with who speaks and how. Say "no music" / "no subtitles" if they are not wanted.
 - Prefer positive wording ("empty street") over lists of negatives.
 - 40–120 words is a good default; longer only for multi-shot or many references.
+
+## Output format
+Labeled blocks, one per line: References (if any) · Subject · Action · Setting · Camera · Look · Sound.
+JSON prompts: keys references, subject, action, setting, camera, look, sound.

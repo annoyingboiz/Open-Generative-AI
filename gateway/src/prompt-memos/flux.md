@@ -5,6 +5,7 @@ kind: image
 match: "^flux"
 sources:
   - https://docs.bfl.ai/guides/prompting_guide_flux2
+blocks: [Subject, Action, Style, Context]
 ---
 # FLUX — prompt notes
 
@@ -16,5 +17,10 @@ sources:
 - Colors: "color #C4725A" or "hex #…" tied to a specific object; gradients name both ends and where.
 - Multi-reference: give each input a role (clothing from one, style from another, background from a third).
 - Camera cues work as look descriptors ("shot on Sony A7IV, 85mm lens").
+
+
+## Output format
+Prose, most important first: subject → action → style → context → secondary details; colors as hex tied to objects; text in quotes with placement.
+JSON prompts: keys scene, subjects, style, color_palette, lighting, mood, background, composition, camera.
 
 **Example:** Ceramic mug in color #0047AB on a white marble counter, soft morning window light, shot on Sony A7IV, 85mm lens, shallow depth of field.

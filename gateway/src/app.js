@@ -384,6 +384,10 @@ export async function buildApp(config, { logger = true } = {}) {
       return reply.redirect('/dz/settings?notice=llm#llm');
     } catch (error) { return chatgptError(req, reply, error); }
   });
+  // From the studio (JSON): make a text model my default.
+  app.post('/dz/api/llm/my-default', async (req, reply) => {
+    try { llm.setUserDefault(req.user, req.body?.model); return { ok: true }; } catch (error) { return llmError(reply, error); }
+  });
   // Everyone: their own default text model.
   app.post('/dz/settings/llm/my-default', async (req, reply) => {
     try { llm.setUserDefault(req.user, req.body?.model); return reply.redirect('/dz/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }

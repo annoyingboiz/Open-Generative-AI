@@ -6,6 +6,7 @@ match: "^seedream"
 sources:
   - https://runware.ai/docs/models/bytedance-seedream-5-0-pro/guides/prompting
   - ByteDance Seed — Seedream 5.0 Pro launch notes
+blocks: [Format, Subject, Composition, Lighting, Text, Style]
 ---
 # Seedream — prompt notes
 
@@ -16,5 +17,10 @@ sources:
 - **Edits:** one change per run; pin what must not change by name (silhouette, camera angle, backdrop, lighting) — unmentioned things drift. Reuse the same pin clause across variants.
 - Fusion: describe composition and light in the prompt; references supply the product identity.
 - Keep under ~600 words; tighten unclear clauses instead of adding more.
+
+
+## Output format
+Layered sentences in this order: format → subject → composition → lighting → in-image text (quoted) → style. Edits: the one change, then a "Keep …" clause pinning what must not change.
+JSON prompts: keys format, subject, composition, lighting, text, style (and keep for edits).
 
 **Example:** A square packshot of a ceramic pour-over dripper on a pale oak tabletop, soft window light from the left. Keep the dripper's exact silhouette, camera angle and backdrop from @image1; change only the glaze to matte sage green.

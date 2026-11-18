@@ -5,6 +5,7 @@ kind: video
 match: "^(minimax|hailuo|h-3)(?!.*image)"
 sources:
   - MiniMax H3 official prompt guide (via https://morphic.com/resources/how-to/minimax-h3-guide, https://lumalabs.ai/learning-center/articles/minimax-h3-prompting-guide)
+blocks: [Roles, Beats, Look, Sound, Limits]
 ---
 # MiniMax H3 (Hailuo 3) — prompt notes
 
@@ -19,4 +20,19 @@ sources:
 - Name the traits to keep in words as well as in the reference image.
 - Clips 5–15 s; prompt can be long, but each instruction competes for time in a short clip.
 
-**Example:** @image1 sets the rooftop location; @image2 is the lead. 0–4s: she walks to the railing; 4–8s: she turns to the camera and smiles. Handheld, slight focus lag, fine grain, cool dusk light with warm city glow. Wind and distant traffic throughout; one soft piano note on the turn. Keep her coat and hairstyle unchanged; no text or watermarks.
+
+## Output format
+Five labeled blocks, one per line, in this order:
+Roles: one job per reference (@tag — character / location / motion / camera / voice).
+Beats: time ranges covering the whole clip, e.g. "0–4s: … 4–8s: …", actions that run, not frozen frames.
+Look: style, palette, light, film texture, capture style (handheld, focus lag, grain), transitions if any.
+Sound: ambience, effects and when they land, music, dialogue with speaker; what stays silent.
+Limits: what stays locked (identity, wardrobe, product) and what must not appear.
+JSON prompts: keys roles, beats, look, sound, limits.
+
+**Example:**
+Roles: @image1 sets the rooftop location; @image2 is the lead.
+Beats: 0–4s: she walks to the railing, coat moving in the wind. 4–8s: she turns to camera and smiles.
+Look: cool dusk light with warm city glow, handheld, slight focus lag, fine grain.
+Sound: wind and distant traffic throughout; one soft piano note on the turn; no dialogue.
+Limits: keep her coat and hairstyle unchanged; no text or watermarks.

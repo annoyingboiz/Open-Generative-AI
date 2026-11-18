@@ -54,6 +54,11 @@ function AdaptDialog({ prompt, model, context, onClose, onUse }) {
   const [state, setState] = useState({ busy: false, error: "", result: null });
   const [text, setText] = useState("");
   const [notes, setNotes] = useState(null); // { name, body, sources } when shown
+  const [myDefault, setMyDefault] = useState(null); // set here: the new default
+  const currentDefault = myDefault || def;
+  const makeDefault = async () => {
+    try { await post("/dz/api/llm/my-default", { model: chosen }); setMyDefault(chosen); } catch (e) { setState((s) => ({ ...s, error: String(e?.message || e) })); }
+  };
   useEffect(() => { try { if (llmId) localStorage.setItem(LLM_KEY, llmId); } catch { /* optional */ } }, [llmId]);
 
   const run = async () => {
@@ -98,6 +103,11 @@ function AdaptDialog({ prompt, model, context, onClose, onUse }) {
             <Button variant="secondary" onClick={run} disabled={state.busy || !loaded}>{state.busy ? <><Spinner className="h-4 w-4" /> Rewriting…</> : r ? "Try again" : "Rewrite"}</Button>
             <Button variant="ghost" onClick={showNotes}>{notes ? "Hide notes" : "Model notes"}</Button>
           </div>
+          <div className="-mt-2 text-muted-foreground">
+            {chosen && chosen === currentDefault
+              ? "This is your default text model."
+              : chosen ? <button type="button" className="font-semibold text-primary hover:underline" onClick={makeDefault}>Make it my default text model</button> : null}
+          </div>
 
           {notes && (
             <div className="max-h-64 overflow-y-auto rounded-xl border border-border bg-background/50 p-4">
@@ -118,7 +128,7 @@ function AdaptDialog({ prompt, model, context, onClose, onUse }) {
           {r && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground">
-                <span>Adapted · notes: {r.memo?.name}{r.memo?.generic ? " (general)" : ""}</span>
+                <span>Adapted · notes: {r.memo?.name}{r.memo?.generic ? " (general)" : ""}{r.memo?.blocks?.length ? ` · blocks: ${r.memo.blocks.join(" / ")}` : ""}</span>
                 <span className="tabular-nums">{[money(r.costUsd), r.ms != null ? `${(r.ms / 1000).toFixed(1)} s` : ""].filter(Boolean).join(" · ")}</span>
               </div>
               <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={Math.min(16, Math.max(6, Math.ceil(text.length / 80)))} className="rounded-xl text-base" spellCheck />

@@ -4,6 +4,7 @@ name: Any image model
 kind: image
 match: ""
 sources: [Google Nano Banana, OpenAI GPT Image, BFL FLUX.2, ByteDance Seedream official prompt guides (common ground)]
+blocks: [Format, Subject, Composition, Light, Style, Text, Constraints]
 ---
 # Image — general prompt notes
 
@@ -17,3 +18,7 @@ sources: [Google Nano Banana, OpenAI GPT Image, BFL FLUX.2, ByteDance Seedream o
 - Photoreal: say "photograph"/"photorealistic" and give a camera look (lens, depth of field, film/grain) as appearance cues.
 - Positive wording; exclusions only for things the model tends to add (extra text, watermarks, logos).
 - 30–100 words usually; longer only for dense layouts.
+
+## Output format
+Natural sentences in this order: format/use → subject → composition and camera → light → style → exact text in quotes → constraints.
+JSON prompts: keys format, subject, composition, lighting, style, text, constraints.

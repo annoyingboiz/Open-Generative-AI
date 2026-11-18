@@ -19,6 +19,8 @@ test('every memo parses, has a body and sources; one generic per kind', () => {
   assert.ok(memos.length >= 15);
   for (const m of memos) {
     assert.ok(m.body.length > 200, m.id);
+    assert.match(m.body, /## Output format/, `${m.id} has an output format`);
+    assert.ok(m.blocks.length >= 4, `${m.id} lists its blocks`);
     assert.ok(m.generic || m.match, `${m.id} has a match`);
     assert.ok(m.sources.length, `${m.id} lists sources`);
   }
@@ -70,18 +72,24 @@ test('a dropped @tag is asked for again; JSON stays JSON; junk is refused', asyn
   a = createPromptAdapter({ llm });
   r = await a.adapt({ id: 1 }, { prompt: '{"scene":"night market"}', model: { family: 'nano-banana-2', kind: 'image' } });
   assert.deepEqual(JSON.parse(r.prompt), { scene: 'night market', camera: 'slow push-in' });
-  assert.match(llm.calls[0].system, /same shape/);
+  assert.match(llm.calls[0].system, /JSON prompts/);
   assert.equal(r.memo.id, 'nano-banana');
 
   llm = fakeLlm(['{"prompt":"{broken","changes":[]}']);
   a = createPromptAdapter({ llm });
   await assert.rejects(a.adapt({ id: 1 }, { prompt: '{"a":1}', model: { family: 'flux-3', kind: 'image' } }), /broke the JSON/);
-  llm = fakeLlm(['{"prompt":{"subject":"fox"},"changes":[]}']);
+  // JSON is rebuilt by the model's blocks, but not thinned out or emptied.
+  llm = fakeLlm(['{"prompt":{"s":"fox"},"changes":[]}']);
   a = createPromptAdapter({ llm });
-  await assert.rejects(a.adapt({ id: 1 }, { prompt: '{"subject":"fox","style":"ink"}', model: { family: 'dz-flux-3', kind: 'image' } }), /dropped keys/);
-  llm = fakeLlm(['{"prompt":[],"changes":[]}']);
+  await assert.rejects(a.adapt({ id: 1 }, { prompt: '{"subject":"a red fox in deep snow at dawn","style":"ink wash painting, soft grey paper"}', model: { family: 'dz-flux-3', kind: 'image' } }), /left out part/);
+  llm = fakeLlm(['{"prompt":{},"changes":[]}']);
   a = createPromptAdapter({ llm });
-  await assert.rejects(a.adapt({ id: 1 }, { prompt: '{"subject":"fox"}', model: { family: 'dz-flux-3', kind: 'image' } }), /dropped keys/);
+  await assert.rejects(a.adapt({ id: 1 }, { prompt: '{"subject":"fox"}', model: { family: 'dz-flux-3', kind: 'image' } }), /empty JSON/);
+  llm = fakeLlm(['{"prompt":{"references":"","subject":"a red fox in deep snow at dawn","action":"","scene":"","style":"ink wash painting, soft grey paper","camera":"","sound":""},"changes":[]}']);
+  a = createPromptAdapter({ llm });
+  r = await a.adapt({ id: 1 }, { prompt: '{"subject":"a red fox in deep snow at dawn","style":"ink wash painting, soft grey paper"}', model: { family: 'dz-seedance-2.5', kind: 'video' } });
+  assert.deepEqual(Object.keys(JSON.parse(r.prompt)), ['references', 'subject', 'action', 'scene', 'style', 'camera', 'sound']);
+  assert.deepEqual(r.memo.blocks, ['References', 'Subject', 'Action', 'Scene', 'Style', 'Camera', 'Sound']);
   await assert.rejects(a.adapt({ id: 1 }, { prompt: '   ', model: { kind: 'image' } }), /Write a prompt/);
   // Unknown family: the general notes for its kind.
   llm = fakeLlm(['plain text answer without json']);

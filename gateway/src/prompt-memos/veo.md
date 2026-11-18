@@ -6,6 +6,7 @@ match: "^veo"
 sources:
   - https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-veo-3-1
   - https://ai.google.dev/gemini-api/docs/video (Veo prompt guide)
+blocks: [Cinematography, Subject, Action, Context, Style, Audio]
 ---
 # Veo 3.1 — prompt notes
 
@@ -24,4 +25,21 @@ sources:
 - Exclusions as plain phrases ("no subtitles", "no text on screen"), not long negative lists.
 - Keep one shot per prompt; for sequences generate shots separately and repeat the character description.
 
-**Example:** Medium tracking shot at waist height, slow dolly back. A bartender in a black linen apron slides a frosted coupe across a walnut bar toward camera; condensation beads on the glass. Late-night cocktail bar, amber practical lights, bokeh of bottles behind. Moody, warm, shallow depth of field. Ambient: low chatter and a jazz trio in the next room. SFX: glass gliding on wood. No subtitles.
+
+## Output format
+Google's five parts plus audio, one labeled block per line:
+Cinematography: shot size, angle, lens feel, camera movement.
+Subject: who/what with identifying details (references by @tag and role).
+Action: what happens over the clip.
+Context: place, time, weather, background.
+Style & ambiance: light, color, film look, mood.
+Audio: Dialogue: speaker + "quoted line" with delivery · SFX: … · Ambient: … (or "No dialogue." / music choice).
+JSON prompts: keys cinematography, subject, action, context, style, audio.
+
+**Example:**
+Cinematography: medium tracking shot at waist height, slow dolly back, shallow depth of field.
+Subject: a bartender in a black linen apron.
+Action: he slides a frosted coupe across a walnut bar toward camera; condensation beads on the glass.
+Context: a late-night cocktail bar, amber practical lights, bottles blurred behind.
+Style & ambiance: moody, warm, filmic contrast.
+Audio: Ambient: low chatter and a jazz trio in the next room. SFX: glass gliding on wood. No subtitles.

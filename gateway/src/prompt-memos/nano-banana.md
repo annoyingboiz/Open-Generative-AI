@@ -6,6 +6,7 @@ match: "^nano-banana"
 sources:
   - https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-nano-banana
   - https://blog.google/products/gemini/prompting-tips-nano-banana-pro/
+blocks: [Subject, Action, Context, Composition, Style]
 ---
 # Nano Banana — prompt notes
 
@@ -24,5 +25,10 @@ sources:
 - Name materials precisely ("navy tweed", "matte ceramic mug").
 - Aspect ratio and resolution are set as parameters (those win); still describe the format and composition in words — vertical poster, wide cinematic frame, square packshot.
 - JSON prompts work well for complex scenes — keep the user's JSON structure.
+
+
+## Output format
+Natural sentences (no labels — Google asks for scene descriptions, not lists) in this order: subject → action/pose → location/context → composition and camera → style, light and materials → exact text in quotes. Edits: start with the verb, then what changes, then what stays the same. References: start with how each @tag is used.
+JSON prompts: keys subject, action, context, composition, style, text (and references, edit when relevant).
 
 **Example:** A fashion model in a tailored brown dress holding a structured handbag, posing confidently against a seamless cherry-red backdrop. Medium-full shot, center-framed. Fashion editorial, medium-format analog film, pronounced grain, soft cinematic key light.

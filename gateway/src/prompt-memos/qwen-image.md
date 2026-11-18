@@ -6,6 +6,7 @@ match: "^qwen-image"
 sources:
   - https://help.aliyun.com/en/model-studio/qwen-image-api
   - https://fal.ai/learn/tools/how-to-use-qwen-image-2
+blocks: [Layout, Subject, Background, Text, Style]
 ---
 # Qwen Image — prompt notes
 
@@ -16,5 +17,10 @@ sources:
 - Complex scenes: main subject → background → secondary objects.
 - Editing is the same model: say what to change and what to keep.
 - The provider may rewrite short prompts by itself; a detailed prompt keeps more control.
+
+
+## Output format
+Full sentences: overall layout/format → main subject → background and secondary objects (with positions) → each text block quoted with its place → style and light.
+JSON prompts: keys layout, subject, background, text_blocks, style.
 
 **Example:** A winter street in Beijing with two traditional shops side by side. A neon sign by the left entrance reads "Fine Detailing". Between the shops a snowman holds a small blackboard; chalk on it reads "Grand Opening". Soft evening light, light snowfall, warm shop windows.

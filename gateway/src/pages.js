@@ -256,7 +256,7 @@ ${chatgptAccounts(llm)}
   <div class="row"><select name="model" style="flex:1">${llmOptions((llm.models || []).filter((m) => m.source !== 'chatgpt' || llm.chatgpt?.sharing === 'all'), llm.globalDefault || llm.default)}</select><button class="btn small" type="submit">Save</button></div>
 </form>
 <form class="section" method="post" action="/dz/settings/llm/try#llm">
-  <label>Try a text model</label>
+  <label>Try a text model <span class="muted">— a test only; it changes no default (set yours in “My default text model” above)</span></label>
   <div class="row"><select name="model" style="flex:1">${llmOptions(llm.models || [], t?.model || llm.default)}</select></div>
   <textarea name="prompt" rows="3" style="margin-top:10px;width:100%" placeholder="e.g. Rewrite for Kling: a bartender pours a cocktail, slow motion">${esc(t?.prompt || '')}</textarea>
   <div class="row" style="margin-top:10px"><button class="btn" type="submit">Send</button><span class="muted">Cloud models cost a little (shown after the answer). The local one is free.</span></div>

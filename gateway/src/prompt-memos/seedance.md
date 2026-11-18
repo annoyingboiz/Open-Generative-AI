@@ -6,6 +6,7 @@ match: "^seedance"
 sources:
   - Seedance 2.5 Prompt Guide and User Guide (ByteDance / Volcengine / BytePlus)
   - https://kylon.io/blog/seedance-2-5-prompt-guide-2026 (summary of the official guides)
+blocks: [References, Subject, Action, Scene, Style, Camera, Sound]
 ---
 # Seedance 2.x — prompt notes
 
@@ -21,4 +22,23 @@ sources:
 - Camera and timing instructions separate from the subject description.
 - 60–120 words for a single shot works well.
 
-**Example:** @image1 defines the ceramic mug's shape and glaze; do not use its background. Stage 1: the mug on a walnut table, a hand lifts it to chest height. Stage 2: continue from the previous stage, same mug and table: slow push-in as steam rises. Warm morning window light, shallow depth of field. (gentle acoustic guitar) <soft ceramic clink> Dialogue in English, calm narrator: {Start your morning slow.}
+
+## Output format
+One labeled block per line, in this order (drop a block only if it truly doesn't apply):
+References: one sentence per @tag — what it defines and what NOT to take from it.
+Subject: who/what, with the details that must stay the same.
+Action: the main event, what visibly changes; for longer clips "Stage 1: … Stage 2: Continue from the previous stage: …".
+Scene: place, time, weather, background.
+Style: look, light, color, texture.
+Camera: shot size, angle, movement, cuts (timestamps only for key beats).
+Sound: (music) <sound effects> {dialogue} — dialogue language and delivery before the line.
+JSON prompts: the same blocks as keys — references, subject, action, scene, style, camera, sound.
+
+**Example:**
+References: @image1 defines the ceramic mug's shape and glaze; do not use its background.
+Subject: one white ceramic mug with a sage glaze, the only mug in the scene.
+Action: Stage 1: a hand lifts the mug from a walnut table to chest height. Stage 2: Continue from the previous stage, same mug and table: steam rises as the mug turns toward camera.
+Scene: a quiet kitchen in the early morning, rain on the window behind.
+Style: warm window light, soft shadows, shallow depth of field, natural color.
+Camera: medium close-up, slow push-in, no cuts.
+Sound: (gentle acoustic guitar) <soft ceramic clink> Dialogue in English, calm narrator: {Start your morning slow.}

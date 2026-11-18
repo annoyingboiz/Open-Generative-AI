@@ -38,7 +38,8 @@ function parseMemo(text, file) {
   if (!meta.id || !['image', 'video'].includes(meta.kind)) return null;
   let match = null;
   try { match = meta.match ? new RegExp(meta.match, 'i') : null; } catch { match = null; }
-  return { id: meta.id, name: meta.name || meta.id, kind: meta.kind, match, generic: file.startsWith('_'), sources: Array.isArray(meta.sources) ? meta.sources : meta.sources ? [meta.sources] : [], body: m[2].trim() };
+  const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  return { id: meta.id, name: meta.name || meta.id, kind: meta.kind, match, generic: file.startsWith('_'), sources: list(meta.sources), blocks: list(meta.blocks), body: m[2].trim() };
 }
 
 export function loadMemos(dir = DIR) {
@@ -92,7 +93,9 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       '1. Keep everything the user asked for: subject, story, action, style, mood and every specific detail. Do not invent new characters, objects, brands, places or plot. Add only concrete craft details the notes call for (shot size, camera move, light, pacing, sound) where they fit and do not contradict the user.',
       '2. Write in English. Keep dialogue lines and on-screen text in the language the user wrote them, in the syntax the notes give.',
       '3. Keep every @tag listed in tags_in_prompt exactly as written: never rename, translate, merge or drop one, and do not invent new @tags. Put them where the notes say references go and say what each one is for (see references in the context).',
-      json ? '4. The prompt is JSON: answer with JSON of the same shape — same container type and all the same top-level keys. Improve the values; you may add keys the notes suggest.' : '4. Plain text in, plain text out (no markdown, no headings unless the notes use labeled sections).',
+      json
+        ? '4. Structure: the prompt is JSON — answer with a JSON object whose keys are the blocks listed under "JSON prompts" in the Output format section. Move every piece of the user\'s information into the right key; drop nothing (keep a user key that fits no block as it is).'
+        : '4. Structure: write the answer exactly in the Output format section of the notes — its blocks, order and labels (or prose, if it says so). Plain text, no markdown.',
       '5. Numeric settings (duration, resolution, aspect-ratio numbers) are set by the app: don\'t write them into the prompt; words about format and composition are fine. If camera_added_by_app is given, don\'t contradict it.',
       '6. Follow the length guidance in the notes.',
       '',
@@ -154,16 +157,17 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     if (json) {
       let parsed;
       try { parsed = JSON.parse(out.prompt); } catch { throw new AdaptError('The text model broke the JSON. Try again or pick another text model.', 424); }
-      const sameType = Array.isArray(parsed) === Array.isArray(original) && typeof parsed === 'object' && parsed !== null;
-      const keysKept = Array.isArray(original) || Object.keys(original).every((k) => Object.prototype.hasOwnProperty.call(parsed, k));
-      if (!sameType || !keysKept) throw new AdaptError('The text model changed the JSON structure (dropped keys). Try again or pick another text model.', 424);
+      // Rebuilt by the model's blocks: still JSON, not empty, roughly as rich as yours.
+      const size = (v) => JSON.stringify(v).length;
+      if (!parsed || typeof parsed !== 'object' || !Object.keys(parsed).length) throw new AdaptError('The text model returned empty JSON. Try again or pick another text model.', 424);
+      if (size(parsed) < size(original) * 0.6) throw new AdaptError('The text model left out part of your JSON. Try again or pick another text model.', 424);
       out.prompt = JSON.stringify(parsed, null, 2);
     }
     return {
       prompt: out.prompt.trim(),
       changes: out.changes,
       lostTags: lost.map((t) => `@${t}`),
-      memo: { id: memo.id, name: memo.name, generic: memo.generic },
+      memo: { id: memo.id, name: memo.name, generic: memo.generic, blocks: memo.blocks },
       llm: r.model, costUsd: r.costUsd == null ? null : Math.round(cost * 1e6) / 1e6, ms,
     };
   }

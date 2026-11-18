@@ -6,6 +6,7 @@ match: "^kling"
 sources:
   - https://kling.ai/blog/kling-4-ai-video-model
   - https://www.krea.ai/models/kling-4/prompt-guide (summary of Kling's 14 Oct 2026 guide)
+blocks: [References, Scene, Beats, Camera, Sound]
 ---
 # Kling — prompt notes
 
@@ -21,4 +22,19 @@ sources:
 - Only two negatives are worth adding: "No subtitles." and "No background music." when not wanted (the model may add both).
 - Keyframes: describe the motion between frames; keep big changes (day → night) for separate clips.
 
-**Example:** @image1 defines the jacket; preserve its color and stitching. Slow orbit around a model in a grey studio, soft key light from the left. 0–5s: she turns toward the camera and adjusts the collar. 5s–end: she steps forward into a close-up, fabric catching the light. Low room tone, footsteps on concrete. No subtitles. No background music.
+
+## Output format
+Labeled blocks, one per line, in this order:
+References: "@tag is / defines …" for every attached asset (skip if none).
+Scene: who and where, concrete visuals, named once.
+Beats: "0–4s: …", "4–10s: …", "10s–end: …" — one action per range (a single short clip may have one range).
+Camera: shot size + behavior per range (locked, push in, orbit, tracking, long take).
+Sound: ambient bed first, then each effect; dialogue lines labeled with character, tone, language; "No subtitles." / "No background music." if not wanted.
+JSON prompts: keys references, scene, beats, camera, sound.
+
+**Example:**
+References: @image1 defines the jacket; preserve its color and stitching.
+Scene: a model in a grey studio, soft key light from the left.
+Beats: 0–5s: she turns toward the camera and adjusts the collar. 5s–end: she steps forward into a close-up, fabric catching the light.
+Camera: slow orbit, then a gentle push-in on the close-up.
+Sound: low room tone, footsteps on concrete. No subtitles. No background music.

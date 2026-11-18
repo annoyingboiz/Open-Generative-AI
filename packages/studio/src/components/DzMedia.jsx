@@ -159,17 +159,17 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
     return (
       <button key={item.key} type="button" onClick={() => pick(item)} disabled={blocked}
         title={item.name || undefined}
-        className={cn("group relative aspect-square overflow-hidden rounded-xl border bg-muted transition-colors", on ? "border-primary ring-2 ring-primary" : "border-border hover:border-primary", blocked && "opacity-40")}>
+        className={cn("group relative aspect-square overflow-hidden rounded-xl border bg-muted transition-colors", on ? "border-signal ring-2 ring-signal" : "border-border hover:border-input", blocked && "opacity-40")}>
         {item.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 256)} className="h-full w-full object-cover" muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
           : item.kind === "audio" ? <span className="flex h-full items-center justify-center px-2 text-center text-muted-foreground">♪ {item.name}</span>
             : <img src={dzThumb(item.url, 256)} alt={item.name || ""} loading="lazy" decoding="async" className="h-full w-full object-cover" />}
         {badges.length > 0 && (
           <span className="absolute bottom-1.5 left-1.5 flex flex-wrap gap-1">
-            {badges.map((b) => <span key={b} className="rounded-md bg-black/75 px-1.5 text-base font-semibold text-white">{b}</span>)}
+            {badges.map((b) => <span key={b} className="rounded-md bg-overlay/75 px-1.5 text-base font-semibold text-overlay-foreground">{b}</span>)}
           </span>
         )}
         {!single && (
-          <span className={cn("absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border-2 font-bold", on ? "border-primary bg-primary text-primary-foreground" : "border-white/80 bg-black/40 text-transparent opacity-0 group-hover:opacity-100")}>
+          <span className={cn("absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border-2 font-bold", on ? "border-signal bg-signal text-primary-foreground" : "border-overlay-foreground/80 bg-overlay/40 text-transparent opacity-0 group-hover:opacity-100")}>
             {on ? chosen.findIndex((x) => x.url === item.url) + 1 : "✓"}
           </span>
         )}
@@ -179,7 +179,7 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
 
   const uploadTile = (
     <button key="upload" type="button" onClick={() => fileInput.current?.click()} disabled={uploading > 0 || (!single && full)}
-      className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50">
+      className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-input hover:text-primary disabled:opacity-50">
       {uploading ? <Spinner className="h-6 w-6" /> : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>}
       <span className="font-semibold">{uploading ? "Uploading…" : "Upload"}</span>
     </button>

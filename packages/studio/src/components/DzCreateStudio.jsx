@@ -214,7 +214,7 @@ export function ModelPicker({ entries, entry, onPick }) {
               key={e.key}
               type="button"
               onClick={() => { onPick(e.key); setOpen(false); }}
-              className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent", e.key === entry?.key && "bg-primary/10")}
+              className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-accent", e.key === entry?.key && "bg-signal/10")}
             >
               <Logo src={e.logo} name={e.vendorName} size={40} />
               <span className="min-w-0 flex-1">
@@ -245,7 +245,7 @@ export function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKe
             {info.kind === "image" ? <img src={dzThumb(f.url, 256)} alt="" className="h-full w-full object-cover" />
               : info.kind === "video" ? <video src={f.url} className="h-full w-full object-cover" muted />
                 : <span className="flex h-full items-center justify-center text-muted-foreground">♪</span>}
-            <button type="button" onClick={() => onRemove(i)} aria-label="Remove" className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100">
+            <button type="button" onClick={() => onRemove(i)} aria-label="Remove" className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-overlay/75 text-overlay-foreground opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
           </div>
@@ -255,7 +255,7 @@ export function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKe
             type="button"
             onClick={() => setPicker(true)}
             disabled={uploading}
-            className="flex h-16 w-16 items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+            className="flex h-16 w-16 items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-input hover:text-primary disabled:opacity-50"
             aria-label={`Add ${info.label.toLowerCase()}`}
           >
             {uploading ? <Spinner className="h-5 w-5" /> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}
@@ -281,7 +281,7 @@ export function CameraPanel({ camera, setCamera, hints = [] }) {
       <div className="grid grid-cols-3 gap-1.5">
         {options.map((o) => (
           <button key={o.id} type="button" onClick={() => set(k, o.id)} title={o.note || undefined}
-            className={cn("flex flex-col items-start gap-0.5 rounded-xl border p-2 text-left leading-tight transition-colors", c[k] === o.id ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+            className={cn("flex flex-col items-start gap-0.5 rounded-xl border p-2 text-left leading-tight transition-colors", c[k] === o.id ? "border-signal bg-signal/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
             <span className="font-medium">{o.label}</span>
             {o.note && <span className="line-clamp-2 text-muted-foreground">{o.note}</span>}
           </button>
@@ -295,7 +295,7 @@ export function CameraPanel({ camera, setCamera, hints = [] }) {
       <div className="flex flex-wrap gap-1.5">
         {options.map((o) => (
           <button key={o.value} type="button" onClick={() => set(k, o.value)}
-            className={cn("rounded-lg border px-2.5 py-1 tabular-nums transition-colors", c[k] === o.value ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>{o.label}</button>
+            className={cn("rounded-lg border px-2.5 py-1 tabular-nums transition-colors", c[k] === o.value ? "border-signal bg-signal/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>{o.label}</button>
         ))}
       </div>
     </div>
@@ -347,7 +347,7 @@ export function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel 
   const canUpscaleVideo = isVideo && dzVideoUpscaleSpec() && dzIsOwnImage(item.url);
   const Icon = ({ title, onClick, children, danger }) => (
     <Tip text={title}>
-      <button type="button" aria-label={title} onClick={(e) => { e.stopPropagation(); onClick(); }} className={cn("flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/65 text-white backdrop-blur-md transition-colors", danger ? "hover:bg-destructive" : "hover:bg-primary hover:text-primary-foreground")}>{children}</button>
+      <button type="button" aria-label={title} onClick={(e) => { e.stopPropagation(); onClick(); }} className={cn("flex h-9 w-9 items-center justify-center rounded-full border border-overlay-foreground/10 bg-overlay/65 text-overlay-foreground backdrop-blur-md transition-colors", danger ? "hover:bg-destructive" : "hover:bg-primary hover:text-primary-foreground")}>{children}</button>
     </Tip>
   );
   const on = sel?.has(item.id);
@@ -355,13 +355,13 @@ export function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel 
     <div className={cn("group relative overflow-hidden rounded-2xl border border-border bg-card", selectedRing(on))} {...(sel ? sel.dragProps(item) : {})}
       onClickCapture={(e) => { if (sel?.click(item, e)) e.stopPropagation(); }}>
       {sel && <SelectBox sel={sel} item={item} />}
-      {item.url && item.studio === "upscale" && !sel?.selecting && <span className="pointer-events-none absolute left-2 top-2 z-[1] rounded-md bg-black/75 px-2 py-0.5 font-semibold text-white">Upscaled</span>}
+      {item.url && item.studio === "upscale" && !sel?.selecting && <span className="pointer-events-none absolute left-2 top-2 z-[1] rounded-md bg-overlay/75 px-2 py-0.5 font-semibold text-overlay-foreground">Upscaled</span>}
       {!item.url ? <DzPendingTile status={item.status} error={item.error} label={item.studio === "upscale" ? "Upscaling" : "Generating"} className="aspect-square w-full"
         note={item.note} onCancel={item.cancellable ? () => dzLibrary.cancel(item.id).catch((e) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Cancel", message: String(e?.message || e) } }))) : undefined} />
         : (
           isAudio ? <DzAudioTile url={item.url} title={item.meta?.toolTitle || "Audio"} className="aspect-square w-full" /> : <button type="button" className="block w-full cursor-zoom-in" onClick={() => onOpen?.(item)} aria-label="Open">
-            {isVideo ? <video src={item.url} poster={dzThumb(item.url)} className="aspect-square w-full bg-black object-cover" muted loop playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
-              : <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" decoding="async" className="aspect-square w-full bg-black/40 object-cover" />}
+            {isVideo ? <video src={item.url} poster={dzThumb(item.url)} className="aspect-square w-full bg-overlay object-cover" muted loop playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
+              : <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" decoding="async" className="aspect-square w-full bg-overlay/40 object-cover" />}
           </button>
         )}
       {!item.url && item.status === "failed" && !sel?.selecting && (
@@ -794,7 +794,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
                   <button type="button" aria-label={`Remove ${e.name}`} onClick={() => setElements((list) => list.filter((x) => x.id !== e.id))} className="text-muted-foreground hover:text-foreground">✕</button>
                 </span>
               ))}
-              {!canUseElements && <span className="text-amber-300">This model takes no references — elements are not used.</span>}
+              {!canUseElements && <span className="text-warning">This model takes no references — elements are not used.</span>}
             </div>
           )}
           {unusedCount > 0 && <p className="text-muted-foreground">{unusedCount} attached file{unusedCount > 1 ? "s are" : " is"} not used by this model.</p>}
@@ -804,7 +804,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
               <span className="text-muted-foreground">In the prompt (or type @):</span>
               {tags.map((t) => (
                 <button key={t.tag} type="button" onClick={() => insertAtCursor(`@${t.tag}`)} title={`Sent to this model as ${t.to}`}
-                  className={cn("flex items-center gap-1.5 rounded-lg bg-primary/15 py-1 pl-1 pr-2.5 font-semibold text-primary transition-colors hover:bg-primary/20", !t.url && "pl-2.5", t.unused && "opacity-60")}>
+                  className={cn("flex items-center gap-1.5 rounded-lg bg-signal/15 py-1 pl-1 pr-2.5 font-semibold text-signal transition-colors hover:bg-signal/20", !t.url && "pl-2.5", t.unused && "opacity-60")}>
                   {t.url && <img src={t.url} alt="" className="h-6 w-6 rounded object-cover" />}
                   {t.kind === "element" && <span className="font-normal text-foreground/80">{t.label}</span>}@{t.tag}
                 </button>
@@ -812,7 +812,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
             </div>
           )}
           {trimmed && (
-            <p className="text-amber-300">
+            <p className="text-warning">
               Not everything fits this model{trimmed.dropped.length ? `: left out ${trimmed.dropped.join(", ")}` : ""}{trimmed.cut ? `${trimmed.dropped.length ? ";" : ":"} ${trimmed.cut} element picture${trimmed.cut === 1 ? "" : "s"} not sent` : ""}. Remove some files or elements, or pick a model with more slots.
             </p>
           )}
@@ -867,11 +867,11 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {jsonPrompt.ok ? (
                 <>
-                  <span className="text-emerald-300">JSON prompt — sent as written{camera.on || (kind === "video" && move) ? (Array.isArray(jsonPrompt.value) ? "; Camera is not added to a JSON list" : "; Camera is added as its own keys") : ""}.</span>
+                  <span className="text-success">JSON prompt — sent as written{camera.on || (kind === "video" && move) ? (Array.isArray(jsonPrompt.value) ? "; Camera is not added to a JSON list" : "; Camera is added as its own keys") : ""}.</span>
                   <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setPrompt(JSON.stringify(jsonPrompt.value, null, 2))}>Format</button>
                 </>
               ) : (
-                <span className="text-amber-300">Looks like JSON but has an error: {jsonPrompt.error}. It will be sent as plain text.</span>
+                <span className="text-warning">Looks like JSON but has an error: {jsonPrompt.error}. It will be sent as plain text.</span>
               )}
             </div>
           )}
@@ -944,7 +944,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
               </Button>
             </div>
           </div>
-          {missing && <p className="text-amber-300">{missing}</p>}
+          {missing && <p className="text-warning">{missing}</p>}
         </div>
       </div>
       <DrawModal isOpen={drawOpen} onClose={() => setDrawOpen(false)} apiKey={apiKey} batchSize={1} studio={mode} onError={onGenerationError} onDone={() => window.dispatchEvent(new CustomEvent("dz:history", { detail: { studio: mode } }))} />

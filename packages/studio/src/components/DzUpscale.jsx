@@ -255,11 +255,11 @@ function Compare({ before, after }) {
     >
       <img src={after} alt="Upscaled" className="absolute inset-0 h-full w-full object-contain" draggable={false} />
       <img src={before} alt="Original" className="absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} draggable={false} />
-      <div className="absolute inset-y-0 w-0.5 bg-white/80 shadow" style={{ left: `${pos}%` }}>
-        <div className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-base font-bold text-black shadow-lg">⇆</div>
+      <div className="absolute inset-y-0 w-0.5 bg-overlay-foreground/80 shadow" style={{ left: `${pos}%` }}>
+        <div className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-overlay-foreground text-base font-bold text-overlay shadow-lg">⇆</div>
       </div>
-      <span className="absolute top-3 left-3 rounded-lg bg-black/70 px-2.5 py-1 text-base font-semibold text-white/90">Before</span>
-      <span className="absolute top-3 right-3 rounded-lg bg-black/70 px-2.5 py-1 text-base font-semibold text-white/90">After</span>
+      <span className="absolute top-3 left-3 rounded-lg bg-overlay/70 px-2.5 py-1 text-base font-semibold text-overlay-foreground/90">Before</span>
+      <span className="absolute top-3 right-3 rounded-lg bg-overlay/70 px-2.5 py-1 text-base font-semibold text-overlay-foreground/90">After</span>
     </div>
   );
 }
@@ -368,9 +368,9 @@ function DzImageUpscaleView({ apiKey, initial, isAdmin = false, onGenerationStar
           )}
           {source && !picker && (
             <div className="absolute bottom-4 left-4 flex gap-2">
-              <Button variant="secondary" size="sm" className="bg-black/70 text-white backdrop-blur hover:bg-black/90" onClick={() => setPicker(true)}>Change image</Button>
+              <Button variant="secondary" size="sm" className="bg-overlay/70 text-overlay-foreground backdrop-blur hover:bg-overlay/90" onClick={() => setPicker(true)}>Change image</Button>
               {result && result.source === source && (
-                <Button variant="secondary" size="sm" className="bg-black/70 text-white backdrop-blur hover:bg-black/90" onClick={() => downloadFile(result.url, `upscaled-${Date.now()}.${result.url.split(".").pop()}`)}>Download</Button>
+                <Button variant="secondary" size="sm" className="bg-overlay/70 text-overlay-foreground backdrop-blur hover:bg-overlay/90" onClick={() => downloadFile(result.url, `upscaled-${Date.now()}.${result.url.split(".").pop()}`)}>Download</Button>
               )}
             </div>
           )}
@@ -386,7 +386,7 @@ function DzImageUpscaleView({ apiKey, initial, isAdmin = false, onGenerationStar
                 <button
                   type="button"
                   onClick={() => { const src = item.params?.image_url; if (src) { setSource(src); setResult({ url: item.url, source: src }); setPicker(false); } }}
-                  className="h-[72px] w-[72px] flex-shrink-0 overflow-hidden rounded-xl border border-border transition-colors hover:border-primary"
+                  className="h-[72px] w-[72px] flex-shrink-0 overflow-hidden rounded-xl border border-border transition-colors hover:border-input"
                 >
                   <img src={item.url} alt="Upscaled" loading="lazy" className="h-full w-full object-cover" />
                 </button>

@@ -168,8 +168,8 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
         const n = entriesByTool[t.id]?.length || 0;
         return (
           <button key={t.id} type="button" onClick={() => setToolId(t.id)} disabled={catalogReady && n === 0}
-            className="group flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/60 hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary"><ToolIcon id={t.id} /></span>
+            className="group flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-input hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted text-foreground"><ToolIcon id={t.id} /></span>
             <span className="text-lg font-semibold text-foreground">{t.title}</span>
             <span className="leading-snug text-muted-foreground">{t.text}</span>
             <span className="mt-auto text-muted-foreground/80">{catalogReady ? (n ? `${n} model${n === 1 ? "" : "s"}` : "No models with your keys") : ""}</span>
@@ -190,7 +190,7 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
             <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-1" role="tablist" aria-label="Tools">
               {TOOLS.map((t) => (
                 <button key={t.id} type="button" role="tab" aria-selected={t.id === tool.id} onClick={() => setToolId(t.id)}
-                  className={cn("flex shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 font-medium transition-colors", t.id === tool.id ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+                  className={cn("flex shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 font-medium transition-colors", t.id === tool.id ? "border-signal bg-signal/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
                   <ToolIcon id={t.id} size={16} />{t.title}
                 </button>
               ))}
@@ -204,7 +204,7 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
           {!tool && cards}
           {tool && history.loaded && items.length === 0 && (
             <div className="mx-auto flex max-w-xl flex-col items-center gap-3 py-16 text-center">
-              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary"><ToolIcon id={tool.id} size={28} /></span>
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-foreground"><ToolIcon id={tool.id} size={28} /></span>
               <div className="text-3xl font-bold text-foreground">{tool.title}</div>
               <p className="text-lg text-muted-foreground">{tool.text}</p>
             </div>
@@ -274,7 +274,7 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
                 </div>
               </div>
             )}
-            {missing && <p className="text-amber-300">{missing}</p>}
+            {missing && <p className="text-warning">{missing}</p>}
           </div>
         </div>
       )}

@@ -134,7 +134,7 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
             <p className="mt-2 whitespace-pre-wrap">{prompt}</p>
           </details>
 
-          {state.error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-200">{state.error}</p>}
+          {state.error && <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">{state.error}</p>}
           {state.busy && !r && <div className="flex items-center gap-2 py-6 text-muted-foreground"><Spinner className="h-5 w-5" /> Rewriting with {options.find((o) => o.value === chosen)?.label || "the text model"}…</div>}
 
           {r && (
@@ -144,7 +144,7 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
                 <span className="tabular-nums">{[money(r.costUsd), r.ms != null ? `${(r.ms / 1000).toFixed(1)} s` : ""].filter(Boolean).join(" · ")}</span>
               </div>
               <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={Math.min(16, Math.max(6, Math.ceil(text.length / 80)))} className="rounded-xl text-base" spellCheck />
-              {r.lostTags?.length > 0 && <p className="text-amber-300">The rewrite lost {r.lostTags.join(", ")} — add them back before using it, or try again.</p>}
+              {r.lostTags?.length > 0 && <p className="text-warning">The rewrite lost {r.lostTags.join(", ")} — add them back before using it, or try again.</p>}
               {r.changes?.length > 0 && (
                 <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">{r.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
               )}

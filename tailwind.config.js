@@ -1,4 +1,8 @@
 /** @type {import('tailwindcss').Config} */
+// Colours, radii and shadows come from the tokens in app/globals.css, so the
+// two themes change in one place. Redesign package 01 (docs/ux/handoff/01-studio).
+const hsl = (name) => `hsl(var(--${name}) / <alpha-value>)`;
+
 module.exports = {
     content: [
         "./app/**/*.{js,ts,jsx,tsx}",
@@ -7,62 +11,70 @@ module.exports = {
     ],
     theme: {
         extend: {
-            // DZ UI kit (shadcn-style): colors come from CSS variables in
-            // app/globals.css, so light/dark themes change in one place.
             colors: {
-                border: 'hsl(var(--border))',
-                input: 'hsl(var(--input))',
-                ring: 'hsl(var(--ring))',
-                background: 'hsl(var(--background))',
-                foreground: 'hsl(var(--foreground))',
-                primary: {
-                    DEFAULT: 'hsl(var(--primary))',
-                    foreground: 'hsl(var(--primary-foreground))',
-                    hover: 'hsl(var(--primary-hover))',
-                },
-                card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
-                popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
-                accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
-                destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
-                muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
-                secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
-                'app-bg': '#050505',
-                'panel-bg': '#0a0a0a',
-                'card-bg': '#141414',
-                secondary: '#a1a1aa',
-                muted: '#52525b',
+                border: hsl('border'),
+                input: hsl('input'),
+                ring: hsl('ring'),
+                background: hsl('background'),
+                foreground: hsl('foreground'),
+                primary: { DEFAULT: hsl('primary'), foreground: hsl('primary-foreground'), hover: hsl('primary-hover') },
+                secondary: { DEFAULT: hsl('secondary'), foreground: hsl('secondary-foreground') },
+                card: { DEFAULT: hsl('card'), foreground: hsl('card-foreground') },
+                popover: { DEFAULT: hsl('popover'), foreground: hsl('popover-foreground') },
+                accent: { DEFAULT: hsl('accent'), foreground: hsl('accent-foreground') },
+                muted: { DEFAULT: hsl('muted'), foreground: hsl('muted-foreground') },
+                destructive: { DEFAULT: hsl('destructive'), foreground: hsl('destructive-foreground') },
+                // The accent: selection, tags, the active group, running state and focus only.
+                signal: hsl('signal'),
+                success: hsl('success'),
+                warning: hsl('warning'),
+                subtle: hsl('subtle'),
+                // Labels and buttons on top of a picture or video (dark in both themes).
+                overlay: { DEFAULT: hsl('overlay'), foreground: hsl('overlay-foreground') },
+                scrim: 'var(--scrim)',
             },
             borderRadius: {
+                xs: 'var(--radius-xs)',
+                sm: 'var(--radius-sm)',
+                DEFAULT: 'var(--radius)',
+                md: 'var(--radius)',
                 lg: 'var(--radius)',
-                md: 'calc(var(--radius) - 2px)',
-                sm: 'calc(var(--radius) - 4px)',
+                slot: 'var(--radius-slot)',
+                xl: 'var(--radius-lg)',
+                '2xl': 'var(--radius-xl)',
+                '3xl': '20px',
             },
             fontFamily: {
                 sans: ['var(--font-inter)', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
             },
-            // Denis: 16 px is the smallest text anywhere in the interface.
-            // xs/sm stay as names (upstream code uses them) but are 16 px too.
+            // Type scale (section 3.2): body 14 px; 16 px is the prompt only; nothing
+            // under 12 px except the 11 px caps overline.
             fontSize: {
-                xs: ['16px', { lineHeight: '22px' }],
-                sm: ['16px', { lineHeight: '24px' }],
-                base: ['16px', { lineHeight: '24px' }],
-                lg: ['18px', { lineHeight: '26px' }],
-                xl: ['20px', { lineHeight: '28px' }],
-                '2xl': ['24px', { lineHeight: '32px' }],
-                '3xl': ['30px', { lineHeight: '36px' }],
-                '4xl': ['36px', { lineHeight: '40px' }],
-                '5xl': ['48px', { lineHeight: '1.1' }],
-            },
-            borderRadius: {
-                'xl': '1rem',
-                '2xl': '1.5rem',
-                '3xl': '2rem',
+                overline: ['11px', { lineHeight: '14px', letterSpacing: '0.08em', fontWeight: '600' }],
+                xs: ['12px', { lineHeight: '16px' }],      // caption
+                sm: ['13px', { lineHeight: '18px' }],      // meta
+                base: ['14px', { lineHeight: '20px' }],    // body
+                lg: ['16px', { lineHeight: '22px' }],      // panel title
+                prompt: ['16px', { lineHeight: '24px' }],
+                xl: ['20px', { lineHeight: '26px', letterSpacing: '-0.015em' }], // screen title
+                '2xl': ['24px', { lineHeight: '30px', letterSpacing: '-0.015em' }],
+                '3xl': ['28px', { lineHeight: '34px', letterSpacing: '-0.02em' }], // display
+                '4xl': ['36px', { lineHeight: '40px', letterSpacing: '-0.02em' }],
+                '5xl': ['48px', { lineHeight: '1.1', letterSpacing: '-0.02em' }],
             },
             boxShadow: {
-                'glow': '0 0 20px rgba(34, 211, 238, 0.4)',
-                'glow-accent': '0 0 20px rgba(168, 85, 247, 0.4)',
-                '3xl': '0 35px 60px -15px rgba(0, 0, 0, 0.8)',
-            }
+                popover: 'var(--shadow-popover)',
+                float: 'var(--shadow-float)',
+                dialog: 'var(--shadow-dialog)',
+            },
+            transitionTimingFunction: {
+                soft: 'cubic-bezier(.2, .8, .2, 1)',
+            },
+            transitionDuration: {
+                state: '120ms',
+                popover: '180ms',
+                sheet: '260ms',
+            },
         },
     },
     plugins: [require('tailwindcss-animate')],

@@ -181,7 +181,7 @@ export function DzVideoUpscalePanel({ apiKey, videoUrl, onStart, onDone, onError
       </div>
 
       <div className="space-y-3 border-t border-border p-5">
-        {quote.problem && <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-base text-amber-200">{quote.problem}</p>}
+        {quote.problem && <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-base text-warning">{quote.problem}</p>}
         <div className="flex items-center justify-between gap-3 text-base">
           <span className="text-muted-foreground">
             {input ? `${input.duration} s · ${input.fps} fps${input.audio ? " · sound kept" : ""}` : videoUrl ? (dzIsOwnImage(videoUrl) ? (quote.loading ? "Checking the video…" : "") : "Upload this video first") : "Choose a video"}
@@ -242,13 +242,13 @@ function VideoCompare({ before, after }) {
           onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={(e) => { setTime(e.currentTarget.currentTime); sync(); }}
           onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)} onSeeked={sync} />
         <video ref={b} src={before} muted loop playsInline preload="auto" className="absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} />
-        <div className="absolute inset-y-0 w-0.5 bg-white/80 shadow" style={{ left: `${pos}%` }}>
-          <div className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-base font-bold text-black shadow-lg">⇆</div>
+        <div className="absolute inset-y-0 w-0.5 bg-overlay-foreground/80 shadow" style={{ left: `${pos}%` }}>
+          <div className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-overlay-foreground text-base font-bold text-overlay shadow-lg">⇆</div>
         </div>
-        <span className="absolute top-3 left-3 rounded-lg bg-black/70 px-2.5 py-1 text-base font-semibold text-white/90">Before</span>
-        <span className="absolute top-3 right-3 rounded-lg bg-black/70 px-2.5 py-1 text-base font-semibold text-white/90">After</span>
+        <span className="absolute top-3 left-3 rounded-lg bg-overlay/70 px-2.5 py-1 text-base font-semibold text-overlay-foreground/90">Before</span>
+        <span className="absolute top-3 right-3 rounded-lg bg-overlay/70 px-2.5 py-1 text-base font-semibold text-overlay-foreground/90">After</span>
       </div>
-      <div className="flex items-center gap-3 border-t border-border bg-black/40 px-4 py-2.5">
+      <div className="flex items-center gap-3 border-t border-border bg-overlay/40 px-4 py-2.5">
         <Button size="sm" variant="secondary" onClick={toggle} aria-label={playing ? "Pause" : "Play"}>{playing ? "Pause" : "Play"}</Button>
         <input type="range" min={0} max={duration || 0} step={0.01} value={time} onChange={(e) => seek(Number(e.target.value))} className="flex-1 accent-primary" aria-label="Position" />
         <span className="w-24 text-right tabular-nums text-muted-foreground">{fmtTime(time)} / {fmtTime(duration)}</span>
@@ -343,9 +343,9 @@ export function DzVideoUpscaleView({ apiKey, initialPick, isAdmin = false, onGen
           )}
           {source && !picker && (
             <div className={cn("absolute left-4 flex gap-2", result && result.source === source ? "bottom-16" : "top-4")}>
-              <Button variant="secondary" size="sm" className="bg-black/70 text-white backdrop-blur hover:bg-black/90" onClick={() => setPicker(true)}>Change video</Button>
+              <Button variant="secondary" size="sm" className="bg-overlay/70 text-overlay-foreground backdrop-blur hover:bg-overlay/90" onClick={() => setPicker(true)}>Change video</Button>
               {result && result.source === source && (
-                <Button variant="secondary" size="sm" className="bg-black/70 text-white backdrop-blur hover:bg-black/90" onClick={() => downloadFile(result.url, `upscaled-${Date.now()}.${result.url.split(".").pop()}`)}>Download</Button>
+                <Button variant="secondary" size="sm" className="bg-overlay/70 text-overlay-foreground backdrop-blur hover:bg-overlay/90" onClick={() => downloadFile(result.url, `upscaled-${Date.now()}.${result.url.split(".").pop()}`)}>Download</Button>
               )}
             </div>
           )}
@@ -364,12 +364,12 @@ export function DzVideoUpscaleView({ apiKey, initialPick, isAdmin = false, onGen
                     type="button"
                     disabled={!item.url}
                     onClick={() => { const src = up.source || item.params?.video_url; if (src && item.url) { setSource(src); setResult({ url: item.url, source: src }); setPicker(false); } }}
-                    className="relative h-[72px] w-[72px] flex-shrink-0 overflow-hidden rounded-xl border border-border transition-colors hover:border-primary disabled:cursor-wait"
+                    className="relative h-[72px] w-[72px] flex-shrink-0 overflow-hidden rounded-xl border border-border transition-colors hover:border-input disabled:cursor-wait"
                   >
                     {item.url
                       ? <img src={dzThumb(item.url, 256)} alt="Upscaled video" loading="lazy" className="h-full w-full object-cover" />
                       : <span className="flex h-full w-full items-center justify-center bg-muted/40"><Spinner className="h-5 w-5" /></span>}
-                    {up.target && <span className="absolute bottom-1 left-1 rounded bg-black/75 px-1 text-sm font-semibold text-white">{up.target.toUpperCase()}</span>}
+                    {up.target && <span className="absolute bottom-1 left-1 rounded bg-overlay/75 px-1 text-sm font-semibold text-overlay-foreground">{up.target.toUpperCase()}</span>}
                   </button>
                 </Tip>
               );

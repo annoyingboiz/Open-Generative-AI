@@ -436,12 +436,12 @@ export default function DzShell() {
         title={isCollapsed ? label : undefined}
         className={`relative flex items-center rounded-xl text-base font-semibold transition-colors
           ${isCollapsed ? 'h-11 w-11 justify-center mx-auto' : 'px-3 py-2 gap-3'}
-          ${active ? 'bg-primary/15 text-primary border border-primary/25' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60 border border-transparent'}`}
+          ${active ? 'bg-signal/15 text-signal border border-signal/25' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60 border border-transparent'}`}
       >
-        {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#22d3ee]" />}
+        {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-primary" />}
         <span className="flex-shrink-0">{icon}</span>
         {!isCollapsed && <span className="truncate">{label}</span>}
-        {running[tab.id] > 0 && <span className={`${isCollapsed ? 'absolute top-1.5 right-1.5' : 'ml-auto'} h-2 w-2 rounded-full bg-[#22d3ee] animate-pulse`} />}
+        {running[tab.id] > 0 && <span className={`${isCollapsed ? 'absolute top-1.5 right-1.5' : 'ml-auto'} h-2 w-2 rounded-full bg-primary animate-pulse`} />}
       </a>
     );
   };
@@ -452,29 +452,29 @@ export default function DzShell() {
 
   return (
     <div
-      className="h-screen bg-[#030303] flex flex-col overflow-hidden text-white relative"
+      className="h-screen bg-background flex flex-col overflow-hidden text-foreground relative"
       onDragOver={(e) => e.preventDefault()}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       {dragging && (
-        <div className="fixed inset-0 z-[100] bg-[#22d3ee]/10 backdrop-blur-sm border-2 border-dashed border-[#22d3ee]/50 flex items-center justify-center pointer-events-none">
+        <div className="fixed inset-0 z-[100] bg-signal/10 backdrop-blur-sm border-2 border-dashed border-signal/50 flex items-center justify-center pointer-events-none">
           <div className="rounded-2xl border border-border bg-card px-6 py-4 text-lg font-semibold text-foreground">Drop files to use them as references</div>
         </div>
       )}
 
       {/* Header */}
-      <header className="flex-shrink-0 h-14 border-b border-white/[0.06] flex items-center justify-between px-4 bg-[#0a0a0b]/90 backdrop-blur-md z-50 gap-4">
+      <header className="flex-shrink-0 h-14 border-b border-border flex items-center justify-between px-4 bg-card/90 backdrop-blur-md z-50 gap-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => setMobileOpen((v) => !v)} className="md:hidden p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70" aria-label="Menu">
+          <button onClick={() => setMobileOpen((v) => !v)} className="md:hidden p-2 rounded-lg bg-muted hover:bg-accent text-muted-foreground" aria-label="Menu">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
           </button>
-          <button onClick={toggleSidebar} className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/5" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          <button onClick={toggleSidebar} className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg bg-muted hover:bg-accent text-muted-foreground hover:text-foreground border border-border" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={collapsed ? 'rotate-180' : ''}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /><path d="M14 9l-3 3 3 3" /></svg>
           </button>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-[#22d3ee] rounded-lg flex items-center justify-center shadow-lg shadow-[#22d3ee]/20">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-signal/20">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M16 10l6-3v10l-6-3" /></svg>
             </div>
             <span className="text-lg font-bold tracking-tight hidden lg:block">Director</span>
@@ -486,7 +486,7 @@ export default function DzShell() {
         </div>
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={() => { setUpscaleDrawer(null); setChatOpen((v) => !v); }} aria-pressed={chatOpen} title="Chat with assistants"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-base font-semibold ${chatOpen ? 'border-primary/60 bg-primary/10 text-primary' : 'border-border text-foreground/90 hover:bg-accent'}`}>
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-base font-semibold ${chatOpen ? 'border-signal/60 bg-signal/10 text-signal' : 'border-border text-foreground/90 hover:bg-accent'}`}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
             <span className="hidden sm:inline">Chat</span>
           </button>
@@ -494,7 +494,7 @@ export default function DzShell() {
           {balance ? (
             <div className="hidden min-w-0 items-center gap-1.5 xl:flex" aria-label="Provider balances">
               {balance.map((b) => (
-                <span key={b.id} title={b.hint} className={`flex items-center gap-2 rounded-full border px-3 py-1 text-base ${b.low ? 'border-amber-400/40 text-amber-300' : 'border-border text-foreground/90'}`}>
+                <span key={b.id} title={b.hint} className={`flex items-center gap-2 rounded-full border px-3 py-1 text-base ${b.low ? 'border-warning/40 text-warning' : 'border-border text-foreground/90'}`}>
                   <span className="text-muted-foreground">{b.name}</span>
                   <span className="font-semibold tabular-nums">{b.text}</span>
                 </span>
@@ -502,7 +502,7 @@ export default function DzShell() {
             </div>
           ) : null}
           <span className="flex min-w-0 max-w-[180px] items-center gap-2 rounded-full border border-border px-3 py-1 text-base text-foreground/90" title={balance ? balance.map((b) => `${b.name} ${b.text}`).join(' · ') : user.displayName}>
-            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+            <span className="h-2 w-2 shrink-0 rounded-full bg-success" />
             <span className="truncate">{user.displayName}</span>
           </span>
           <a href={changes?.unseen ? '/dz/settings#changes' : '/dz/settings'} title={changes?.unseen ? `${changes.unseen} new provider change(s) — applied automatically` : undefined} className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-base font-semibold text-foreground/90 hover:bg-accent">
@@ -518,10 +518,10 @@ export default function DzShell() {
       {project && <div className="h-[3px] w-full flex-shrink-0" style={{ background: project.color }} aria-hidden="true" />}
 
       <div className="flex-1 min-h-0 flex relative overflow-hidden">
-        {mobileOpen && <div className="fixed inset-0 bg-black/70 z-40 md:hidden" onClick={() => setMobileOpen(false)} />}
+        {mobileOpen && <div className="fixed inset-0 bg-overlay/70 z-40 md:hidden" onClick={() => setMobileOpen(false)} />}
 
         {/* Sidebar */}
-        <aside className={`fixed top-14 bottom-0 left-0 md:static md:h-full z-30 bg-[#0a0a0b]/95 border-r border-white/[0.06] flex flex-col transition-all duration-300 flex-shrink-0 select-none
+        <aside className={`fixed top-14 bottom-0 left-0 md:static md:h-full z-30 bg-card/95 border-r border-border flex flex-col transition-all duration-300 flex-shrink-0 select-none
           ${mobileOpen ? 'translate-x-0 w-64 z-50' : '-translate-x-full md:translate-x-0'} ${collapsed ? 'md:w-16' : 'md:w-56'}`}>
           <nav aria-label="Navigation" className="flex-1 overflow-y-auto custom-scrollbar py-3 px-2 space-y-1">
             {project && (
@@ -552,11 +552,11 @@ export default function DzShell() {
                   onDropItems={(ids, folderId) => dropItems(ids, project.id, folderId)} />
               </div>
             )}
-            <div className="mx-2 my-2 border-t border-white/[0.06]" />
+            <div className="mx-2 my-2 border-t border-border" />
             {DZ_TABS.filter((t) => !t.tool && (project || t.id !== 'projects')).map(navLink)}
             {!project && (
               <>
-                <div className="mx-2 my-2 border-t border-white/[0.06]" />
+                <div className="mx-2 my-2 border-t border-border" />
                 {!isCollapsed ? (
                   <div className="flex items-center justify-between px-3 pb-1 pt-1">
                     <a href="/studio/projects" onClick={(e) => { if (e.button === 0 && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openTab('projects'); } }} className="text-base font-semibold text-muted-foreground/80 hover:text-foreground">Projects</a>
@@ -569,7 +569,7 @@ export default function DzShell() {
                     onDragOver={(e) => { if (Array.from(e.dataTransfer.types).includes('application/x-dz-items')) { e.preventDefault(); e.stopPropagation(); e.currentTarget.dataset.over = '1'; } }}
                     onDragLeave={(e) => { delete e.currentTarget.dataset.over; }}
                     onDrop={(e) => { delete e.currentTarget.dataset.over; const raw = e.dataTransfer.getData('application/x-dz-items'); if (!raw) return; e.preventDefault(); e.stopPropagation(); try { dropItems(JSON.parse(raw), p.id, null); } catch { /* not ours */ } }}
-                    className="flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-3 text-base text-muted-foreground hover:bg-accent/60 hover:text-foreground data-[over]:ring-2 data-[over]:ring-primary">
+                    className="flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-3 text-base text-muted-foreground hover:bg-accent/60 hover:text-foreground data-[over]:ring-2 data-[over]:ring-signal">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.color }} />
                     <span className="truncate">{p.name}</span>
                   </a>
@@ -583,7 +583,7 @@ export default function DzShell() {
         </aside>
 
         {/* Studios stay mounted, so running generations survive switching tabs */}
-        <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-[#030303]" onContextMenu={onContextMenu}>
+        <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-background" onContextMenu={onContextMenu}>
           <div className={activeTab === 'create' ? 'h-full w-full' : 'hidden'}>
             <DzCreateStudio {...studioProps} {...callbacks('create')} droppedFiles={activeTab === 'create' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
@@ -641,8 +641,8 @@ export default function DzShell() {
                 <img src={upscaleDrawer.url} alt="Original" className="h-28 min-w-0 flex-1 rounded-xl bg-background object-contain" />
                 {upscaleDrawer.result && (
                   <button type="button" onClick={() => downloadUrl(upscaleDrawer.result)} title="Download the upscaled image" className="relative h-28 min-w-0 flex-1">
-                    <img src={upscaleDrawer.result} alt="Upscaled" className="h-full w-full rounded-xl border border-primary/50 bg-background object-contain" />
-                    <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/75 px-2 py-0.5 text-base font-semibold text-white">Download</span>
+                    <img src={upscaleDrawer.result} alt="Upscaled" className="h-full w-full rounded-xl border border-signal/50 bg-background object-contain" />
+                    <span className="absolute bottom-1.5 right-1.5 rounded-md bg-overlay/75 px-2 py-0.5 text-base font-semibold text-overlay-foreground">Download</span>
                   </button>
                 )}
               </div>
@@ -667,12 +667,12 @@ export default function DzShell() {
         </SidePanel>
 
         {imageMenu && (
-          <div role="menu" className="fixed z-[210] w-52 overflow-hidden rounded-xl border border-white/[0.08] bg-[#151519] py-1 text-base shadow-[0_12px_32px_rgba(0,0,0,0.6)]" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
+          <div role="menu" className="fixed z-[210] w-52 overflow-hidden rounded-xl border border-border bg-popover py-1 text-base shadow-[0_12px_32px_rgba(0,0,0,0.6)]" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
             {dzUpscaleSpec() && (
-              <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-white/85 hover:bg-white/[0.06]" onClick={() => { setUpscaleDrawer({ url: imageMenu.url, result: null }); setImageMenu(null); }}>Upscale…</button>
+              <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-foreground hover:bg-muted" onClick={() => { setUpscaleDrawer({ url: imageMenu.url, result: null }); setImageMenu(null); }}>Upscale…</button>
             )}
-            <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-white/85 hover:bg-white/[0.06]" onClick={() => { openInUpscaleTab(imageMenu.url); setImageMenu(null); }}>Open in Upscale tab</button>
-            <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-white/85 hover:bg-white/[0.06]" onClick={() => { downloadUrl(imageMenu.url); setImageMenu(null); }}>Download</button>
+            <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-foreground hover:bg-muted" onClick={() => { openInUpscaleTab(imageMenu.url); setImageMenu(null); }}>Open in Upscale tab</button>
+            <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-foreground hover:bg-muted" onClick={() => { downloadUrl(imageMenu.url); setImageMenu(null); }}>Download</button>
           </div>
         )}
       </div>
@@ -683,29 +683,29 @@ export default function DzShell() {
       {(runningTabs.some((t) => t !== activeTab) || notifications.length > 0) && (
         <div aria-live="polite" className={`fixed top-16 right-3 z-[200] flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none ${rightPanelOpen ? 'md:right-[440px]' : 'md:right-5'}`}>
           {runningTabs.filter((t) => t !== activeTab).map((tabId) => (
-            <div key={tabId} role="status" className="pointer-events-auto flex items-center gap-3 rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md px-3.5 py-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
-              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#22d3ee]/25 border-t-[#22d3ee]" />
-              <span className="font-semibold text-white/90">{labelOf(tabId)}</span>
-              <span className="text-white/45">generating{running[tabId] > 1 ? ` · ${running[tabId]}` : ''}…</span>
+            <div key={tabId} role="status" className="pointer-events-auto flex items-center gap-3 rounded-xl border border-border bg-popover/95 backdrop-blur-md px-3.5 py-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
+              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-signal/25 border-t-[#22d3ee]" />
+              <span className="font-semibold text-foreground">{labelOf(tabId)}</span>
+              <span className="text-muted-foreground">generating{running[tabId] > 1 ? ` · ${running[tabId]}` : ''}…</span>
             </div>
           ))}
           {notifications.map((n) => (
-            <div key={n.id} role={n.type === 'error' ? 'alert' : 'status'} className="dz-toast pointer-events-auto flex items-start gap-3 overflow-hidden rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md p-2.5 pr-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
-              <span className={`w-1 self-stretch rounded-full ${n.type === 'error' ? 'bg-red-400' : 'bg-[#22d3ee]'}`} />
+            <div key={n.id} role={n.type === 'error' ? 'alert' : 'status'} className="dz-toast pointer-events-auto flex items-start gap-3 overflow-hidden rounded-xl border border-border bg-popover/95 backdrop-blur-md p-2.5 pr-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
+              <span className={`w-1 self-stretch rounded-full ${n.type === 'error' ? 'bg-destructive' : 'bg-primary'}`} />
               {n.type === 'success' && n.url && /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(n.url) && (
-                <img src={n.url} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover border border-white/10" />
+                <img src={n.url} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover border border-border" />
               )}
               <div className="min-w-0 flex-1 py-0.5">
-                <p className="font-semibold text-white/90">
-                  {n.title || labelOf(n.tabId)} {n.type !== 'notice' && !n.title && <span className="font-normal text-white/45">{n.type === 'error' ? '· failed' : '· ready'}</span>}
+                <p className="font-semibold text-foreground">
+                  {n.title || labelOf(n.tabId)} {n.type !== 'notice' && !n.title && <span className="font-normal text-muted-foreground">{n.type === 'error' ? '· failed' : '· ready'}</span>}
                 </p>
-                {n.type === 'error' && <p className="mt-0.5 line-clamp-2 text-base text-red-300/90" title={n.message}>{n.message}</p>}
-                {n.type === 'notice' && <p className="mt-0.5 line-clamp-3 text-base text-white/70" title={n.message}>{n.message}</p>}
+                {n.type === 'error' && <p className="mt-0.5 line-clamp-2 text-base text-destructive" title={n.message}>{n.message}</p>}
+                {n.type === 'notice' && <p className="mt-0.5 line-clamp-3 text-base text-muted-foreground" title={n.message}>{n.message}</p>}
                 {n.type === 'success' && n.tabId !== activeTab && (
-                  <button type="button" onClick={() => { openTab(n.tabId); dismiss(n.id); }} className="mt-0.5 text-base font-semibold text-[#22d3ee] hover:text-[#67e8f9]">Open</button>
+                  <button type="button" onClick={() => { openTab(n.tabId); dismiss(n.id); }} className="mt-0.5 text-base font-semibold text-signal hover:text-signal">Open</button>
                 )}
               </div>
-              <button type="button" onClick={() => dismiss(n.id)} className="mt-0.5 h-6 w-6 shrink-0 rounded-md text-white/35 hover:bg-white/10 hover:text-white" aria-label="Dismiss">✕</button>
+              <button type="button" onClick={() => dismiss(n.id)} className="mt-0.5 h-6 w-6 shrink-0 rounded-md text-subtle hover:bg-accent hover:text-foreground" aria-label="Dismiss">✕</button>
             </div>
           ))}
         </div>

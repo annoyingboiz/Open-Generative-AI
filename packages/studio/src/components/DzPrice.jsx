@@ -51,7 +51,7 @@ export default function DzPrice({ apiKey, build, count = 1, provider = "", fallb
     ? `${price.source === "quote" ? (price.exact ? "Exact price for your account" : "Provider estimate") : "Catalog price"}${count > 1 ? ` · ${count} × $${fmt(price.usd)}` : ""}`
     : "No price from the provider yet";
   return (
-    <span className={`text-base whitespace-nowrap tabular-nums ${loading ? "text-white/30" : "text-white/55"} ${className}`} title={title}>
+    <span className={`text-base whitespace-nowrap tabular-nums ${loading ? "text-subtle" : "text-muted-foreground"} ${className}`} title={title}>
       {[provider, label].filter(Boolean).join(" · ")}
     </span>
   );

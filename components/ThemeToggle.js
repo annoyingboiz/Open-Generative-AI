@@ -38,7 +38,7 @@ export default function ThemeToggle() {
       onClick={toggle}
       aria-label={label}
       title={label}
-      className="flex items-center justify-center w-8 h-8 rounded-md border border-white/10 bg-white/5 text-white/80 hover:text-white hover:bg-white/10 hover:border-white/20 transition-colors"
+      className="flex items-center justify-center w-8 h-8 rounded-md border border-border bg-muted text-foreground hover:text-foreground hover:bg-accent hover:border-input transition-colors"
     >
       {theme === 'light' ? (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

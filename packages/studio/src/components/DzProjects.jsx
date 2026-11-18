@@ -273,7 +273,7 @@ export function MoveDialog({ item: request, onOpenChange, projects = [] }) {
       onOpenChange(false);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
-  const row = (selected) => cn("flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-base", selected ? "bg-primary/15 text-foreground" : "hover:bg-accent text-foreground/85");
+  const row = (selected) => cn("flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-base", selected ? "bg-signal/15 text-foreground" : "hover:bg-accent text-foreground/85");
   const what = n === 1 ? "1 item" : `${n} items`;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -293,7 +293,7 @@ export function MoveDialog({ item: request, onOpenChange, projects = [] }) {
             </button>
           ))}
         </div>
-        {mode === "move" && theirs > 0 && <p className="text-amber-300">{theirs} of them {theirs === 1 ? "was" : "were"} made by someone else — only the author can move it. Those stay; copy them instead.</p>}
+        {mode === "move" && theirs > 0 && <p className="text-warning">{theirs} of them {theirs === 1 ? "was" : "were"} made by someone else — only the author can move it. Those stay; copy them instead.</p>}
         <div className="grid max-h-[50vh] gap-1 overflow-y-auto">
           <button className={row(!target)} onClick={() => { setTarget(null); setFolder(null); }}><span className="w-3" /> Library (personal)</button>
           {projects.filter((p) => !p.archived).map((p) => (
@@ -356,8 +356,8 @@ export function FolderTree({ project, folders = [], current, onPick, onNew, onRe
   if (collapsed) return null;
   const rowCls = (active, isOver) => cn(
     "group flex h-9 w-full min-w-0 items-center gap-1.5 rounded-lg pr-1 text-left text-base transition-colors",
-    active ? "bg-primary/15 font-semibold text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-    isOver && "ring-2 ring-primary",
+    active ? "bg-signal/15 font-semibold text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+    isOver && "ring-2 ring-signal",
   );
   return (
     <div className="space-y-0.5" role="tree" aria-label="Folders">

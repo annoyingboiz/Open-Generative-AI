@@ -59,7 +59,7 @@ function Strip({ items, picked, running, kind, onPick, onRemove, onOpen }) {
   return (
     <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-1">
       {items.map((x) => (
-        <div key={x.url} className={cn("group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2", x.url === picked ? "border-primary" : "border-transparent")}>
+        <div key={x.url} className={cn("group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2", x.url === picked ? "border-signal" : "border-transparent")}>
           {x.gone ? (
             <span className="flex h-full w-full items-center justify-center bg-muted px-1 text-center text-[11px] leading-tight text-muted-foreground" title="Sent to Trash or moved out of here">Not here</span>
           ) : (
@@ -68,7 +68,7 @@ function Strip({ items, picked, running, kind, onPick, onRemove, onOpen }) {
             </button>
           )}
           <button type="button" onClick={() => onRemove(x.url)} aria-label="Remove from this shot" title="Remove from this shot (stays in All work)"
-            className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100">
+            className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-overlay/75 text-overlay-foreground opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         </div>
@@ -107,7 +107,7 @@ function ShotCard({
   return (
     <section className="rounded-2xl border border-border bg-card/60 p-3 md:p-4" aria-label={`Shot ${index + 1}`}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="flex h-7 min-w-7 items-center justify-center rounded-lg bg-primary/15 px-2 font-semibold text-primary">{index + 1}</span>
+        <span className="flex h-7 min-w-7 items-center justify-center rounded-lg bg-signal/15 px-2 font-semibold text-signal">{index + 1}</span>
         <Input value={shot.title} onChange={(e) => set("title", e.target.value)} placeholder="Shot title" disabled={readOnly} className="h-9 max-w-[260px] font-semibold" />
         <Pick label="Size" value={shot.size} options={SHOT_SIZES} onChange={(v) => set("size", v)} none="—" />
         <Pick label="Angle" value={shot.angle} options={SHOT_ANGLES} onChange={(v) => set("angle", v)} none="—" />
@@ -119,7 +119,7 @@ function ShotCard({
           <Button size="sm" variant="ghost" disabled={readOnly || index === 0} onClick={() => onMove(-1)} aria-label="Move up">↑</Button>
           <Button size="sm" variant="ghost" disabled={readOnly || index === total - 1} onClick={() => onMove(1)} aria-label="Move down">↓</Button>
           <Button size="sm" variant="ghost" disabled={readOnly} onClick={onDuplicate}>Duplicate</Button>
-          <Button size="sm" variant="ghost" disabled={readOnly} className="text-red-300 hover:text-red-200" onClick={onDelete}>Delete</Button>
+          <Button size="sm" variant="ghost" disabled={readOnly} className="text-destructive hover:text-destructive" onClick={onDelete}>Delete</Button>
         </div>
       </div>
 
@@ -158,7 +158,7 @@ function ShotCard({
           <Strip items={m.frames} picked={m.frame} running={running("frame")} kind="image" onOpen={(u) => onOpen(u, "image")}
             onPick={(url) => onMedia({ shot: shot.id, kind: "frame", op: "pick", url })} onRemove={(url) => onMedia({ shot: shot.id, kind: "frame", op: "remove", url })} />
           <Textarea value={shot.frame_prompt} onChange={(e) => set("frame_prompt", e.target.value)} disabled={readOnly} rows={5} placeholder="Start-frame prompt (for the image model)" className="min-h-[96px] resize-y font-[inherit]" />
-          {fr.trimmed && <p className="text-amber-300">Not every element fits this image model{fr.trimmed.dropped.length ? `: left out ${fr.trimmed.dropped.join(", ")}` : ""}.</p>}
+          {fr.trimmed && <p className="text-warning">Not every element fits this image model{fr.trimmed.dropped.length ? `: left out ${fr.trimmed.dropped.join(", ")}` : ""}.</p>}
           <div className="flex flex-wrap items-center gap-2">
             <Button className="rounded-xl" disabled={readOnly || !fr.body} onClick={() => onRun("frame", fr)} title={fr.problem || undefined}>
               {frames > 1 ? `Make ${frames} frames` : "Make frame"}
@@ -166,7 +166,7 @@ function ShotCard({
             <Button variant="secondary" className="rounded-xl" disabled={readOnly} onClick={() => setPicker(true)}>Use my image</Button>
             <span className={cn("tabular-nums", framePrice.loading ? "text-muted-foreground/60" : "text-muted-foreground")}>{price(framePrice, frames)}</span>
           </div>
-          {fr.problem && <p className="text-amber-300">{fr.problem}</p>}
+          {fr.problem && <p className="text-warning">{fr.problem}</p>}
           <DzMediaPicker open={picker} onOpenChange={setPicker} accept="image" max={1} apiKey={apiKey} title="Start frame" onPick={(list) => list[0] && onAddFrame(list[0].url)} />
         </div>
 
@@ -195,14 +195,14 @@ function ShotCard({
             )}
             <span className={cn("tabular-nums", videoPrice.loading ? "text-muted-foreground/60" : "text-muted-foreground")}>{price(videoPrice)}</span>
           </div>
-          {m.frame && vr.problem && <p className="text-amber-300">{vr.problem}</p>}
+          {m.frame && vr.problem && <p className="text-warning">{vr.problem}</p>}
         </div>
       </div>
 
       {failed.map((j) => (
-        <div key={j.id} className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-200">
+        <div key={j.id} className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
           <span className="flex-1">{j.step === "video" ? "Video" : "Frame"} failed: {j.error}</span>
-          <button type="button" onClick={() => onDismiss(j.id)} className="text-red-200/70 hover:text-red-100" aria-label="Dismiss">✕</button>
+          <button type="button" onClick={() => onDismiss(j.id)} className="text-destructive hover:text-destructive" aria-label="Dismiss">✕</button>
         </div>
       ))}
     </section>
@@ -220,7 +220,7 @@ function FinalCut({ boardId, onOpen }) {
         {history.items.map((item) => (
           <div key={item.id} className="w-64 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/40">
             {item.url ? (
-              <video src={item.url} controls playsInline preload="metadata" className="aspect-video w-full bg-black object-contain" />
+              <video src={item.url} controls playsInline preload="metadata" className="aspect-video w-full bg-overlay object-contain" />
             ) : <DzPendingTile status={item.status} error={item.error} label="Stitching" className="aspect-video w-full" />}
             <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-muted-foreground">
               <span className="truncate">{(item.meta?.stitch?.shots || []).length} shots · {new Date(item.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
@@ -639,7 +639,7 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
           {boardsLoaded && !boards.length && <p className="px-2 py-4 text-muted-foreground">None in {where} yet.</p>}
           {boards.map((b) => (
             <button key={b.id} type="button" onClick={() => switchTo(b.id)}
-              className={cn("flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors", b.id === currentId ? "bg-primary/10" : "hover:bg-accent")}>
+              className={cn("flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors", b.id === currentId ? "bg-signal/10" : "hover:bg-accent")}>
               {b.cover ? <img src={dzThumb(b.cover, 160)} alt="" className="h-10 w-14 shrink-0 rounded-md object-cover" /> : <span className="h-10 w-14 shrink-0 rounded-md bg-muted" />}
               <span className="min-w-0">
                 <span className={cn("block truncate font-semibold", b.id === currentId && "text-primary")}>{b.name}</span>
@@ -676,7 +676,7 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
               </span>
               <div className="ml-auto flex items-center gap-2">
                 <Button variant="secondary" size="sm" className="md:hidden" onClick={createBoard} disabled={readOnly}>New</Button>
-                <Button variant="ghost" size="sm" className="text-red-300 hover:text-red-200" onClick={deleteBoard} disabled={readOnly}>Delete storyboard</Button>
+                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={deleteBoard} disabled={readOnly}>Delete storyboard</Button>
               </div>
             </div>
 

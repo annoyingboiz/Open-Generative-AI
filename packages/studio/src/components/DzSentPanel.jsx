@@ -54,7 +54,7 @@ export function DzHints({ hints, className = "" }) {
   if (!hints?.length) return null;
   return (
     <div className={cn("space-y-1", className)}>
-      {hints.map((h) => <p key={h} className="text-amber-300">{h}</p>)}
+      {hints.map((h) => <p key={h} className="text-warning">{h}</p>)}
     </div>
   );
 }
@@ -78,7 +78,7 @@ export function RequestView({ label, endpoint, body, look, size, enabled = true,
   return (
     <section className="space-y-3">
       {label && <h3 className="text-lg font-semibold text-foreground">{label}</h3>}
-      {problem && <p className="text-amber-300">{problem}</p>}
+      {problem && <p className="text-warning">{problem}</p>}
       {!problem && (loading && !data ? <Spinner className="h-5 w-5" /> : error ? <p className="text-destructive">{error}</p> : data && (
         <>
           <p className="text-muted-foreground">

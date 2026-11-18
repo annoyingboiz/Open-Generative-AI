@@ -80,7 +80,7 @@ function InsertButtons({ text, canInsert, onInsert, small }) {
 function Message({ m, canInsert, onInsert, onOpen }) {
   if (m.role === "user") {
     return (
-      <div className="ml-8 space-y-2 rounded-2xl rounded-br-md bg-primary/10 px-3.5 py-2.5">
+      <div className="ml-8 space-y-2 rounded-2xl rounded-br-md bg-muted px-3.5 py-2.5">
         {m.images?.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {m.images.map((u) => <button key={u} type="button" onClick={() => onOpen(u)}><img src={dzThumb(u, 160)} alt="" className="h-16 w-16 rounded-lg object-cover" /></button>)}
@@ -91,14 +91,14 @@ function Message({ m, canInsert, onInsert, onOpen }) {
     );
   }
   if (m.error) {
-    return <div className="mr-8 rounded-2xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-red-200">{m.error}</div>;
+    return <div className="mr-8 rounded-2xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-destructive">{m.error}</div>;
   }
   const parts = splitAnswer(m.content || "");
   const codes = parts.filter((p) => p.kind === "code");
   return (
     <div className="mr-4 space-y-2">
       {parts.map((p, i) => (p.kind === "code" ? (
-        <div key={i} className="rounded-xl border border-border bg-black/40 p-3">
+        <div key={i} className="rounded-xl border border-border bg-overlay/40 p-3">
           <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words font-mono text-[15px] leading-relaxed text-foreground/90">{p.text}</pre>
           <InsertButtons text={p.text} canInsert={canInsert} onInsert={onInsert} small />
         </div>
@@ -192,7 +192,7 @@ function AssistantEditor({ assistant, modelOptions, onSaved, onDeleted, onBack, 
           <input ref={fileInput} type="file" multiple accept=".md,.markdown,.txt,text/plain,text/markdown" className="hidden" onChange={(e) => { addText(e.target.files || []); e.target.value = ""; }} />
           <DzMediaPicker open={picker} onOpenChange={setPicker} accept="image" max={2} apiKey={apiKey} onError={onError} title="Picture for the assistant" onPick={addImages} />
           {preview && (
-            <div className="space-y-2 rounded-xl border border-border bg-black/30 p-3">
+            <div className="space-y-2 rounded-xl border border-border bg-muted/50 p-3">
               <div className="flex items-center justify-between"><span className="font-semibold">{preview.name}</span><Button size="sm" variant="ghost" onClick={() => setPreview(null)}>Close</Button></div>
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[15px] text-foreground/80">{preview.text}</pre>
             </div>
@@ -202,7 +202,7 @@ function AssistantEditor({ assistant, modelOptions, onSaved, onDeleted, onBack, 
       <div className="flex items-center gap-2 border-t border-border p-3">
         <Button onClick={save} disabled={busy || !form.name.trim()}>{busy ? "Saving…" : "Save"}</Button>
         <Button variant="ghost" onClick={onBack}>Cancel</Button>
-        <Button variant="ghost" className="ml-auto text-red-300 hover:text-red-200" onClick={del}>Delete</Button>
+        <Button variant="ghost" className="ml-auto text-destructive hover:text-destructive" onClick={del}>Delete</Button>
       </div>
     </div>
   );
@@ -339,7 +339,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
           {view === "new" && <Button size="sm" variant="ghost" onClick={() => setView("chat")}>← Back</Button>}
           <p className="text-muted-foreground">Start from a template (you can change everything later) or from scratch. It goes to your Library; to share one with a project, make it inside that project.</p>
           {lists.templates.map((t) => (
-            <button key={t.id} type="button" onClick={() => createFrom(t.id)} className="block w-full rounded-xl border border-border p-3 text-left transition-colors hover:border-primary/60 hover:bg-accent">
+            <button key={t.id} type="button" onClick={() => createFrom(t.id)} className="block w-full rounded-xl border border-border p-3 text-left transition-colors hover:border-input hover:bg-accent">
               <span className="block font-semibold">{t.name}</span>
               <span className="block text-muted-foreground">{t.description}</span>
             </button>
@@ -354,7 +354,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
       ) : (
         <div className="flex h-full">
           {/* Left: assistant and its chats (on phones: behind the "Chats" button) */}
-          <aside className={cn("flex w-[260px] shrink-0 flex-col border-r border-border bg-black/20", showList ? "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-20 max-md:w-[82%] max-md:bg-card" : "max-md:hidden")}>
+          <aside className={cn("flex w-[260px] shrink-0 flex-col border-r border-border bg-muted/40", showList ? "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-20 max-md:w-[82%] max-md:bg-card" : "max-md:hidden")}>
             <div className="space-y-2 border-b border-border p-3">
               <Select value={assistant?.id || ""} onValueChange={(v) => (v === "__new" ? setView("new") : setAssistantId(v))}>
                 <SelectTrigger aria-label="Assistant" className="h-10 w-full rounded-xl"><SelectValue placeholder="Choose an assistant" /></SelectTrigger>
@@ -379,13 +379,13 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
             <nav aria-label="Chats" className="min-h-0 flex-1 space-y-0.5 overflow-y-auto custom-scrollbar p-2">
               {chats.length === 0 && <p className="px-2 py-3 text-muted-foreground">No chats with {assistant?.name || "this assistant"} yet.</p>}
               {chats.map((c) => (
-                <div key={c.id} className={cn("group flex items-center gap-1 rounded-lg pr-1", chat?.id === c.id ? "bg-primary/10" : "hover:bg-accent")}>
+                <div key={c.id} className={cn("group flex items-center gap-1 rounded-lg pr-1", chat?.id === c.id ? "bg-signal/10" : "hover:bg-accent")}>
                   <button type="button" onClick={() => { openChat(c.id); setShowList(wide()); }} className="min-w-0 flex-1 px-2.5 py-2 text-left">
-                    <span className={cn("block truncate", chat?.id === c.id && "font-semibold text-primary")}>{c.title}</span>
+                    <span className={cn("block truncate", chat?.id === c.id && "font-semibold text-signal")}>{c.title}</span>
                     <span className="block text-[14px] text-muted-foreground">{when(c.updated_at)}</span>
                   </button>
                   <button type="button" aria-label={`Delete chat ${c.title}`} title="Delete chat"
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-white/10 hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus:opacity-100 group-hover:opacity-100"
                     onClick={async () => {
                       if (!window.confirm(`Delete “${c.title}”?`)) return;
                       try { await dzAssistants.removeChat(c.id); setChats((l) => l.filter((x) => x.id !== c.id)); if (chat?.id === c.id) setChat(null); } catch (e) { notify(String(e.message || e)); }
@@ -425,12 +425,12 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
                   <div key={x.url} className="group relative">
                     <img src={dzThumb(x.url, 160)} alt="" className="h-14 w-14 rounded-lg object-cover" />
                     <button type="button" onClick={() => setImages((l) => l.filter((_, j) => j !== i))} aria-label="Remove picture"
-                      className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-[11px] text-white">✕</button>
+                      className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-overlay/75 text-[11px] text-overlay-foreground">✕</button>
                   </div>
                 ))}
               </div>
             )}
-            {visionWarn && <p className="text-amber-300">This text model may not see pictures — pick one marked for images (GPT, Claude, Gemini, Qwen VL…).</p>}
+            {visionWarn && <p className="text-warning">This text model may not see pictures — pick one marked for images (GPT, Claude, Gemini, Qwen VL…).</p>}
             <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} disabled={!assistant}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
               placeholder={assistant ? `Message ${assistant.name}… (Enter to send, Shift+Enter for a new line)` : "Choose an assistant"} className="max-h-[30vh] min-h-[80px] resize-y" />
@@ -453,7 +453,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
         </div>
       )}
       {viewing && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/90 p-6" onClick={() => setViewing(null)} role="dialog" aria-label="Picture">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-overlay/90 p-6" onClick={() => setViewing(null)} role="dialog" aria-label="Picture">
           <img src={viewing} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
         </div>
       )}

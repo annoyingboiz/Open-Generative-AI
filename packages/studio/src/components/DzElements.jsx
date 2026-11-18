@@ -203,18 +203,18 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError, o
           <div className="flex items-center justify-between"><span className="font-semibold">Views <span className="font-normal text-muted-foreground">— the first is the main one</span></span><span className="text-muted-foreground tabular-nums">{form.views.length}/24</span></div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {form.views.map((v, i) => (
-              <div key={v.url} className={cn("overflow-hidden rounded-xl border", i === 0 ? "border-primary" : "border-border")}>
+              <div key={v.url} className={cn("overflow-hidden rounded-xl border", i === 0 ? "border-signal" : "border-border")}>
                 <div className="group relative">
                   <img src={dzThumb(v.url)} alt={v.label || ""} className="aspect-square w-full object-cover" />
                   {i === 0 && <span className="absolute left-1.5 top-1.5 rounded-md bg-primary px-1.5 font-semibold text-primary-foreground">Main</span>}
                   <div className="absolute inset-x-1.5 bottom-1.5 flex justify-between gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
                     <span className="flex gap-1">
-                      <button type="button" aria-label="Move left" disabled={i === 0} onClick={() => moveView(i, -1)} className="h-8 w-8 rounded-md bg-black/75 text-white disabled:opacity-40">←</button>
-                      <button type="button" aria-label="Move right" disabled={i === form.views.length - 1} onClick={() => moveView(i, 1)} className="h-8 w-8 rounded-md bg-black/75 text-white disabled:opacity-40">→</button>
+                      <button type="button" aria-label="Move left" disabled={i === 0} onClick={() => moveView(i, -1)} className="h-8 w-8 rounded-md bg-overlay/75 text-overlay-foreground disabled:opacity-40">←</button>
+                      <button type="button" aria-label="Move right" disabled={i === form.views.length - 1} onClick={() => moveView(i, 1)} className="h-8 w-8 rounded-md bg-overlay/75 text-overlay-foreground disabled:opacity-40">→</button>
                     </span>
                     <span className="flex gap-1">
-                      {i > 0 && <button type="button" onClick={() => makeMain(i)} className="h-8 rounded-md bg-black/75 px-2 text-white">Main</button>}
-                      <button type="button" aria-label="Remove view" onClick={() => setForm((f) => ({ ...f, views: f.views.filter((_, j) => j !== i) }))} className="h-8 w-8 rounded-md bg-black/75 text-white">✕</button>
+                      {i > 0 && <button type="button" onClick={() => makeMain(i)} className="h-8 rounded-md bg-overlay/75 px-2 text-overlay-foreground">Main</button>}
+                      <button type="button" aria-label="Remove view" onClick={() => setForm((f) => ({ ...f, views: f.views.filter((_, j) => j !== i) }))} className="h-8 w-8 rounded-md bg-overlay/75 text-overlay-foreground">✕</button>
                     </span>
                   </div>
                 </div>
@@ -223,7 +223,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError, o
               </div>
             ))}
             {form.views.length < 24 && (
-              <button type="button" onClick={() => setPicker("image")} className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
+              <button type="button" onClick={() => setPicker("image")} className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground hover:border-input hover:text-primary">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
                 <span className="font-semibold">Add views</span>
               </button>
@@ -299,17 +299,17 @@ function ElementViewer({ element, onClose, onEdit, onGenerateVideo, onUse }) {
         <DialogTitle className="sr-only">{element.name}</DialogTitle>
         <DialogDescription className="sr-only">Views and videos of the element</DialogDescription>
         <div className="grid max-h-[92vh] md:grid-cols-[1fr_340px]">
-          <div className="flex min-h-0 flex-col bg-black">
+          <div className="flex min-h-0 flex-col bg-overlay">
             <div className="flex min-h-[320px] flex-1 items-center justify-center p-4">
               {cur ? (cur.video ? <video key={cur.url} src={cur.url} controls autoPlay className="max-h-[66vh] max-w-full rounded-lg" /> : <img src={cur.url} alt={cur.label || element.name} className="max-h-[66vh] max-w-full rounded-lg object-contain" />) : null}
             </div>
-            {cur?.label && <div className="px-4 pb-2 text-center text-white/80">{cur.label}</div>}
-            <div className="flex gap-2 overflow-x-auto custom-scrollbar border-t border-white/10 p-3">
+            {cur?.label && <div className="px-4 pb-2 text-center text-foreground">{cur.label}</div>}
+            <div className="flex gap-2 overflow-x-auto custom-scrollbar border-t border-border p-3">
               {media.map((m, j) => (
                 <button key={m.url} type="button" onClick={() => setI(j)} aria-label={m.label || (m.video ? "Video" : "View")}
-                  className={cn("relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2", j === i ? "border-primary" : "border-transparent opacity-70 hover:opacity-100")}>
+                  className={cn("relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2", j === i ? "border-signal" : "border-transparent opacity-70 hover:opacity-100")}>
                   <MediaTile url={m.url} video={m.video} className="h-full w-full" />
-                  {m.video && <span className="absolute bottom-0.5 left-0.5 rounded bg-black/75 px-1 text-white">▶</span>}
+                  {m.video && <span className="absolute bottom-0.5 left-0.5 rounded bg-overlay/75 px-1 text-overlay-foreground">▶</span>}
                 </button>
               ))}
             </div>
@@ -320,7 +320,7 @@ function ElementViewer({ element, onClose, onEdit, onGenerateVideo, onUse }) {
               <div className="text-muted-foreground">{kindLabel(element.kind)}{element.status === "draft" ? " · Draft" : ""}{element.author ? ` · ${element.author}` : ""}</div>
             </div>
             <button type="button" onClick={() => { navigator.clipboard?.writeText(`@${element.tag}`).then(() => setCopied(true)).catch(() => {}); }}
-              className="flex items-center justify-between rounded-xl bg-primary/15 px-3 py-2 text-left font-semibold text-primary hover:bg-primary/20" title="Copy the tag">
+              className="flex items-center justify-between rounded-xl bg-signal/15 px-3 py-2 text-left font-semibold text-signal hover:bg-signal/20" title="Copy the tag">
               @{element.tag}<span className="font-normal">{copied ? "Copied" : "Copy"}</span>
             </button>
             {element.description && <p className="whitespace-pre-wrap text-foreground/90">{element.description}</p>}
@@ -418,14 +418,14 @@ export function VideoElementDialog({ element, onClose, onError, apiKey = "sessio
                 const on = chosen.includes(v.url);
                 return (
                   <button key={v.url} type="button" onClick={() => setChosen((c) => (on ? c.filter((u) => u !== v.url) : [...c, v.url]))} title={v.label || undefined}
-                    className={cn("relative h-20 w-20 overflow-hidden rounded-lg border-2", on ? "border-primary" : "border-border opacity-50")}>
+                    className={cn("relative h-20 w-20 overflow-hidden rounded-lg border-2", on ? "border-signal" : "border-border opacity-50")}>
                     <img src={dzThumb(v.url, 256)} alt={v.label || ""} className="h-full w-full object-cover" />
                     {on && <span className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground">{chosen.indexOf(v.url) + 1}</span>}
                   </button>
                 );
               })}
             </div>
-            {tooMany && <p className="text-amber-300">Only the first {refSlot.max} chosen views go in.</p>}
+            {tooMany && <p className="text-warning">Only the first {refSlot.max} chosen views go in.</p>}
           </div>
           <label className="grid gap-1.5"><span className="font-semibold">Model</span>
             <Select value={entryKey} onValueChange={setEntryKey}>
@@ -448,15 +448,15 @@ export function VideoElementDialog({ element, onClose, onError, apiKey = "sessio
             <Input value={label} onChange={(e) => setLabel(e.target.value.slice(0, 40))} />
           </label>
         </div>
-        {full && <p className="text-amber-300">This element already has 8 videos. Remove one to add another.</p>}
-        {picked && !variant && <p className="text-amber-300">{missingFor(picked, attached)} Pick another model.</p>}
+        {full && <p className="text-warning">This element already has 8 videos. Remove one to add another.</p>}
+        {picked && !variant && <p className="text-warning">{missingFor(picked, attached)} Pick another model.</p>}
         {error && <p className="text-destructive">{error}</p>}
         <DialogFooter className="items-center gap-3">
           <span className="mr-auto text-muted-foreground tabular-nums">{price ? `${price.exact ? "" : "≈ "}$${price.usd.toFixed(2)}` : loading ? "…" : entry?.priceLabel || ""}</span>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={run} disabled={!variant || !prompt.trim() || busy || !entries.length || full}>{busy ? <Spinner /> : "Generate"}</Button>
         </DialogFooter>
-        {!entries.length && <p className="text-amber-300">No video model that takes pictures is available.</p>}
+        {!entries.length && <p className="text-warning">No video model that takes pictures is available.</p>}
       </DialogContent>
     </Dialog>
   );
@@ -494,7 +494,7 @@ export function ToElementDialog({ items, onClose, onError }) {
       onClose();
     } catch (e) { onError?.(e.message); } finally { setBusy(false); }
   };
-  const row = (selected) => cn("flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left", selected ? "bg-primary/15" : "hover:bg-accent");
+  const row = (selected) => cn("flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left", selected ? "bg-signal/15" : "hover:bg-accent");
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
@@ -556,8 +556,8 @@ export function DzElementsPage({ projects = [], onError, apiKey = "session" }) {
     <div key={el.id} className="group overflow-hidden rounded-2xl border border-border bg-card">
       <button className="relative block w-full" onClick={() => setViewing(el)}>
         <Thumb el={el} className="aspect-square w-full" />
-        {el.status === "draft" && <span className="absolute left-2 top-2 rounded-md bg-black/75 px-2 font-semibold text-white">Draft</span>}
-        {(el.videos || []).length > 0 && <span className="absolute bottom-2 left-2 rounded-md bg-black/75 px-2 font-semibold text-white">▶ {el.videos.length}</span>}
+        {el.status === "draft" && <span className="absolute left-2 top-2 rounded-md bg-overlay/75 px-2 font-semibold text-overlay-foreground">Draft</span>}
+        {(el.videos || []).length > 0 && <span className="absolute bottom-2 left-2 rounded-md bg-overlay/75 px-2 font-semibold text-overlay-foreground">▶ {el.videos.length}</span>}
       </button>
       <div className="flex items-start gap-2 p-3">
         <div className="min-w-0 flex-1">
@@ -625,7 +625,7 @@ export function DzElementsPage({ projects = [], onError, apiKey = "session" }) {
               <h2 className="mb-3 mt-10 text-xl font-semibold text-muted-foreground">From your Library — copy into this project</h2>
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                 {library.map((el) => (
-                  <button key={el.id} disabled={archived} onClick={() => dzElementsApi.copy(el.id, ctx.project.id).catch(report)} className="overflow-hidden rounded-xl border border-border text-left hover:border-primary disabled:opacity-50" title="Copy into this project">
+                  <button key={el.id} disabled={archived} onClick={() => dzElementsApi.copy(el.id, ctx.project.id).catch(report)} className="overflow-hidden rounded-xl border border-border text-left hover:border-input disabled:opacity-50" title="Copy into this project">
                     <Thumb el={el} className="aspect-square w-full" />
                     <div className="truncate px-2 py-1.5">{el.name} <span className="text-muted-foreground">+</span></div>
                   </button>
@@ -662,7 +662,7 @@ export function ElementPicker({ selected = [], onChange, max = 7, note }) {
   };
   const row = (el) => (
     <button key={el.id} onClick={() => toggle(el)} disabled={!ids.has(el.id) && selected.length >= max}
-      className={cn("flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left disabled:opacity-40", ids.has(el.id) ? "bg-primary/15" : "hover:bg-accent")}>
+      className={cn("flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left disabled:opacity-40", ids.has(el.id) ? "bg-signal/15" : "hover:bg-accent")}>
       <Thumb el={el} className="h-10 w-10 shrink-0 rounded-md" />
       <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{el.name}</span><span className="block truncate text-muted-foreground">@{el.tag} · {ELEMENT_KINDS.find((k) => k.value === el.kind)?.label}{el.video ? " · video" : ""}</span></span>
       {ids.has(el.id) && <span>✓</span>}

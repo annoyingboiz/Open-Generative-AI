@@ -15,6 +15,7 @@
     "check:clean": "node scripts/dz-check-clean.mjs"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "next": "^15.5.29",
     "react": "~19.2.9",
     "react-dom": "~19.2.9",

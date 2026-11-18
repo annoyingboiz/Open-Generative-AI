@@ -61,7 +61,7 @@ function IconButton({ title, onClick, danger, children }) {
       title={title}
       aria-label={title}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className={`flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/60 backdrop-blur-md transition-all ${danger ? "text-red-300 hover:bg-red-500 hover:text-white" : "text-white hover:bg-[#22d3ee] hover:text-black"}`}
+      className={`flex h-8 w-8 items-center justify-center rounded-full border border-overlay-foreground/10 bg-overlay/60 backdrop-blur-md transition-all ${danger ? "text-destructive hover:bg-destructive hover:text-overlay-foreground" : "text-overlay-foreground hover:bg-primary hover:text-primary-foreground"}`}
     >
       {children}
     </button>
@@ -77,13 +77,13 @@ export function Viewer({ item, onClose }) {
   if (!item) return null;
   const isVideo = item.kind === "video" || /\.(mp4|mov|webm)$/i.test(item.url || "");
   return (
-    <div className="fixed inset-0 z-[150] flex flex-col bg-black/90 backdrop-blur-sm" onClick={onClose} role="dialog" aria-label="Preview">
+    <div className="fixed inset-0 z-[150] flex flex-col bg-overlay/90 backdrop-blur-sm" onClick={onClose} role="dialog" aria-label="Preview">
       <div className="flex items-center justify-between gap-4 px-5 py-3 text-base text-foreground/90" onClick={(e) => e.stopPropagation()}>
         <span className="min-w-0 truncate">{item.prompt || item.name || ""}</span>
         {isVideo && dzVideoUpscaleSpec() && /\/media\/[ug]\//.test(item.url || "") && (
-          <button type="button" onClick={() => { onClose(); dzOpenVideoUpscale(item.url); }} className="ml-auto flex-shrink-0 rounded-lg border border-white/15 px-3 py-1.5 text-foreground hover:bg-white/10">Upscale video</button>
+          <button type="button" onClick={() => { onClose(); dzOpenVideoUpscale(item.url); }} className="ml-auto flex-shrink-0 rounded-lg border border-input px-3 py-1.5 text-foreground hover:bg-accent">Upscale video</button>
         )}
-        <button type="button" onClick={onClose} className="h-9 w-9 flex-shrink-0 rounded-lg text-muted-foreground hover:bg-white/10 hover:text-white" aria-label="Close">✕</button>
+        <button type="button" onClick={onClose} className="h-9 w-9 flex-shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close">✕</button>
       </div>
       {/* A click on the empty dark area closes; on the picture or video it doesn't. */}
       <div className="flex min-h-0 flex-1 items-center justify-center p-4">
@@ -104,7 +104,7 @@ function Card({ item, view, onOpen, actions, sel }) {
   const studio = STUDIO_LABEL[item.studio] || null;
   const on = sel?.has(item.id);
   return (
-    <div className={cn("group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-white/20", selectedRing(on))} {...(sel && view !== "uploads" ? sel.dragProps(item) : {})}>
+    <div className={cn("group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-input", selectedRing(on))} {...(sel && view !== "uploads" ? sel.dragProps(item) : {})}>
       {sel && <SelectBox sel={sel} item={item} />}
       <button type="button" className="relative block w-full" onClick={(e) => { if (sel?.click(item, e)) return; if (item.url) onOpen(item); }} disabled={!item.url}>
         {!item.url ? (
@@ -116,7 +116,7 @@ function Card({ item, view, onOpen, actions, sel }) {
           <video
             src={item.url}
             poster={dzThumb(item.url)}
-            className="aspect-square w-full bg-black/40 object-cover"
+            className="aspect-square w-full bg-overlay/40 object-cover"
             muted
             loop
             playsInline
@@ -125,9 +125,9 @@ function Card({ item, view, onOpen, actions, sel }) {
             onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
           />
         ) : (
-          <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || item.name || "Image"} loading="lazy" decoding="async" className="aspect-square w-full bg-black/40 object-cover" />
+          <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || item.name || "Image"} loading="lazy" decoding="async" className="aspect-square w-full bg-overlay/40 object-cover" />
         )}
-        {isVideo && item.url && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-base font-semibold text-foreground">Video</span>}
+        {isVideo && item.url && <span className="absolute bottom-2 left-2 rounded-md bg-overlay/70 px-2 py-0.5 text-base font-semibold text-foreground">Video</span>}
       </button>
       {(item.url || item.status === "failed") && actions && !sel?.selecting && (
         <div className={cn("absolute right-2 top-2 flex flex-col gap-2 transition-opacity", item.url ? "opacity-100 md:opacity-0 md:group-hover:opacity-100" : "opacity-100")}>
@@ -141,8 +141,8 @@ function Card({ item, view, onOpen, actions, sel }) {
           <p className="truncate text-base text-foreground/85" title={item.name}>{item.name}</p>
         ) : null}
         <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 text-base text-muted-foreground">
-          {studio && <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-muted-foreground">{studio}</span>}
-          {item.meta?.copiedFrom && <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-muted-foreground">Copy</span>}
+          {studio && <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{studio}</span>}
+          {item.meta?.copiedFrom && <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">Copy</span>}
           {item.author && <span className="truncate">{item.author}</span>}
           {item.model && <span className="truncate">{dzModelLabel(item.model) || item.provider_model}</span>}
           {Number.isFinite(item.cost_usd) && <span className="tabular-nums">${fmtUsd(item.cost_usd)}</span>}

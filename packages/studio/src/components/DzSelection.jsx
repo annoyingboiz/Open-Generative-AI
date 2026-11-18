@@ -109,7 +109,7 @@ export function SelectBox({ sel, item, className }) {
       onClick={(e) => { e.stopPropagation(); sel.toggle(item, e); }}
       className={cn(
         "absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full border-2 transition-opacity",
-        on ? "border-primary bg-primary text-primary-foreground opacity-100" : "border-white/80 bg-black/40 text-transparent",
+        on ? "border-signal bg-signal text-primary-foreground opacity-100" : "border-overlay-foreground/80 bg-overlay/40 text-transparent",
         !on && (sel.selecting ? "opacity-100" : "opacity-0 group-hover:opacity-100"),
         className,
       )}
@@ -120,7 +120,7 @@ export function SelectBox({ sel, item, className }) {
 }
 
 // Ring around a chosen card.
-export const selectedRing = (on) => (on ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "");
+export const selectedRing = (on) => (on ? "ring-2 ring-signal ring-offset-2 ring-offset-background" : "");
 
 async function downloadOne(url) {
   try {
@@ -190,7 +190,7 @@ export function GridToolbar({ ctx, sel, title, inTrash = false, children, canSel
   if (sel?.selecting) {
     const n = sel.count;
     return (
-      <div className="flex min-h-[44px] flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5">
+      <div className="flex min-h-[44px] flex-wrap items-center gap-2 rounded-xl border border-signal/30 bg-signal/10 px-3 py-1.5">
         <span className="mr-1 font-semibold text-foreground tabular-nums">{n ? `${n} selected` : "Choose items"}</span>
         <Button size="sm" variant="ghost" onClick={sel.selectAll}>Select all</Button>
         <span className="mx-1 hidden h-5 w-px bg-border sm:block" />

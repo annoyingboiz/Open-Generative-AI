@@ -25,7 +25,7 @@ export default function DzLikeButton({ id, liked: initial, onChange, className =
       aria-pressed={liked}
       aria-label={liked ? "Remove from Liked" : "Add to Liked"}
       title={liked ? "Remove from Liked" : "Add to Liked"}
-      className={`flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/60 backdrop-blur-md transition-all hover:bg-[#22d3ee] hover:text-black ${liked ? "text-[#f43f5e]" : "text-white"} ${className}`}
+      className={`flex h-8 w-8 items-center justify-center rounded-full border border-overlay-foreground/10 bg-overlay/60 backdrop-blur-md transition-all hover:bg-primary hover:text-primary-foreground ${liked ? "text-signal" : "text-overlay-foreground"} ${className}`}
     >
       <svg width="15" height="15" viewBox="0 0 24 24" fill={liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round">
         <path d="M12 20.5s-7.5-4.6-9.3-9.2C1.6 8.4 3.4 5 6.8 5c2 0 3.5 1.1 4.2 2.5h2C13.7 6.1 15.2 5 17.2 5c3.4 0 5.2 3.4 4.1 6.3-1.8 4.6-9.3 9.2-9.3 9.2z" />
@@ -50,24 +50,24 @@ const PENDING_CSS = `
 export function DzPendingTile({ status, error, className = "", label, note, onCancel }) {
   if (status === "failed") {
     return (
-      <div className={`flex flex-col items-center justify-center gap-2 bg-red-500/[0.06] p-4 text-center ${className}`}>
-        <span className="text-base font-semibold text-red-300">Failed</span>
-        {error && <span className="line-clamp-3 text-base text-red-200/70">{error}</span>}
+      <div className={`flex flex-col items-center justify-center gap-2 bg-destructive/[0.06] p-4 text-center ${className}`}>
+        <span className="text-base font-semibold text-destructive">Failed</span>
+        {error && <span className="line-clamp-3 text-base text-destructive">{error}</span>}
       </div>
     );
   }
   return (
-    <div className={`relative isolate flex items-center justify-center overflow-hidden bg-[#0b0d12] ${className}`} title="It keeps going if you close the page">
+    <div className={`relative isolate flex items-center justify-center overflow-hidden bg-card ${className}`} title="It keeps going if you close the page">
       <style>{PENDING_CSS}</style>
-      <span aria-hidden className="dz-pend-a absolute left-1/4 top-1/4 h-2/3 w-2/3 rounded-full bg-[#22d3ee]/35 blur-3xl" />
-      <span aria-hidden className="dz-pend-b absolute bottom-1/4 right-1/4 h-2/3 w-2/3 rounded-full bg-violet-500/30 blur-3xl" />
+      <span aria-hidden className="dz-pend-a absolute left-1/4 top-1/4 h-2/3 w-2/3 rounded-full bg-signal/20 blur-3xl" />
+      <span aria-hidden className="dz-pend-b absolute bottom-1/4 right-1/4 h-2/3 w-2/3 rounded-full bg-foreground/10 blur-3xl" />
       <span className="relative z-10 flex max-w-[92%] flex-col items-center gap-2 text-center">
-        <span className="dz-pend-t rounded-full bg-black/35 px-3 py-1 text-base font-semibold text-white/90 backdrop-blur-sm">{label || "Generating"}</span>
+        <span className="dz-pend-t rounded-full bg-overlay/35 px-3 py-1 text-base font-semibold text-overlay-foreground/90 backdrop-blur-sm">{label || "Generating"}</span>
         {/* e.g. "Waiting for the GPU: Meetbot is processing a meeting · 1 ahead" (this server) */}
-        {note && <span className="line-clamp-3 rounded-lg bg-black/45 px-2.5 py-1 text-base leading-snug text-white/80 backdrop-blur-sm">{note}</span>}
+        {note && <span className="line-clamp-3 rounded-lg bg-overlay/45 px-2.5 py-1 text-base leading-snug text-overlay-foreground/80 backdrop-blur-sm">{note}</span>}
         {onCancel && (
           <button type="button" onClick={(e) => { e.stopPropagation(); onCancel(); }}
-            className="rounded-lg border border-white/20 bg-black/40 px-3 py-1 text-base font-medium text-white/85 backdrop-blur-sm transition-colors hover:bg-white/10 hover:text-white">
+            className="rounded-lg border border-overlay-foreground/20 bg-overlay/40 px-3 py-1 text-base font-medium text-overlay-foreground/85 backdrop-blur-sm transition-colors hover:bg-overlay-foreground/10 hover:text-overlay-foreground">
             Cancel
           </button>
         )}

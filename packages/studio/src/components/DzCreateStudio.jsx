@@ -18,7 +18,7 @@ import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelect
 import { DzMediaPicker } from "./DzMedia.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
-  parseJsonPrompt, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
+  parseJsonPrompt, promptTags, translateTags, elementTags, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
   ROLE_INFO, CAMERA, LENS, FOCAL, APERTURE, CAMERA_ASSETS, CAMERA_MOVES, DEFAULT_CAMERA,
 } from "../dzCreate.js";
 import {
@@ -42,6 +42,7 @@ function normalizeSaved(raw) {
   if (typeof s.prompt === "string") out.prompt = s.prompt;
   if (isObj(s.camera)) out.camera = Object.fromEntries(Object.entries(s.camera).filter(([, v]) => isScalar(v)));
   if (typeof s.move === "string") out.move = s.move;
+  if ([1, 2, 3, 4].includes(s.count)) out.count = s.count;
   if (Array.isArray(s.elements)) out.elements = s.elements.filter((e) => isObj(e) && typeof e.id === "string" && typeof e.name === "string").slice(0, 7).map((e) => ({
     id: e.id, name: e.name, kind: typeof e.kind === "string" ? e.kind : "other", description: typeof e.description === "string" ? e.description : "",
     images: Array.isArray(e.images) ? e.images.filter((u) => typeof u === "string").slice(0, 8) : [], video: typeof e.video === "string" ? e.video : null,
@@ -345,6 +346,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const [prompt, setPrompt] = useState(saved.prompt || "");
   const [camera, setCamera] = useState({ ...DEFAULT_CAMERA, ...(saved.camera || {}) });
   const [move, setMove] = useState(saved.move || "");
+  const [count, setCount] = useState(saved.count || 1); // ×1–4: same request, several results
   const [attached, setAttached] = useState(saved.attached || {});
   const [uploadingRole, setUploadingRole] = useState(null);
   const [elements, setElements] = useState(saved.elements || []); // chosen elements (Library or project)
@@ -374,8 +376,8 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const storedValues = valuesByKind[kind] || {};
 
   useEffect(() => {
-    try { localStorage.setItem(cfg.store, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements })); } catch { /* optional */ }
-  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements]);
+    try { localStorage.setItem(cfg.store, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count })); } catch { /* optional */ }
+  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count]);
 
   // Only the slots this model has; other attached files are kept but not sent.
   const slotRoles = new Set((entry?.slots || []).map((s) => s.role));
@@ -398,7 +400,10 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const values = variant ? keepValues(storedValues, variant) : storedValues;
   const syntax = variant ? refSyntaxFor(variant.model) : null;
   const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, merged.attached);
-  const finalPrompt = composePrompt(prompt, { kind, camera, move });
+  // Our tags (@img1, @char_mike) → this model's own words, then Camera.
+  const tags = promptTags({ attached: merged.attached, syntax, elements: activeElements, elementPairs });
+  const finalPrompt = composePrompt(translateTags(prompt, tags), { kind, camera, move });
+  const usedTags = tags.filter((t) => new RegExp(`(^|[^\\w@])@${t.tag}(?![\\w])`, "i").test(prompt));
   const jsonPrompt = useMemo(() => parseJsonPrompt(prompt), [prompt]);
   const needsPrompt = variant?.model.promptRequired;
   const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
@@ -497,19 +502,23 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       elements: (elementSpec ? elementPairs.map((p) => p.element) : elementsUsed ? activeElements : []).map((e) => ({ id: e.id, name: e.name })),
     };
     const request = { endpoint: variant.model.endpoint, ...body };
-    setBusy((n) => n + 1);
-    onGenerationStart?.();
-    try {
-      const res = await dzWithMeta({ studio: mode, meta }, () => dzGenerate(apiKey, request));
-      onGenerationEnd?.();
-      if (res?.url) onGenerationComplete?.({ url: res.url, type: kind });
-    } catch (e) {
-      onGenerationEnd?.();
-      onGenerationError?.(String(e?.message || e).replace(/^API Request Failed: \d+ [^-]*- /, ""));
-    } finally {
-      setBusy((n) => n - 1);
-    }
-  }, [canRun, variant, kind, entry, prompt, values, camera, move, used, body, apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError]);
+    // ×N: the same request N times, each its own job and result card.
+    const one = async () => {
+      setBusy((n) => n + 1);
+      onGenerationStart?.();
+      try {
+        const res = await dzWithMeta({ studio: mode, meta }, () => dzGenerate(apiKey, request));
+        onGenerationEnd?.();
+        if (res?.url) onGenerationComplete?.({ url: res.url, type: kind });
+      } catch (e) {
+        onGenerationEnd?.();
+        onGenerationError?.(String(e?.message || e).replace(/^API Request Failed: \d+ [^-]*- /, ""));
+      } finally {
+        setBusy((n) => n - 1);
+      }
+    };
+    await Promise.all(Array.from({ length: count }, one));
+  }, [canRun, variant, kind, entry, prompt, values, camera, move, used, body, count, apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError]);
 
   const applyResult = (item, how) => {
     if (how === "animate" && fixedKind === "image") {
@@ -552,22 +561,48 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     if (isObj(m.attached)) setAttached(normalizeSaved({ attached: m.attached }).attached || {});
   };
 
-  // Prompt tags for what is attached; an element's tag shows its name.
-  const refChips = [];
-  if (syntax) {
-    const seenElement = new Set();
-    let n = 0;
-    for (const role of ["first", "middle", "last", "reference"]) for (const f of merged.attached[role] || []) {
-      n += 1;
-      if (f.element) { if (!seenElement.has(f.element)) { seenElement.add(f.element); refChips.push({ label: syntax.image(n), name: f.name }); } }
-      else refChips.push({ label: syntax.image(n), role });
+  // Typing "@": our tags for what is attached and chosen, plus every element
+  // the user can add (picking one adds it). Arrow keys, Enter/Tab, Esc.
+  const [mention, setMention] = useState(null); // { start, query, index }
+  const mentionOptions = useMemo(() => {
+    if (!mention) return [];
+    const q = mention.query.toLowerCase();
+    const chosenIds = new Set(elements.map((e) => e.id));
+    const others = canUseElements && elements.length < elementMax
+      ? [...elementLists.project, ...elementLists.library].filter((e, i, all) => !chosenIds.has(e.id) && all.findIndex((x) => x.id === e.id) === i)
+      : [];
+    const otherTags = elementTags([...activeElements, ...others]);
+    const list = [
+      ...tags.map((t) => ({ ...t, add: false })),
+      ...others.map((e) => ({ tag: otherTags.get(e.id), label: e.name, kind: "element", element: e, url: e.images?.[0] || null, add: true })),
+    ];
+    return list.filter((o) => !q || o.tag.toLowerCase().includes(q) || String(o.label || "").toLowerCase().includes(q)).slice(0, 8);
+  }, [mention, tags, elements, elementLists, canUseElements, elementMax, activeElements]);
+  const readMention = (el) => {
+    const pos = el.selectionStart ?? 0;
+    const m = /(^|[^\w@])@([\w]*)$/.exec(el.value.slice(0, pos));
+    setMention(m ? { start: pos - m[2].length - 1, query: m[2], index: 0 } : null);
+  };
+  const pickMention = (o) => {
+    const el = promptRef.current;
+    if (!mention || !el) return;
+    const end = el.selectionStart ?? prompt.length;
+    const text = `@${o.tag} `;
+    const next = `${prompt.slice(0, mention.start)}${text}${prompt.slice(end).replace(/^\s+/, "")}`;
+    setPrompt(next);
+    if (o.add && o.element) setElements((list) => (list.some((x) => x.id === o.element.id) || list.length >= elementMax ? list : [...list, o.element]));
+    setMention(null);
+    requestAnimationFrame(() => { el.focus(); const p = mention.start + text.length; el.setSelectionRange(p, p); });
+  };
+  const onPromptKey = (e) => {
+    if (mention && mentionOptions.length) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setMention((m) => ({ ...m, index: (m.index + 1) % mentionOptions.length })); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setMention((m) => ({ ...m, index: (m.index - 1 + mentionOptions.length) % mentionOptions.length })); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMention(mentionOptions[Math.min(mention.index, mentionOptions.length - 1)]); return; }
+      if (e.key === "Escape") { e.preventDefault(); setMention(null); return; }
     }
-    let v = 0;
-    for (const role of ["video", "source"]) for (const f of merged.attached[role] || []) { v += 1; refChips.push({ label: syntax.video(v), role, name: f.element ? f.name : undefined }); }
-    let a = 0;
-    for (const _ of merged.attached.audio || []) { a += 1; refChips.push({ label: syntax.audio(a), role: "audio" }); }
-  }
-  elementPairs.forEach((p, i) => refChips.push({ label: `@element_${i + 1}`, name: p.element.name }));
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
+  };
 
   const items = history.items;
 
@@ -629,25 +664,56 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           )}
           {unusedCount > 0 && <p className="text-muted-foreground">{unusedCount} attached file{unusedCount > 1 ? "s are" : " is"} not used by this model.</p>}
 
-          {refChips.length > 0 && (
+          {tags.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-muted-foreground">Refer to them in the prompt:</span>
-              {refChips.map((c) => (
-                <button key={c.label} type="button" onClick={() => insertAtCursor(c.label)} title={c.name ? `${c.name}` : undefined} className="rounded-lg bg-primary/15 px-2.5 py-1 font-semibold text-primary transition-colors hover:bg-primary/20">{c.name ? <span className="mr-1 font-normal text-foreground/80">{c.name}</span> : null}{c.label}</button>
+              <span className="text-muted-foreground">In the prompt (or type @):</span>
+              {tags.map((t) => (
+                <button key={t.tag} type="button" onClick={() => insertAtCursor(`@${t.tag}`)} title={`Sent to this model as ${t.to}`}
+                  className={cn("flex items-center gap-1.5 rounded-lg bg-primary/15 py-1 pl-1 pr-2.5 font-semibold text-primary transition-colors hover:bg-primary/20", !t.url && "pl-2.5", t.unused && "opacity-60")}>
+                  {t.url && <img src={t.url} alt="" className="h-6 w-6 rounded object-cover" />}
+                  {t.kind === "element" && <span className="font-normal text-foreground/80">{t.label}</span>}@{t.tag}
+                </button>
               ))}
             </div>
+          )}
+          {merged.trimmed && (
+            <p className="text-amber-300">
+              This model has room for fewer references{merged.trimmed.dropped.length ? `: left out ${merged.trimmed.dropped.join(", ")}` : ""}{merged.trimmed.cut ? `${merged.trimmed.dropped.length ? ";" : ":"} ${merged.trimmed.cut} element picture${merged.trimmed.cut === 1 ? "" : "s"} not sent` : ""}. Remove some files or pick a model with more slots.
+            </p>
           )}
 
           <Textarea
             ref={promptRef}
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); } }}
+            onChange={(e) => { setPrompt(e.target.value); readMention(e.target); }}
+            onKeyDown={onPromptKey}
+            onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) readMention(e.target); }}
+            onClick={(e) => readMention(e.target)}
+            onBlur={() => setTimeout(() => setMention(null), 150)}
             rows={jsonPrompt.json ? 8 : 3}
             spellCheck={!jsonPrompt.json}
             placeholder={kind === "video" ? "Describe the shot: subject, action, mood… (plain text or JSON)" : "Describe the image… (plain text or JSON)"}
             className={cn("min-h-[88px] max-h-[45vh] resize-y rounded-2xl text-base", jsonPrompt.json && "font-mono")}
           />
+          {mention && mentionOptions.length > 0 && (
+            <div role="listbox" aria-label="Tags" className="max-h-72 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl">
+              {mentionOptions.map((o, i) => (
+                <button key={`${o.tag}-${o.add}`} type="button" role="option" aria-selected={i === mention.index}
+                  onMouseDown={(e) => { e.preventDefault(); pickMention(o); }}
+                  className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left", i === mention.index ? "bg-accent" : "hover:bg-accent/60")}>
+                  {o.url ? <img src={o.url} alt="" className="h-8 w-8 rounded-md object-cover" /> : <span className="h-8 w-8 rounded-md bg-muted" />}
+                  <span className="font-semibold text-primary">@{o.tag}</span>
+                  <span className="truncate text-muted-foreground">{o.label}{o.add ? " · add element" : ""}</span>
+                  {!o.add && o.to && <span className="ml-auto shrink-0 text-muted-foreground">→ {o.to}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          {usedTags.length > 0 && (
+            <p className="text-muted-foreground">
+              This model gets: {usedTags.map((t) => `@${t.tag} → ${t.to}`).join(" · ")}
+            </p>
+          )}
           {jsonPrompt.json && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {jsonPrompt.ok ? (
@@ -717,8 +783,12 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
             )}
 
             <div className="ml-auto flex items-center gap-3">
+              <Tip text="How many results to make with one click (separate jobs, each paid)">
+                <span><Segmented value={count} onChange={setCount} size="sm" className="w-auto" aria-label="How many"
+                  options={[1, 2, 3, 4].map((n) => ({ value: n, label: `×${n}` }))} /></span>
+              </Tip>
               <span className={cn("tabular-nums", priceLoading ? "text-muted-foreground/60" : "text-muted-foreground")} title={price ? (price.exact ? "Exact price for your account" : "Estimate") : undefined}>
-                {price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd)}` : entry?.priceLabel || ""}
+                {price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}${count > 1 ? ` (${count} × ${fmtUsd(price.usd)})` : ""}` : entry?.priceLabel || ""}
               </span>
               <Button size="lg" className="h-11 rounded-xl px-6" onClick={generate} disabled={!canRun}>
                 {busy > 0 ? <><Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> Generating{busy > 1 ? ` · ${busy}` : ""}</> : "Generate"}

@@ -155,26 +155,123 @@ export function createEntries(kind) {
 export const elementsInputOf = (model) => (model?.inputs?.elements?.type === "elements" ? model.inputs.elements : null);
 export const entryTakesElements = (entry) => Boolean(entry?.variants.some((v) => elementsInputOf(v.model)));
 
-// The files an element adds when the model has no native elements.
-export function elementMedia(entry, elements = []) {
-  const has = (r) => entry?.slots.some((s) => s.role === r);
+// The files an element adds when the model has no native elements — fitted
+// into the room the model has left after the user's own files: every element
+// gets its main picture first, then more (up to 3 each) while there is room.
+// Elements that don't fit at all are reported, not sent.
+export function elementMedia(entry, elements = [], attached = {}) {
+  const slot = (r) => entry?.slots.find((s) => s.role === r);
   const out = {};
-  if (has("reference")) out.reference = elements.flatMap((e) => (e.images || []).slice(0, 3).map((url) => ({ url, name: e.name, element: e.id })));
-  if (has("video")) {
+  const dropped = [];
+  let cut = 0;
+  const ref = slot("reference");
+  if (ref) {
+    let room = Math.max(0, ref.max - (attached.reference || []).length);
+    const withPics = elements.filter((e) => (e.images || []).length);
+    const take = new Map(withPics.map((e) => [e.id, 0]));
+    for (const e of withPics) { if (room > 0) { take.set(e.id, 1); room -= 1; } else dropped.push(e.name); }
+    for (let round = 1; round < 3 && room > 0; round += 1) {
+      for (const e of withPics) {
+        if (room > 0 && take.get(e.id) === round && (e.images || []).length > round) { take.set(e.id, round + 1); room -= 1; }
+      }
+    }
+    for (const e of withPics) cut += Math.max(0, Math.min(3, e.images.length) - take.get(e.id));
+    out.reference = withPics.flatMap((e) => e.images.slice(0, take.get(e.id)).map((url) => ({ url, name: e.name, element: e.id })));
+    if (!out.reference.length) delete out.reference;
+  }
+  const vid = slot("video");
+  if (vid) {
+    const room = Math.max(0, vid.max - (attached.video || []).length);
     const videos = elements.filter((e) => e.video).map((e) => ({ url: e.video, name: e.name, element: e.id }));
-    if (videos.length) out.video = videos;
+    if (videos.length) out.video = videos.slice(0, room);
+    if (!out.video?.length) delete out.video;
+  }
+  return { files: out, dropped: [...new Set(dropped)], cut };
+}
+
+// Attached files + elements → what the endpoint choice and the body use.
+// `trimmed`: { dropped: [names], cut: pictures left out } when the model has too few slots.
+export function mergeElements(entry, attached, elements = []) {
+  if (!elements.length) return { attached, native: false, trimmed: null };
+  if (entryTakesElements(entry)) return { attached, native: true, trimmed: null };
+  const { files, dropped, cut } = elementMedia(entry, elements, attached);
+  const merged = { ...attached };
+  for (const [role, list] of Object.entries(files)) merged[role] = [...(attached[role] || []), ...list];
+  return { attached: merged, native: false, trimmed: dropped.length || cut ? { dropped, cut } : null };
+}
+
+// ── Our prompt tags ─────────────────────────────────────────────────────────
+// The prompt uses our own tags, whatever the model: @img1, @video1, @audio1 for
+// attached files and @char_mike / @prop_glass / @loc_bar / @obj_x for elements.
+// At send time each becomes what this model understands (@Image3, @image_3,
+// @element_1, …) — or plain words when the model has no @-syntax.
+const CYR = { а: "a", б: "b", в: "v", г: "g", ґ: "g", д: "d", е: "e", є: "ye", ё: "e", ж: "zh", з: "z", и: "i", і: "i", ї: "yi", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" };
+const TAG_PREFIX = { character: "char", object: "prop", place: "loc", other: "obj" };
+export function elementTag(e) {
+  if (e?.tag) return String(e.tag).replace(/^@/, "");
+  const latin = String(e?.name || "").toLowerCase().split("").map((c) => CYR[c] ?? c).join("");
+  const slug = latin.normalize("NFKD").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "x";
+  return `${TAG_PREFIX[e?.kind] || "obj"}_${slug}`;
+}
+// Unique tags for a list of elements (a second "Mike" becomes char_mike_2).
+export function elementTags(elements = []) {
+  const seen = new Map();
+  const out = new Map();
+  for (const e of elements) {
+    const base = elementTag(e);
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    out.set(e.id, n > 1 ? `${base}_${n}` : base);
   }
   return out;
 }
 
-// Attached files + elements → what the endpoint choice and the body use.
-export function mergeElements(entry, attached, elements = []) {
-  if (!elements.length) return { attached, native: false };
-  if (entryTakesElements(entry)) return { attached, native: true };
-  const extra = elementMedia(entry, elements);
-  const merged = { ...attached };
-  for (const [role, files] of Object.entries(extra)) merged[role] = [...(attached[role] || []), ...files];
-  return { attached: merged, native: false };
+// Every tag the prompt can use now, with what it turns into for this model.
+//   [{ tag, to, label, kind: 'file'|'element', role?, url?, element? }]
+export function promptTags({ attached = {}, syntax = null, elements = [], elementPairs = [] }) {
+  const out = [];
+  const tagOf = elementTags(elements);
+  let n = 0;
+  const firstImage = new Map(); // element id → its first image number
+  for (const role of ["first", "middle", "last", "reference"]) {
+    for (const f of attached[role] || []) {
+      n += 1;
+      if (f.element) { if (!firstImage.has(f.element)) firstImage.set(f.element, n); continue; }
+      out.push({ tag: `img${n}`, to: syntax ? syntax.image(n) : `image ${n}`, label: ROLE_INFO[role]?.label || "Image", kind: "file", role, url: f.url });
+    }
+  }
+  let v = 0;
+  const firstVideo = new Map();
+  for (const role of ["video", "source"]) {
+    for (const f of attached[role] || []) {
+      v += 1;
+      if (f.element) { if (!firstVideo.has(f.element)) firstVideo.set(f.element, v); continue; }
+      out.push({ tag: `video${v}`, to: syntax ? syntax.video(v) : `video ${v}`, label: ROLE_INFO[role]?.label || "Video", kind: "file", role, url: f.url });
+    }
+  }
+  let a = 0;
+  for (const f of attached.audio || []) { a += 1; out.push({ tag: `audio${a}`, to: syntax ? syntax.audio(a) : `audio ${a}`, label: "Audio", kind: "file", role: "audio", url: f.url }); }
+  const native = new Map(elementPairs.map((p, i) => [p.element.id, `@element_${i + 1}`]));
+  for (const e of elements) {
+    const tag = tagOf.get(e.id);
+    let to = null;
+    if (native.size) to = native.get(e.id) || null;
+    else if (firstImage.has(e.id)) to = syntax ? syntax.image(firstImage.get(e.id)) : `${e.name} (image ${firstImage.get(e.id)})`;
+    else if (firstVideo.has(e.id)) to = syntax ? syntax.video(firstVideo.get(e.id)) : `${e.name} (video ${firstVideo.get(e.id)})`;
+    out.push({ tag, to: to || e.name, label: e.name, kind: "element", element: e, url: e.images?.[0] || null, unused: !to });
+  }
+  return out;
+}
+
+// The prompt with our tags turned into the model's own words. Anything else
+// that starts with @ (a model tag typed by hand, an e-mail) stays as it is.
+export function translateTags(prompt, tags = []) {
+  if (!tags.length) return prompt;
+  const map = new Map(tags.map((t) => [t.tag.toLowerCase(), t.to]));
+  return String(prompt || "").replace(/(^|[^\w@])@([a-z][a-z0-9_]*)/gi, (all, pre, name) => {
+    const to = map.get(name.toLowerCase());
+    return to == null ? all : `${pre}${to}`;
+  });
 }
 
 // One element in Kling's shape.

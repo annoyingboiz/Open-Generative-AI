@@ -208,7 +208,7 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
                     onDrop={(e) => { e.preventDefault(); if (drag.current?.g === g.id) setAttached((a) => reorderGroup(a, g, drag.current.url, item.url)); drag.current = null; }}
                     className="flex h-14 items-center gap-2.5 rounded-md px-1 hover:bg-accent/60">
                     <DotsSixVertical size={16} className="flex-shrink-0 cursor-grab text-muted-foreground" />
-                    {g.kind === "video" ? <video src={item.url} className="h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" muted preload="metadata" />
+                    {g.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} className="h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" muted preload="metadata" />
                       : g.kind === "audio" ? <span className="flex h-[42px] w-14 flex-shrink-0 items-center justify-center rounded-xs bg-muted">♪</span>
                         : <img src={dzThumb(item.url, 128)} alt="" className="h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" />}
                     <span className="min-w-0 flex-1">

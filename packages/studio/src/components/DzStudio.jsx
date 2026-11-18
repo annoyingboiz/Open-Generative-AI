@@ -38,6 +38,40 @@ function useAspects() {
   const set = (id, w, h) => { if (w && h) setMap((m) => (m[id] ? m : { ...m, [id]: w / h })); };
   return [map, set];
 }
+// Justified rows (§5.1): row height clamp(200px, 24% of the grid width, 560px); every row
+// but the last fills the width exactly, keeping each picture's own shape.
+const GAP = 6;
+function justify(items, aspects, width) {
+  if (!width) return [];
+  const target = Math.min(560, Math.max(200, width * 0.24));
+  const rows = [];
+  let row = [];
+  let sum = 0;
+  for (const item of items) {
+    const a = Math.min(4, Math.max(0.3, itemAspect(item, aspects)));
+    row.push({ item, a });
+    sum += a;
+    const natural = sum * target + GAP * (row.length - 1);
+    if (natural >= width) {
+      const h = (width - GAP * (row.length - 1)) / sum;
+      rows.push({ h, cells: row.map((c) => ({ ...c, w: c.a * h })) });
+      row = [];
+      sum = 0;
+    }
+  }
+  if (row.length) rows.push({ h: target, cells: row.map((c) => ({ ...c, w: c.a * target })), last: true });
+  return rows;
+}
+function useWidth(el) {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    if (!el) return undefined;
+    const ro = new ResizeObserver(([e]) => setW(Math.floor(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return w;
+}
 const itemAspect = (item, measured) => measured[item.id] || ratioNum(item.params?.aspect_ratio || item.params?.ratio || item.params?.size || item.meta?.values?.aspect_ratio) || (item.kind === "video" ? 16 / 9 : 1);
 
 function PendingTile({ item }) {
@@ -100,7 +134,7 @@ function TileMenu({ item, onUseStart, onUseRef, onTrash, open, setOpen }) {
   );
 }
 
-function Tile({ item, aspect, onMeasure, sel, onOpen, onLike, onUseStart, onUseRef, onTrash }) {
+function Tile({ item, width, height, onMeasure, sel, onOpen, onLike, onUseStart, onUseRef, onTrash }) {
   const [menu, setMenu] = useState(false);
   const selecting = sel.selecting;
   const on = sel.has(item.id);
@@ -111,8 +145,8 @@ function Tile({ item, aspect, onMeasure, sel, onOpen, onLike, onUseStart, onUseR
       onClick={(e) => { if (!done) return; if (selecting) { sel.toggle(item, e); return; } onOpen(item); }}
       onKeyDown={(e) => { if (done && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); if (selecting) sel.toggle(item, e); else onOpen(item); } }}
       {...(done ? sel.dragProps(item) : {})}
-      className="group relative h-[var(--row)] cursor-pointer overflow-hidden rounded-sm bg-muted"
-      style={{ flexGrow: aspect, flexBasis: `calc(var(--row) * ${aspect})` }}>
+      className="group relative flex-shrink-0 cursor-pointer overflow-hidden rounded-sm bg-muted"
+      style={{ width, height }}>
       {!done ? <PendingTile item={item} />
         : item.kind === "audio" ? <span className="flex h-full w-full items-center justify-center p-3 text-center text-muted-foreground">♪ {item.meta?.toolTitle || item.prompt || "Audio"}</span>
           : item.kind === "video" ? (
@@ -197,7 +231,7 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault }) {
   return (
     <div className="dz-pop group/t relative h-12 w-12 flex-shrink-0" draggable onDragStart={onDragStart} tabIndex={0}>
       <div className={cn("h-12 w-12 overflow-hidden rounded-slot bg-muted ring-signal transition-shadow duration-state group-hover/t:ring-2 group-focus/t:ring-2", fault && "ring-2 ring-destructive")}>
-        {kind === "video" ? <video src={item.url} muted preload="metadata" className="h-full w-full object-cover" onLoadedMetadata={(e) => setDur(e.currentTarget.duration)} />
+        {kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} muted preload="metadata" className="h-full w-full object-cover" onLoadedMetadata={(e) => setDur(e.currentTarget.duration)} />
           : kind === "audio" ? <span className="flex h-full items-center justify-center text-muted-foreground">♪</span>
             : <img src={dzThumb(item.url, 128)} alt="" className="h-full w-full object-cover" />}
         {(label || dur) && <span className="absolute inset-x-0 bottom-0 rounded-b-slot bg-overlay/70 text-center text-[11px] font-semibold leading-4 text-overlay-foreground">{label || fmtDur(dur)}</span>}
@@ -280,7 +314,7 @@ function Strip({ groups, unused, attached, setAttached, activeGroup, openLibrary
           <div className="flex gap-2">
             {unused.slice(0, 2).map((it) => (
               <div key={`${it.role}-${it.url}`} className="h-12 w-12 overflow-hidden rounded-slot bg-muted">
-                {GROUP_OF_ROLE[it.role] === "video" || it.role === "source" ? <video src={it.url} muted preload="metadata" className="h-full w-full object-cover" /> : it.role === "audio" ? <span className="flex h-full items-center justify-center">♪</span> : <img src={dzThumb(it.url, 128)} alt="" className="h-full w-full object-cover" />}
+                {GROUP_OF_ROLE[it.role] === "video" || it.role === "source" ? <video src={it.url} poster={dzThumb(it.url, 128)} muted preload="metadata" className="h-full w-full object-cover" /> : it.role === "audio" ? <span className="flex h-full items-center justify-center">♪</span> : <img src={dzThumb(it.url, 128)} alt="" className="h-full w-full object-cover" />}
               </div>
             ))}
             {unused.length > 2 && <span className="flex h-12 w-12 items-center justify-center rounded-slot bg-muted text-base font-semibold">+{unused.length - 2}</span>}
@@ -469,6 +503,8 @@ export default function DzStudio(props) {
   const modelAnchor = useRef(null);
   const atAnchor = useRef(null);
   const scroller = useRef(null);
+  const [gridEl, gridRef] = useState(null);
+  const gridWidth = useWidth(gridEl);
   const fileInput = useRef(null);
 
   const groups = useMemo(() => groupsFor(entry), [entry]);
@@ -477,7 +513,6 @@ export default function DzStudio(props) {
   const closeAll = () => { setPanel(null); setPop(null); setLibGroup(null); };
   const openLibrary = (gid) => { setPop(null); setPanel(null); setLibGroup(gid || groups.find((g) => g.id === "reference")?.id || groups[0]?.id || null); };
   const openList = (gid) => { setLibGroup(null); setListGroup(gid); setPanel("list"); };
-  useEscLayer(Boolean(pop === "model"), () => setPop(null));
 
   // Results opened from the tile menu.
   useEffect(() => {
@@ -548,6 +583,7 @@ export default function DzStudio(props) {
   };
 
   const items = history.items;
+  const rows = useMemo(() => justify(items, aspects, gridWidth), [items, aspects, gridWidth]);
   const total = groups.reduce((n, g) => n + groupItems(attached, g).length, 0);
   const faultGroup = missing ? (groups.find((g) => /start frame|first/i.test(missing) && g.id === "frames") || groups.find((g) => new RegExp(g.label, "i").test(missing)))?.id : null;
   const priceText = price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}` : entry?.priceLabel || "";
@@ -574,9 +610,11 @@ export default function DzStudio(props) {
             </div>
           </div>
         ) : (
-          <div className="flex flex-wrap gap-1.5 pb-[340px] pt-3 [--row:clamp(200px,24cqw,560px)]">
-            {items.map((item) => (
-              <Tile key={item.id} item={item} aspect={itemAspect(item, aspects)} onMeasure={measure} sel={sel} onOpen={setViewing}
+          <div ref={gridRef} className="flex flex-col gap-1.5 pb-[340px] pt-3">
+            {rows.map((row, ri) => (
+              <div key={ri} className="flex gap-1.5" style={{ height: row.h }}>
+            {row.cells.map(({ item, w }) => (
+              <Tile key={item.id} item={item} width={w} height={row.h} onMeasure={measure} sel={sel} onOpen={setViewing}
                 onLike={history.like} onTrash={(id) => history.trash(id).catch((e) => notify({ type: "error", title: "Trash", message: String(e?.message || e) }))}
                 onUseStart={(it) => applyResult(it, "animate")}
                 onUseRef={(it) => {
@@ -586,7 +624,8 @@ export default function DzStudio(props) {
                   else setAttached((prev) => ({ ...prev, [gid]: [...(prev[gid] || []), { url: it.url, name: "result" }] }));
                 }} />
             ))}
-            <span className="flex-grow-[100]" aria-hidden="true" />
+              </div>
+            ))}
             {history.hasMore && (
               <div className="flex w-full justify-center py-4"><button type="button" onClick={history.loadMore} disabled={history.loadingMore} className="h-8 rounded-md border border-border px-3 text-base font-medium hover:bg-accent">{history.loadingMore ? "Loading…" : "Load more"}</button></div>
             )}

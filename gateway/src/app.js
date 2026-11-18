@@ -770,6 +770,8 @@ export async function buildApp(config, { logger = true } = {}) {
         estCostUsd: price?.usd ?? null,
         estSource: !price ? null : price.source === 'quote' ? (price.exact ? 'quote' : 'quote~') : 'estimate',
         studio: studio || (resolved.tool ? 'upscale' : null),
+        // The text as typed (speech models get it as "text", not "prompt").
+        displayPrompt: typeof requestBody.prompt === 'string' ? requestBody.prompt : null,
         meta,
         projectId,
         folderId,

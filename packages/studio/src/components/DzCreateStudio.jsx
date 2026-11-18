@@ -97,7 +97,8 @@ export async function download(url) {
 
 const optLabel = (p, v) => {
   if (p.key === "duration") return Number(v) === -1 ? "Auto" : `${v}s`;
-  return String(v);
+  const named = p.enumLabels && Object.hasOwn(p.enumLabels, String(v)) ? p.enumLabels[String(v)] : null;
+  return typeof named === "string" ? named : String(v);
 };
 
 // ── Small controls ─────────────────────────────────────────────────────────

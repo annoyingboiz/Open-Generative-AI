@@ -84,9 +84,11 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
   const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, used, labels);
   const hasPrompt = variant ? variant.model.hasPrompt !== false : false;
   const needsPrompt = Boolean(variant?.model.promptRequired);
-  const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(used).length));
+  // Something to make it from: text, files, or lyrics (songs from lyrics alone).
+  const hasContent = Boolean(prompt.trim() || Object.keys(used).length || String(values.lyrics || "").trim());
+  const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && hasContent);
   const body = variant && canRun ? buildBody(variant, { prompt: hasPrompt ? prompt.trim() : "", values, attached: used }) : null;
-  const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: prompt.trim() || "price check", values, attached: used }) : null);
+  const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: prompt.trim() || (hasContent && !needsPrompt ? "" : "price check"), values, attached: used }) : null);
   const { price, loading: priceLoading } = useDzQuote(apiKey, () => (quoteBody ? [dzGenerate, { endpoint: variant.model.endpoint, ...quoteBody }] : null), 1, { textMatters: tool?.kind === "audio" });
 
   // The side chat sees the open tool and its text; it can write into it.
@@ -155,8 +157,8 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
 
   // Results of this tool in the current place (all tools on the cards page).
   const ctx = useDzContext();
-  const history = useDzHistory({ studio: "tools", ...(tool ? { kind: tool.kind } : {}), ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
-  const items = useMemo(() => (tool ? history.items.filter((i) => !i.meta?.tool || i.meta.tool === tool.id) : history.items), [history.items, tool]);
+  const history = useDzHistory({ studio: "tools", ...(tool ? { kind: tool.kind, tool: tool.id } : {}), ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
+  const items = history.items;
   const sel = useDzSelection(items);
   const [viewing, setViewing] = useState(null);
 

@@ -16,8 +16,8 @@ export function useDzQuote(apiKey, build, count = 1, { textMatters = false } = {
   let request = null;
   try { request = build(); } catch { request = null; }
   // Prompt text and reference files don't change the price; the rest does.
-  // (Speech is priced by characters: there the text length counts, in steps of 100.)
-  const key = request ? JSON.stringify(request[1], (k, v) => (k === "prompt" ? (textMatters ? Math.ceil(String(v || "").trim().length / 100) : Boolean(String(v || "").trim())) : k === "negative_prompt" ? undefined : v)) : "";
+  // (Speech is priced by characters: there the exact text length counts.)
+  const key = request ? JSON.stringify(request[1], (k, v) => (k === "prompt" ? (textMatters ? String(v || "").trim().length : Boolean(String(v || "").trim())) : k === "negative_prompt" ? undefined : v)) : "";
   const fnRef = useRef(null);
   fnRef.current = request;
 

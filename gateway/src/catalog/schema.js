@@ -42,7 +42,10 @@ export function toStudioInput(name, prop = {}) {
   const def = prop.default;
   if (Array.isArray(prop.enum) && prop.enum.length) {
     const numeric = prop.enum.every((v) => typeof v === 'number');
-    return clean({ ...base, type: numeric ? (prop.enum.every(Number.isInteger) ? 'int' : 'number') : 'string', enum: prop.enum, default: prop.enum.includes(def) ? def : prop.enum[0] });
+    // Readable names for opaque ids (voices: "Bella · en-US · female"), from Atlas's x-enum-options.
+    const opts = prop['x-enum-options'];
+    const enumLabels = opts && typeof opts === 'object' ? Object.fromEntries(prop.enum.filter((v) => opts[v]?.name).map((v) => [v, [opts[v].name, opts[v].language, opts[v].gender].filter((x) => typeof x === 'string' && x).join(' · ').slice(0, 80)])) : null;
+    return clean({ ...base, type: numeric ? (prop.enum.every(Number.isInteger) ? 'int' : 'number') : 'string', enum: prop.enum, enumLabels: enumLabels && Object.keys(enumLabels).length ? enumLabels : undefined, default: prop.enum.includes(def) ? def : prop.enum[0] });
   }
   switch (prop.type) {
     case 'integer':

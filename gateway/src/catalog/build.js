@@ -184,6 +184,8 @@ export function buildApimartVariants(model, override, price) {
   // A hand-checked spec (apimart-manual.json) lists exactly the modes that work.
   const modes = override?.onlyModes ? Object.keys(override.modes || {}) : [...tagModes, ...Object.keys(override?.modes || {})];
   const family = override?.family || familyFor('apimart', model.id);
+  // Priced by the length of an input video we can't see here: a lower bound only.
+  if (override?.priceFrom && price) price = { ...price, from: true };
   const familyName = override?.name || prettyFamilyName(family);
   const out = [];
   for (const mode of [...new Set(modes)]) {

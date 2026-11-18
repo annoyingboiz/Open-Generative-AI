@@ -29,7 +29,7 @@ export const TOOLS = [
     text: "A portrait and a voice track become a talking video.",
     kind: "video",
     match: /avatar/i,
-    labels: { first: "Photo", audio: "Voice" },
+    labels: { first: "Photo", audio: "Voice", reference: "Background" },
     main: ["avatar", "voice", "mode", "resolution"],
     promptLabel: "What the person does or says",
   },

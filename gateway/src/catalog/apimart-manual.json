@@ -62,7 +62,8 @@
         }
       }
     },
-    "onlyModes": true
+    "onlyModes": true,
+    "priceFrom": true
   },
   "kling-v3-motion-control": {
     "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/kling-v2-6-motion-control-generation.md (checked 18.11.2026)",
@@ -126,6 +127,7 @@
         }
       }
     },
-    "onlyModes": true
+    "onlyModes": true,
+    "priceFrom": true
   }
 }

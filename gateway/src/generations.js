@@ -162,7 +162,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   }
 
-  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, estSource = null, kind = null, studio = null, meta = null, projectId = null, folderId = null }) {
+  async function submit(user, { providerId, modelId, body, endpoint, estCostUsd = null, estSource = null, kind = null, studio = null, meta = null, projectId = null, folderId = null, displayPrompt = null }) {
     const provider = providerById(providerId);
     if (!provider) throw new GenerationError(`Unknown provider: ${providerId}`, 404);
     const cfg = providers.resolve(providerId);
@@ -181,7 +181,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const { onRequestId: _ignored, ...clean } = body || {};
     const id = newId('gen');
     const t = now();
-    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 32000), JSON.stringify(clean), estCostUsd, estSource, studio, meta == null ? null : JSON.stringify(meta), projectId, folderId, t, t);
+    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(displayPrompt ?? clean.prompt ?? '').slice(0, 32000), JSON.stringify(clean), estCostUsd, estSource, studio, meta == null ? null : JSON.stringify(meta), projectId, folderId, t, t);
     try {
       const resolved = await resolveMedia(user, providerId, cfg, clean);
       const { taskId } = await provider.submit(cfg, { kind: model.kind, model: modelId, body: resolved });
@@ -381,7 +381,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   const KINDS = new Set(['image', 'video', 'audio']);
   //   project=<id> (that project; folder=<id>|root narrows it) · project=none (personal only)
   //   no project → the user's Library: their own items plus their projects' items.
-  function history(user, { cursor, limit = 50, studio, kind, liked, trash: inTrash, status, project, folder, q: search } = {}) {
+  function history(user, { cursor, limit = 50, studio, kind, tool, liked, trash: inTrash, status, project, folder, q: search } = {}) {
     const where = ['purged_at IS NULL'];
     const args = [];
     if (project === 'none') {
@@ -408,6 +408,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       if (parts.length) where.push(`(${parts.join(' OR ')})`);
     }
     if (KINDS.has(kind)) { where.push('kind = ?'); args.push(kind); }
+    // Tools tab: one tool's results (Lip Sync, Motion Control…).
+    if (typeof tool === 'string' && /^[a-z]{2,20}$/.test(tool)) { where.push("json_extract(meta_json, '$.tool') = ?"); args.push(tool); }
     if (liked === '1' || liked === true) where.push('liked_at IS NOT NULL');
     if (status === 'completed' || status === 'failed') { where.push('status = ?'); args.push(status); }
     if (status === 'processing') where.push("status IN ('submitting','submitted','processing','downloading')");

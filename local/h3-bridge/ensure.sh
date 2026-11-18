@@ -16,7 +16,7 @@ running() {
   [ -f "$PIDFILE" ] || return 1
   local pid; pid="$(cat "$PIDFILE")"
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "h3_bridge.py"
+  tr '\0' ' ' 2>/dev/null < "/proc/$pid/cmdline" | grep -q "h3_bridge.py"
 }
 stop() { if running; then kill "$(cat "$PIDFILE")"; for _ in $(seq 20); do running || break; sleep 0.5; done; fi; rm -f "$PIDFILE"; }
 # 9>&-: the bridge must not keep ensure.lock open (status/stop/restart would never get it)

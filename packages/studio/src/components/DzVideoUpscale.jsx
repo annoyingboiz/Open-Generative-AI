@@ -100,7 +100,8 @@ export function DzVideoUpscalePanel({ apiKey, videoUrl, onStart, onDone, onError
   useEffect(() => {
     if (!bodyKey) { setQuote({ price: null, problem: null, needsCheck: false, info: null, loading: false }); return undefined; }
     let cancelled = false;
-    setQuote((q) => ({ ...q, loading: true }));
+    // Nothing from the previous request stays on screen (price, warning) while this one is checked.
+    setQuote((q) => ({ price: null, problem: null, needsCheck: false, info: q.info, loading: true }));
     const check = checkSeq > 0 && checkFor.current.seq === checkSeq && checkFor.current.key === bodyKey;
     const timer = setTimeout(async () => {
       const [provider, endpoint, b] = JSON.parse(bodyKey);

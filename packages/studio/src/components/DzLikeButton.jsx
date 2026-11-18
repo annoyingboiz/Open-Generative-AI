@@ -47,7 +47,7 @@ const PENDING_CSS = `
 .dz-pend-t { animation: dz-breathe 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .dz-pend-a, .dz-pend-b, .dz-pend-t { animation: none; } }
 `;
-export function DzPendingTile({ status, error, className = "", label }) {
+export function DzPendingTile({ status, error, className = "", label, note, onCancel }) {
   if (status === "failed") {
     return (
       <div className={`flex flex-col items-center justify-center gap-2 bg-red-500/[0.06] p-4 text-center ${className}`}>
@@ -61,7 +61,17 @@ export function DzPendingTile({ status, error, className = "", label }) {
       <style>{PENDING_CSS}</style>
       <span aria-hidden className="dz-pend-a absolute left-1/4 top-1/4 h-2/3 w-2/3 rounded-full bg-[#22d3ee]/35 blur-3xl" />
       <span aria-hidden className="dz-pend-b absolute bottom-1/4 right-1/4 h-2/3 w-2/3 rounded-full bg-violet-500/30 blur-3xl" />
-      <span className="dz-pend-t relative z-10 rounded-full bg-black/35 px-3 py-1 text-base font-semibold text-white/90 backdrop-blur-sm">{label || "Generating"}</span>
+      <span className="relative z-10 flex max-w-[92%] flex-col items-center gap-2 text-center">
+        <span className="dz-pend-t rounded-full bg-black/35 px-3 py-1 text-base font-semibold text-white/90 backdrop-blur-sm">{label || "Generating"}</span>
+        {/* e.g. "Waiting for the GPU: Meetbot is processing a meeting · 1 ahead" (this server) */}
+        {note && <span className="line-clamp-3 rounded-lg bg-black/45 px-2.5 py-1 text-base leading-snug text-white/80 backdrop-blur-sm">{note}</span>}
+        {onCancel && (
+          <button type="button" onClick={(e) => { e.stopPropagation(); onCancel(); }}
+            className="rounded-lg border border-white/20 bg-black/40 px-3 py-1 text-base font-medium text-white/85 backdrop-blur-sm transition-colors hover:bg-white/10 hover:text-white">
+            Cancel
+          </button>
+        )}
+      </span>
     </div>
   );
 }

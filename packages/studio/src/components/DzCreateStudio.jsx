@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dzGenerate, dzWithMeta, uploadFile, dzThumb } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
-import { useDzHistory } from "../dzLibrary.js";
+import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
 import { DzAdaptButton } from "./DzAdapt.jsx";
@@ -311,7 +311,8 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel }) {
       onClickCapture={(e) => { if (sel?.click(item, e)) e.stopPropagation(); }}>
       {sel && <SelectBox sel={sel} item={item} />}
       {item.url && item.studio === "upscale" && !sel?.selecting && <span className="pointer-events-none absolute left-2 top-2 z-[1] rounded-md bg-black/75 px-2 py-0.5 font-semibold text-white">Upscaled</span>}
-      {!item.url ? <DzPendingTile status={item.status} error={item.error} label={item.studio === "upscale" ? "Upscaling" : "Generating"} className="aspect-square w-full" />
+      {!item.url ? <DzPendingTile status={item.status} error={item.error} label={item.studio === "upscale" ? "Upscaling" : "Generating"} className="aspect-square w-full"
+        note={item.note} onCancel={item.cancellable ? () => dzLibrary.cancel(item.id).catch((e) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Cancel", message: String(e?.message || e) } }))) : undefined} />
         : (
           <button type="button" className="block w-full cursor-zoom-in" onClick={() => onOpen?.(item)} aria-label="Open">
             {isVideo ? <video src={item.url} poster={dzThumb(item.url)} className="aspect-square w-full bg-black object-cover" muted loop playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />

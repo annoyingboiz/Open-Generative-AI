@@ -30,6 +30,8 @@ export const dzLibrary = {
   },
   async like(id, liked) { const r = await call("POST", `/api/v1/predictions/${encodeURIComponent(id)}/like`, { liked }); changed(); return r; },
   async trash(id) { const r = await call("DELETE", `/api/v1/predictions/${encodeURIComponent(id)}/media`); changed(); return r; },
+  // Stop a job that is still waiting or running (this server's jobs).
+  async cancel(id) { const r = await call("POST", `/api/v1/predictions/${encodeURIComponent(id)}/cancel`); changed(); return r; },
   async restore(id) { const r = await call("POST", `/api/v1/predictions/${encodeURIComponent(id)}/restore`); changed(); return r; },
   // One action on many items: { action: move|copy|trash|restore|purge, ids, project?, folder? } → { done, failed }.
   async batch(action, ids, target = {}) {

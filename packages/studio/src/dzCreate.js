@@ -80,6 +80,8 @@ export function paramsOf(model) {
 export function refSyntaxOf(model) {
   // An explicit hint from the catalog (provider overrides) wins over the text.
   const hint = model.dzRefSyntax;
+  // MiniMax H3 in ComfyUI (this server): references are <Picture 1>…<Picture 9>.
+  if (hint === "PictureN") return { image: (n) => `<Picture ${n}>`, video: (n) => `video ${n}`, audio: (n) => `audio ${n}` };
   const d = String(model.inputs?.prompt?.description || "");
   if (hint === "image_N" || /@image_N|@image_\d/.test(d)) return { image: (n) => `@image_${n}`, video: (n) => `@video_${n}`, audio: (n) => `@audio_${n}` };
   if (hint === "ImageN" || /@Image(\d|N)/.test(d)) return { image: (n) => `@Image${n}`, video: (n) => `@Video${n}`, audio: (n) => `@Audio${n}` };
@@ -94,7 +96,8 @@ export function refSyntaxFor(model) {
   if (own || !model?.dzFamily) return own;
   const lists = (typeof window !== "undefined" && window.__DZ_CATALOG__?.lists) || {};
   for (const list of Object.values(lists)) {
-    for (const m of list || []) if (m?.dzFamily === model.dzFamily && m !== model) { const s = refSyntaxOf(m); if (s) return s; }
+    // Never borrow this server's ComfyUI syntax for a cloud model (or the other way round).
+    for (const m of list || []) if (m?.dzFamily === model.dzFamily && m !== model && (m.dzProvider === "local") === (model.dzProvider === "local")) { const s = refSyntaxOf(m); if (s) return s; }
   }
   return null;
 }

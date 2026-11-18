@@ -281,7 +281,7 @@ export async function buildApp(config, { logger = true } = {}) {
     // The page never waits long for providers: after 4 s it shows what is known.
     if (isAdmin) {
       const lists = await Promise.race([llm.list(req.user).catch(() => null), new Promise((r) => setTimeout(() => r(null), 4000))]);
-      llmInfo = { ...(lists || llm.cachedList(req.user)), recent: llm.recent(10), try: llmTry, chatgpt: chatgpt.status(req.user), username: req.user.username };
+      llmInfo = { ...(lists || llm.cachedList(req.user)), recent: llm.recent(10), try: llmTry, chatgpt: chatgpt.status(req.user), username: req.user.username, isAdmin: req.user.role === 'admin' };
     }
     return html(reply, settingsPage({
       user: req.user,
@@ -331,6 +331,15 @@ export async function buildApp(config, { logger = true } = {}) {
     if (req.user.role !== 'admin' && !st.mine) return reply.code(403).send({ error: 'Not allowed' });
     const r = await chatgpt.disconnect();
     return renderSettings(req, reply, { notice: r.revoked ? 'ChatGPT disconnected and revoked at OpenAI.' : 'ChatGPT disconnected here; OpenAI did not confirm the revocation — you can also remove the app in ChatGPT → Settings.' });
+  });
+  // Who may use the plan: only the owner, or everyone signed in here. Back to
+  // owner-only also drops ChatGPT as the default (others would get errors).
+  app.post('/dz/settings/chatgpt/sharing', async (req, reply) => {
+    const st = chatgpt.status(req.user);
+    if (req.user.role !== 'admin' && !st.mine) return reply.code(403).send({ error: 'Not allowed' });
+    const v = chatgpt.setSharing(req.body?.sharing);
+    if (v !== 'all' && llm.defaultId().startsWith('chatgpt:')) llm.setDefault('');
+    return reply.redirect('/dz/settings?notice=llm#llm');
   });
   app.post('/dz/settings/llm/try', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;

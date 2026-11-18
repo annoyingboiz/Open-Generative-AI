@@ -161,4 +161,18 @@ test('ChatGPT plan: credentials are checked on import, stored encrypted, shown o
   assert.equal(res.body.includes('secret-'), false);
   res = await as('kid', 'POST', '/dz/settings/chatgpt/disconnect');
   assert.equal(res.statusCode, 403);
+  // Owner-only: it can't be everyone's default.
+  assert.throws(() => app.ctx.llm.setDefault('chatgpt:gpt-6.1-sol'), /share it with everyone/);
+  // Shared with everyone: others see it and may use it; it can be the default.
+  res = await as('kid', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'all' });
+  assert.equal(res.statusCode, 403, 'only the owner or an admin decides');
+  res = await as('admin', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'all' });
+  assert.equal(res.statusCode, 302);
+  assert.equal(cg.canUse({ id: 999 }), true);
+  app.ctx.llm.setDefault('chatgpt:gpt-6.1-sol');
+  assert.equal(app.ctx.llm.defaultId(), 'chatgpt:gpt-6.1-sol');
+  // Back to owner-only: the default is dropped so others don't hit errors.
+  res = await as('admin', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'owner' });
+  assert.equal(app.ctx.llm.defaultId(), '');
+  assert.equal(cg.canUse({ id: 999 }), false);
 });

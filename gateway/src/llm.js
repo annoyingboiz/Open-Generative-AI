@@ -139,7 +139,7 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
     const st = chatgpt?.status(user) || { connected: false };
     if (!st.connected) return { id: 'chatgpt', name: 'ChatGPT account', status: 'not connected', note: 'Connect it in Settings (one sign-in on the Mac).' };
     if (st.lost) return { id: 'chatgpt', name: 'ChatGPT account', status: 'error', note: `${st.email} — the connection expired or was revoked. Reconnect.` };
-    return { id: 'chatgpt', name: 'ChatGPT account', status: 'ok', note: `${st.email} · for ${st.owner} only · uses the ChatGPT plan, not API money`, mine: st.mine };
+    return { id: 'chatgpt', name: 'ChatGPT account', status: 'ok', note: `${st.email} · ${st.sharing === 'all' ? 'shared with everyone here' : `for ${st.owner} only`} · uses the ChatGPT plan, not API money`, mine: st.mine, usable: st.usable };
   }
   async function chatgptModels(user) {
     const list = chatgpt ? await chatgpt.models(user) : [];
@@ -161,7 +161,7 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
         { id: 'local', name: 'This server (Ollama)', status: local.status, note: local.note || 'Free. Busy while the graphics cards run other work.', count: (local.models || []).length },
         { id: 'apimart', name: 'APIMart', status: apimart.status, note: apimart.note || '', count: am.length },
         { id: 'atlas', name: 'Atlas Cloud', status: atlas.status, note: atlas.note || '', count: (atlas.models || []).length },
-        (() => { const st = chatgptStatus(user); return { ...st, count: gpt.length, ...(user?.role === 'admin' || st.mine ? {} : { hidden: true }) }; })(),
+        (() => { const st = chatgptStatus(user); return { ...st, count: gpt.length, ...(user?.role === 'admin' || st.usable ? {} : { hidden: true }) }; })(),
       ].filter((s) => !s.hidden),
       models: all.sort((a, b) => Number(b.recommended) - Number(a.recommended) || RECOMMENDED.indexOf(a.id) - RECOMMENDED.indexOf(b.id) || a.source.localeCompare(b.source) || a.name.localeCompare(b.name)),
       default: def,
@@ -177,8 +177,9 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   }
   function setDefault(id) {
     const v = String(id || '');
-    if (v.startsWith('chatgpt:')) throw new LlmError('The ChatGPT plan belongs to one person, so it can’t be everyone’s default. Pick it by name where you need it.');
-    if (v && !/^(local|apimart|atlas):.+/.test(v)) throw new LlmError('Unknown model.');
+    // The plan can be everyone's default only while it is shared with everyone.
+    if (v.startsWith('chatgpt:') && chatgpt?.sharing() !== 'all') throw new LlmError('To make ChatGPT the default, first share it with everyone here (Settings → ChatGPT account).');
+    if (v && !/^(local|apimart|atlas|chatgpt):.+/.test(v)) throw new LlmError('Unknown model.');
     q.setMeta.run('llm_default', v);
     return { ok: true };
   }
@@ -359,5 +360,6 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   // Calls cut off by a restart: their booking is released.
   db.prepare("UPDATE llm_calls SET status = 'failed', cost_usd = 0, error = 'Interrupted (server restart).' WHERE status = 'running'").run();
 
-  return { list, cachedList, chat, setDefault, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
+  const defaultId = () => q.getMeta.get('llm_default')?.value || '';
+  return { list, cachedList, chat, setDefault, defaultId, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
 }

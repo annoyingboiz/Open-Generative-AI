@@ -275,6 +275,13 @@ function chatgptBox(llm) {
   return `<div class="section">
   <div class="top"><b>ChatGPT account</b><form method="post" action="/dz/settings/chatgpt/disconnect" onsubmit="return confirm('Disconnect ChatGPT? It is revoked at OpenAI and deleted here.')"><button class="btn small" type="submit">Disconnect</button></form></div>
   <p style="margin:6px 0 0">${esc(st.email || '(no e-mail)')} · for <b>${esc(st.owner || '')}</b> · connected ${esc(when(st.saved_at))} · last refresh ${esc(when(st.refreshed_at))}${st.lost ? ' · <b style="color:#f87171">expired or revoked — reconnect</b>' : ''}</p>
+  ${st.mine || llm.isAdmin ? `<form method="post" action="/dz/settings/chatgpt/sharing" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+    <span>Who can use it:</span>
+    <label><input type="radio" name="sharing" value="owner"${st.sharing !== 'all' ? ' checked' : ''}> Only ${esc(st.owner || 'me')}</label>
+    <label><input type="radio" name="sharing" value="all"${st.sharing === 'all' ? ' checked' : ''}> Everyone signed in here</label>
+    <button class="btn small" type="submit">Save</button>
+  </form>
+  <p class="muted" style="margin:6px 0 0">${st.sharing === 'all' ? 'Everyone here uses this one ChatGPT plan (its limits are shared). It can be the default text model.' : 'Shared with everyone, it can also be the default text model for all.'}</p>` : ''}
   <details style="margin-top:8px"><summary class="muted">Reconnect</summary>${how}</details>
 </div>`;
 }

@@ -142,11 +142,20 @@ export function createChatGpt({ db, masterKey, config, log }) {
     } finally { dropLease(); }
   }
 
+  // Who may use the plan here: only its owner (default) or everyone signed in
+  // to this app — the owner's (admin's) choice, e.g. for the family.
+  const sharing = () => (q.get.get('chatgpt_sharing')?.value === 'all' ? 'all' : 'owner');
+  function setSharing(value) {
+    q.set.run('chatgpt_sharing', value === 'all' ? 'all' : 'owner');
+    return sharing();
+  }
+  const canUse = (user, c = load()) => Boolean(c && !c.lost && user && (user.id === c.owner_id || sharing() === 'all'));
+
   function status(user) {
     const c = load();
-    if (!c) return { connected: false };
+    if (!c) return { connected: false, sharing: sharing() };
     return {
-      connected: true, email: c.email, owner: c.owner_username, mine: user?.id === c.owner_id, lost: Boolean(c.lost),
+      connected: true, email: c.email, owner: c.owner_username, mine: user?.id === c.owner_id, lost: Boolean(c.lost), sharing: sharing(), usable: canUse(user, c),
       saved_at: c.saved_at, refreshed_at: c.refreshed_at, expires_at: c.expires_at, plan: c.scopes.includes(PLAN_SCOPE),
     };
   }
@@ -156,7 +165,7 @@ export function createChatGpt({ db, masterKey, config, log }) {
   let modelsCache = null;
   async function models(user) {
     const c = load();
-    if (!c || c.lost || user?.id !== c.owner_id) return [];
+    if (!canUse(user, c)) return [];
     if (modelsCache && modelsCache.sub === c.sub && modelsCache.client === c.client_id && Date.now() - modelsCache.at < 3600_000) return modelsCache.list;
     try {
       const t = await freshToken();
@@ -190,7 +199,7 @@ export function createChatGpt({ db, masterKey, config, log }) {
   async function chat(user, { model, msgs, images = [] }) {
     const c = load();
     if (!c) throw new ChatGptError('The ChatGPT account is not connected.', 409);
-    if (user.id !== c.owner_id) throw new ChatGptError('This ChatGPT account belongs to someone else.', 403);
+    if (!canUse(user, c)) throw new ChatGptError(c.lost ? 'The ChatGPT connection has expired or was revoked. Reconnect it in Settings.' : 'This ChatGPT account belongs to someone else.', c.lost ? 409 : 403);
     const instructions = msgs.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n') || undefined;
     const input = msgs.filter((m) => m.role !== 'system').map((m, i, all) => {
       const last = i === all.length - 1 && m.role === 'user';
@@ -288,5 +297,5 @@ export function createChatGpt({ db, masterKey, config, log }) {
     return { ok: true, revoked };
   }
 
-  return { status, models, chat, importCredentials, disconnect, hostId };
+  return { status, models, chat, importCredentials, disconnect, hostId, sharing, setSharing, canUse: (user) => canUse(user) };
 }

@@ -37,7 +37,7 @@ const RECOMMENDED = [
 ];
 const VISION_GUESS = /gpt-4o|gpt-4\.1|gpt-5|gpt-6|claude|gemini|grok-4|qwen.*vl|glm-5v|kimi-k[23]|doubao-seed/i;
 
-export function createLlm({ db, providers, generations, config, log }) {
+export function createLlm({ db, providers, generations, config, log, chatgpt = null }) {
   const q = {
     insert: db.prepare(`INSERT INTO llm_calls (id, user_id, source, model, purpose, prompt_tokens, completion_tokens, cost_usd, ms, status, error, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
@@ -134,24 +134,34 @@ export function createLlm({ db, providers, generations, config, log }) {
     return null;
   }
 
-  const chatgptStatus = () => ({ id: 'chatgpt', name: 'ChatGPT account', status: 'not connected', note: 'Denis’s own ChatGPT account — needs his sign-in setup first.' });
+  // The ChatGPT plan: seen and used only by the person it was connected for.
+  function chatgptStatus(user) {
+    const st = chatgpt?.status(user) || { connected: false };
+    if (!st.connected) return { id: 'chatgpt', name: 'ChatGPT account', status: 'not connected', note: 'Connect it in Settings (one sign-in on the Mac).' };
+    if (st.lost) return { id: 'chatgpt', name: 'ChatGPT account', status: 'error', note: `${st.email} — the connection expired or was revoked. Reconnect.` };
+    return { id: 'chatgpt', name: 'ChatGPT account', status: 'ok', note: `${st.email} · for ${st.owner} only · uses the ChatGPT plan, not API money`, mine: st.mine };
+  }
+  async function chatgptModels(user) {
+    const list = chatgpt ? await chatgpt.models(user) : [];
+    return list.map((m) => ({ id: `chatgpt:${m.slug}`, source: 'chatgpt', model: m.slug, name: m.name, note: 'ChatGPT plan', price: { in: 0, out: 0 }, free: true, plan: true, vision: true }));
+  }
 
   async function list(user, { force = false } = {}) {
-    const [local, apimart, atlas] = await Promise.all(['local', 'apimart', 'atlas'].map((s) => sourceList(s, { force })));
+    const [local, apimart, atlas, gpt] = await Promise.all([...['local', 'apimart', 'atlas'].map((s) => sourceList(s, { force })), chatgptModels(user)]);
     // Prices for the recommended APIMart models (the rest: asked at first use).
     await Promise.all((apimart.models || []).filter((m) => RECOMMENDED.includes(m.id)).map((m) => apimartPrice(m.model)));
-    return assemble(user, local, apimart, atlas);
+    return assemble(user, local, apimart, atlas, gpt);
   }
-  function assemble(user, local, apimart, atlas) {
+  function assemble(user, local, apimart, atlas, gpt = []) {
     const am = (apimart.models || []).map((m) => { const p = apimartPrices.get(m.model); return p && !m.price ? { ...m, price: { in: p.in, out: p.out } } : m; });
-    const all = [...(local.models || []), ...am, ...(atlas.models || [])].map((m) => ({ ...m, recommended: RECOMMENDED.includes(m.id) }));
+    const all = [...gpt, ...(local.models || []), ...am, ...(atlas.models || [])].map((m) => ({ ...m, recommended: m.source === 'chatgpt' || RECOMMENDED.includes(m.id) }));
     const def = defaultModel(all);
     return {
       sources: [
         { id: 'local', name: 'This server (Ollama)', status: local.status, note: local.note || 'Free. Busy while the graphics cards run other work.', count: (local.models || []).length },
         { id: 'apimart', name: 'APIMart', status: apimart.status, note: apimart.note || '', count: am.length },
         { id: 'atlas', name: 'Atlas Cloud', status: atlas.status, note: atlas.note || '', count: (atlas.models || []).length },
-        { ...chatgptStatus(), count: 0, ...(user?.role === 'admin' ? {} : { hidden: true }) },
+        (() => { const st = chatgptStatus(user); return { ...st, count: gpt.length, ...(user?.role === 'admin' || st.mine ? {} : { hidden: true }) }; })(),
       ].filter((s) => !s.hidden),
       models: all.sort((a, b) => Number(b.recommended) - Number(a.recommended) || RECOMMENDED.indexOf(a.id) - RECOMMENDED.indexOf(b.id) || a.source.localeCompare(b.source) || a.name.localeCompare(b.name)),
       default: def,
@@ -167,7 +177,7 @@ export function createLlm({ db, providers, generations, config, log }) {
   }
   function setDefault(id) {
     const v = String(id || '');
-    if (v && !/^(local|apimart|atlas):.+/.test(v)) throw new LlmError('Unknown model.');
+    if (v && !/^(local|apimart|atlas|chatgpt):.+/.test(v)) throw new LlmError('Unknown model.');
     q.setMeta.run('llm_default', v);
     return { ok: true };
   }
@@ -280,7 +290,7 @@ export function createLlm({ db, providers, generations, config, log }) {
   const monthStart = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1); };
 
   const priceOf = async (source, model) => {
-    if (source === 'local') return { in: 0, out: 0 };
+    if (source === 'local' || source === 'chatgpt') return { in: 0, out: 0 }; // free here (the plan pays)
     if (source === 'apimart') return apimartPrice(model);
     return (await sourceList('atlas')).models.find((x) => x.model === model)?.price || null;
   };
@@ -296,14 +306,14 @@ export function createLlm({ db, providers, generations, config, log }) {
     const m = /^(local|apimart|atlas|chatgpt):(.+)$/.exec(id);
     if (!m) throw new LlmError('Pick a text model.');
     const [, source, model] = m;
-    if (source === 'chatgpt') throw new LlmError('The ChatGPT account is not connected yet.', 409);
+    if (source === 'chatgpt' && !chatgpt) throw new LlmError('The ChatGPT account is not connected yet.', 409);
     const msgs = cleanMessages(body);
     const images = imagesOf(user, body.images);
     const maxTokens = Math.min(16_000, Math.max(64, Number(body.maxTokens) || DEFAULT_MAX_TOKENS));
     const temperature = body.temperature == null ? null : Math.min(2, Math.max(0, Number(body.temperature)));
     const purpose = String(body.purpose || 'chat').slice(0, 40);
     const price = await priceOf(source, model);
-    const limited = user.monthly_limit_usd != null && source !== 'local';
+    const limited = user.monthly_limit_usd != null && source !== 'local' && source !== 'chatgpt';
     if (limited && !price) throw new LlmError('The price of this model is unknown right now, so it can’t be used with a spending limit. Pick another model.', 409);
     const inEstimate = Math.ceil(msgs.reduce((n, x) => n + x.content.length + 8, 0) / 3) + images.length * 1600;
     const worst = costOf(price, { in: inEstimate, out: maxTokens });
@@ -321,7 +331,9 @@ export function createLlm({ db, providers, generations, config, log }) {
     try {
       out = source === 'local'
         ? await callLocal(model, msgs, images, { maxTokens, temperature })
-        : await callOpenAiStyle(source, model, msgs, images, { maxTokens, temperature });
+        : source === 'chatgpt'
+          ? await chatgpt.chat(user, { model, msgs, images }).catch((error) => { throw new LlmError(error.message, error.status || 424); })
+          : await callOpenAiStyle(source, model, msgs, images, { maxTokens, temperature });
       const costUsd = costOf(price, out.usage);
       const ms = Date.now() - started;
       if (!out.text) {

@@ -139,3 +139,26 @@ test('settings: default model and a test call', async () => {
   assert.equal(res.statusCode, 503);
   assert.match(res.json().error, /offline/i);
 });
+
+test('ChatGPT plan: credentials are checked on import, stored encrypted, shown only to their owner and admins', async () => {
+  const cg = app.ctx.chatgpt;
+  assert.throws(() => cg.importCredentials({ client_id: 'oaiapp_x', access_token: 'a', refresh_token: 'r', scopes: ['openid'] }, { username: 'admin' }), /plan permission/);
+  assert.throws(() => cg.importCredentials({ client_id: 'dynamic_agent_client', access_token: 'a', refresh_token: 'r', scopes: ['chatgpt.tokens.use.direct'] }, { username: 'admin' }), /Registration/);
+  assert.throws(() => cg.importCredentials({ client_id: 'oaiapp_x', access_token: 'a', refresh_token: 'r', scopes: ['chatgpt.tokens.use.direct'] }, { username: 'nobody' }), /No user/);
+  const r = cg.importCredentials(JSON.stringify({ client_id: 'oaiapp_x', access_token: 'secret-access', refresh_token: 'secret-refresh', scopes: ['openid', 'chatgpt.tokens.use.direct'], email: 'me@example.com', expires_in: 3600 }), { username: 'admin' });
+  assert.equal(r.owner, 'admin');
+  const stored = app.ctx.db.prepare("SELECT value FROM meta WHERE key = 'chatgpt_creds'").get().value;
+  assert.equal(stored.includes('secret-access'), false, 'stored encrypted');
+  const host1 = cg.hostId();
+  assert.match(host1, /^urn:uuid:/);
+  assert.equal(cg.hostId(), host1, 'the server keeps one host id');
+  let res = await as('kid', 'POST', '/dz/api/llm/chat', { model: 'chatgpt:gpt-6.1-sol', prompt: 'hi' });
+  assert.equal(res.statusCode, 403);
+  res = await as('kid', 'GET', '/dz/api/llm/models');
+  assert.equal(res.json().sources.some((s) => s.id === 'chatgpt'), false);
+  res = await as('admin', 'GET', '/dz/settings');
+  assert.match(res.body, /me@example\.com/);
+  assert.equal(res.body.includes('secret-'), false);
+  res = await as('kid', 'POST', '/dz/settings/chatgpt/disconnect');
+  assert.equal(res.statusCode, 403);
+});

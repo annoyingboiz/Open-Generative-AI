@@ -247,6 +247,7 @@ function llmSection(llm) {
   ${(llm.sources || []).map((src) => `<tr><td><b>${esc(src.name)}</b></td><td>${pill(src.status)}</td><td>${src.count || 0}</td><td class="muted">${esc(src.note || '')}</td></tr>`).join('')}
   </tbody></table>
 </div>
+${chatgptBox(llm)}
 <form class="section" method="post" action="/dz/settings/llm/default">
   <label>Default text model <span class="muted">— used when a tool doesn't pick one</span></label>
   <div class="row"><select name="model" style="flex:1">${llmOptions(llm.models || [], llm.default)}</select><button class="btn small" type="submit">Save</button></div>
@@ -259,4 +260,21 @@ function llmSection(llm) {
 </form>
 ${tryBox}
 ${recent ? `<div class="section"><b>Recent calls</b><table style="margin-top:8px"><thead><tr><th>When (UTC)</th><th>Model</th><th>For</th><th>Tokens in / out</th><th>Cost</th><th>Time</th><th></th></tr></thead><tbody>${recent}</tbody></table></div>` : ''}`;
+}
+
+// ChatGPT plan: connect once from the Mac (the tokens go over SSH, never
+// through the browser), reconnect the same way, disconnect here.
+function chatgptBox(llm) {
+  const st = llm.chatgpt || { connected: false };
+  const cmd = `node tools/connect-chatgpt.mjs | ssh stand 'cd ~/projects/ai-video-platform && docker compose exec -T gateway node src/import-chatgpt.mjs ${llm.username || 'USERNAME'}'`;
+  const how = `<p class="muted" style="margin:8px 0 6px">On your Mac, in the project folder, run (it opens the OpenAI sign-in; allow “Use your ChatGPT plan”):</p>
+  <pre style="white-space:pre-wrap;word-break:break-all;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;font-size:16px">${esc(cmd)}</pre>
+  <p class="muted" style="margin:8px 0 0">Only you can use it here; it spends your ChatGPT plan, never API money. The tokens go straight to this server over SSH and are stored encrypted.</p>`;
+  if (!st.connected) return `<div class="section"><b>ChatGPT account</b> — not connected.${how}</div>`;
+  const when = (t) => (t ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '—');
+  return `<div class="section">
+  <div class="top"><b>ChatGPT account</b><form method="post" action="/dz/settings/chatgpt/disconnect" onsubmit="return confirm('Disconnect ChatGPT? It is revoked at OpenAI and deleted here.')"><button class="btn small" type="submit">Disconnect</button></form></div>
+  <p style="margin:6px 0 0">${esc(st.email || '(no e-mail)')} · for <b>${esc(st.owner || '')}</b> · connected ${esc(when(st.saved_at))} · last refresh ${esc(when(st.refreshed_at))}${st.lost ? ' · <b style="color:#f87171">expired or revoked — reconnect</b>' : ''}</p>
+  <details style="margin-top:8px"><summary class="muted">Reconnect</summary>${how}</details>
+</div>`;
 }

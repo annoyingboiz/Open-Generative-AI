@@ -26,6 +26,7 @@ import { createGenerations, GenerationError } from './generations.js';
 import { createProjects, ProjectError } from './projects.js';
 import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
+import { createChatGpt } from './chatgpt.js';
 import { createThumbs } from './thumbs.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
@@ -79,14 +80,15 @@ export async function buildApp(config, { logger = true } = {}) {
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations, log: app.log });
   generations.setOnCompleted((row) => elements.attachGenerated(row));
-  const llm = createLlm({ db, providers, generations, config, log: app.log });
+  const chatgpt = createChatGpt({ db, masterKey, config, log: app.log });
+  const llm = createLlm({ db, providers, generations, config, log: app.log, chatgpt });
   const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
   if (config.startWorkers !== false) setInterval(() => { try { thumbs.prune(); } catch { /* ignore */ } }, 24 * 3600_000).unref?.();
   if (config.startWorkers !== false) {
     setTimeout(() => elements.attachPending().catch(() => {}), 30_000).unref?.();
     setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
   }
-  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, llm });
+  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, llm, chatgpt });
   await app.register(cookie);
   await app.register(formbody);
   await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1, fields: 5 } });
@@ -245,7 +247,7 @@ export async function buildApp(config, { logger = true } = {}) {
     // The page never waits long for providers: after 4 s it shows what is known.
     if (isAdmin) {
       const lists = await Promise.race([llm.list(req.user).catch(() => null), new Promise((r) => setTimeout(() => r(null), 4000))]);
-      llmInfo = { ...(lists || llm.cachedList(req.user)), recent: llm.recent(10), try: llmTry };
+      llmInfo = { ...(lists || llm.cachedList(req.user)), recent: llm.recent(10), try: llmTry, chatgpt: chatgpt.status(req.user), username: req.user.username };
     }
     return html(reply, settingsPage({
       user: req.user,
@@ -288,6 +290,13 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/dz/settings/llm/default', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     try { llm.setDefault(req.body?.model); return reply.redirect('/dz/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
+  });
+  // ChatGPT: the owner or an admin may disconnect (revoke at OpenAI, then forget).
+  app.post('/dz/settings/chatgpt/disconnect', async (req, reply) => {
+    const st = chatgpt.status(req.user);
+    if (req.user.role !== 'admin' && !st.mine) return reply.code(403).send({ error: 'Not allowed' });
+    const r = await chatgpt.disconnect();
+    return renderSettings(req, reply, { notice: r.revoked ? 'ChatGPT disconnected and revoked at OpenAI.' : 'ChatGPT disconnected here; OpenAI did not confirm the revocation — you can also remove the app in ChatGPT → Settings.' });
   });
   app.post('/dz/settings/llm/try', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;

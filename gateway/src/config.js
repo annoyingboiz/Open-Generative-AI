@@ -31,4 +31,6 @@ export const config = {
   publicUrl: env.PUBLIC_URL || '',
   // Ollama on this server (from inside Docker: the host's bridge address).
   ollamaUrl: env.DZ_OLLAMA_URL || 'http://172.17.0.1:11434',
+  // Optional proxy for OpenAI (ChatGPT plan), e.g. socks5h://…
+  openaiProxy: env.DZ_OPENAI_PROXY || '',
 };

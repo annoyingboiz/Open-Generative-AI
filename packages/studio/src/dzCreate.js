@@ -425,7 +425,7 @@ export function keepValues(values, variant) {
 // The choices (ids) go to the server with the request (`_dz.look`); the server
 // writes them into the prompt in the chosen model's words and place
 // (gateway/src/look.js). Here: only the lists to draw the controls.
-const LOOK_FALLBACK = { cameras: [], lenses: [], filters: [], focals: [], apertures: [], eras: [], lights: [], moves: [], defaults: { camera: "digital", lens: "clean", focal: 35, aperture: "f/4" } };
+const LOOK_FALLBACK = { cameras: [], lenses: [], filters: [], focals: [], apertures: [], eras: [], lights: [], palettes: [], genres: [], moves: [], defaults: { camera: "digital", lens: "clean", focal: 35, aperture: "f/4" } };
 export function lookData() {
   return (typeof window !== "undefined" && window.__DZ_CATALOG__?.look) || LOOK_FALLBACK;
 }
@@ -433,8 +433,23 @@ export const DEFAULT_CAMERA = { on: false, camera: "digital", lens: "clean", foc
 // Settings saved before 18.11 used display names; the server maps those too.
 const LEGACY_CAMERA = { "Modular 8K Digital": "digital", "Full-Frame Cine Digital": "digital", "Studio Digital S35": "digital", "Grand Format 70mm Film": "imax-70", "Classic 16mm Film": "film-16", "Premium Large Format Digital": "large-format" };
 const LEGACY_LENS = { "Premium Modern Prime": "clean", "Clinical Sharp Prime": "clean", "Classic Anamorphic": "anamorphic", "Compact Anamorphic": "anamorphic", "70s Cinema Prime": "vintage-prime", "Warm Cinema Prime": "vintage-prime", "Vintage Prime": "vintage-prime", "Swirl Bokeh Portrait": "petzval", "Halation Diffusion": "clean", "Creative Tilt Lens": "tilt-shift", "Extreme Macro": "macro" };
-export function normalizeCamera(c) {
+// Studio (redesign 01): every part of the look is its own choice, Auto (null) by default.
+export const AUTO_LOOK = { auto: true, camera: null, lens: null, focal: null, aperture: null, palette: null, light: null, genre: null, era: null };
+const strOrNull = (x) => (typeof x === "string" && x ? x : null);
+export function autoLook(c) {
   const v = c && typeof c === "object" ? c : {};
+  if (v.auto) {
+    const focal = Number(v.focal);
+    return { ...AUTO_LOOK, camera: strOrNull(v.camera), lens: strOrNull(v.lens), focal: Number.isFinite(focal) && focal > 0 ? focal : null, aperture: strOrNull(v.aperture),
+      palette: strOrNull(v.palette), light: strOrNull(v.light), genre: strOrNull(v.genre), era: strOrNull(v.era) };
+  }
+  const old = normalizeCamera(v);
+  return { ...AUTO_LOOK, ...(old.on ? { camera: old.camera, lens: old.lens, focal: old.focal, aperture: old.aperture } : {}), era: old.era, light: old.light };
+}
+export function normalizeCamera(c, { auto = false } = {}) {
+  const v = c && typeof c === "object" ? c : {};
+  if (auto) return autoLook(v);
+  if (v.auto) { const a = autoLook(v); return normalizeCamera({ on: Boolean(a.camera || a.lens || a.focal || a.aperture), camera: a.camera, lens: a.lens, focal: a.focal, aperture: a.aperture, era: a.era, light: a.light }); }
   const focal = { 8: 12, 14: 16 }[Number(v.focal)] || Number(v.focal) || DEFAULT_CAMERA.focal;
   return {
     ...DEFAULT_CAMERA,
@@ -450,15 +465,25 @@ export function normalizeCamera(c) {
 }
 // What goes to the server: null when nothing is chosen.
 export function lookOf(camera, move = "") {
+  if (camera?.auto) {
+    const a = autoLook(camera);
+    const look = { on: Boolean(a.camera || a.lens || a.focal || a.aperture), camera: a.camera, lens: a.lens, focal: a.focal, aperture: a.aperture, filter: null,
+      era: a.era, light: a.light, palette: a.palette, genre: a.genre, move: move || null };
+    return look.on || look.era || look.light || look.palette || look.genre || look.move ? look : null;
+  }
   const c = normalizeCamera(camera);
   const look = { ...(c.on ? { on: true, camera: c.camera, lens: c.lens, focal: c.focal, aperture: c.aperture } : { on: false }), filter: c.filter, era: c.era, light: c.light, move: move || null };
   return look.on || look.filter || look.era || look.light || look.move ? look : null;
 }
 // Short label for buttons ("35mm Film · 50mm · f/2").
 export function lookLabel(camera) {
-  const c = normalizeCamera(camera);
   const d = lookData();
-  const name = (list, id) => list.find((x) => x.id === id)?.label || "";
+  const name = (list, id) => (list || []).find((x) => x.id === id)?.label || "";
+  if (camera?.auto) {
+    const a = autoLook(camera);
+    return [name(d.cameras, a.camera), name(d.lenses, a.lens), a.focal ? `${a.focal}mm` : "", a.aperture || "", name(d.palettes, a.palette), name(d.lights, a.light), name(d.genres, a.genre), name(d.eras, a.era)].filter(Boolean).join(" · ");
+  }
+  const c = normalizeCamera(camera);
   return [c.on ? name(d.cameras, c.camera) : "", c.on ? `${c.focal}mm` : "", c.on ? c.aperture : "", name(d.eras, c.era), name(d.lights, c.light)].filter(Boolean).join(" · ");
 }
 

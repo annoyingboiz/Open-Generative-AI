@@ -9,10 +9,10 @@ import { Button, Textarea, OptionSelect, Spinner, DialogParts, Segmented, cn } f
 import { RequestView } from "./DzSentPanel.jsx";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } = DialogParts;
-const LLM_KEY = "dz_adapt_llm";
+export const LLM_KEY = "dz_adapt_llm";
 const money = (v) => (v == null ? "" : v === 0 ? "free" : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(3)}`);
 
-async function post(url, body) {
+export async function post(url, body) {
   const res = await fetch(url, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -20,7 +20,7 @@ async function post(url, body) {
 }
 
 // Recommended text models (incl. your ChatGPT), your default first.
-function useAdaptModels() {
+export function useAdaptModels() {
   const llm = useDzLlmModels();
   const options = useMemo(() => {
     const list = llm.models || [];

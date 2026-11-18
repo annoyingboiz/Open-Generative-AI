@@ -44,7 +44,7 @@ async function getJson(url) {
 }
 
 // One page of a tab, with "Load more".
-function usePaged(tab, type, where, accept, ctx, refreshKey) {
+export function usePaged(tab, type, where, accept, ctx, refreshKey) {
   const [state, setState] = useState({ items: [], cursor: null, loading: true });
   const seq = useRef(0);
   const query = useMemo(() => {

@@ -395,7 +395,7 @@ export function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel 
 
 // ── Studio ─────────────────────────────────────────────────────────────────
 
-export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {
+export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {
   const cfg = MODES[mode] || MODES.create;
   const fixedKind = mode === "image" || mode === "video" ? mode : null;
   const saved = useMemo(() => load(cfg.store), [cfg.store]);
@@ -404,7 +404,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const [modelByKind, setModelByKind] = useState(saved.modelByKind || {});
   const [valuesByKind, setValuesByKind] = useState(saved.valuesByKind || { image: {}, video: {} });
   const [prompt, setPrompt] = useState(saved.prompt || "");
-  const [camera, setCamera] = useState(() => normalizeCamera(saved.camera));
+  const [camera, setCamera] = useState(() => normalizeCamera(saved.camera, { auto: mode === "create" }));
   const [move, setMove] = useState(saved.move || "");
   const [count, setCount] = useState(saved.count || 1); // ×1–4: same request, several results
   const [attached, setAttached] = useState(saved.attached || {});
@@ -681,7 +681,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     if (m.entryKey) setModelByKind((prev) => ({ ...prev, [m.kind || kind]: m.entryKey }));
     if (m.values) setValuesByKind((prev) => ({ ...prev, [m.kind || kind]: cleanValues(m.values) }));
     if (typeof m.prompt === "string") setPrompt(m.prompt);
-    if (m.camera) setCamera(normalizeCamera(m.camera));
+    if (m.camera) setCamera(normalizeCamera(m.camera, { auto: mode === "create" }));
     setMove(m.move || "");
     if (isObj(m.attached)) setAttached(normalizeSaved({ attached: m.attached }).attached || {});
   };
@@ -739,6 +739,11 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey };
+}
+
+export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {
+  const { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey } = useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode });
   const items = history.items;
 
   return (

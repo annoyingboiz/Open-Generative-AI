@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DzCreateStudio, DzDirector, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
+import { DzCreateStudio, DzStudio, DzDirector, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
   DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT,
   DzProjectsPage, DzElementsPage, ToElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
   DropdownMenuParts, DialogParts, cn } from 'studio';
@@ -200,9 +200,12 @@ export default function DzShell() {
   }, []);
   // Messages from anywhere (Move / Copy / Trash on many items, …).
   useEffect(() => {
-    const onNotify = (e) => { if (e.detail?.message) push({ type: e.detail.type === 'error' ? 'error' : 'notice', title: e.detail.title, message: e.detail.message }); };
+    const onNotify = (e) => { if (e.detail?.message) push({ type: e.detail.type === 'error' ? 'error' : 'notice', title: e.detail.title, message: e.detail.message, undo: typeof e.detail.undo === 'function' ? e.detail.undo : null }); };
+    // Any screen can open another one (e.g. Studio → Elements).
+    const onOpen = (e) => { if (e.detail?.tab) openTabRef.current?.(e.detail.tab); };
     window.addEventListener('dz:notify', onNotify);
-    return () => window.removeEventListener('dz:notify', onNotify);
+    window.addEventListener('dz:open-tab', onOpen);
+    return () => { window.removeEventListener('dz:notify', onNotify); window.removeEventListener('dz:open-tab', onOpen); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Folders: new / rename / delete from the sidebar tree.
@@ -546,7 +549,7 @@ export default function DzShell() {
         {/* Studios stay mounted, so running generations survive switching tabs */}
         <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-background" onContextMenu={onContextMenu}>
           <div className={activeTab === 'create' ? 'h-full w-full' : 'hidden'}>
-            <DzCreateStudio {...studioProps} {...callbacks('create')} droppedFiles={activeTab === 'create' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+            <DzStudio {...studioProps} {...callbacks('create')} droppedFiles={activeTab === 'create' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
           <div className={activeTab === 'elements' ? 'h-full w-full' : 'hidden'}>
             {activeTab === 'elements' && <DzElementsPage projects={projects} apiKey={DZ_SESSION_PLACEHOLDER} onError={(message) => push({ type: 'error', tabId: 'elements', message })} />}
@@ -667,6 +670,9 @@ export default function DzShell() {
                 {n.type === 'error' && <p className="mt-0.5 line-clamp-2 text-destructive" title={n.message}>{n.message}</p>}
                 {n.type === 'notice' && <p className="mt-0.5 line-clamp-3 text-muted-foreground" title={n.message}>{n.message}</p>}
               </div>
+              {n.undo && (
+                <button type="button" onClick={() => { n.undo(); dismiss(n.id); }} className="shrink-0 rounded-md px-1.5 font-semibold text-foreground hover:bg-accent">Undo</button>
+              )}
               {n.type === 'success' && n.tabId !== activeTab && (
                 <button type="button" onClick={() => { openTab(n.tabId); dismiss(n.id); }} className="shrink-0 rounded-md px-1.5 font-semibold text-foreground hover:bg-accent">Open</button>
               )}

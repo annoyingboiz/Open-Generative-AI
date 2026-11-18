@@ -88,6 +88,24 @@ export const LIGHTS = [
   { id: 'studio', label: 'Studio softbox', text: 'clean studio softbox key light with soft fill' },
 ];
 
+// Colour palette and genre (redesign 01, Look panel). Left on Auto, the model decides.
+export const PALETTES = [
+  { id: 'teal-orange', label: 'Teal and orange', text: 'teal-and-orange color grade, warm skin against cool shadows' },
+  { id: 'warm-film', label: 'Warm film', text: 'warm analog film color, soft amber tones, gentle grain' },
+  { id: 'noir', label: 'Noir', text: 'black-and-white noir grade, deep blacks, hard contrast' },
+  { id: 'neon-night', label: 'Neon night', text: 'saturated neon palette, magenta and cyan accents in the dark' },
+  { id: 'pastel', label: 'Pastel', text: 'soft pastel palette, light airy colors, low contrast' },
+  { id: 'bleach-bypass', label: 'Bleach bypass', text: 'bleach-bypass look, desaturated colors, silvery high contrast' },
+  { id: 'natural', label: 'Natural', text: 'natural true-to-life colors, neutral grade' },
+];
+export const GENRES = [
+  { id: 'drama', label: 'Drama', text: 'grounded dramatic film tone, intimate and emotional' },
+  { id: 'thriller', label: 'Thriller', text: 'tense thriller tone, suspenseful and moody' },
+  { id: 'commercial', label: 'Commercial', text: 'polished commercial look, clean and aspirational' },
+  { id: 'documentary', label: 'Documentary', text: 'observational documentary feel, natural and unstaged' },
+  { id: 'music-video', label: 'Music video', text: 'stylized music-video look, bold and rhythmic' },
+];
+
 // Camera moves for video, written the way video models understand them.
 export const MOVES = [
   { id: 'static', label: 'Static', text: 'static locked-off camera, no camera movement' },
@@ -145,9 +163,11 @@ export function cleanLook(input) {
     camera, lens, focal, aperture, filter,
     era: byId(ERAS, raw.era)?.id || null,
     light: byId(LIGHTS, raw.light)?.id || null,
+    palette: byId(PALETTES, idOf(raw.palette))?.id || null,
+    genre: byId(GENRES, idOf(raw.genre))?.id || null,
     move: byId(MOVES, raw.move)?.id || null,
   };
-  return out.on || out.filter || out.era || out.light || out.move ? out : null;
+  return out.on || out.filter || out.era || out.light || out.palette || out.genre || out.move ? out : null;
 }
 
 // "Unusual" combinations: not an error — a hint (it may look great or odd).
@@ -180,6 +200,8 @@ export function lookForClient() {
     apertures: APERTURES.map((a) => a.f),
     eras: pick(ERAS, ['id', 'label']),
     lights: pick(LIGHTS, ['id', 'label']),
+    palettes: pick(PALETTES, ['id', 'label']),
+    genres: pick(GENRES, ['id', 'label']),
     moves: pick(MOVES, ['id', 'label']),
     defaults: DEFAULT_LOOK,
   };
@@ -204,6 +226,8 @@ function words(look, kind) {
     camera: cam.join(', '),
     move,
     light: byId(LIGHTS, look.light)?.text || '',
+    palette: byId(PALETTES, look.palette)?.text || '',
+    genre: byId(GENRES, look.genre)?.text || '',
     era: byId(ERAS, look.era)?.text || '',
   };
 }
@@ -227,7 +251,7 @@ export function renderLook(prompt, look, { kind = 'video', memo = null } = {}) {
   const raw = String(prompt ?? '');
   if (!look) return raw;
   const w = words(look, kind);
-  const parts = [w.camera, w.move, w.light, w.era];
+  const parts = [w.camera, w.move, w.light, w.palette, w.genre, w.era];
   if (!parts.some(Boolean)) return raw;
 
   const rule = memo?.look || {};
@@ -250,8 +274,8 @@ export function renderLook(prompt, look, { kind = 'video', memo = null } = {}) {
       };
       if (rule.camera) put(rule.camera, [w.camera, w.move].filter(Boolean).join(', '));
       else { put('camera', w.camera); put('camera_movement', w.move); }
-      if (rule.style) put(rule.style, [w.light, w.era].filter(Boolean).join(', '));
-      else { put('lighting', w.light); put('era', w.era); }
+      if (rule.style) put(rule.style, [w.light, w.palette, w.genre, w.era].filter(Boolean).join(', '));
+      else { put('lighting', w.light); put('color', w.palette); put('genre', w.genre); put('era', w.era); }
       return JSON.stringify(out, null, 2);
     } catch { /* not JSON after all: plain text */ }
   }
@@ -264,11 +288,11 @@ export function renderLook(prompt, look, { kind = 'video', memo = null } = {}) {
     const styleLabel = rule.style || camLabel;
     let out = text;
     out = intoBlock(out, camLabel, [w.camera, w.move].filter(Boolean).join(', '));
-    out = intoBlock(out, styleLabel, [w.light, w.era].filter(Boolean).join(', '));
+    out = intoBlock(out, styleLabel, [w.light, w.palette, w.genre, w.era].filter(Boolean).join(', '));
     return out;
   }
   const cameraSentence = sentence([w.camera, w.move].filter(Boolean).join(', '));
-  const styleSentence = [sentence(w.light && `lighting: ${w.light}`), sentence(w.era)].filter(Boolean).join(' ');
+  const styleSentence = [sentence(w.light && `lighting: ${w.light}`), sentence(w.palette && `color: ${w.palette}`), sentence(w.genre), sentence(w.era)].filter(Boolean).join(' ');
   const body = text ? (/[.!?"')\]]$/.test(text) ? text : `${text.replace(/[,;:\s]+$/, '')}.`) : '';
   if (rule.place === 'start') return [cameraSentence, body, styleSentence].filter(Boolean).join(' ');
   return [body, cameraSentence, styleSentence].filter(Boolean).join(' ');

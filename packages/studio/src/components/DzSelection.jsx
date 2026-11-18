@@ -49,7 +49,7 @@ export function useDzSelection(items) {
   }, [clear]);
   useEffect(() => {
     if (!selecting) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") clear(); };
+    const onKey = (e) => { if (e.key === "Escape" && !e.defaultPrevented) clear(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selecting, clear]);

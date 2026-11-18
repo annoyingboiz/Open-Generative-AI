@@ -33,4 +33,10 @@ export const config = {
   ollamaUrl: env.DZ_OLLAMA_URL || 'http://172.17.0.1:11434',
   // Optional proxy for OpenAI (ChatGPT plan), e.g. socks5h://…
   openaiProxy: env.DZ_OPENAI_PROXY || '',
+  // ChatGPT sign-in: Director on the same computer as the browser listens for
+  // OpenAI's callback itself (DZ_CHATGPT_LOOPBACK=1; in Docker also set
+  // DZ_CHATGPT_LOOPBACK_HOST=0.0.0.0 and publish 127.0.0.1:1455:1455).
+  chatgptLoopback: env.DZ_CHATGPT_LOOPBACK === '1',
+  chatgptLoopbackHost: env.DZ_CHATGPT_LOOPBACK_HOST || '127.0.0.1',
+  chatgptCallbackPort: Number(env.DZ_CHATGPT_CALLBACK_PORT) || 1455,
 };

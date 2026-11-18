@@ -76,7 +76,7 @@ test('model list: local models (no embeddings), cloud sources without keys say s
   assert.equal(data.sources.find((s) => s.id === 'chatgpt').status, 'not connected');
   assert.ok(['local:gemma4:31b', 'local:qwen3.5:9b'].includes(data.default));
   res = await as('kid', 'GET', '/dz/api/llm/models');
-  assert.equal(res.json().sources.some((s) => s.id === 'chatgpt'), false);
+  assert.equal(res.json().sources.find((s) => s.id === 'chatgpt').status, 'not connected', 'everyone can connect their own');
 });
 
 test('chat on the local machine: free, logged, works even at a $0 limit; busy and offline get plain messages', async () => {
@@ -140,39 +140,50 @@ test('settings: default model and a test call', async () => {
   assert.match(res.json().error, /offline/i);
 });
 
-test('ChatGPT plan: credentials are checked on import, stored encrypted, shown only to their owner and admins', async () => {
+test('ChatGPT plans: one per person, stored encrypted; an admin may share theirs; defaults per person', async () => {
   const cg = app.ctx.chatgpt;
+  const db = app.ctx.db;
+  const id = (name) => db.prepare('SELECT id FROM users WHERE username = ?').get(name).id;
   assert.throws(() => cg.importCredentials({ client_id: 'oaiapp_x', access_token: 'a', refresh_token: 'r', scopes: ['openid'] }, { username: 'admin' }), /plan permission/);
   assert.throws(() => cg.importCredentials({ client_id: 'dynamic_agent_client', access_token: 'a', refresh_token: 'r', scopes: ['chatgpt.tokens.use.direct'] }, { username: 'admin' }), /Registration/);
   assert.throws(() => cg.importCredentials({ client_id: 'oaiapp_x', access_token: 'a', refresh_token: 'r', scopes: ['chatgpt.tokens.use.direct'] }, { username: 'nobody' }), /No user/);
   const r = cg.importCredentials(JSON.stringify({ client_id: 'oaiapp_x', access_token: 'secret-access', refresh_token: 'secret-refresh', scopes: ['openid', 'chatgpt.tokens.use.direct'], email: 'me@example.com', expires_in: 3600 }), { username: 'admin' });
   assert.equal(r.owner, 'admin');
-  const stored = app.ctx.db.prepare("SELECT value FROM meta WHERE key = 'chatgpt_creds'").get().value;
+  const stored = db.prepare('SELECT value FROM meta WHERE key = ?').get(`chatgpt_creds:${id('admin')}`).value;
   assert.equal(stored.includes('secret-access'), false, 'stored encrypted');
+  assert.equal(JSON.parse(db.prepare('SELECT value FROM meta WHERE key = ?').get(`chatgpt_reg:${id('admin')}`).value).client_id, 'oaiapp_x', 'registration kept apart, without tokens');
   const host1 = cg.hostId();
   assert.match(host1, /^urn:uuid:/);
   assert.equal(cg.hostId(), host1, 'the server keeps one host id');
+  // The kid has no plan of their own: not usable, told to connect.
   let res = await as('kid', 'POST', '/dz/api/llm/chat', { model: 'chatgpt:gpt-6.1-sol', prompt: 'hi' });
-  assert.equal(res.statusCode, 403);
-  res = await as('kid', 'GET', '/dz/api/llm/models');
-  assert.equal(res.json().sources.some((s) => s.id === 'chatgpt'), false);
+  assert.equal(res.statusCode, 409);
+  assert.match(res.json().error, /Connect your ChatGPT/);
   res = await as('admin', 'GET', '/dz/settings');
   assert.match(res.body, /me@example\.com/);
   assert.equal(res.body.includes('secret-'), false);
-  res = await as('kid', 'POST', '/dz/settings/chatgpt/disconnect');
+  res = await as('kid', 'GET', '/dz/settings');
+  assert.match(res.body, /Connect ChatGPT/);
+  assert.equal(res.body.includes('me@example.com'), false, 'others don’t see the admin’s plan');
+  res = await as('kid', 'POST', '/dz/settings/chatgpt/disconnect', { userId: String(id('admin')) });
   assert.equal(res.statusCode, 403);
-  // Owner-only: it can't be everyone's default.
+  // Not shared: ChatGPT can be the admin's own default, not everyone's.
   assert.throws(() => app.ctx.llm.setDefault('chatgpt:gpt-6.1-sol'), /share it with everyone/);
-  // Shared with everyone: others see it and may use it; it can be the default.
+  assert.throws(() => app.ctx.llm.setUserDefault({ id: id('kid') }, 'chatgpt:gpt-6.1-sol'), /Connect your ChatGPT/);
+  app.ctx.llm.setUserDefault({ id: id('admin') }, 'chatgpt:gpt-6.1-sol');
+  // Shared: the kid may use it; it can be everyone's default.
   res = await as('kid', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'all' });
-  assert.equal(res.statusCode, 403, 'only the owner or an admin decides');
+  assert.equal(res.statusCode, 403, 'only an admin shares their plan');
   res = await as('admin', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'all' });
   assert.equal(res.statusCode, 302);
-  assert.equal(cg.canUse({ id: 999 }), true);
+  assert.equal(cg.canUse({ id: id('kid') }), true);
+  res = await as('kid', 'GET', '/dz/settings');
+  assert.match(res.body, /admin<\/b>’s plan, shared/);
   app.ctx.llm.setDefault('chatgpt:gpt-6.1-sol');
   assert.equal(app.ctx.llm.defaultId(), 'chatgpt:gpt-6.1-sol');
-  // Back to owner-only: the default is dropped so others don't hit errors.
+  // Back to "only me": everyone's default is dropped, the admin's own stays.
   res = await as('admin', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'owner' });
   assert.equal(app.ctx.llm.defaultId(), '');
-  assert.equal(cg.canUse({ id: 999 }), false);
+  assert.equal(cg.canUse({ id: id('kid') }), false);
+  assert.equal(db.prepare('SELECT value FROM meta WHERE key = ?').get(`llm_default:${id('admin')}`).value, 'chatgpt:gpt-6.1-sol');
 });

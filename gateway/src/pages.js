@@ -113,7 +113,7 @@ ${providerSections}
 ${changes ? changesSection(changes) : ''}
 <h2 style="margin:28px 0 12px" id="recommended">Recommended models</h2>
 ${recommendedSection(recommended, families)}
-<h2 style="margin:28px 0 12px" id="llm">Text models (LLM)</h2>
+<h2 style="margin:28px 0 12px" id="llm-admin">Text models — sources and tests</h2>
 ${llm ? llmSection(llm) : ''}
 <h2 style="margin:28px 0 12px">Test generation</h2>
 <form class="section" method="post" action="/dz/settings/test-generation">
@@ -149,6 +149,9 @@ ${flash(error, notice)}
   <div><label>New password (8+)</label><input name="newPassword" type="password" required minlength="8" autocomplete="new-password"></div>
   <div><button class="btn" type="submit">Change password</button></div>
 </form></div>
+${llm ? `<h2 style="margin:28px 0 12px" id="llm">Text models</h2>
+${chatgptBox(llm)}
+${myDefaultBox(llm)}` : ''}
 ${adminBlocks}
 </div>`);
 }
@@ -221,7 +224,7 @@ export function testResultPage({ result, provider, model }) {
 }
 
 // ── Text models (LLM) ──────────────────────────────────────────────────────
-const SOURCE_NAME = { local: 'This server', apimart: 'APIMart', atlas: 'Atlas' };
+const SOURCE_NAME = { local: 'This server', apimart: 'APIMart', atlas: 'Atlas', chatgpt: 'ChatGPT plan' };
 const money = (v) => (v == null ? '—' : v === 0 ? '$0' : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(3)}`);
 const perM = (p) => (p.free ? 'free' : p.price ? `$${(+p.price.in).toFixed(2)} in / $${(+p.price.out).toFixed(2)} out per 1M tokens` : 'price at first use');
 function llmOptions(models, selected) {
@@ -247,10 +250,10 @@ function llmSection(llm) {
   ${(llm.sources || []).map((src) => `<tr><td><b>${esc(src.name)}</b></td><td>${pill(src.status)}</td><td>${src.count || 0}</td><td class="muted">${esc(src.note || '')}</td></tr>`).join('')}
   </tbody></table>
 </div>
-${chatgptBox(llm)}
+${chatgptAccounts(llm)}
 <form class="section" method="post" action="/dz/settings/llm/default">
-  <label>Default text model <span class="muted">— used when a tool doesn't pick one</span></label>
-  <div class="row"><select name="model" style="flex:1">${llmOptions(llm.models || [], llm.default)}</select><button class="btn small" type="submit">Save</button></div>
+  <label>Default text model for everyone <span class="muted">— used when a tool doesn't pick one and a person has no default of their own</span></label>
+  <div class="row"><select name="model" style="flex:1">${llmOptions((llm.models || []).filter((m) => m.source !== 'chatgpt' || llm.chatgpt?.sharing === 'all'), llm.globalDefault || llm.default)}</select><button class="btn small" type="submit">Save</button></div>
 </form>
 <form class="section" method="post" action="/dz/settings/llm/try#llm">
   <label>Try a text model</label>
@@ -262,26 +265,68 @@ ${tryBox}
 ${recent ? `<div class="section"><b>Recent calls</b><table style="margin-top:8px"><thead><tr><th>When (UTC)</th><th>Model</th><th>For</th><th>Tokens in / out</th><th>Cost</th><th>Time</th><th></th></tr></thead><tbody>${recent}</tbody></table></div>` : ''}`;
 }
 
-// ChatGPT plan: connect once from the Mac (the tokens go over SSH, never
-// through the browser), reconnect the same way, disconnect here.
+// ChatGPT: each person connects their own plan from here. "Connect" opens the
+// OpenAI sign-in in a new tab; afterwards the browser lands on 127.0.0.1:1455.
 function chatgptBox(llm) {
   const st = llm.chatgpt || { connected: false };
-  const cmd = `cd ~/Documents/Builds/ai-video-platform && node tools/connect-chatgpt.mjs --server meetbot --user ${llm.username || 'USERNAME'}`;
-  const how = `<p class="muted" style="margin:8px 0 6px">On your Mac, in the project folder, run (it opens the OpenAI sign-in; allow “Use your ChatGPT plan”):</p>
-  <pre style="white-space:pre-wrap;word-break:break-all;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;font-size:16px">${esc(cmd)}</pre>
-  <p class="muted" style="margin:8px 0 0">Only you can use it here; it spends your ChatGPT plan, never API money. The tokens go straight to this server over SSH and are stored encrypted.</p>`;
-  if (!st.connected) return `<div class="section"><b>ChatGPT account</b> — not connected.${how}</div>`;
   const when = (t) => (t ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '—');
+  const connectForm = (label, fresh = false, primary = true) => `<form method="post" action="/dz/settings/chatgpt/connect" target="_blank" style="display:inline">${fresh ? '<input type="hidden" name="fresh" value="1">' : ''}<button class="btn ${primary ? 'primary' : 'small'}" type="submit">${label}</button></form>`;
+  const steps = `<ol style="margin:12px 0 8px;padding-left:22px;line-height:1.6">
+    <li>Press <b>Connect ChatGPT</b> — the OpenAI sign-in opens in a new tab.</li>
+    <li>Sign in and keep <b>“Use your ChatGPT plan”</b> on.</li>
+    ${st.loopback
+      ? '<li>Director runs on this computer, so it finishes by itself. Then reload this page. If the new tab says the page can’t be reached, use step 4.</li><li>Copy the address of that tab and paste it here:</li>'
+      : '<li>The new tab then says the page <b>can’t be reached</b> — that’s expected. Copy its whole address (it starts with <span class="mono">http://127.0.0.1:1455</span>) and paste it here within a few minutes:</li>'}
+  </ol>
+  <form method="post" action="/dz/settings/chatgpt/finish#llm" class="row">
+    <input name="callback" required autocomplete="off" placeholder="http://127.0.0.1:1455/auth/callback?code=…" style="flex:1">
+    <button class="btn" type="submit">Finish</button>
+  </form>`;
+  const helper = `<details style="margin-top:10px"><summary class="muted">Other way: from a Mac terminal</summary>
+  <pre style="white-space:pre-wrap;word-break:break-all;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0 0;font-size:16px">${esc(`node tools/connect-chatgpt.mjs --server <your ssh host> --user ${llm.username || 'USERNAME'}`)}</pre></details>`;
+  const shared = st.shared ? `<p style="margin:6px 0 0">For now you use <b>${esc(st.shared.owner)}</b>’s plan, shared with everyone here. Connect your own to use yours.</p>` : '';
+  if (!st.connected) {
+    return `<div class="section">
+  <b>Your ChatGPT</b> — not connected.
+  <p class="muted" style="margin:6px 0 0">Use your own ChatGPT plan (Plus or Pro) for the text models here: it costs nothing extra and only you use it.</p>
+  ${shared}
+  <div style="margin-top:12px">${connectForm('Connect ChatGPT')}</div>
+  ${steps}${helper}
+</div>`;
+  }
   return `<div class="section">
-  <div class="top"><b>ChatGPT account</b><form method="post" action="/dz/settings/chatgpt/disconnect" onsubmit="return confirm('Disconnect ChatGPT? It is revoked at OpenAI and deleted here.')"><button class="btn small" type="submit">Disconnect</button></form></div>
-  <p style="margin:6px 0 0">${esc(st.email || '(no e-mail)')} · for <b>${esc(st.owner || '')}</b> · connected ${esc(when(st.saved_at))} · last refresh ${esc(when(st.refreshed_at))}${st.lost ? ' · <b style="color:#f87171">expired or revoked — reconnect</b>' : ''}</p>
-  ${st.mine || llm.isAdmin ? `<form method="post" action="/dz/settings/chatgpt/sharing" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:14px;align-items:center">
-    <span>Who can use it:</span>
-    <label><input type="radio" name="sharing" value="owner"${st.sharing !== 'all' ? ' checked' : ''}> Only ${esc(st.owner || 'me')}</label>
-    <label><input type="radio" name="sharing" value="all"${st.sharing === 'all' ? ' checked' : ''}> Everyone signed in here</label>
+  <div class="top"><b>Your ChatGPT</b><form method="post" action="/dz/settings/chatgpt/disconnect" onsubmit="return confirm('Disconnect your ChatGPT? It is revoked at OpenAI and deleted here.')"><button class="btn small" type="submit">Disconnect</button></form></div>
+  <p style="margin:6px 0 0">${esc(st.email || '(no e-mail)')} · connected ${esc(when(st.saved_at))} · last refresh ${esc(when(st.refreshed_at))}${st.lost ? ' · <b style="color:#f87171">expired or revoked — reconnect</b>' : ''}</p>
+  ${st.lost ? shared : ''}
+  ${llm.isAdmin ? `<form method="post" action="/dz/settings/chatgpt/sharing" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+    <span>Who can use your plan:</span>
+    <label><input type="radio" name="sharing" value="owner"${st.sharing !== 'all' ? ' checked' : ''}> Only me</label>
+    <label><input type="radio" name="sharing" value="all"${st.sharing === 'all' ? ' checked' : ''}> Also everyone here without their own</label>
     <button class="btn small" type="submit">Save</button>
   </form>
-  <p class="muted" style="margin:6px 0 0">${st.sharing === 'all' ? 'Everyone here uses this one ChatGPT plan (its limits are shared). It can be the default text model.' : 'Shared with everyone, it can also be the default text model for all.'}</p>` : ''}
-  <details style="margin-top:8px"><summary class="muted">Reconnect</summary>${how}</details>
+  <p class="muted" style="margin:6px 0 0">${st.sharing === 'all' ? 'People without their own ChatGPT use yours (its limits are shared). It can be the default for everyone.' : 'People connect their own ChatGPT in their Settings.'}</p>` : ''}
+  <details style="margin-top:10px"${st.lost ? ' open' : ''}><summary class="muted">Reconnect or switch account</summary>
+    <div style="margin-top:10px" class="row">${connectForm('Reconnect', false, true)} ${connectForm('Connect a different account', true, false)}</div>
+    ${steps}${helper}
+  </details>
 </div>`;
+}
+
+// Everyone: their own default text model (else the one for everyone).
+function myDefaultBox(llm) {
+  const models = llm.models || [];
+  if (!models.length) return '';
+  const g = models.find((m) => m.id === llm.globalDefault);
+  return `<form class="section" method="post" action="/dz/settings/llm/my-default#llm">
+  <label>My default text model <span class="muted">— used when a tool doesn't pick one</span></label>
+  <div class="row"><select name="model" style="flex:1"><option value="">Same as everyone${g ? ` (${esc(g.name)})` : ''}</option>${llmOptions(models, llm.myDefault)}</select><button class="btn small" type="submit">Save</button></div>
+</form>`;
+}
+
+// Admin: who has connected a ChatGPT plan here (no tokens shown).
+function chatgptAccounts(llm) {
+  const list = llm.accounts || [];
+  if (!list.length) return '';
+  const rows = list.map((a) => `<tr><td><b>${esc(a.username)}</b></td><td>${esc(a.email || '')}</td><td>${a.lost ? '<span style="color:#f87171">expired</span>' : 'ok'}${a.shared ? ' · shared with everyone' : ''}</td><td style="text-align:right"><form method="post" action="/dz/settings/chatgpt/disconnect" style="display:inline" onsubmit="return confirm('Disconnect this ChatGPT? It is revoked at OpenAI.')"><input type="hidden" name="userId" value="${esc(a.userId)}"><button class="btn small danger" type="submit">Disconnect</button></form></td></tr>`).join('');
+  return `<div class="section"><b>ChatGPT plans connected here</b><table style="margin-top:8px"><tbody>${rows}</tbody></table></div>`;
 }

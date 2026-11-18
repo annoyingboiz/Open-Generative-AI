@@ -44,6 +44,7 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
     finish: db.prepare('UPDATE llm_calls SET prompt_tokens = ?, completion_tokens = ?, cost_usd = ?, ms = ?, status = ?, error = ? WHERE id = ?'),
     getMeta: db.prepare('SELECT value FROM meta WHERE key = ?'),
     setMeta: db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"),
+    delMeta: db.prepare('DELETE FROM meta WHERE key = ?'),
     spent: db.prepare(`SELECT
       (SELECT COALESCE(SUM(COALESCE(cost_usd, est_cost_usd, 0)), 0) FROM generations WHERE user_id = ?1 AND created_at >= ?2 AND status != 'failed')
       + (SELECT COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE user_id = ?1 AND created_at >= ?2) AS usd`),
@@ -134,12 +135,14 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
     return null;
   }
 
-  // The ChatGPT plan: seen and used only by the person it was connected for.
+  // ChatGPT: each person's own plan (or the one an admin shares with everyone).
   function chatgptStatus(user) {
     const st = chatgpt?.status(user) || { connected: false };
-    if (!st.connected) return { id: 'chatgpt', name: 'ChatGPT account', status: 'not connected', note: 'Connect it in Settings (one sign-in on the Mac).' };
-    if (st.lost) return { id: 'chatgpt', name: 'ChatGPT account', status: 'error', note: `${st.email} — the connection expired or was revoked. Reconnect.` };
-    return { id: 'chatgpt', name: 'ChatGPT account', status: 'ok', note: `${st.email} · ${st.sharing === 'all' ? 'shared with everyone here' : `for ${st.owner} only`} · uses the ChatGPT plan, not API money`, mine: st.mine, usable: st.usable };
+    const base = { id: 'chatgpt', name: 'ChatGPT (your plan)', usable: Boolean(st.usable) };
+    if (st.connected && st.lost) return { ...base, status: 'error', note: `${st.email} — the connection expired or was revoked. Reconnect in Settings.` };
+    if (st.connected) return { ...base, status: 'ok', note: `${st.email}${st.sharing === 'all' ? ' · shared with everyone here' : ''} · uses the ChatGPT plan, not API money` };
+    if (st.shared) return { ...base, status: 'ok', note: `${st.shared.owner}'s plan, shared with everyone here · connect your own in Settings` };
+    return { ...base, status: 'not connected', note: 'Connect your ChatGPT in Settings.' };
   }
   async function chatgptModels(user) {
     const list = chatgpt ? await chatgpt.models(user) : [];
@@ -155,25 +158,40 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   function assemble(user, local, apimart, atlas, gpt = []) {
     const am = (apimart.models || []).map((m) => { const p = apimartPrices.get(m.model); return p && !m.price ? { ...m, price: { in: p.in, out: p.out } } : m; });
     const all = [...gpt, ...(local.models || []), ...am, ...(atlas.models || [])].map((m) => ({ ...m, recommended: m.source === 'chatgpt' || RECOMMENDED.includes(m.id) }));
-    const def = defaultModel(all);
+    const def = defaultFor(user, all);
     return {
       sources: [
         { id: 'local', name: 'This server (Ollama)', status: local.status, note: local.note || 'Free. Busy while the graphics cards run other work.', count: (local.models || []).length },
         { id: 'apimart', name: 'APIMart', status: apimart.status, note: apimart.note || '', count: am.length },
         { id: 'atlas', name: 'Atlas Cloud', status: atlas.status, note: atlas.note || '', count: (atlas.models || []).length },
-        (() => { const st = chatgptStatus(user); return { ...st, count: gpt.length, ...(user?.role === 'admin' || st.usable ? {} : { hidden: true }) }; })(),
+        { ...chatgptStatus(user), count: gpt.length },
       ].filter((s) => !s.hidden),
       models: all.sort((a, b) => Number(b.recommended) - Number(a.recommended) || RECOMMENDED.indexOf(a.id) - RECOMMENDED.indexOf(b.id) || a.source.localeCompare(b.source) || a.name.localeCompare(b.name)),
       default: def,
+      globalDefault: globalDefault(),
+      myDefault: user ? (q.getMeta.get(`llm_default:${user.id}`)?.value || '') : '',
     };
   }
 
   // A saved default is kept even while its source is down: a tool that leaves
   // the model out then gets "offline" instead of a paid model it didn't ask for.
-  function defaultModel(all) {
-    const saved = q.getMeta.get('llm_default')?.value || '';
-    if (saved) return saved;
-    return RECOMMENDED.find((id) => all.some((m) => m.id === id)) || all[0]?.id || null;
+  // Each person may pick their own default; else the one for everyone; else
+  // the first recommended. A ChatGPT default counts only while it is usable.
+  const globalDefault = () => q.getMeta.get('llm_default')?.value || '';
+  function defaultFor(user, all) {
+    const usable = (id) => id && (!id.startsWith('chatgpt:') || chatgpt?.canUse(user));
+    const mine = user ? q.getMeta.get(`llm_default:${user.id}`)?.value || '' : '';
+    if (usable(mine)) return mine;
+    const g = globalDefault();
+    if (usable(g)) return g;
+    return RECOMMENDED.find((id) => all.some((m) => m.id === id)) || all.find((m) => m.source !== 'chatgpt')?.id || null;
+  }
+  function setUserDefault(user, id) {
+    const v = String(id || '');
+    if (v && !/^(local|apimart|atlas|chatgpt):.+/.test(v)) throw new LlmError('Unknown model.');
+    if (v.startsWith('chatgpt:') && !chatgpt?.canUse(user)) throw new LlmError('Connect your ChatGPT first.');
+    if (v) q.setMeta.run(`llm_default:${user.id}`, v); else q.delMeta.run(`llm_default:${user.id}`);
+    return { ok: true };
   }
   function setDefault(id) {
     const v = String(id || '');
@@ -182,6 +200,10 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
     if (v && !/^(local|apimart|atlas|chatgpt):.+/.test(v)) throw new LlmError('Unknown model.');
     q.setMeta.run('llm_default', v);
     return { ok: true };
+  }
+  // A ChatGPT default for everyone only makes sense while a plan is shared.
+  function dropUnusableDefaults() {
+    if (chatgpt?.sharing() !== 'all' && globalDefault().startsWith('chatgpt:')) q.setMeta.run('llm_default', '');
   }
 
   // ── Calls ───────────────────────────────────────────────────────────────
@@ -304,7 +326,7 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   // real cost replaces it. A model whose price we can't learn is refused for
   // people with a limit; for others its cost is kept as the worst case.
   async function chat(user, body = {}) {
-    const id = String(body.model || defaultModel((await list(user)).models) || '');
+    const id = String(body.model || defaultFor(user, (await list(user)).models) || '');
     const m = /^(local|apimart|atlas|chatgpt):(.+)$/.exec(id);
     if (!m) throw new LlmError('Pick a text model.');
     const [, source, model] = m;
@@ -361,5 +383,5 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   db.prepare("UPDATE llm_calls SET status = 'failed', cost_usd = 0, error = 'Interrupted (server restart).' WHERE status = 'running'").run();
 
   const defaultId = () => q.getMeta.get('llm_default')?.value || '';
-  return { list, cachedList, chat, setDefault, defaultId, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
+  return { list, cachedList, chat, setDefault, setUserDefault, dropUnusableDefaults, defaultId, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
 }

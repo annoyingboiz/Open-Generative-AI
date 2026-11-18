@@ -277,12 +277,13 @@ export async function buildApp(config, { logger = true } = {}) {
   async function renderSettings(req, reply, { error, notice, code = 200, llmTry = null } = {}) {
     const isAdmin = req.user.role === 'admin';
     const balancesP = isAdmin ? fetchBalances(providers) : Promise.resolve([]);
-    let llmInfo = null;
+    // Everyone gets their ChatGPT box and own default; admins also the sources and tests.
     // The page never waits long for providers: after 4 s it shows what is known.
-    if (isAdmin) {
-      const lists = await Promise.race([llm.list(req.user).catch(() => null), new Promise((r) => setTimeout(() => r(null), 4000))]);
-      llmInfo = { ...(lists || llm.cachedList(req.user)), recent: llm.recent(10), try: llmTry, chatgpt: chatgpt.status(req.user), username: req.user.username, isAdmin: req.user.role === 'admin' };
-    }
+    const lists = await Promise.race([llm.list(req.user).catch(() => null), new Promise((r) => setTimeout(() => r(null), 4000))]);
+    const llmInfo = {
+      ...(lists || llm.cachedList(req.user)), try: llmTry, chatgpt: chatgpt.status(req.user), username: req.user.username, isAdmin,
+      ...(isAdmin ? { recent: llm.recent(10), accounts: chatgpt.accounts() } : {}),
+    };
     return html(reply, settingsPage({
       user: req.user,
       providers: isAdmin ? PROVIDERS.map((p) => providers.publicView(p.id)) : [],
@@ -325,21 +326,41 @@ export async function buildApp(config, { logger = true } = {}) {
     if (!requireAdmin(req, reply)) return;
     try { llm.setDefault(req.body?.model); return reply.redirect('/dz/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
   });
-  // ChatGPT: the owner or an admin may disconnect (revoke at OpenAI, then forget).
+  // ChatGPT, each person their own. Connect: the server makes the sign-in link
+  // (opens in a new tab); finish: the address the browser landed on.
+  const chatgptError = (req, reply, error) => {
+    if (error?.status && error.message) return renderSettings(req, reply, { error: error.message, code: error.status >= 500 ? 424 : error.status });
+    throw error;
+  };
+  app.post('/dz/settings/chatgpt/connect', async (req, reply) => {
+    const { url } = chatgpt.startConnect(req.user, { fresh: req.body?.fresh === '1' });
+    return reply.redirect(url);
+  });
+  app.post('/dz/settings/chatgpt/finish', async (req, reply) => {
+    try {
+      const r = await chatgpt.finishConnect(req.user, req.body?.callback);
+      return renderSettings(req, reply, { notice: `ChatGPT connected${r.email ? `: ${r.email}` : ''}.` });
+    } catch (error) { return chatgptError(req, reply, error); }
+  });
+  // Your own connection, or (admin) someone else's: revoke at OpenAI, then forget.
   app.post('/dz/settings/chatgpt/disconnect', async (req, reply) => {
-    const st = chatgpt.status(req.user);
-    if (req.user.role !== 'admin' && !st.mine) return reply.code(403).send({ error: 'Not allowed' });
-    const r = await chatgpt.disconnect();
+    const target = req.body?.userId ? Number(req.body.userId) : req.user.id;
+    if (target !== req.user.id && req.user.role !== 'admin') return reply.code(403).send({ error: 'Not allowed' });
+    const r = await chatgpt.disconnect(target);
+    llm.dropUnusableDefaults();
     return renderSettings(req, reply, { notice: r.revoked ? 'ChatGPT disconnected and revoked at OpenAI.' : 'ChatGPT disconnected here; OpenAI did not confirm the revocation — you can also remove the app in ChatGPT → Settings.' });
   });
-  // Who may use the plan: only the owner, or everyone signed in here. Back to
-  // owner-only also drops ChatGPT as the default (others would get errors).
+  // An admin shares their own plan with everyone here (people without one), or stops.
   app.post('/dz/settings/chatgpt/sharing', async (req, reply) => {
-    const st = chatgpt.status(req.user);
-    if (req.user.role !== 'admin' && !st.mine) return reply.code(403).send({ error: 'Not allowed' });
-    const v = chatgpt.setSharing(req.body?.sharing);
-    if (v !== 'all' && llm.defaultId().startsWith('chatgpt:')) llm.setDefault('');
-    return reply.redirect('/dz/settings?notice=llm#llm');
+    try {
+      chatgpt.setShared(req.user, req.body?.sharing === 'all');
+      llm.dropUnusableDefaults();
+      return reply.redirect('/dz/settings?notice=llm#llm');
+    } catch (error) { return chatgptError(req, reply, error); }
+  });
+  // Everyone: their own default text model.
+  app.post('/dz/settings/llm/my-default', async (req, reply) => {
+    try { llm.setUserDefault(req.user, req.body?.model); return reply.redirect('/dz/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
   });
   app.post('/dz/settings/llm/try', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
@@ -843,7 +864,7 @@ export async function buildApp(config, { logger = true } = {}) {
     catalog.refreshAll().catch(() => {});
     setInterval(() => catalog.refreshAll().catch(() => {}), 3_600_000).unref();
   });
-  app.addHook('onClose', async () => { generations.stop(); db.close(); });
+  app.addHook('onClose', async () => { generations.stop(); chatgpt.closeListener(); db.close(); });
   return app;
 }
 

@@ -1,11 +1,12 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openDatabase } from '../src/db.js';
-import { loadMasterKey } from '../src/crypto.js';
+import { loadMasterKey, encrypt } from '../src/crypto.js';
 import { createChatGpt } from '../src/chatgpt.js';
 
 // A fake OpenAI: token refresh (rotating), /models, /responses as SSE.
@@ -15,12 +16,48 @@ let respMode = 'ok';
 const seen = { refresh: [], auth: [] };
 let accessGen = 1;
 let validAccess = 'acc-1';
+// Signing key of the fake OpenAI (ID tokens).
+const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', use: 'sig' };
+const b64u = (v) => Buffer.from(typeof v === 'string' ? v : JSON.stringify(v)).toString('base64url');
+const codes = new Map(); // code -> { challenge, nonce, clientId }
+let revoked = [];
+function idToken(claims) {
+  const head = b64u({ alg: 'RS256', kid: 'k1', typ: 'JWT' });
+  const body = b64u(claims);
+  const sig = crypto.sign('RSA-SHA256', Buffer.from(`${head}.${body}`), privateKey).toString('base64url');
+  return `${head}.${body}.${sig}`;
+}
+// What OpenAI's sign-in would do with the link we made: a code for the callback.
+function signIn(url, { email = 'wife@example.com', sub = 'user-wife' } = {}) {
+  const u = new URL(url);
+  const code = `code-${crypto.randomUUID()}`;
+  const clientId = u.searchParams.get('client_id') === 'dynamic_agent_client' ? 'oaiapp_new' : u.searchParams.get('client_id');
+  codes.set(code, { challenge: u.searchParams.get('code_challenge'), nonce: u.searchParams.get('nonce'), clientId, email, sub });
+  return `${u.searchParams.get('redirect_uri')}?code=${code}&state=${u.searchParams.get('state')}${u.searchParams.get('client_id') === 'dynamic_agent_client' ? `&client_id=${clientId}` : ''}`;
+}
 
 before(async () => {
   server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', async () => {
+      if (req.url === '/auth/.well-known/openid-configuration') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ issuer: `${base}/auth`, jwks_uri: `${base}/auth/jwks`, revocation_endpoint: `${base}/auth/revoke` })); return; }
+      if (req.url === '/auth/jwks') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ keys: [jwk] })); return; }
+      if (req.url === '/auth/revoke') { revoked.push(new URLSearchParams(body).get('token')); res.end('{}'); return; }
+      if (req.url === '/auth/api/accounts/oauth/token' && new URLSearchParams(body).get('grant_type') === 'authorization_code') {
+        const f = new URLSearchParams(body);
+        const c = codes.get(f.get('code'));
+        res.setHeader('content-type', 'application/json');
+        const pkce = c && crypto.createHash('sha256').update(f.get('code_verifier') || '').digest('base64url') === c.challenge;
+        if (!c || !pkce || f.get('client_id') !== c.clientId || f.get('redirect_uri') !== 'http://127.0.0.1:' + (process.env.TEST_CB_PORT || 1455) + '/auth/callback') { res.statusCode = 400; res.end(JSON.stringify({ error: 'invalid_grant' })); return; }
+        codes.delete(f.get('code'));
+        accessGen += 1;
+        validAccess = `acc-${accessGen}`;
+        res.end(JSON.stringify({ access_token: validAccess, refresh_token: `ref-${accessGen}`, expires_in: 3600, scope: 'openid email offline_access chatgpt.tokens.use.direct',
+          id_token: idToken({ iss: `${base}/auth`, aud: c.clientId, sub: c.sub, email: c.email, nonce: c.nonce, exp: Math.floor(Date.now() / 1000) + 600 }) }));
+        return;
+      }
       if (req.url === '/auth/api/accounts/oauth/token') {
         const f = new URLSearchParams(body);
         seen.refresh.push(f.get('refresh_token'));
@@ -59,11 +96,12 @@ before(async () => {
 });
 after(() => server.close());
 
-function setup() {
+function setup(extra = {}, seed = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dz-cg-'));
   const db = openDatabase(dir);
   db.prepare("INSERT INTO users (id, username, display_name, role, pw_hash, created_at) VALUES (1, 'denis', 'Denis', 'admin', 'x', 0), (2, 'kid', 'Kid', 'user', 'x', 0)").run();
-  const config = { chatgptAuthBase: `${base}/auth`, chatgptApiBase: `${base}/api` };
+  seed?.(db, loadMasterKey(dir, 'secret'));
+  const config = { chatgptAuthBase: `${base}/auth`, chatgptApiBase: `${base}/api`, ...extra };
   const masterKey = loadMasterKey(dir, 'secret');
   return { db, cg: createChatGpt({ db, masterKey, config, log: { warn() {} } }), cg2: createChatGpt({ db, masterKey, config, log: { warn() {} } }) };
 }
@@ -76,7 +114,7 @@ test('answers stream in odd pieces with CRLF and still come out whole', async ()
   const out = await cg.chat({ id: 1 }, { model: 'gpt-x', msgs: [{ role: 'system', content: 'be brief' }, { role: 'user', content: 'hi' }] });
   assert.equal(out.text, 'Hello, бар');
   assert.deepEqual(out.usage, { in: 7, out: 3 });
-  await assert.rejects(cg.chat({ id: 2 }, { model: 'gpt-x', msgs: [{ role: 'user', content: 'hi' }] }), (e) => e.status === 403);
+  await assert.rejects(cg.chat({ id: 2 }, { model: 'gpt-x', msgs: [{ role: 'user', content: 'hi' }] }), (e) => e.status === 409, 'no plan of their own, none shared');
 });
 
 test('an unfinished answer is an error, the plan limit is a 429', async () => {
@@ -117,4 +155,66 @@ test('a reused refresh token marks the connection lost; a newer import is never 
   const st = cg.status({ id: 1 });
   assert.equal(st.lost, false);
   assert.equal(st.email, 'new@x');
+});
+
+test('connect from Settings: link with PKCE, pasted address finishes, ID token checked, each person their own plan', async () => {
+  const { cg, db } = setup();
+  const kid = { id: 2, username: 'kid', role: 'user' };
+  const start = cg.startConnect(kid);
+  const u = new URL(start.url);
+  assert.equal(u.searchParams.get('client_id'), 'dynamic_agent_client', 'first time: registration');
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
+  assert.equal(u.searchParams.get('redirect_uri'), 'http://127.0.0.1:1455/auth/callback');
+  assert.match(u.searchParams.get('ext_agent_host_id'), /^urn:uuid:/);
+  const landed = signIn(start.url);
+  // Someone else can't finish this person's sign-in; junk is refused.
+  await assert.rejects(cg.finishConnect({ id: 1, username: 'denis' }, landed), /expired or belongs/);
+  await assert.rejects(cg.finishConnect(kid, 'https://evil.example/auth/callback?code=x'), /not the sign-in address/);
+  const out = await cg.finishConnect(kid, landed);
+  assert.equal(out.email, 'wife@example.com');
+  assert.equal(cg.status(kid).connected, true);
+  assert.equal(cg.status({ id: 1 }).connected, false, 'the admin has no plan from this');
+  const rec = JSON.parse(db.prepare("SELECT value FROM meta WHERE key = 'chatgpt_reg:2'").get().value);
+  assert.equal(rec.client_id, 'oaiapp_new');
+  // The same address twice: the attempt is used up.
+  await assert.rejects(cg.finishConnect(kid, landed), /expired/);
+  // Next sign-in reuses the issued client id (no new registration).
+  const again = new URL(cg.startConnect(kid).url);
+  assert.equal(again.searchParams.get('client_id'), 'oaiapp_new');
+  assert.equal(again.searchParams.get('login_hint'), 'wife@example.com');
+  // A forged ID token (wrong nonce) is refused.
+  const bad = signIn(cg.startConnect(kid).url);
+  codes.get(new URL(bad).searchParams.get('code')).nonce = 'other';
+  await assert.rejects(cg.finishConnect(kid, bad), /nonce/);
+  // Disconnect revokes at OpenAI first; the registration stays for later.
+  revoked = [];
+  const d = await cg.disconnect(2);
+  assert.equal(d.revoked, true);
+  assert.equal(revoked.length, 1);
+  assert.equal(cg.status(kid).connected, false);
+  assert.ok(db.prepare("SELECT 1 FROM meta WHERE key = 'chatgpt_reg:2'").get());
+});
+
+test('same computer: Director catches the callback itself', async () => {
+  const port = 20000 + Math.floor(Math.random() * 20000);
+  process.env.TEST_CB_PORT = String(port);
+  const { cg } = setup({ chatgptLoopback: true, chatgptCallbackPort: port });
+  const kid = { id: 2, username: 'kid', role: 'user' };
+  const start = cg.startConnect(kid);
+  assert.equal(start.loopback, true);
+  await new Promise((r) => setTimeout(r, 50));
+  const page = await (await fetch(signIn(start.url))).text();
+  assert.match(page, /ChatGPT connected/);
+  assert.equal(cg.status(kid).connected, true);
+  cg.closeListener();
+  delete process.env.TEST_CB_PORT;
+});
+
+test('the older single-account record moves to its owner', async () => {
+  const { cg } = setup({}, (db, key) => {
+    db.prepare("INSERT INTO meta (key, value) VALUES ('chatgpt_creds', ?), ('chatgpt_sharing', 'all')").run(encrypt(key, JSON.stringify({ client_id: 'oaiapp_old', access_token: validAccess, refresh_token: 'r', scopes: ['chatgpt.tokens.use.direct'], email: 'd@x', sub: 's', owner_id: 1, owner_username: 'denis', expires_at: Date.now() + 3600_000, saved_at: 1, version: 'v' })));
+  });
+  assert.equal(cg.status({ id: 1 }).email, 'd@x');
+  assert.equal(cg.status({ id: 1 }).sharing, 'all');
+  assert.equal(cg.canUse({ id: 2 }), true, 'it was shared, so it still is');
 });

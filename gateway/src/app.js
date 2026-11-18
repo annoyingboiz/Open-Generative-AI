@@ -25,6 +25,7 @@ import { createChanges } from './catalog/changes.js';
 import { createGenerations, GenerationError } from './generations.js';
 import { createProjects, ProjectError } from './projects.js';
 import { createElements, ElementError } from './elements.js';
+import { createLlm, LlmError } from './llm.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
@@ -77,11 +78,12 @@ export async function buildApp(config, { logger = true } = {}) {
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations, log: app.log });
   generations.setOnCompleted((row) => elements.attachGenerated(row));
+  const llm = createLlm({ db, providers, generations, config, log: app.log });
   if (config.startWorkers !== false) {
     setTimeout(() => elements.attachPending().catch(() => {}), 30_000).unref?.();
     setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
   }
-  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements });
+  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, llm });
   await app.register(cookie);
   await app.register(formbody);
   await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1, fields: 5 } });
@@ -231,10 +233,12 @@ export async function buildApp(config, { logger = true } = {}) {
   });
 
   // ── Settings ────────────────────────────────────────────────────────────
-  const NOTICES = { welcome: 'Admin created. Add provider keys below.', saved: 'Saved.', password: 'Password changed.', user: 'Account saved.', recommended: 'Recommended models saved. Reload the studio to see them.', changes: 'Provider changes updated.', checked: 'Check started. It takes a minute or two — reload this page to see new changes.' };
+  const NOTICES = { welcome: 'Admin created. Add provider keys below.', saved: 'Saved.', password: 'Password changed.', user: 'Account saved.', recommended: 'Recommended models saved. Reload the studio to see them.', changes: 'Provider changes updated.', checked: 'Check started. It takes a minute or two — reload this page to see new changes.', llm: 'Default text model saved.' };
 
-  async function renderSettings(req, reply, { error, notice, code = 200 } = {}) {
+  async function renderSettings(req, reply, { error, notice, code = 200, llmTry = null } = {}) {
     const isAdmin = req.user.role === 'admin';
+    let llmInfo = null;
+    if (isAdmin) { try { llmInfo = { ...(await llm.list(req.user)), recent: llm.recent(10), try: llmTry }; } catch { llmInfo = { sources: [], models: [], recent: [], try: llmTry }; } }
     return html(reply, settingsPage({
       user: req.user,
       providers: isAdmin ? PROVIDERS.map((p) => providers.publicView(p.id)) : [],
@@ -243,6 +247,7 @@ export async function buildApp(config, { logger = true } = {}) {
       recommended: isAdmin ? getRecommended() : [],
       families: isAdmin ? catalog.families() : [],
       changes: isAdmin ? { entries: changes.list({ limit: 150 }), summary: changes.summary(), telegram: Boolean(config.telegram?.botToken && config.telegram?.chatId) } : null,
+      llm: llmInfo,
       error,
       notice: notice ?? NOTICES[req.query?.notice],
     }), code);
@@ -258,6 +263,34 @@ export async function buildApp(config, { logger = true } = {}) {
   };
 
   app.get('/dz/settings', (req, reply) => renderSettingsSeen(req, reply));
+
+  // ── Text models (LLM) ───────────────────────────────────────────────────
+  const llmError = (reply, error) => {
+    if (error instanceof LlmError) return reply.code(error.status).send({ error: error.message });
+    app.log.error(error);
+    return reply.code(500).send({ error: 'Text model error.' });
+  };
+  app.get('/dz/api/llm/models', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    try { return await llm.list(req.user, { force: req.query?.refresh === '1' && req.user.role === 'admin' }); } catch (error) { return llmError(reply, error); }
+  });
+  app.post('/dz/api/llm/chat', async (req, reply) => {
+    try { return await llm.chat(req.user, req.body || {}); } catch (error) { return llmError(reply, error); }
+  });
+  app.post('/dz/settings/llm/default', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    try { llm.setDefault(req.body?.model); return reply.redirect('/dz/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
+  });
+  app.post('/dz/settings/llm/try', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const started = Date.now();
+    try {
+      const r = await llm.chat(req.user, { model: req.body?.model, prompt: req.body?.prompt, purpose: 'settings-test', maxTokens: 1500 });
+      return renderSettings(req, reply, { llmTry: { ok: true, model: r.model, text: r.text, costUsd: r.costUsd, ms: r.ms, usage: r.usage, prompt: req.body?.prompt } });
+    } catch (error) {
+      return renderSettings(req, reply, { llmTry: { ok: false, model: req.body?.model, text: error.message, ms: Date.now() - started, prompt: req.body?.prompt } });
+    }
+  });
 
   // ── Provider changes (admin) ────────────────────────────────────────────
   app.get('/dz/api/changes/summary', async (req, reply) => {

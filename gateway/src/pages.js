@@ -67,7 +67,7 @@ function balanceCell(b) {
   return `<span class="pill err" title="${esc(b.error)}">error</span> <span class="muted">${esc(b.error)}</span>`;
 }
 
-export function settingsPage({ user, providers = [], balances = [], users = [], recommended = [], families = [], changes = null, error, notice }) {
+export function settingsPage({ user, providers = [], balances = [], users = [], recommended = [], families = [], changes = null, llm = null, error, notice }) {
   const isAdmin = user.role === 'admin';
   const balanceById = Object.fromEntries(balances.map((b) => [b.id, b]));
 
@@ -112,6 +112,8 @@ ${providerSections}
 ${changes ? changesSection(changes) : ''}
 <h2 style="margin:28px 0 12px" id="recommended">Recommended models</h2>
 ${recommendedSection(recommended, families)}
+<h2 style="margin:28px 0 12px" id="llm">Text models (LLM)</h2>
+${llm ? llmSection(llm) : ''}
 <h2 style="margin:28px 0 12px">Test generation</h2>
 <form class="section" method="post" action="/dz/settings/test-generation">
   <p class="muted" style="margin-top:0">One cheap picture to check that a provider works end to end: request → server waits → file saved on this server. Costs real money (about $0.01).</p>
@@ -215,4 +217,45 @@ export function testResultPage({ result, provider, model }) {
       ? `<div class="msg err">Failed: ${esc(result.error)}</div>`
       : '<p>Waiting for the provider… this page refreshes itself.</p>';
   return layout('Test generation', `${done ? '' : '<meta http-equiv="refresh" content="3">'}<div class="wide"><div class="top"><h1>Test generation · ${esc(provider)} · <span class="mono">${esc(model)}</span></h1><a class="btn" href="/dz/settings">← Settings</a></div>${body}</div>`);
+}
+
+// ── Text models (LLM) ──────────────────────────────────────────────────────
+const SOURCE_NAME = { local: 'This server', apimart: 'APIMart', atlas: 'Atlas' };
+const money = (v) => (v == null ? '—' : v === 0 ? '$0' : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(3)}`);
+const perM = (p) => (p.free ? 'free' : p.price ? `$${(+p.price.in).toFixed(2)} in / $${(+p.price.out).toFixed(2)} out per 1M tokens` : 'price at first use');
+function llmOptions(models, selected) {
+  const group = (label, list) => (list.length ? `<optgroup label="${esc(label)}">${list.map((m) => `<option value="${esc(m.id)}" ${m.id === selected ? 'selected' : ''}>${esc(m.name)} · ${esc(SOURCE_NAME[m.source] || m.source)} — ${esc(perM(m))}${m.vision ? ' · sees pictures' : ''}</option>`).join('')}</optgroup>` : '');
+  const rec = models.filter((m) => m.recommended);
+  return group('Recommended', rec) + ['local', 'apimart', 'atlas'].map((src) => group(SOURCE_NAME[src], models.filter((m) => m.source === src && !m.recommended))).join('');
+}
+function llmSection(llm) {
+  const pill = (st) => {
+    const color = st === 'ok' ? 'var(--ok, #34d399)' : st === 'not connected' || st === 'off' ? 'var(--muted)' : '#f87171';
+    const text = { ok: 'works', offline: 'offline', 'no key': 'no key', off: 'off', error: 'error', 'not connected': 'not connected' }[st] || st;
+    return `<b style="color:${color}">${esc(text)}</b>`;
+  };
+  const t = llm.try;
+  const tryBox = t ? `<div class="section" style="border-color:${t.ok ? 'var(--line)' : '#f87171'}">
+  <div class="muted">${esc(t.model || '')} · ${(t.ms / 1000).toFixed(1)} s${t.ok ? ` · ${t.usage ? `${t.usage.in} in / ${t.usage.out} out tokens · ` : ''}${t.costUsd == null ? 'cost unknown' : money(t.costUsd)}` : ''}</div>
+  <div style="white-space:pre-wrap;margin-top:10px${t.ok ? '' : ';color:#f87171'}">${esc(t.text)}</div>
+</div>` : '';
+  const recent = (llm.recent || []).map((c) => `<tr><td class="mono">${esc(new Date(c.created_at).toISOString().slice(5, 16).replace('T', ' '))}</td><td>${esc(SOURCE_NAME[c.source] || c.source)} · ${esc(c.model)}</td><td>${esc(c.purpose)}</td><td>${c.prompt_tokens} / ${c.completion_tokens}</td><td>${money(c.cost_usd)}</td><td>${(c.ms / 1000).toFixed(1)} s</td><td>${c.status === 'ok' ? 'ok' : `<span style="color:#f87171">${esc(c.error || 'failed')}</span>`}</td></tr>`).join('');
+  return `<div class="section">
+  <p class="muted" style="margin-top:0">The “brain” for the prompt adapter, AI Director and assistants. Pictures and videos are not made here — only text. Calls count toward each person's monthly limit; the local machine is free.</p>
+  <table><thead><tr><th>Source</th><th>Status</th><th>Models</th><th></th></tr></thead><tbody>
+  ${(llm.sources || []).map((src) => `<tr><td><b>${esc(src.name)}</b></td><td>${pill(src.status)}</td><td>${src.count || 0}</td><td class="muted">${esc(src.note || '')}</td></tr>`).join('')}
+  </tbody></table>
+</div>
+<form class="section" method="post" action="/dz/settings/llm/default">
+  <label>Default text model <span class="muted">— used when a tool doesn't pick one</span></label>
+  <div class="row"><select name="model" style="flex:1">${llmOptions(llm.models || [], llm.default)}</select><button class="btn small" type="submit">Save</button></div>
+</form>
+<form class="section" method="post" action="/dz/settings/llm/try#llm">
+  <label>Try a text model</label>
+  <div class="row"><select name="model" style="flex:1">${llmOptions(llm.models || [], t?.model || llm.default)}</select></div>
+  <textarea name="prompt" rows="3" style="margin-top:10px;width:100%" placeholder="e.g. Rewrite for Kling: a bartender pours a cocktail, slow motion">${esc(t?.prompt || '')}</textarea>
+  <div class="row" style="margin-top:10px"><button class="btn" type="submit">Send</button><span class="muted">Cloud models cost a little (shown after the answer). The local one is free.</span></div>
+</form>
+${tryBox}
+${recent ? `<div class="section"><b>Recent calls</b><table style="margin-top:8px"><thead><tr><th>When (UTC)</th><th>Model</th><th>For</th><th>Tokens in / out</th><th>Cost</th><th>Time</th><th></th></tr></thead><tbody>${recent}</tbody></table></div>` : ''}`;
 }

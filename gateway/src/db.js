@@ -178,6 +178,24 @@ const MIGRATIONS = [
   CREATE UNIQUE INDEX elements_tag_personal ON elements(owner_id, tag) WHERE project_id IS NULL AND tag IS NOT NULL AND deleted_at IS NULL;
   CREATE UNIQUE INDEX elements_tag_project ON elements(project_id, tag) WHERE project_id IS NOT NULL AND tag IS NOT NULL AND deleted_at IS NULL;
   `,
+  // 11: calls to text models (LLM): tokens, cost, time — they count toward the monthly limit.
+  `
+  CREATE TABLE llm_calls (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    source TEXT NOT NULL,
+    model TEXT NOT NULL,
+    purpose TEXT NOT NULL DEFAULT 'chat',
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    ms INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX llm_calls_user ON llm_calls(user_id, created_at);
+  `,
 ];
 
 export function openDatabase(dataDir) {

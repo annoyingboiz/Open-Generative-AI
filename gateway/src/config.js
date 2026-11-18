@@ -29,4 +29,6 @@ export const config = {
   // Optional: provider-change alerts to Telegram (Settings → Provider changes).
   telegram: { botToken: env.DZ_TELEGRAM_BOT_TOKEN || '', chatId: env.DZ_TELEGRAM_CHAT_ID || '' },
   publicUrl: env.PUBLIC_URL || '',
+  // Ollama on this server (from inside Docker: the host's bridge address).
+  ollamaUrl: env.DZ_OLLAMA_URL || 'http://172.17.0.1:11434',
 };

@@ -23,7 +23,7 @@ import { Viewer } from "./DzLibrary.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, promptTags, translateTags, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
-  ROLE_INFO, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel,
+  ROLE_INFO, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags,
 } from "../dzCreate.js";
 import {
   Button, Segmented, ScrollTabs, Switch, Slider, Textarea, Input, Logo, Spinner, InfoTip, Tip, cn,
@@ -43,7 +43,7 @@ function normalizeSaved(raw) {
   if (s.kind === "image" || s.kind === "video") out.kind = s.kind;
   if (isObj(s.modelByKind)) out.modelByKind = Object.fromEntries(Object.entries(s.modelByKind).filter(([, v]) => typeof v === "string"));
   if (isObj(s.valuesByKind)) out.valuesByKind = { image: cleanValues(s.valuesByKind.image), video: cleanValues(s.valuesByKind.video) };
-  if (typeof s.prompt === "string") out.prompt = s.prompt;
+  if (typeof s.prompt === "string") out.prompt = migrateTags(s.prompt);
   if (isObj(s.camera)) out.camera = Object.fromEntries(Object.entries(s.camera).filter(([, v]) => isScalar(v)));
   if (typeof s.move === "string") out.move = s.move;
   if ([1, 2, 3, 4].includes(s.count)) out.count = s.count;
@@ -680,7 +680,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (fixedKind && m.kind && m.kind !== fixedKind) return;
     if (m.entryKey) setModelByKind((prev) => ({ ...prev, [m.kind || kind]: m.entryKey }));
     if (m.values) setValuesByKind((prev) => ({ ...prev, [m.kind || kind]: cleanValues(m.values) }));
-    if (typeof m.prompt === "string") setPrompt(m.prompt);
+    if (typeof m.prompt === "string") setPrompt(migrateTags(m.prompt));
     if (m.camera) setCamera(normalizeCamera(m.camera, { auto: mode === "create" }));
     setMove(m.move || "");
     if (isObj(m.attached)) setAttached(normalizeSaved({ attached: m.attached }).attached || {});
@@ -837,7 +837,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           />
           {mention && mentionOptions.length === 0 && (
             <div className="rounded-xl border border-border bg-popover px-3 py-2 text-muted-foreground">
-              {mention.query ? `Nothing called “${mention.query}”.` : "Nothing to tag yet."} Attach files with “+” (they become @image1, @image2…) or make elements on the Elements page.
+              {mention.query ? `Nothing called “${mention.query}”.` : "Nothing to tag yet."} Attach files with “+” (they become @img1, @image2…) or make elements on the Elements page.
             </div>
           )}
           {mention && mentionOptions.length > 0 && (

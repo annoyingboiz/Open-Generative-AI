@@ -209,8 +209,9 @@ export function mergeElements(entry, attached, elements = []) {
 }
 
 // ── Our prompt tags ─────────────────────────────────────────────────────────
-// The prompt uses our own tags, whatever the model: @image1, @video1, @audio1 for
-// attached files and @char_mike / @prop_glass / @loc_bar / @obj_x for elements.
+// The prompt uses our own tags, whatever the model: @start, @mid1, @end for
+// frames, @img1, @vid1, @aud1 for attached files (Denis 19.11: short names) and
+// @char_mike / @prop_glass / @loc_bar / @obj_x for elements.
 // At send time each becomes what this model understands (@Image3, @image_3,
 // @element_1, …) — or plain words when the model has no @-syntax.
 const CYR = { а: "a", б: "b", в: "v", г: "g", ґ: "g", д: "d", е: "e", є: "ye", ё: "e", ж: "zh", з: "z", и: "i", і: "i", ї: "yi", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" };
@@ -244,8 +245,8 @@ export function elementFits(entry, e) {
 
 // Every tag the prompt can use now, with what it turns into for this model.
 //   [{ tag, to, label, kind: 'file'|'element', role?, url?, element?, unused? }]
-// References are numbered on their own (@image1 = the first reference image the
-// model gets), frames have their own tags (@first, @middle, @last). A model
+// References are numbered on their own (@img1 = the first reference image the
+// model gets), frames have their own tags (@start, @mid1…, @end). A model
 // with no reference input numbers its frames as images instead.
 const FRAME_WORDS = { first: "the start frame", middle: "the middle frame", last: "the end frame" };
 export function promptTags({ attached = {}, syntax = null, elements = [], elementPairs = [], variant = null }) {
@@ -254,18 +255,20 @@ export function promptTags({ attached = {}, syntax = null, elements = [], elemen
   const hasRefInput = variant ? Boolean(variant.media?.reference) : Boolean((attached.reference || []).length);
   let frameN = 0;
   for (const role of ["first", "middle", "last"]) {
-    for (const f of attached[role] || []) {
+    (attached[role] || []).forEach((f, i) => {
       frameN += 1;
-      const to = !hasRefInput && syntax ? syntax.image(frameN) : FRAME_WORDS[role];
-      out.push({ tag: role, to, label: ROLE_INFO[role]?.label || role, kind: "file", role, url: f.url });
-    }
+      const to = !hasRefInput && syntax ? syntax.image(frameN) : role === "middle" && (attached.middle || []).length > 1 ? `${FRAME_WORDS.middle} ${i + 1}` : FRAME_WORDS[role];
+      const tag = role === "first" ? "start" : role === "last" ? "end" : `mid${i + 1}`;
+      const label = role === "first" ? "Start frame" : role === "last" ? "End frame" : `Mid ${i + 1}`;
+      out.push({ tag, to, label, kind: "file", role, url: f.url });
+    });
   }
   let n = 0;
   const firstImage = new Map(); // element id → its first reference number
   for (const f of attached.reference || []) {
     n += 1;
     if (f.element) { if (!firstImage.has(f.element)) firstImage.set(f.element, n); continue; }
-    out.push({ tag: `image${n}`, to: syntax ? syntax.image(n) : `image ${n}`, label: ROLE_INFO.reference?.label || "Reference", kind: "file", role: "reference", url: f.url });
+    out.push({ tag: `img${n}`, to: syntax ? syntax.image(n) : `image ${n}`, label: `Reference ${n}`, kind: "file", role: "reference", url: f.url });
   }
   let v = 0;
   const firstVideo = new Map();
@@ -273,11 +276,11 @@ export function promptTags({ attached = {}, syntax = null, elements = [], elemen
     for (const f of attached[role] || []) {
       v += 1;
       if (f.element) { if (!firstVideo.has(f.element)) firstVideo.set(f.element, v); continue; }
-      out.push({ tag: `video${v}`, to: syntax ? syntax.video(v) : `video ${v}`, label: ROLE_INFO[role]?.label || "Video", kind: "file", role, url: f.url });
+      out.push({ tag: `vid${v}`, to: syntax ? syntax.video(v) : `video ${v}`, label: role === "source" ? "Video to edit" : `Reference video ${v}`, kind: "file", role, url: f.url });
     }
   }
   let a = 0;
-  for (const f of attached.audio || []) { a += 1; out.push({ tag: `audio${a}`, to: syntax ? syntax.audio(a) : `audio ${a}`, label: "Audio", kind: "file", role: "audio", url: f.url }); }
+  for (const f of attached.audio || []) { a += 1; out.push({ tag: `aud${a}`, to: syntax ? syntax.audio(a) : `audio ${a}`, label: `Audio ${a}`, kind: "file", role: "audio", url: f.url }); }
   const native = new Map(elementPairs.map((p, i) => [p.element.id, `@element_${i + 1}`]));
   for (const e of elements) {
     const tag = tagOf.get(e.id);
@@ -295,15 +298,36 @@ export function promptTags({ attached = {}, syntax = null, elements = [], elemen
 // Inside a JSON prompt the replacement is escaped for a JSON string, so a name
 // with quotes can't break it. A tag is a whole word: "abc@image1" is left alone.
 export const TAG_RE = /(^|[^\p{L}\p{N}_@])@([a-z][a-z0-9_]*)(?![\p{L}\p{N}_])/giu;
+const LONG = { img: "image", vid: "video", aud: "audio" };
+function OLD_SPELLINGS(tag) {
+  if (tag === "start") return ["first"];
+  if (tag === "end") return ["last"];
+  if (tag === "mid1") return ["middle", "mid_1"];
+  const m = /^(img|vid|aud|mid)(\d+)$/.exec(tag);
+  if (!m) return [];
+  if (m[1] === "mid") return [`mid_${m[2]}`];
+  return [`${m[1]}_${m[2]}`, `${LONG[m[1]]}${m[2]}`, `${LONG[m[1]]}_${m[2]}`];
+}
+// Prompts written before 19.11 use the long names: rewrite them once (saved
+// state, reused results). Element tags (char_… / prop_…) are not touched.
+const OLD_TAG = { first: "start", last: "end", middle: "mid1" };
+export function migrateTags(prompt) {
+  const text = String(prompt ?? "");
+  if (!text.includes("@")) return text;
+  return text.replace(TAG_RE, (all, pre, name) => {
+    const low = name.toLowerCase();
+    if (OLD_TAG[low]) return `${pre}@${OLD_TAG[low]}`;
+    const m = /^(image|video|audio)_?(\d+)$/.exec(low);
+    if (m) return `${pre}@${{ image: "img", video: "vid", audio: "aud" }[m[1]]}${m[2]}`;
+    return all;
+  });
+}
 export function translateTags(prompt, tags = []) {
   if (!tags.length) return prompt;
   const map = new Map(tags.map((t) => [t.tag.toLowerCase(), t.to]));
-  // Other spellings people type: @img1, @image_1, @video_1.
+  // Other spellings people type, and the names used before 19.11 (@image1, @first…).
   for (const t of tags) {
-    const m = /^(image|video|audio)(\d+)$/.exec(t.tag);
-    if (!m) continue;
-    map.set(`${m[1]}_${m[2]}`, t.to);
-    if (m[1] === "image") map.set(`img${m[2]}`, t.to);
+    for (const old of OLD_SPELLINGS(t.tag)) if (!map.has(old)) map.set(old, t.to);
   }
   const text = String(prompt || "");
   const json = parseJsonPrompt(text).ok;

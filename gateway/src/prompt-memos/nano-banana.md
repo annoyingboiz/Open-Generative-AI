@@ -19,7 +19,7 @@ look: end
 - Describe the scene in sentences; don't list keywords.
 - Start edit prompts with a strong verb: Remove, Replace, Combine, Transform, Restyle.
 - Positive framing: "an empty street", not "no cars".
-- Refer to each reference by its role: "use @image1 as the structure and @image2 as the fabric texture"; up to 14 references help keep a character or product consistent.
+- Refer to each reference by its role: "use @img1 as the structure and @img2 as the fabric texture"; up to 14 references help keep a character or product consistent.
 - Text: exact words in quotes + font or style ("bold white sans-serif") + placement; one language per text block.
 - Camera/look vocabulary works: "low-angle, shallow depth of field (f/1.8)", "macro lens", "aerial view", "GoPro", "disposable-camera flash", "1980s color film, slightly grainy".
 - Lighting: "three-point softbox", "chiaroscuro, hard contrast", "golden-hour backlight".

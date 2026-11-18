@@ -15,7 +15,7 @@ look_style: Style
 
 **Formula (official):** Subject + action/event + scene & environment + visual style + camera (shot size, angle, movement, cut) + sound. Skip parts you don't need; write them as separate short layers, not one dense paragraph.
 
-- **References:** map every upload explicitly: "@image1 is the mug — use its shape and glaze, do not use its background", "@video1 gives only the camera movement", "@audio1 is the narrator's voice". Say what each reference must NOT bring in.
+- **References:** map every upload explicitly: "@img1 is the mug — use its shape and glaze, do not use its background", "@vid1 gives only the camera movement", "@aud1 is the narrator's voice". Say what each reference must NOT bring in.
 - Multi-angle product shots: say all views are the same single object, only one instance appears.
 - **Continuity:** name what must hold — identity, number of characters, clothing, who holds which prop, direction of travel, product shape, logo. "Keep it consistent" alone is too vague.
 - **Longer stories (up to ~30 s):** consecutive stages; each has a start state, one main event, a visible end state. Later stages begin "Continue from the previous stage:" + facts that must not change. Timestamps only for critical beats (entrances, cuts).
@@ -38,7 +38,7 @@ Sound: (music) <sound effects> {dialogue} — dialogue language and delivery bef
 JSON prompts: the same blocks as keys — references, subject, action, scene, style, camera, sound.
 
 **Example:**
-References: @image1 defines the ceramic mug's shape and glaze; do not use its background.
+References: @img1 defines the ceramic mug's shape and glaze; do not use its background.
 Subject: one white ceramic mug with a sage glaze, the only mug in the scene.
 Action: Stage 1: a hand lifts the mug from a walnut table to chest height. Stage 2: Continue from the previous stage, same mug and table: steam rises as the mug turns toward camera.
 Scene: a quiet kitchen in the early morning, rain on the window behind.

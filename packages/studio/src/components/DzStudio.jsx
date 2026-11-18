@@ -20,6 +20,7 @@ import { DropdownMenuParts, Spinner, cn } from "../ui/index.js";
 import { Overline, Chip, ChipMenu, MenuRow, useEscLayer, fmtDur } from "./studio/ui.jsx";
 import { groupsFor, groupItems, addToGroup, removeFromGroup, unusedItems, GROUP_OF_ROLE } from "./studio/attachments.js";
 import ModelMenu from "./studio/ModelMenu.jsx";
+import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList } from "./studio/Library.jsx";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
 
@@ -345,44 +346,18 @@ function Block({ icon: Icon, label, value, auto, onClick, active }) {
 // ── Prompt with tag highlights (§5.3, row 3) ───────────────────────────────
 function PromptField({ engine, onFocusChange, mentionGroups, onPasteFiles }) {
   const { prompt, setPrompt, promptRef, readMention, onPromptKey, setMention, mention, tags, jsonPrompt } = engine;
-  const back = useRef(null);
-  const known = useMemo(() => new Set(tags.map((t) => t.tag.toLowerCase())), [tags]);
-  const json = jsonPrompt.json;
-  // Grow upward with the text up to ~330 px, then scroll inside.
-  useEffect(() => {
-    const el = promptRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 44), 330)}px`;
-  }, [prompt, promptRef, json]);
-  const parts = useMemo(() => {
-    const out = [];
-    let last = 0;
-    for (const m of String(prompt).matchAll(TAG_RE)) {
-      const start = m.index + m[1].length;
-      if (!known.has(m[2].toLowerCase())) continue;
-      out.push(prompt.slice(last, start));
-      out.push(<mark key={start} className="rounded-xs bg-signal/[.14] text-signal shadow-[0_0_0_1px_hsl(var(--signal)/.42)]">{prompt.slice(start, start + m[2].length + 1)}</mark>);
-      last = start + m[2].length + 1;
-    }
-    out.push(prompt.slice(last));
-    return out;
-  }, [prompt, known]);
-  const shared = cn("w-full whitespace-pre-wrap break-words rounded-[10px] px-3 py-2.5", json ? "font-mono text-[13px] leading-5" : "text-prompt");
+  const [focused, setFocused] = useState(false);
   return (
     <div className="relative">
-      <div ref={back} aria-hidden="true" className={cn(shared, "pointer-events-none absolute inset-0 overflow-hidden text-foreground")}>{parts}{"\n"}</div>
-      <textarea ref={promptRef} value={prompt} rows={1} spellCheck={!json}
+      <PromptEditor value={prompt} onChange={(v) => { setPrompt(v); requestAnimationFrame(() => promptRef.current && readMention(promptRef.current)); }} tags={tags} inputRef={promptRef} json={jsonPrompt.json}
         placeholder="Describe the shot. Type @ to use an element or anything you attached."
-        onChange={(e) => { setPrompt(e.target.value); readMention(e.target); }}
         onKeyDown={onPromptKey}
-        onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) readMention(e.target); }}
-        onClick={(e) => readMention(e.target)}
-        onScroll={(e) => { if (back.current) back.current.scrollTop = e.currentTarget.scrollTop; }}
-        onFocus={() => onFocusChange(true)}
-        onBlur={() => { onFocusChange(false); setTimeout(() => setMention(null), 150); }}
-        onPaste={(e) => { const files = Array.from(e.clipboardData?.files || []); if (files.length) { e.preventDefault(); onPasteFiles(files); } }}
-        className={cn(shared, "custom-scrollbar relative block resize-none bg-transparent text-transparent caret-signal outline-none transition-colors duration-state placeholder:text-muted-foreground focus:bg-muted focus:shadow-[inset_0_0_0_1px_hsl(var(--input))] focus-visible:outline-none selection:bg-signal/30 selection:text-foreground")} />
+        onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key) && !mention) readMention(promptRef.current); }}
+        onClick={() => readMention(promptRef.current)}
+        onFocus={() => { setFocused(true); onFocusChange(true); }}
+        onBlur={() => { setFocused(false); onFocusChange(false); setTimeout(() => setMention(null), 150); }}
+        onPasteFiles={onPasteFiles}
+        className={cn("rounded-[10px] px-3 py-2.5 caret-signal transition-colors duration-state", focused && "bg-muted shadow-[inset_0_0_0_1px_hsl(var(--input))]")} />
       {mention && (
         <div className="glass absolute bottom-[calc(100%+8px)] left-0 z-30 w-[420px] rounded-xl border border-border p-1.5 shadow-popover" role="listbox" aria-label="Tags">
           {mentionGroups.length === 0 && <p className="px-2.5 py-2 text-sm text-muted-foreground">{mention.query ? `Nothing called “${mention.query}”.` : "Nothing to tag yet."} Attach files with + or make elements.</p>}

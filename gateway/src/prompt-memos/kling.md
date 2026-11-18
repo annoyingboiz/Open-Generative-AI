@@ -15,7 +15,7 @@ look_style: Camera
 
 **Order (Kling 4 guide):** reference roles → scene → timed beats → camera.
 
-- **References:** give every attached asset a role in the first lines: "@image1 is the character", "@image2 defines the jacket — keep its color and stitching", "@video1 gives the camera move". Unlabeled references make the model guess.
+- **References:** give every attached asset a role in the first lines: "@img1 is the character", "@img2 defines the jacket — keep its color and stitching", "@vid1 gives the camera move". Unlabeled references make the model guess.
 - With a start image: don't describe the image again (identity/text may drift) — describe only what moves and what the camera does.
 - Concrete visuals, no abstract adjectives ("premium", "vintage"): name light, material, wear.
 - Name characters/objects once and reuse the same words.
@@ -36,7 +36,7 @@ Sound: ambient bed first, then each effect; dialogue lines labeled with characte
 JSON prompts: keys references, scene, beats, camera, sound.
 
 **Example:**
-References: @image1 defines the jacket; preserve its color and stitching.
+References: @img1 defines the jacket; preserve its color and stitching.
 Scene: a model in a grey studio, soft key light from the left.
 Beats: 0–5s: she turns toward the camera and adjusts the collar. 5s–end: she steps forward into a close-up, fabric catching the light.
 Camera: slow orbit, then a gentle push-in on the close-up.

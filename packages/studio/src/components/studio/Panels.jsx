@@ -3,7 +3,7 @@
 // Side panels of the Studio composer (redesign 01, §5.9–5.10): Camera, Camera move,
 // Look, Settings, Adapt. Every choice applies at once; Done, ×, Esc and the scrim close.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Aperture, CircleDashed, MagnifyingGlass, ArrowsClockwise, BookOpen, CaretRight, ArrowsOutCardinal } from "@phosphor-icons/react";
+import { Camera, Aperture, CircleDashed, MagnifyingGlass, ArrowsClockwise, BookOpen, CaretRight } from "@phosphor-icons/react";
 import { Switch, Slider, Input, Spinner, cn, SelectParts } from "../../ui/index.js";
 import { lookData, autoLook, AUTO_LOOK } from "../../dzCreate.js";
 import { useAdaptModels, post, LLM_KEY } from "../DzAdapt.jsx";
@@ -12,6 +12,8 @@ import { StudioPanel, Overline, ChipMenu, MenuRow } from "./ui.jsx";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 const FOCAL_STOPS = [null, 24, 35, 50, 85, 135];
+// Pictures for the choices (generated 19.11 with Nano Banana 2, public/look/*).
+export const lookPicture = (kind, id) => (id ? `/look/${kind}-${String(id).replace("/", "").replace(".", "_")}.webp` : null);
 
 // ── Camera: three wheels and the focal track ────────────────────────────────
 function Wheel({ title, options, value, onChange, icon: Icon }) {
@@ -33,7 +35,9 @@ function Wheel({ title, options, value, onChange, icon: Icon }) {
         big ? "h-[170px] border-[1.5px] border-signal" : "h-[120px] opacity-60 hover:opacity-100")}>
       {o.id == null
         ? <span className={cn("rounded-md border border-dashed border-input", big ? "h-[110px] w-[150px]" : "h-12 w-16")} />
-        : <Icon size={big ? 56 : 32} weight="light" className="text-muted-foreground" />}
+        : o.image
+          ? <img src={o.image} alt="" draggable={false} className={cn("rounded-md object-cover", big ? "h-[110px] w-[150px]" : "h-12 w-16")} />
+          : <Icon size={big ? 56 : 32} weight="light" className="text-muted-foreground" />}
       <span className={cn("line-clamp-2", big ? "text-base font-semibold text-foreground" : "text-sm text-muted-foreground")}>{o.label}</span>
     </button>
   );
@@ -101,9 +105,9 @@ export function CameraLookPanel({ open, onClose, look, setLook, hints = [] }) {
     <StudioPanel open={open} onClose={onClose} title="Camera" resetLabel="Reset to Auto"
       onReset={() => setLook((prev) => ({ ...autoLook(prev), camera: null, lens: null, aperture: null, focal: null, filter: null }))}>
       <div className="grid grid-cols-3 gap-3">
-        <Wheel title="Camera" icon={Camera} options={d.cameras} value={a.camera} onChange={(v) => set("camera", v)} />
-        <Wheel title="Lens" icon={Aperture} options={d.lenses} value={a.lens} onChange={(v) => set("lens", v)} />
-        <Wheel title="Aperture" icon={CircleDashed} options={(d.apertures || []).map((f) => ({ id: f, label: f }))} value={a.aperture} onChange={(v) => set("aperture", v)} />
+        <Wheel title="Camera" icon={Camera} options={d.cameras.map((o) => ({ ...o, image: lookPicture("camera", o.id) }))} value={a.camera} onChange={(v) => set("camera", v)} />
+        <Wheel title="Lens" icon={Aperture} options={d.lenses.map((o) => ({ ...o, image: lookPicture("lens", o.id) }))} value={a.lens} onChange={(v) => set("lens", v)} />
+        <Wheel title="Aperture" icon={CircleDashed} options={(d.apertures || []).map((f) => ({ id: f, label: f, image: lookPicture("aperture", f) }))} value={a.aperture} onChange={(v) => set("aperture", v)} />
       </div>
       <div className="mt-6"><FocalTrack value={a.focal} onChange={(v) => set("focal", v)} /></div>
       {(d.filters || []).map((f) => (
@@ -119,12 +123,34 @@ export function CameraLookPanel({ open, onClose, look, setLook, hints = [] }) {
 }
 
 // ── Camera move ─────────────────────────────────────────────────────────────
+// Each move plays as a loop over one of six scenes (CSS camera moves, no video needed).
+const MOVE_CSS = `
+@keyframes mv-in{from{transform:scale(1)}to{transform:scale(1.28)}}
+@keyframes mv-out{from{transform:scale(1.28)}to{transform:scale(1)}}
+@keyframes mv-pl{from{transform:scale(1.18) translateX(7%)}to{transform:scale(1.18) translateX(-7%)}}
+@keyframes mv-pr{from{transform:scale(1.18) translateX(-7%)}to{transform:scale(1.18) translateX(7%)}}
+@keyframes mv-tu{from{transform:scale(1.18) translateY(-7%)}to{transform:scale(1.18) translateY(7%)}}
+@keyframes mv-td{from{transform:scale(1.18) translateY(7%)}to{transform:scale(1.18) translateY(-7%)}}
+@keyframes mv-cu{from{transform:scale(1.12) translateY(-6%)}to{transform:scale(1.3) translateY(6%)}}
+@keyframes mv-cd{from{transform:scale(1.3) translateY(6%)}to{transform:scale(1.12) translateY(-6%)}}
+@keyframes mv-or{from{transform:perspective(500px) rotateY(-9deg) scale(1.25)}to{transform:perspective(500px) rotateY(9deg) scale(1.25)}}
+@keyframes mv-hh{0%{transform:scale(1.12) translate(0,0) rotate(0)}25%{transform:scale(1.12) translate(-1.2%,.8%) rotate(-.6deg)}50%{transform:scale(1.12) translate(.8%,-1%) rotate(.4deg)}75%{transform:scale(1.12) translate(1.2%,.6%) rotate(-.3deg)}100%{transform:scale(1.12) translate(0,0) rotate(0)}}
+@keyframes mv-dr{from{transform:scale(1.35) translateY(4%)}to{transform:scale(1.1) translateY(-4%)}}
+@keyframes mv-dz{from{transform:scale(1.3);filter:blur(0)}to{transform:scale(1);filter:blur(.4px)}}
+@keyframes mv-tr{from{transform:scale(1.2) translateX(-6%) translateY(1%)}to{transform:scale(1.2) translateX(6%) translateY(-1%)}}
+.mv-run{animation-duration:3.2s;animation-timing-function:ease-in-out;animation-iteration-count:infinite;animation-direction:alternate}
+.mv-run.mv-hh{animation-duration:1.4s;animation-direction:normal}
+`;
+const MOVE_ANIM = { "dolly-in": "mv-in", "push-in": "mv-in", "zoom-in": "mv-in", "dolly-out": "mv-out", "pan-left": "mv-pl", "pan-right": "mv-pr", "truck-left": "mv-pl", "truck-right": "mv-pr",
+  "tilt-up": "mv-tu", "tilt-down": "mv-td", "crane-up": "mv-cu", "crane-down": "mv-cd", orbit: "mv-or", handheld: "mv-hh", drone: "mv-dr", "dolly-zoom": "mv-dz", tracking: "mv-tr" };
+
 export function MovePanel({ open, onClose, move, setMove }) {
   const [q, setQ] = useState("");
   const moves = [{ id: "", label: "Auto" }, ...(lookData().moves || [])];
   const shown = moves.filter((m) => !q.trim() || m.label.toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <StudioPanel open={open} onClose={onClose} title="Camera move" onReset={() => setMove("")}>
+      <style>{MOVE_CSS}</style>
       <label className="flex h-9 items-center gap-2 rounded-md border border-input px-3">
         <MagnifyingGlass size={16} className="text-muted-foreground" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${moves.length - 1} moves`} className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground focus-visible:outline-none" />
@@ -132,11 +158,17 @@ export function MovePanel({ open, onClose, move, setMove }) {
       <div className="mt-3 grid grid-cols-3 gap-3">
         {shown.map((m) => {
           const on = (move || "") === m.id;
+          const i = moves.findIndex((x) => x.id === m.id);
+          const anim = MOVE_ANIM[m.id];
           return (
             <button key={m.id || "auto"} type="button" onClick={() => setMove(m.id)}
-              className={cn("group flex h-[104px] flex-col overflow-hidden rounded-md border text-left transition-colors duration-state", on ? "border-[1.5px] border-signal" : "border-border hover:border-input")}>
-              <span className="flex flex-1 items-center justify-center bg-muted/60 text-muted-foreground">
-                {m.id ? <ArrowsOutCardinal size={28} weight="light" className={cn("transition-transform duration-sheet ease-soft", on ? "scale-110 text-foreground" : "group-hover:scale-110")} /> : <span className="h-8 w-12 rounded-xs border border-dashed border-input" />}
+              className={cn("group flex flex-col overflow-hidden rounded-md border text-left transition-colors duration-state", on ? "border-[1.5px] border-signal" : "border-border hover:border-input")}>
+              <span className="relative block aspect-video overflow-hidden bg-muted">
+                {m.id ? (
+                  <img src={`/look/move-${((i - 1) % 6) + 1}.webp`} alt="" loading="lazy" draggable={false}
+                    className={cn("h-full w-full object-cover", anim && "mv-run", anim, anim && !on && "[animation-play-state:paused] group-hover:[animation-play-state:running]")} style={anim ? { animationName: anim } : undefined} />
+                ) : <span className="absolute inset-3 rounded-xs border border-dashed border-input" />}
+                {on && m.id && <span className="absolute left-1.5 top-1.5 rounded-xs bg-signal px-1.5 text-xs font-medium text-primary-foreground">Playing</span>}
               </span>
               <span className={cn("px-2.5 py-1.5 text-sm", on ? "font-semibold text-foreground" : "text-muted-foreground")}>{m.label}</span>
             </button>
@@ -152,14 +184,17 @@ export function LookPanel({ open, onClose, look, setLook }) {
   const d = lookData();
   const a = autoLook(look);
   const set = (k, v) => setLook((prev) => ({ ...autoLook(prev), [k]: v }));
-  const Cards = ({ k, options }) => (
+  const Cards = ({ k, kind, options }) => (
     <div className="grid grid-cols-4 gap-2.5">
       {[{ id: null, label: "Auto" }, ...(options || [])].map((o) => {
         const on = a[k] === o.id;
         return (
           <button key={o.id || "auto"} type="button" onClick={() => set(k, o.id)}
-            className={cn("flex h-16 items-end rounded-md border px-2.5 py-2 text-left text-sm transition-colors duration-state", on ? "border-[1.5px] border-signal font-semibold text-foreground" : "border-border text-muted-foreground hover:border-input hover:text-foreground", o.id == null && "border-dashed")}>
-            {o.label}
+            className={cn("flex flex-col overflow-hidden rounded-md border text-left text-sm transition-colors duration-state", on ? "border-[1.5px] border-signal font-semibold text-foreground" : "border-border text-muted-foreground hover:border-input hover:text-foreground")}>
+            {o.id == null
+              ? <span className="m-1.5 mb-0 flex aspect-[16/7] items-center justify-center rounded-xs border border-dashed border-input" />
+              : <img src={lookPicture(kind, o.id)} alt="" loading="lazy" className="aspect-[16/7] w-full object-cover" />}
+            <span className="truncate px-2.5 py-1.5">{o.label}</span>
           </button>
         );
       })}
@@ -181,8 +216,8 @@ export function LookPanel({ open, onClose, look, setLook }) {
       onReset={() => setLook((prev) => ({ ...autoLook(prev), palette: null, light: null, genre: null, era: null }))}>
       <p className="mb-5 text-sm text-muted-foreground">Anything left on Auto is decided by the model from your scene.</p>
       <div className="space-y-6">
-        <section className="space-y-2.5"><Overline>Colour palette</Overline><Cards k="palette" options={d.palettes} /></section>
-        <section className="space-y-2.5"><Overline>Lighting</Overline><Cards k="light" options={d.lights} /></section>
+        <section className="space-y-2.5"><Overline>Colour palette</Overline><Cards k="palette" kind="palette" options={d.palettes} /></section>
+        <section className="space-y-2.5"><Overline>Lighting</Overline><Cards k="light" kind="light" options={d.lights} /></section>
         <section className="space-y-2.5"><Overline>Genre</Overline><Chips k="genre" options={d.genres} /></section>
         <section className="space-y-2.5"><Overline>Era</Overline><Chips k="era" options={d.eras} /></section>
       </div>

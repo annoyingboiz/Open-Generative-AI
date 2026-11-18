@@ -7,8 +7,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'prompt-memos');
-// Our tags, exactly as the studio reads them (dzCreate.js TAG_RE): @image1,
-// @first, @char_anna — not the "@" inside an e-mail address.
+// Our tags, exactly as the studio reads them (dzCreate.js TAG_RE): @img1,
+// @start, @char_anna — not the "@" inside an e-mail address.
 const TAG_RE = /(^|[^\p{L}\p{N}_@])@([a-z][a-z0-9_]*)(?![\p{L}\p{N}_])/giu;
 const MAX_PROMPT = 12_000;
 

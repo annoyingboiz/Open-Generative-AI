@@ -14,7 +14,7 @@ look_style: Look
 
 **Five blocks:** Roles → Beats → Look → Sound → Limits. Treat it as an audiovisual production brief.
 
-- **Roles:** give each reference one job — character, location, motion, camera, voice ("@image1 is the lead", "@video1 gives the handheld camera move", "@audio1 is her voice"). Audio references need an image or video next to them.
+- **Roles:** give each reference one job — character, location, motion, camera, voice ("@img1 is the lead", "@vid1 gives the handheld camera move", "@aud1 is her voice"). Audio references need an image or video next to them.
 - **Beats:** block the clip in time ranges (0–5s, 5–10s…) and describe actions that run through the clip, not a frozen frame.
 - **Look:** style, palette, light, film texture; describe the capture style too — handheld tremor, focus lag, exposure shifts, grain.
 - Name transitions when you want cuts: hard cut, whip pan, match cut.
@@ -34,7 +34,7 @@ Limits: what stays locked (identity, wardrobe, product) and what must not appear
 JSON prompts: keys roles, beats, look, sound, limits.
 
 **Example:**
-Roles: @image1 sets the rooftop location; @image2 is the lead.
+Roles: @img1 sets the rooftop location; @img2 is the lead.
 Beats: 0–4s: she walks to the railing, coat moving in the wind. 4–8s: she turns to camera and smiles.
 Look: cool dusk light with warm city glow, handheld, slight focus lag, fine grain.
 Sound: wind and distant traffic throughout; one soft piano note on the turn; no dialogue.

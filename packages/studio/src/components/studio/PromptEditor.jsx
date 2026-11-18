@@ -121,6 +121,9 @@ const hasLooseTag = (root, tagMap) => [...root.childNodes].some((c) => c.nodeTyp
 
 export default function PromptEditor({ value, onChange, tags, inputRef, json, placeholder, onKeyDown, onKeyUp, onClick, onFocus, onBlur, onPasteFiles, className, ariaProps }) {
   const composing = useRef(false);
+  // A caret asked for by the engine (after an @ pick, an insert): kept for the next redraw,
+  // which may come after it (React commits the new prompt later than the request).
+  const wanted = useRef(null);
   const root = useRef(null);
   const emitted = useRef(null);
   const tagMap = useMemo(() => new Map(tags.map((t) => [t.tag.toLowerCase(), t])), [tags]);
@@ -132,7 +135,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
       get value() { return root.current ? serialize(root.current) : ""; },
       get selectionStart() { const o = root.current && getOffset(root.current); return o ? o.start : (this.value || "").length; },
       get selectionEnd() { const o = root.current && getOffset(root.current); return o ? o.end : (this.value || "").length; },
-      setSelectionRange(a, b) { if (root.current) setOffset(root.current, a, b ?? a); },
+      setSelectionRange(a, b) { wanted.current = { start: a, end: b ?? a, at: Date.now() }; if (root.current) setOffset(root.current, a, b ?? a); },
       focus() { root.current?.focus({ preventScroll: true }); },
       blur() { root.current?.blur(); },
     };
@@ -147,18 +150,20 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
     if (value === emitted.current && el.dataset.chips === chipKey) return;
     if (composing.current && value === emitted.current) return; // new chips wait for the IME to finish
     const focused = document.activeElement === el;
-    const off = focused ? getOffset(el) : null;
+    const want = wanted.current && Date.now() - wanted.current.at < 1000 ? wanted.current : null;
+    const off = want || (focused ? getOffset(el) : null);
     render(el, value, tagMap);
     el.dataset.chips = chipKey;
     emitted.current = value;
-    if (focused && off) setOffset(el, Math.min(off.start, value.length), Math.min(off.end, value.length));
+    if ((focused || want) && off) setOffset(el, Math.min(off.start, value.length), Math.min(off.end, value.length));
   }, [value, chipKey, tagMap]);
 
   const emit = (next) => { emitted.current = next; onChange(next); };
   // Typed edits go through the browser (so ⌘Z undoes them); the rest redraws.
   const insertNative = (text) => (typeof document !== "undefined" && document.execCommand ? document.execCommand("insertText", false, text) : false);
   const replaceSelection = (text) => {
-    if (insertNative(text)) return;
+    wanted.current = null;
+    if (!text.includes("\n") && insertNative(text)) return;
     const el = root.current;
     const v = serialize(el);
     const off = getOffset(el) || { start: v.length, end: v.length };
@@ -184,8 +189,11 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
         "empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]", json ? "font-mono text-[13px] leading-5" : "text-prompt", className)}
       onInput={(e) => {
         const el = root.current;
+        wanted.current = null;
         let next = serialize(el);
-        if (!e.nativeEvent.isComposing && !composing.current && hasLooseTag(el, tagMap)) {
+        // Blocks or line breaks the browser made (drop, autocorrect): back to flat text + chips.
+        const messy = [...el.childNodes].some((c) => c.nodeType === 1 && !c.dataset?.tag && !c.dataset?.end);
+        if (!e.nativeEvent.isComposing && !composing.current && (messy || hasLooseTag(el, tagMap))) {
           const off = getOffset(el);
           render(el, next, tagMap);
           if (off) setOffset(el, off.start, off.end);
@@ -205,6 +213,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
         if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); replaceSelection("\n"); }
       }}
       onKeyUp={onKeyUp}
+      onMouseDown={() => { wanted.current = null; }}
       onClick={onClick}
       onFocus={onFocus}
       onBlur={onBlur}

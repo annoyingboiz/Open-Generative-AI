@@ -610,8 +610,13 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     // Library also every project's). One that can't go in says why.
     const candidates = [...elementLists.project, ...elementLists.library, ...(elementLists.others || [])]
       .filter((e, i, all) => !chosenIds.has(e.id) && all.findIndex((x) => x.id === e.id) === i && e.status !== "draft");
-    const whyNot = (e) => (!canUseElements || !elementFits(entry, e) ? "this model takes no reference pictures"
-      : elements.length >= elementMax ? `this model takes up to ${elementMax} elements` : null);
+    const takesPics = entry?.slots.some((s) => s.role === "reference") || entryTakesElements(entry);
+    const takesVideo = entry?.slots.some((s) => s.role === "video") || entryTakesElements(entry);
+    const whyNot = (e) => {
+      if (!canUseElements || (!takesPics && !takesVideo)) return "this model takes no reference files";
+      if (!elementFits(entry, e)) return (e.images || []).length ? "this model takes no pictures here" : "it has no pictures, and this model takes no videos";
+      return elements.length >= elementMax ? `this model takes up to ${elementMax} elements` : null;
+    };
     // Each candidate's tag as it will be once added (next to the chosen ones only).
     const tagIfAdded = (e) => elementTags([...activeElements, e]).get(e.id);
     const list = [

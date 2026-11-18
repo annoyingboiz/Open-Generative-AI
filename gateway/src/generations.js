@@ -64,7 +64,9 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     uploadBytes: db.prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM uploads WHERE user_id = ?'),
     activeJobs: db.prepare("SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('submitting','submitted','processing','downloading')"),
     deleteUpload: db.prepare('DELETE FROM uploads WHERE id = ?'),
-    elementsUsing: db.prepare(`SELECT name FROM elements WHERE deleted_at IS NULL AND (views_json LIKE ?1 OR videos_json LIKE ?1 OR images_json LIKE ?1) LIMIT 1`),
+    // Exact text search (instr, not LIKE: "_" in ids is not a wildcard). ?1 = "/media/u/<id>."
+    elementsUsing: db.prepare(`SELECT name FROM elements WHERE deleted_at IS NULL AND (instr(views_json, ?1) > 0 OR instr(videos_json, ?1) > 0 OR instr(images_json, ?1) > 0 OR instr(COALESCE(video_url, ''), ?1) > 0) LIMIT 1`),
+    runningUsing: db.prepare(`SELECT id FROM generations WHERE status IN ('submitting','submitted','processing','downloading') AND instr(params_json, ?1) > 0 LIMIT 1`),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, project_id, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
     listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
@@ -496,9 +498,10 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       if (!up || !canSee(user, up)) { failed.push({ id, error: 'Not found.' }); continue; }
       const mayDelete = up.user_id === user.id || (up.project_id && projects?.roleIn(user.id, up.project_id) === 'owner');
       if (!mayDelete) { failed.push({ id, error: 'Only the person who uploaded it (or the project owner) can delete it.' }); continue; }
-      const url = `/media/u/${up.id}.${up.path.split('.').pop()}`;
-      const el = q.elementsUsing.get(`%"${url}"%`);
+      const ref = `/media/u/${up.id}.`;
+      const el = q.elementsUsing.get(ref);
       if (el) { failed.push({ id, error: `The element “${el.name}” uses it.` }); continue; }
+      if (q.runningUsing.get(ref)) { failed.push({ id, error: 'A generation that is still running uses it. Try again when it finishes.' }); continue; }
       storage.remove(up.path);
       q.deleteUpload.run(up.id);
       done.push(id);

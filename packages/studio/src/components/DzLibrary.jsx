@@ -73,16 +73,17 @@ export function Viewer({ item, onClose }) {
   if (!item) return null;
   const isVideo = item.kind === "video" || /\.(mp4|mov|webm)$/i.test(item.url || "");
   return (
-    <div className="fixed inset-0 z-[150] flex flex-col bg-black/90 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[150] flex flex-col bg-black/90 backdrop-blur-sm" onClick={onClose} role="dialog" aria-label="Preview">
       <div className="flex items-center justify-between gap-4 px-5 py-3 text-base text-foreground/90" onClick={(e) => e.stopPropagation()}>
         <span className="min-w-0 truncate">{item.prompt || item.name || ""}</span>
         <button type="button" onClick={onClose} className="h-9 w-9 flex-shrink-0 rounded-lg text-muted-foreground hover:bg-white/10 hover:text-white" aria-label="Close">✕</button>
       </div>
-      <div className="flex min-h-0 flex-1 items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+      {/* A click on the empty dark area closes; on the picture or video it doesn't. */}
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4">
         {isVideo ? (
-          <video src={item.url} controls autoPlay className="max-h-full max-w-full rounded-lg" />
+          <video src={item.url} controls autoPlay className="max-h-full max-w-full rounded-lg" onClick={(e) => e.stopPropagation()} />
         ) : (
-          <img src={item.url} alt={item.prompt || "Image"} className="max-h-full max-w-full rounded-lg object-contain" />
+          <img src={item.url} alt={item.prompt || "Image"} className="max-h-full max-w-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
         )}
       </div>
     </div>
@@ -149,6 +150,9 @@ function Uploads({ onOpen, project, onError }) {
   const [items, setItems] = useState(null);
   const sel = useDzSelection(items || []);
   const [busy, setBusy] = useState(false);
+  // Another place, or nothing left: choosing ends.
+  useEffect(() => { sel.clear(); }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (items && !items.length) sel.clear(); }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
   const remove = async (ids) => {
     setBusy(true);
     try {

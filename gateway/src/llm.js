@@ -23,9 +23,11 @@ const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_INPUT_CHARS = 60_000;
 const DEFAULT_MAX_TOKENS = 4000;
+const MAX_MESSAGES = 100;
+const LOCAL_TIMEOUT_MS = 110_000; // under Cloudflare's 125 s
 
 // Not text models (pictures, video, sound, embeddings, …).
-const NOT_TEXT = /image|video|veo|kling|seedance|seedream|sora|(^|\/)wan|hailuo|flux|midjourney|tts|audio|music|suno|whisper|transcribe|embedding|dall-?e|upscale|vidu|pixverse|luma|runway|kolors|ideogram|recraft|nano-banana|happyhorse|ocr|babbage|davinci|instruct|search-api|deep-research|realtime/i;
+const NOT_TEXT = /image|video|veo|kling|seedance|seedream|sora|(^|\/)wan|hailuo|flux|midjourney|tts|audio|music|suno|whisper|transcribe|embedding|dall-?e|upscale|vidu|pixverse|luma|runway|kolors|ideogram|recraft|nano-banana|happyhorse|ocr|babbage|davinci|gpt-3\.5-turbo-instruct|search-api|deep-research|realtime/i;
 // Shown first; only those the source really has. Changeable here.
 const RECOMMENDED = [
   'apimart:claude-sonnet-5-5', 'apimart:gpt-5.5', 'apimart:gemini-3.5-flash', 'apimart:deepseek-v4-flash',
@@ -38,6 +40,7 @@ export function createLlm({ db, providers, generations, config, log }) {
   const q = {
     insert: db.prepare(`INSERT INTO llm_calls (id, user_id, source, model, purpose, prompt_tokens, completion_tokens, cost_usd, ms, status, error, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    finish: db.prepare('UPDATE llm_calls SET prompt_tokens = ?, completion_tokens = ?, cost_usd = ?, ms = ?, status = ?, error = ? WHERE id = ?'),
     getMeta: db.prepare('SELECT value FROM meta WHERE key = ?'),
     setMeta: db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"),
     spent: db.prepare(`SELECT
@@ -60,7 +63,7 @@ export function createLlm({ db, providers, generations, config, log }) {
       const models = (data.models || []).filter((m) => !/embed/i.test(m.name)).map((m) => ({
         id: `local:${m.name}`, source: 'local', model: m.name, name: m.name,
         note: [m.details?.parameter_size, m.details?.quantization_level].filter(Boolean).join(' · '),
-        price: { in: 0, out: 0 }, free: true, vision: (m.capabilities || []).includes('vision'),
+        price: { in: 0, out: 0 }, free: true, vision: (m.capabilities || []).includes('vision'), thinking: (m.capabilities || []).includes('thinking'),
       }));
       return { status: 'ok', models };
     } catch (error) {
@@ -92,16 +95,24 @@ export function createLlm({ db, providers, generations, config, log }) {
     return { status: 'ok', models };
   }
 
+  // A failure is kept only a minute (then asked again); the last good models
+  // stay listed with the failure shown, so a saved choice doesn't vanish.
+  const lastGood = new Map();
   async function sourceList(id, { force = false } = {}) {
     const hit = cache.get(id);
-    if (!force && hit && Date.now() - hit.at < TTL[id]) return hit;
+    if (!force && hit && Date.now() - hit.at < (hit.status === 'ok' ? TTL[id] : 60_000)) return hit;
     let out;
     try { out = id === 'local' ? await listLocal() : await providerList(id); } catch (error) { out = { status: 'error', note: error.message, models: [] }; }
-    const entry = { ...out, at: Date.now() };
-    // A failed refresh keeps the last good list (marked).
-    if (out.status !== 'ok' && hit?.models?.length && id !== 'local') { cache.set(id, { ...hit, at: Date.now() - TTL[id] + 300_000 }); return { ...hit, note: out.note }; }
+    let entry = { ...out, at: Date.now() };
+    if (out.status === 'ok') lastGood.set(id, out.models);
+    else if (lastGood.get(id)?.length) entry = { ...entry, models: lastGood.get(id), note: `${out.note || 'Not answering.'} Showing the last known models.` };
     cache.set(id, entry);
     return entry;
+  }
+  // What is known right now, without asking anyone (for pages that must not wait).
+  function cachedList(user) {
+    const get = (id) => cache.get(id) || { status: 'unknown', note: 'Checking…', models: lastGood.get(id) || [] };
+    return assemble(user, get('local'), get('apimart'), get('atlas'));
   }
 
   // APIMart's price for our account, per 1M tokens (asked per model, kept a day).
@@ -127,14 +138,16 @@ export function createLlm({ db, providers, generations, config, log }) {
   async function list(user, { force = false } = {}) {
     const [local, apimart, atlas] = await Promise.all(['local', 'apimart', 'atlas'].map((s) => sourceList(s, { force })));
     // Prices for the recommended APIMart models (the rest: asked at first use).
-    const am = apimart.models || [];
-    await Promise.all(am.filter((m) => RECOMMENDED.includes(m.id)).map(async (m) => { const p = await apimartPrice(m.model); if (p) m.price = { in: p.in, out: p.out }; }));
-    for (const m of am) { const p = apimartPrices.get(m.model); if (p && !m.price) m.price = { in: p.in, out: p.out }; }
-    const all = [...local.models, ...am, ...(atlas.models || [])].map((m) => ({ ...m, recommended: RECOMMENDED.includes(m.id) }));
+    await Promise.all((apimart.models || []).filter((m) => RECOMMENDED.includes(m.id)).map((m) => apimartPrice(m.model)));
+    return assemble(user, local, apimart, atlas);
+  }
+  function assemble(user, local, apimart, atlas) {
+    const am = (apimart.models || []).map((m) => { const p = apimartPrices.get(m.model); return p && !m.price ? { ...m, price: { in: p.in, out: p.out } } : m; });
+    const all = [...(local.models || []), ...am, ...(atlas.models || [])].map((m) => ({ ...m, recommended: RECOMMENDED.includes(m.id) }));
     const def = defaultModel(all);
     return {
       sources: [
-        { id: 'local', name: 'This server (Ollama)', status: local.status, note: local.note || 'Free. Busy while the graphics cards run other work.', count: local.models.length },
+        { id: 'local', name: 'This server (Ollama)', status: local.status, note: local.note || 'Free. Busy while the graphics cards run other work.', count: (local.models || []).length },
         { id: 'apimart', name: 'APIMart', status: apimart.status, note: apimart.note || '', count: am.length },
         { id: 'atlas', name: 'Atlas Cloud', status: atlas.status, note: atlas.note || '', count: (atlas.models || []).length },
         { ...chatgptStatus(), count: 0, ...(user?.role === 'admin' ? {} : { hidden: true }) },
@@ -144,9 +157,11 @@ export function createLlm({ db, providers, generations, config, log }) {
     };
   }
 
+  // A saved default is kept even while its source is down: a tool that leaves
+  // the model out then gets "offline" instead of a paid model it didn't ask for.
   function defaultModel(all) {
     const saved = q.getMeta.get('llm_default')?.value || '';
-    if (saved && all.some((m) => m.id === saved)) return saved;
+    if (saved) return saved;
     return RECOMMENDED.find((id) => all.some((m) => m.id === id)) || all[0]?.id || null;
   }
   function setDefault(id) {
@@ -171,6 +186,7 @@ export function createLlm({ db, providers, generations, config, log }) {
   }
 
   function cleanMessages(body) {
+    if (Array.isArray(body.messages) && body.messages.length > MAX_MESSAGES) throw new LlmError(`At most ${MAX_MESSAGES} messages.`);
     const msgs = [];
     if (body.system) msgs.push({ role: 'system', content: String(body.system) });
     for (const m of Array.isArray(body.messages) ? body.messages : []) {
@@ -201,17 +217,30 @@ export function createLlm({ db, providers, generations, config, log }) {
     });
     const raw = await r.text();
     let data;
-    try { data = JSON.parse(raw); } catch { throw new LlmError(r.ok ? 'The model answered in an unexpected format.' : `The provider refused (HTTP ${r.status}).`, 502); }
+    try {
+      data = /^\s*data:/.test(raw) ? fromSse(raw) : JSON.parse(raw);
+    } catch { throw new LlmError(r.ok ? 'The model answered in an unexpected format.' : `The provider refused (HTTP ${r.status}).`, 502); }
     if (!r.ok || data.error) throw new LlmError(String(data.error?.message || data.message || `HTTP ${r.status}`).slice(0, 300), 502);
     const choice = data.choices?.[0];
-    const text = textOf(choice?.message?.content).trim();
-    const usage = { in: Number(data.usage?.prompt_tokens || 0), out: Number(data.usage?.completion_tokens || 0) };
-    if (!text) {
-      throw new LlmError(choice?.finish_reason === 'length'
-        ? 'The model spent all its tokens thinking and wrote nothing. Try again with a bigger limit or another model.'
-        : 'The model returned an empty answer.', 502);
+    return { text: textOf(choice?.message?.content).trim(), usage: { in: Number(data.usage?.prompt_tokens || 0), out: Number(data.usage?.completion_tokens || 0) }, finish: choice?.finish_reason || null };
+  }
+  // A streamed answer (when a provider ignores stream:false) → one answer.
+  function fromSse(raw) {
+    let text = '';
+    let usage = null;
+    let finish = null;
+    let error = null;
+    for (const line of raw.split(/\r?\n/)) {
+      const m = /^data:\s*(.*)$/.exec(line);
+      if (!m || m[1] === '[DONE]') continue;
+      const ev = JSON.parse(m[1]);
+      if (ev.error) error = ev.error;
+      const c = ev.choices?.[0];
+      text += textOf(c?.delta?.content ?? c?.message?.content ?? '');
+      if (c?.finish_reason) finish = c.finish_reason;
+      if (ev.usage) usage = ev.usage;
     }
-    return { text, usage, finish: choice?.finish_reason || null };
+    return { ...(error ? { error } : {}), choices: [{ message: { content: text }, finish_reason: finish }], usage };
   }
 
   async function callLocal(model, msgs, images, { maxTokens, temperature }) {
@@ -222,9 +251,11 @@ export function createLlm({ db, providers, generations, config, log }) {
     }
     let r;
     try {
+      // Thinking models answer much faster without the thinking pass.
+      const thinks = (lastGood.get('local') || []).find((x) => x.model === model)?.thinking;
       r = await fetch(`${ollamaUrl}/api/chat`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(150_000),
-        body: JSON.stringify({ model, messages, stream: false, options: { num_predict: maxTokens, ...(temperature != null ? { temperature } : {}) } }),
+        method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(LOCAL_TIMEOUT_MS),
+        body: JSON.stringify({ model, messages, stream: false, ...(thinks ? { think: false } : {}), options: { num_predict: maxTokens, ...(temperature != null ? { temperature } : {}) } }),
       });
     } catch (error) {
       if (error?.name === 'TimeoutError') throw new LlmError('The local machine is busy right now (its graphics cards are doing other work). Try again later or pick a cloud model.', 503);
@@ -241,43 +272,67 @@ export function createLlm({ db, providers, generations, config, log }) {
       if (/not found|pull/i.test(msg)) throw new LlmError(`The model ${model} is not on the local machine.`, 404);
       throw new LlmError(`Local model error: ${msg.slice(0, 200)}`, 502);
     }
-    const text = textOf(data.message?.content).trim();
-    if (!text) throw new LlmError(data.done_reason === 'length' ? 'The model used all its tokens and wrote nothing. Try a bigger limit.' : 'The model returned an empty answer.', 502);
-    return { text, usage: { in: Number(data.prompt_eval_count || 0), out: Number(data.eval_count || 0) }, finish: data.done_reason || null };
+    return { text: textOf(data.message?.content).trim(), usage: { in: Number(data.prompt_eval_count || 0), out: Number(data.eval_count || 0) }, finish: data.done_reason || null };
   }
 
   const monthStart = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1); };
 
+  const priceOf = async (source, model) => {
+    if (source === 'local') return { in: 0, out: 0 };
+    if (source === 'apimart') return apimartPrice(model);
+    return (await sourceList('atlas')).models.find((x) => x.model === model)?.price || null;
+  };
+  const costOf = (price, usage) => (price ? (usage.in * price.in + usage.out * price.out) / 1e6 : null);
+
   // { model, system?, messages?, prompt?, images?, maxTokens?, temperature?, purpose? } → { text, model, usage, costUsd, ms }
+  // Money: before the call the worst case (input + maxTokens) is booked against
+  // the monthly limit, so parallel calls can't run past it; after the call the
+  // real cost replaces it. A model whose price we can't learn is refused for
+  // people with a limit; for others its cost is kept as the worst case.
   async function chat(user, body = {}) {
     const id = String(body.model || defaultModel((await list(user)).models) || '');
     const m = /^(local|apimart|atlas|chatgpt):(.+)$/.exec(id);
     if (!m) throw new LlmError('Pick a text model.');
     const [, source, model] = m;
     if (source === 'chatgpt') throw new LlmError('The ChatGPT account is not connected yet.', 409);
-    if (user.monthly_limit_usd != null && source !== 'local') {
-      const spent = q.spent.get(user.id, monthStart()).usd;
-      if (spent >= user.monthly_limit_usd) throw new LlmError(`Monthly limit reached ($${spent.toFixed(2)} of $${user.monthly_limit_usd}). Ask the admin to raise it.`, 402);
-    }
     const msgs = cleanMessages(body);
     const images = imagesOf(user, body.images);
     const maxTokens = Math.min(16_000, Math.max(64, Number(body.maxTokens) || DEFAULT_MAX_TOKENS));
     const temperature = body.temperature == null ? null : Math.min(2, Math.max(0, Number(body.temperature)));
     const purpose = String(body.purpose || 'chat').slice(0, 40);
+    const price = await priceOf(source, model);
+    const limited = user.monthly_limit_usd != null && source !== 'local';
+    if (limited && !price) throw new LlmError('The price of this model is unknown right now, so it can’t be used with a spending limit. Pick another model.', 409);
+    const inEstimate = Math.ceil(msgs.reduce((n, x) => n + x.content.length + 8, 0) / 3) + images.length * 1600;
+    const worst = costOf(price, { in: inEstimate, out: maxTokens });
+    // Check and book in one go (no waiting in between).
+    if (limited) {
+      const spent = q.spent.get(user.id, monthStart()).usd;
+      if (spent + worst > user.monthly_limit_usd) {
+        throw new LlmError(`Monthly limit: $${spent.toFixed(2)} of $${user.monthly_limit_usd} used — not enough left for this call (up to $${worst.toFixed(3)}). Ask the admin to raise it, or use a cheaper model or the local one.`, 402);
+      }
+    }
+    const callId = newId('llm');
+    q.insert.run(callId, user.id, source, model, purpose, 0, 0, worst ?? 0, 0, 'running', null, now());
     const started = Date.now();
+    let out = null;
     try {
-      const out = source === 'local'
+      out = source === 'local'
         ? await callLocal(model, msgs, images, { maxTokens, temperature })
         : await callOpenAiStyle(source, model, msgs, images, { maxTokens, temperature });
-      let price = null;
-      if (source === 'atlas') price = (await sourceList('atlas')).models.find((x) => x.model === model)?.price || null;
-      if (source === 'apimart') price = await apimartPrice(model);
-      const costUsd = source === 'local' ? 0 : price ? (out.usage.in * price.in + out.usage.out * price.out) / 1e6 : null;
+      const costUsd = costOf(price, out.usage);
       const ms = Date.now() - started;
-      q.insert.run(newId('llm'), user.id, source, model, purpose, out.usage.in, out.usage.out, costUsd ?? 0, ms, 'ok', null, now());
+      if (!out.text) {
+        const msg = out.finish === 'length'
+          ? 'The model spent all its tokens thinking and wrote nothing. Try again with a bigger limit or another model.'
+          : 'The model returned an empty answer.';
+        q.finish.run(out.usage.in, out.usage.out, costUsd ?? worst ?? 0, ms, 'failed', msg, callId);
+        throw new LlmError(msg, 502);
+      }
+      q.finish.run(out.usage.in, out.usage.out, costUsd ?? worst ?? 0, ms, 'ok', null, callId);
       return { text: out.text, model: id, usage: out.usage, costUsd, priceKnown: costUsd != null, ms, finish: out.finish };
     } catch (error) {
-      q.insert.run(newId('llm'), user.id, source, model, purpose, 0, 0, 0, Date.now() - started, 'failed', String(error.message).slice(0, 300), now());
+      if (!out) q.finish.run(0, 0, 0, Date.now() - started, 'failed', String(error.message).slice(0, 300), callId);
       if (error instanceof LlmError) throw error;
       log?.warn?.(`llm ${id}: ${error.message}`);
       throw new LlmError(error?.name === 'TimeoutError' ? 'The model took too long to answer.' : `The model could not be reached: ${error.message}`, 502);
@@ -286,5 +341,8 @@ export function createLlm({ db, providers, generations, config, log }) {
 
   const recent = (limit = 20) => q.recent.all(limit);
 
-  return { list, chat, setDefault, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
+  // Calls cut off by a restart: their booking is released.
+  db.prepare("UPDATE llm_calls SET status = 'failed', cost_usd = 0, error = 'Interrupted (server restart).' WHERE status = 'running'").run();
+
+  return { list, cachedList, chat, setDefault, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
 }

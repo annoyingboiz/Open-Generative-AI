@@ -25,7 +25,7 @@ before(async () => {
       res.setHeader('content-type', 'application/json');
       if (req.url === '/api/tags') {
         res.end(JSON.stringify({ models: [
-          { name: 'qwen3.5:9b', details: { parameter_size: '9B', quantization_level: 'Q4' }, capabilities: ['completion'] },
+          { name: 'qwen3.5:9b', details: { parameter_size: '9B', quantization_level: 'Q4' }, capabilities: ['completion', 'thinking'] },
           { name: 'gemma4:31b', details: { parameter_size: '31B' }, capabilities: ['completion', 'vision'] },
           { name: 'nomic-embed-text', details: {} },
         ] }));
@@ -34,6 +34,7 @@ before(async () => {
       if (req.url === '/api/chat') {
         lastChat = JSON.parse(body);
         if (mode === 'busy') { res.statusCode = 500; res.end(JSON.stringify({ error: 'model requires more system memory (12 GiB) than is available' })); return; }
+        if (mode === 'empty') { res.end(JSON.stringify({ message: { role: 'assistant', content: '' }, done_reason: 'length', prompt_eval_count: 5, eval_count: 64 })); return; }
         res.end(JSON.stringify({ message: { role: 'assistant', content: '  A bartender pours a cocktail, slow motion.  ' }, done_reason: 'stop', prompt_eval_count: 21, eval_count: 9 }));
         return;
       }
@@ -86,6 +87,13 @@ test('chat on the local machine: free, logged, works even at a $0 limit; busy an
   assert.deepEqual(res.json().usage, { in: 21, out: 9 });
   assert.deepEqual(lastChat.messages.map((m) => m.role), ['system', 'user']);
   assert.equal(lastChat.stream, false);
+  assert.equal(lastChat.think, false, 'thinking models are asked not to think');
+  mode = 'empty';
+  res = await as('kid', 'POST', '/dz/api/llm/chat', { model: 'local:qwen3.5:9b', prompt: 'hi', purpose: 'empty' });
+  assert.equal(res.statusCode, 502);
+  assert.match(res.json().error, /thinking/);
+  assert.equal(app.ctx.db.prepare("SELECT completion_tokens FROM llm_calls WHERE purpose = 'empty'").get().completion_tokens, 64);
+  mode = 'ok';
   const row = app.ctx.db.prepare("SELECT * FROM llm_calls WHERE purpose = 'adapter'").get();
   assert.equal(row.status, 'ok');
   assert.equal(row.source, 'local');
@@ -96,9 +104,13 @@ test('chat on the local machine: free, logged, works even at a $0 limit; busy an
   assert.match(res.json().error, /local machine is busy/i);
   mode = 'ok';
 
-  // Cloud models stop at the monthly limit ($0 here).
+  // Cloud models with no known price are refused for people with a limit.
   res = await as('kid', 'POST', '/dz/api/llm/chat', { model: 'atlas:deepseek-ai/deepseek-v4-flash', prompt: 'hi' });
-  assert.equal(res.statusCode, 402);
+  assert.equal(res.statusCode, 409);
+  res = await as('kid', 'POST', '/dz/api/llm/chat', { model: 'local:qwen3.5:9b', messages: Array.from({ length: 101 }, () => ({ role: 'user', content: 'x' })) });
+  assert.equal(res.statusCode, 400);
+  // A restart releases bookings of calls that never finished.
+  assert.equal(app.ctx.db.prepare("SELECT COUNT(*) n FROM llm_calls WHERE status = 'running'").get().n, 0);
   res = await as('admin', 'POST', '/dz/api/llm/chat', { model: 'chatgpt:gpt', prompt: 'hi' });
   assert.equal(res.statusCode, 409);
   res = await as('admin', 'POST', '/dz/api/llm/chat', { model: 'local:qwen3.5:9b', prompt: '' });

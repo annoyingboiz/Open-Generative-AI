@@ -16,6 +16,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .wide{max-width:880px;margin:0 auto;padding:24px}
 h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:0 0 12px}p.sub{color:var(--muted);margin:0 0 20px}
 label{display:block;font-size:16px;font-weight:600;color:var(--muted);margin:12px 0 6px}
+textarea{width:100%;padding:10px 12px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit;font-size:16px}
 input,select{width:100%;height:44px;padding:0 12px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit}
 input:focus,select:focus{outline:none;border-color:var(--accent)}
 input[type=checkbox]{width:auto;height:auto}

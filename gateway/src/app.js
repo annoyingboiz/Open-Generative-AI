@@ -237,12 +237,17 @@ export async function buildApp(config, { logger = true } = {}) {
 
   async function renderSettings(req, reply, { error, notice, code = 200, llmTry = null } = {}) {
     const isAdmin = req.user.role === 'admin';
+    const balancesP = isAdmin ? fetchBalances(providers) : Promise.resolve([]);
     let llmInfo = null;
-    if (isAdmin) { try { llmInfo = { ...(await llm.list(req.user)), recent: llm.recent(10), try: llmTry }; } catch { llmInfo = { sources: [], models: [], recent: [], try: llmTry }; } }
+    // The page never waits long for providers: after 4 s it shows what is known.
+    if (isAdmin) {
+      const lists = await Promise.race([llm.list(req.user).catch(() => null), new Promise((r) => setTimeout(() => r(null), 4000))]);
+      llmInfo = { ...(lists || llm.cachedList(req.user)), recent: llm.recent(10), try: llmTry };
+    }
     return html(reply, settingsPage({
       user: req.user,
       providers: isAdmin ? PROVIDERS.map((p) => providers.publicView(p.id)) : [],
-      balances: isAdmin ? await fetchBalances(providers) : [],
+      balances: await balancesP,
       users: isAdmin ? auth.listUsers() : [],
       recommended: isAdmin ? getRecommended() : [],
       families: isAdmin ? catalog.families() : [],

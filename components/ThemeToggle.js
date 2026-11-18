@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const STORAGE_KEY = 'theme';
 
@@ -12,44 +12,26 @@ function readStoredTheme() {
   }
 }
 
-export default function ThemeToggle() {
-  const [theme, setTheme] = useState('dark');
-
-  useEffect(() => {
-    setTheme(readStoredTheme());
+// Dark is the default; light is data-theme="light" on <html> (set before first paint in layout.js).
+export function useTheme() {
+  const [theme, setThemeState] = useState('dark');
+  useEffect(() => { setThemeState(readStoredTheme()); }, []);
+  const setTheme = useCallback((next) => {
+    setThemeState(next);
+    if (next === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem(STORAGE_KEY, next); } catch { /* storage is optional */ }
   }, []);
+  return [theme, setTheme];
+}
 
-  const toggle = () => {
-    const next = theme === 'light' ? 'dark' : 'light';
-    setTheme(next);
-    document.documentElement.setAttribute('data-theme', next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Storage can be unavailable (private mode); the choice just won't persist.
-    }
-  };
-
+export default function ThemeToggle() {
+  const [theme, setTheme] = useTheme();
   const label = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
-
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={label}
-      title={label}
-      className="flex items-center justify-center w-8 h-8 rounded-md border border-border bg-muted text-foreground hover:text-foreground hover:bg-accent hover:border-input transition-colors"
-    >
-      {theme === 'light' ? (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-        </svg>
-      ) : (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="5" />
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-        </svg>
-      )}
+    <button type="button" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={label} title={label}
+      className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground">
+      {theme === 'light' ? '☾' : '☀'}
     </button>
   );
 }

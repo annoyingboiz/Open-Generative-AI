@@ -40,7 +40,7 @@ function layout(title, body) {
 
 const flash = (error, notice) => `${error ? `<div class="msg err">${esc(error)}</div>` : ''}${notice ? `<div class="msg ok">${esc(notice)}</div>` : ''}`;
 
-export function loginPage({ error, next = '/studio', username = '' } = {}) {
+export function loginPage({ error, next = '/library/studio', username = '' } = {}) {
   return layout('Sign in', `<div class="center"><form class="card" method="post" action="/login">
 <h1>Sign in</h1><p class="sub">AI Video Platform</p>${flash(error)}
 <input type="hidden" name="next" value="${esc(next)}">
@@ -70,7 +70,7 @@ function balanceCell(b) {
   return `<span class="pill err" title="${esc(b.error)}">error</span> <span class="muted">${esc(b.error)}</span>`;
 }
 
-export function settingsPage({ user, providers = [], balances = [], users = [], recommended = [], families = [], changes = null, llm = null, error, notice }) {
+export function settingsPage({ user, providers = [], balances = [], users = [], recommended = [], families = [], changes = null, llm = null, error, notice, section = null }) {
   const isAdmin = user.role === 'admin';
   const balanceById = Object.fromEntries(balances.map((b) => [b.id, b]));
 
@@ -108,7 +108,7 @@ export function settingsPage({ user, providers = [], balances = [], users = [], 
 </tr>`).join('');
 
   const adminBlocks = isAdmin ? `
-<h2 style="margin:28px 0 12px">Providers</h2>
+<h2 style="margin:28px 0 12px" id="providers">Providers</h2>
 <p class="muted" style="margin-top:-6px">Keys are stored encrypted on this server and never sent to the browser.</p>
 ${providerSections}
 <h2 style="margin:28px 0 12px" id="changes">Provider changes</h2>
@@ -117,7 +117,7 @@ ${changes ? changesSection(changes) : ''}
 ${recommendedSection(recommended, families)}
 <h2 style="margin:28px 0 12px" id="llm-admin">Text models — sources and tests</h2>
 ${llm ? llmSection(llm) : ''}
-<h2 style="margin:28px 0 12px">Test generation</h2>
+<h2 style="margin:28px 0 12px" id="test">Test generation</h2>
 <form class="section" method="post" action="/dz/settings/test-generation">
   <p class="muted" style="margin-top:0">One cheap picture to check that a provider works end to end: request → server waits → file saved on this server. Costs real money (about $0.01).</p>
   <label>Prompt</label><input name="prompt" value="A red paper boat on a calm lake at sunrise, photo">
@@ -126,7 +126,7 @@ ${llm ? llmSection(llm) : ''}
     <button class="btn" name="provider" value="atlas" type="submit">Atlas · FLUX.1 schnell (~$0.003)</button>
   </div>
 </form>
-<h2 style="margin:28px 0 12px">Accounts</h2>
+<h2 style="margin:28px 0 12px" id="accounts">Accounts</h2>
 <div class="section">
   <table><thead><tr><th>Person</th><th colspan="4">Role · monthly limit (USD) · status · password reset</th></tr></thead><tbody>${userRows}</tbody></table>
   <details style="margin-top:16px"><summary>Add an account</summary>
@@ -143,9 +143,9 @@ ${llm ? llmSection(llm) : ''}
 
   return layout('Settings', `<div class="wide">
 <div class="top"><div><h1>Settings</h1><div class="muted">Signed in as <b>${esc(user.display_name)}</b> (${esc(user.username)}, ${esc(user.role)})</div></div>
-<div class="row"><a class="btn" href="/studio">← Back to studio</a><form method="post" action="/logout"><button class="btn danger" type="submit">Sign out</button></form></div></div>
+<div class="row"><a class="btn" href="/library/studio">← Back to Studio</a><form method="post" action="/logout"><button class="btn danger" type="submit">Sign out</button></form></div></div>
 ${flash(error, notice)}
-<div class="section"><h2>My password</h2>
+<div class="section" id="account"><h2>My password</h2>
 <form method="post" action="/dz/settings/password" class="grid2">
   <div><label>Current password</label><input name="currentPassword" type="password" required autocomplete="current-password"></div>
   <div><label>New password (8+)</label><input name="newPassword" type="password" required minlength="8" autocomplete="new-password"></div>
@@ -155,7 +155,7 @@ ${llm ? `<h2 style="margin:28px 0 12px" id="llm">Text models</h2>
 ${chatgptBox(llm)}
 ${myDefaultBox(llm)}` : ''}
 ${adminBlocks}
-</div>`);
+</div>${section ? `<script>document.getElementById(${JSON.stringify(section)})?.scrollIntoView()</script>` : ''}`);
 }
 
 const CHANGE_LABEL = {
@@ -222,7 +222,7 @@ export function testResultPage({ result, provider, model }) {
     : result.status === 'failed'
       ? `<div class="msg err">Failed: ${esc(result.error)}</div>`
       : '<p>Waiting for the provider… this page refreshes itself.</p>';
-  return layout('Test generation', `${done ? '' : '<meta http-equiv="refresh" content="3">'}<div class="wide"><div class="top"><h1>Test generation · ${esc(provider)} · <span class="mono">${esc(model)}</span></h1><a class="btn" href="/dz/settings">← Settings</a></div>${body}</div>`);
+  return layout('Test generation', `${done ? '' : '<meta http-equiv="refresh" content="3">'}<div class="wide"><div class="top"><h1>Test generation · ${esc(provider)} · <span class="mono">${esc(model)}</span></h1><a class="btn" href="/settings">← Settings</a></div>${body}</div>`);
 }
 
 // ── Text models (LLM) ──────────────────────────────────────────────────────

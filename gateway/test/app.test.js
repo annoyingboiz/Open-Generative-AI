@@ -95,7 +95,7 @@ test('login flow and wrong password', async () => {
   assert.equal(res.statusCode, 302);
   assert.equal(res.headers.location, '/studio/video');
   res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'denis', password: 'long-enough-1', next: '//evil.com' } });
-  assert.equal(res.headers.location, '/studio');
+  assert.equal(res.headers.location, '/library/studio');
 });
 
 test('admin creates a user; user cannot see keys or admin pages', async () => {
@@ -106,7 +106,7 @@ test('admin creates a user; user cannot see keys or admin pages', async () => {
   const userCookie = cookieOf(res);
   res = await app.inject({ url: '/dz/api/me', headers: { cookie: userCookie } });
   assert.deepEqual(res.json().user, { id: 2, username: 'daughter', displayName: 'Daughter', role: 'user', monthlyLimitUsd: 5 });
-  res = await app.inject({ url: '/dz/settings', headers: { cookie: userCookie } });
+  res = await app.inject({ url: '/settings', headers: { cookie: userCookie } });
   assert.equal(res.statusCode, 200);
   assert.ok(!res.body.includes('Providers'), 'no provider section for users');
   res = await app.inject({ method: 'POST', url: '/dz/settings/providers/atlas', headers: { cookie: userCookie }, payload: { apiKey: 'x' } });
@@ -116,10 +116,21 @@ test('admin creates a user; user cannot see keys or admin pages', async () => {
 });
 
 test('settings page never prints a full key', async () => {
-  const res = await app.inject({ url: '/dz/settings', headers: { cookie: adminCookie } });
+  const res = await app.inject({ url: '/settings', headers: { cookie: adminCookie } });
   assert.equal(res.statusCode, 200);
   assert.ok(!res.body.includes('env-key-1234'));
   assert.ok(res.body.includes('••••1234'));
+});
+
+test('settings moved to /settings/<section>; the old address redirects', async () => {
+  let res = await app.inject({ url: '/dz/settings?notice=llm', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/settings?notice=llm');
+  res = await app.inject({ url: '/settings/providers', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200);
+  assert.ok(res.body.includes('getElementById("providers")'));
+  res = await app.inject({ url: '/settings/nope', headers: { cookie: adminCookie } });
+  assert.equal(res.headers.location, '/settings');
 });
 
 test('bad proxy is rejected; cross-origin POST is blocked', async () => {
@@ -159,7 +170,7 @@ test('cross-site sign-in is refused (login CSRF)', async () => {
 test('recommended models: admin edits the list, users cannot', async () => {
   let res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: adminCookie }, payload: { action: 'remove', key: 'dz-kling-4' } });
   assert.equal(res.statusCode, 302);
-  res = await app.inject({ url: '/dz/settings', headers: { cookie: adminCookie } });
+  res = await app.inject({ url: '/settings', headers: { cookie: adminCookie } });
   assert.ok(res.body.includes('Recommended models'));
   assert.ok(!res.body.includes('>dz-kling-4<'));
   assert.ok(res.body.includes('dz-nano-banana-pro'));
@@ -167,7 +178,7 @@ test('recommended models: admin edits the list, users cannot', async () => {
   assert.equal(res.statusCode, 400);
   res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: adminCookie }, payload: { action: 'reset' } });
   assert.equal(res.statusCode, 302);
-  res = await app.inject({ url: '/dz/settings', headers: { cookie: adminCookie } });
+  res = await app.inject({ url: '/settings', headers: { cookie: adminCookie } });
   assert.ok(res.body.includes('dz-kling-4'));
   res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'daughter', password: 'kid-password-1' } });
   res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: cookieOf(res) }, payload: { action: 'reset' } });

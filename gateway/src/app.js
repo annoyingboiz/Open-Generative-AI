@@ -80,7 +80,7 @@ export async function buildApp(config, { logger = true } = {}) {
     // Provider error texts may echo prompts or signed links: for refusals only the setting names go out.
     const safeDetail = (e) => (e.type === 'rejected' ? '' : String(e.detail || '').replace(/https?:\/\/\S+/g, '[link]').slice(0, 80));
     const lines = added.slice(0, 12).map((e) => `• ${e.provider} · ${e.name || e.model || e.endpoint || ''} — ${e.type}${e.param ? ` ${e.param}` : ''}${safeDetail(e) ? `: ${safeDetail(e)}` : ''}`);
-    const text = [`Director: ${added.length} provider change(s)${reverted ? `, ${reverted} rolled back` : ''}`, ...lines, added.length > 12 ? `…and ${added.length - 12} more` : '', config.publicUrl ? `${config.publicUrl}/dz/settings#changes` : ''].filter(Boolean).join('\n');
+    const text = [`Director: ${added.length} provider change(s)${reverted ? `, ${reverted} rolled back` : ''}`, ...lines, added.length > 12 ? `…and ${added.length - 12} more` : '', config.publicUrl ? `${config.publicUrl}/settings/changes` : ''].filter(Boolean).join('\n');
     try {
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }), signal: AbortSignal.timeout(10_000) });
     } catch (error) { app.log.warn(`telegram: ${error.message}`); }
@@ -167,7 +167,7 @@ export async function buildApp(config, { logger = true } = {}) {
     path: '/', httpOnly: true, sameSite: 'lax', secure: isHttps(req), maxAge: config.sessionDays * 86_400,
   });
   const html = (reply, body, code = 200) => reply.code(code).type('text/html; charset=utf-8').header('cache-control', 'no-store').send(body);
-  const safeNext = (value) => (typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/studio');
+  const safeNext = (value) => (typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/library/studio');
 
   // ── Auth gate ───────────────────────────────────────────────────────────
   const crossSite = (req) => {
@@ -267,7 +267,7 @@ export async function buildApp(config, { logger = true } = {}) {
     setupCode = null;
     const session = await auth.login(username, password, req.headers['user-agent']);
     setSessionCookie(req, reply, session.token);
-    return reply.redirect('/dz/settings?notice=welcome');
+    return reply.redirect('/settings?notice=welcome');
   });
 
   // ── Sign in / out ───────────────────────────────────────────────────────
@@ -302,7 +302,7 @@ export async function buildApp(config, { logger = true } = {}) {
   // ── Settings ────────────────────────────────────────────────────────────
   const NOTICES = { welcome: 'Admin created. Add provider keys below.', saved: 'Saved.', password: 'Password changed.', user: 'Account saved.', recommended: 'Recommended models saved. Reload the studio to see them.', changes: 'Provider changes updated.', checked: 'Check started. It takes a minute or two — reload this page to see new changes.', llm: 'Default text model saved.' };
 
-  async function renderSettings(req, reply, { error, notice, code = 200, llmTry = null } = {}) {
+  async function renderSettings(req, reply, { error, notice, code = 200, llmTry = null, section = null } = {}) {
     const isAdmin = req.user.role === 'admin';
     const balancesP = isAdmin ? fetchBalances(providers) : Promise.resolve([]);
     // Everyone gets their ChatGPT box and own default; admins also the sources and tests.
@@ -325,6 +325,7 @@ export async function buildApp(config, { logger = true } = {}) {
       llm: llmInfo,
       error,
       notice: notice ?? NOTICES[req.query?.notice],
+      section,
     }), code);
   }
   const renderSettingsSeen = async (req, reply, opts) => {
@@ -337,7 +338,18 @@ export async function buildApp(config, { logger = true } = {}) {
     return true;
   };
 
-  app.get('/dz/settings', (req, reply) => renderSettingsSeen(req, reply));
+  // Settings live at /settings/<section> (redesign package 01); the old address redirects.
+  const SETTINGS_SECTIONS = { account: 'account', 'text-models': 'llm', providers: 'providers', changes: 'changes', models: 'recommended', sources: 'llm-admin', test: 'test', people: 'accounts' };
+  app.get('/settings', (req, reply) => renderSettingsSeen(req, reply));
+  app.get('/settings/:section', (req, reply) => {
+    const section = SETTINGS_SECTIONS[req.params.section];
+    if (!section) return reply.redirect('/settings');
+    return renderSettingsSeen(req, reply, { section });
+  });
+  app.get('/dz/settings', (req, reply) => {
+    const q = req.url.indexOf('?');
+    return reply.redirect(`/settings${q >= 0 ? req.url.slice(q) : ''}`);
+  });
 
   // ── Text models (LLM) ───────────────────────────────────────────────────
   const llmError = (reply, error) => {
@@ -372,7 +384,7 @@ export async function buildApp(config, { logger = true } = {}) {
   });
   app.post('/dz/settings/llm/default', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
-    try { llm.setDefault(req.body?.model); return reply.redirect('/dz/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
+    try { llm.setDefault(req.body?.model); return reply.redirect('/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
   });
   // ChatGPT, each person their own. Connect: the server makes the sign-in link
   // (opens in a new tab); finish: the address the browser landed on.
@@ -404,7 +416,7 @@ export async function buildApp(config, { logger = true } = {}) {
     try {
       chatgpt.setShared(req.user, req.body?.sharing === 'all');
       llm.dropUnusableDefaults();
-      return reply.redirect('/dz/settings?notice=llm#llm');
+      return reply.redirect('/settings?notice=llm#llm');
     } catch (error) { return chatgptError(req, reply, error); }
   });
   // From the studio (JSON): make a text model my default.
@@ -413,7 +425,7 @@ export async function buildApp(config, { logger = true } = {}) {
   });
   // Everyone: their own default text model.
   app.post('/dz/settings/llm/my-default', async (req, reply) => {
-    try { llm.setUserDefault(req.user, req.body?.model); return reply.redirect('/dz/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
+    try { llm.setUserDefault(req.user, req.body?.model); return reply.redirect('/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
   });
   app.post('/dz/settings/llm/try', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
@@ -436,7 +448,7 @@ export async function buildApp(config, { logger = true } = {}) {
     if (!requireAdmin(req, reply)) return;
     // Takes a minute or two (every schema and docs page) — runs in the background.
     catalog.refreshAll({ force: true, docs: true }).catch((error) => app.log.warn(`changes check: ${error.message}`));
-    return reply.redirect('/dz/settings?notice=checked#changes');
+    return reply.redirect('/settings?notice=checked#changes');
   });
 
   app.post('/dz/settings/password', async (req, reply) => {
@@ -451,7 +463,7 @@ export async function buildApp(config, { logger = true } = {}) {
       if (error instanceof UserError) return renderSettings(req, reply, { error: error.message, code: 400 });
       throw error;
     }
-    return reply.redirect('/dz/settings?notice=password');
+    return reply.redirect('/settings?notice=password');
   });
 
   app.post('/dz/settings/providers/:id', async (req, reply) => {
@@ -499,7 +511,7 @@ export async function buildApp(config, { logger = true } = {}) {
     }
     appSettings.set('recommended', list);
     catalog.requestRebuild();
-    return reply.redirect('/dz/settings?notice=recommended#recommended');
+    return reply.redirect('/settings?notice=recommended#recommended');
   });
 
   const TEST_MODELS = {
@@ -544,7 +556,7 @@ export async function buildApp(config, { logger = true } = {}) {
       if (error instanceof UserError) return renderSettings(req, reply, { error: error.message, code: 400 });
       throw error;
     }
-    return reply.redirect('/dz/settings?notice=user');
+    return reply.redirect('/settings?notice=user');
   });
 
   app.post('/dz/settings/users/:id', async (req, reply) => {
@@ -561,7 +573,7 @@ export async function buildApp(config, { logger = true } = {}) {
       if (error instanceof UserError) return renderSettings(req, reply, { error: error.message, code: 400 });
       throw error;
     }
-    return reply.redirect('/dz/settings?notice=user');
+    return reply.redirect('/settings?notice=user');
   });
 
   // ── JSON for the studio shell ───────────────────────────────────────────

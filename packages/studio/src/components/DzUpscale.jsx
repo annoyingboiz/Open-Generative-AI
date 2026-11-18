@@ -153,7 +153,7 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
           Upscaling uses Topaz models on fal.ai. {isAdmin ? "Add your fal.ai API key in Settings to turn it on." : "Ask the admin to add a fal.ai API key in Settings."}
         </p>
         {isAdmin && (
-          <a href="/dz/settings#provider-fal" className={buttonVariants()}>Add fal.ai key</a>
+          <a href="/settings/providers" className={buttonVariants()}>Add fal.ai key</a>
         )}
       </div>
     );

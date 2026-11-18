@@ -230,11 +230,14 @@ function Uploads({ onOpen, project, onError }) {
   );
 }
 
-export default function DzLibrary({ section = "all", onGenerationError }) {
+export default function DzLibrary({ section = "all", initialLiked = false, onLikedChange, onGenerationError }) {
   const inTrash = section === "trash";
   const [type, setType] = useState("all");
   const [tool, setTool] = useState("any");
-  const [likedOnly, setLikedOnly] = useState(false);
+  const [likedOnly, setLikedOnlyState] = useState(Boolean(initialLiked));
+  // Liked is a tab of All work (redesign 01, 4.3): the shell keeps it in the URL (#liked).
+  useEffect(() => { setLikedOnlyState(Boolean(initialLiked)); }, [initialLiked]);
+  const setLikedOnly = (next) => { setLikedOnlyState(next); if (next !== likedOnly) onLikedChange?.(next); };
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");
   useEffect(() => { const t = setTimeout(() => setSearch(text.trim()), 300); return () => clearTimeout(t); }, [text]);
@@ -254,7 +257,7 @@ export default function DzLibrary({ section = "all", onGenerationError }) {
   const sel = useDzSelection(uploads ? [] : lib.items);
   const report = (e) => onGenerationError?.(String(e?.message || e));
   const canUpscale = Boolean(dzUpscaleSpec());
-  const filtered = type !== "all" || tool !== "any" || likedOnly || Boolean(search);
+  const filtered = type !== "all" || tool !== "any" || Boolean(search);
 
   const actionsFor = (item) => {
     if (!item.url && !inTrash) {
@@ -312,6 +315,14 @@ export default function DzLibrary({ section = "all", onGenerationError }) {
     <div className="flex h-full w-full flex-col overflow-hidden bg-background">
       <div className="flex-shrink-0 space-y-3 border-b border-border px-4 py-3 md:px-6">
         <GridToolbar ctx={ctx} sel={uploads ? null : sel} title={SECTION_TITLE[section]} inTrash={inTrash} canSelect={!uploads} />
+        {section === "all" && !sel.selecting && (
+          <div role="tablist" aria-label="All work" className="flex h-9 items-end gap-5 border-b border-border">
+            {[[false, "All"], [true, "Liked"]].map(([v, label]) => (
+              <button key={label} type="button" role="tab" aria-selected={likedOnly === v} onClick={() => setLikedOnly(v)}
+                className={cn("-mb-px h-9 border-b-2 text-base font-medium transition-colors duration-state", likedOnly === v ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{label}</button>
+            ))}
+          </div>
+        )}
         {!sel.selecting && (
           <div className="flex flex-wrap items-center gap-2">
             <Segmented value={type} onChange={setType} options={inTrash ? TYPES.filter((t) => t.value !== "uploads") : TYPES} aria-label="Type" className="w-auto" size="sm" />
@@ -321,11 +332,8 @@ export default function DzLibrary({ section = "all", onGenerationError }) {
                 <SelectContent>{TOOLS.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
               </Select>
             )}
-            {section === "all" && !uploads && (
-              <Button size="sm" variant={likedOnly ? "default" : "secondary"} aria-pressed={likedOnly} onClick={() => setLikedOnly((v) => !v)}>♥ Liked</Button>
-            )}
             {!uploads && <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Search prompts" aria-label="Search prompts" className="h-9 w-[220px]" />}
-            {filtered && <Button size="sm" variant="ghost" onClick={() => { setType("all"); setTool("any"); setLikedOnly(false); setText(""); }}>Clear</Button>}
+            {filtered && <Button size="sm" variant="ghost" onClick={() => { setType("all"); setTool("any"); setText(""); }}>Clear</Button>}
           </div>
         )}
       </div>

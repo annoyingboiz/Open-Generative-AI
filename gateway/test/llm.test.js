@@ -159,10 +159,10 @@ test('ChatGPT plans: one per person, stored encrypted; an admin may share theirs
   let res = await as('kid', 'POST', '/dz/api/llm/chat', { model: 'chatgpt:gpt-6.1-sol', prompt: 'hi' });
   assert.equal(res.statusCode, 409);
   assert.match(res.json().error, /Connect your ChatGPT/);
-  res = await as('admin', 'GET', '/dz/settings');
+  res = await as('admin', 'GET', '/settings');
   assert.match(res.body, /me@example\.com/);
   assert.equal(res.body.includes('secret-'), false);
-  res = await as('kid', 'GET', '/dz/settings');
+  res = await as('kid', 'GET', '/settings');
   assert.match(res.body, /Connect ChatGPT/);
   assert.equal(res.body.includes('me@example.com'), false, 'others don’t see the admin’s plan');
   res = await as('kid', 'POST', '/dz/settings/chatgpt/disconnect', { userId: String(id('admin')) });
@@ -177,7 +177,7 @@ test('ChatGPT plans: one per person, stored encrypted; an admin may share theirs
   res = await as('admin', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'all' });
   assert.equal(res.statusCode, 302);
   assert.equal(cg.canUse({ id: id('kid') }), true);
-  res = await as('kid', 'GET', '/dz/settings');
+  res = await as('kid', 'GET', '/settings');
   assert.match(res.body, /admin<\/b>’s plan, shared/);
   app.ctx.llm.setDefault('chatgpt:gpt-6.1-sol');
   assert.equal(app.ctx.llm.defaultId(), 'chatgpt:gpt-6.1-sol');

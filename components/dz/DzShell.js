@@ -5,97 +5,49 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DzCinemaStudio, DzCreateStudio, DzDirector, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
+import { DzCreateStudio, DzDirector, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
   DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT,
-  DzProjectsPage, DzElementsPage, ToElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
+  DzProjectsPage, DzElementsPage, ToElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
+  DropdownMenuParts, DialogParts, cn } from 'studio';
+import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, SquaresFour, Images, Shapes, Layout, Trash, FolderSimple, Plus,
+  SidebarSimple, MagnifyingGlass, ChatCircle, CaretUpDown, GearSix, Sun, Moon, SignOut, List, X, ArrowRight } from '@phosphor-icons/react';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
-import ThemeToggle from '../ThemeToggle';
+import { useTheme } from '../ThemeToggle';
 
+// Phosphor icons (redesign package 01, section 3.4). The active sidebar item uses weight Fill.
 const ICONS = {
-  create: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" /><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" />
-    </svg>
-  ),
-  image: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-    </svg>
-  ),
-  cinema: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="2" width="20" height="20" rx="2.18" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" />
-      <line x1="2" y1="12" x2="22" y2="12" /><line x1="2" y1="7" x2="7" y2="7" /><line x1="2" y1="17" x2="7" y2="17" />
-      <line x1="17" y1="17" x2="22" y2="17" /><line x1="17" y1="7" x2="22" y2="7" />
-    </svg>
-  ),
-  video: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" />
-    </svg>
-  ),
-  library: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </svg>
-  ),
-  elements: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
-  ),
-  projects: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
-  ),
-  director: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" /><path d="M4 11l-.6-3.2a1 1 0 0 1 .8-1.2l13.8-2.5a1 1 0 0 1 1.2.8L19.6 8 4 11z" /><path d="M8.5 6.2l2.4 3.6M13.5 5.3l2.4 3.6" />
-    </svg>
-  ),
-  tools: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="3.5" /><rect x="3" y="14" width="7" height="7" rx="3.5" /><path d="M17.5 14v7M14 17.5h7" />
-    </svg>
-  ),
-  upscale: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-    </svg>
-  ),
-  liked: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z" /></svg>
-  ),
-  trash: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
-  ),
-  settings: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></svg>
-  ),
+  image: ImageIcon, video: VideoCamera, create: Aperture, director: FilmSlate, upscale: ArrowsOut, tools: SquaresFour,
+  library: Images, elements: Shapes, boards: Layout, trash: Trash, projects: FolderSimple,
 };
 
-// Tools make things (grid of the current place + panel); the rest shows it.
+// Navigation (section 4.2). Internal ids stay as before (studios key their state by them);
+// the URL and the label follow the new names.
 export const DZ_TABS = [
-  { id: 'create', label: 'Create', tool: true },
-  // Quick single-purpose studios on the same adaptive engine as Create.
-  { id: 'image', label: 'Image', tool: true },
-  { id: 'video', label: 'Video', tool: true },
-  { id: 'upscale', label: 'Upscale', tool: true },
-  // AI Director: scene → shots → start frames → videos (storyboards).
-  { id: 'director', label: 'Director', tool: true },
-  // Lip Sync, Motion Control, Talking Photo, Character Swap, Audio.
-  { id: 'tools', label: 'Tools', tool: true },
-  // The old Cinema stays for now, in the Library only.
-  { id: 'cinema', label: 'Cinema (old)', tool: true, libraryOnly: true },
-  { id: 'library', label: 'All work' },
-  { id: 'liked', label: 'Liked' },
-  { id: 'elements', label: 'Elements' },
+  { id: 'image', label: 'Image', group: 'create' },
+  { id: 'video', label: 'Video', group: 'create' },
+  { id: 'create', label: 'Studio', group: 'create' },
+  { id: 'director', label: 'Storyboard', group: 'create' },
+  { id: 'upscale', label: 'Upscale', group: 'tools' },
+  { id: 'tools', label: 'All tools', group: 'tools' },
+  { id: 'library', label: 'All work', group: 'library' },
+  { id: 'elements', label: 'Elements', group: 'library' },
+  { id: 'boards', label: 'Boards', group: 'library' },
   { id: 'trash', label: 'Trash' },
-  { id: 'projects', label: 'Projects', projectLabel: 'Settings' },
+  { id: 'projects', label: 'Projects', projectLabel: 'Project settings' },
 ];
+const GROUPS = [['create', 'Create'], ['tools', 'Tools'], ['library', 'Library']];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
 // Tabs whose prompt the side chat can write into.
 const INSERT_TABS = new Set(['create', 'image', 'video', 'director', 'tools']);
 const DEFAULT_TAB = 'create';
 const labelOf = (tabId) => DZ_TABS.find((t) => t.id === tabId)?.label || tabId;
-const WORK_TABS = { library: 'all', liked: 'liked', trash: 'trash' };
+const WORK_TABS = { library: 'all', trash: 'trash' };
+// URL segment of a tab, and back. Old segments still open the right place.
+const SEGMENT = { create: 'studio', director: 'storyboard', library: 'work' };
+const segOf = (tab) => SEGMENT[tab] || tab;
+const TAB_OF = Object.fromEntries(DZ_TABS.map((t) => [segOf(t.id), t.id]));
+const OLD_SEGMENT = { create: 'create', director: 'director', library: 'library', liked: 'library', cinema: 'create' };
+const tabOfSeg = (seg) => TAB_OF[seg] || OLD_SEGMENT[seg] || DEFAULT_TAB;
 // Folder names from the top down to `id`.
 const pathOf = (folders, id) => {
   const byId = new Map(folders.map((f) => [f.id, f]));
@@ -103,18 +55,19 @@ const pathOf = (folders, id) => {
   for (let f = byId.get(id), n = 0; f && n < 10; f = byId.get(f.parent_id), n += 1) out.unshift(f.name);
   return out;
 };
-// /studio/<tab> — Library (personal);  /p/<project slug>/<tab> — inside a project.
+// /library/<tab> — Library (personal);  /p/<project slug>/<tab> — inside a project.
 const parsePath = (path) => {
   const parts = String(path || '').split('/').filter(Boolean);
-  if (parts[0] === 'p' && parts[1]) return { slug: decodeURIComponent(parts[1]), tab: TAB_IDS.has(parts[2]) ? parts[2] : DEFAULT_TAB };
-  return { slug: null, tab: TAB_IDS.has(parts[1]) ? parts[1] : DEFAULT_TAB };
+  if (parts[0] === 'p' && parts[1]) return { slug: decodeURIComponent(parts[1]), tab: tabOfSeg(parts[2]) };
+  return { slug: null, tab: tabOfSeg(parts[1]) };
 };
 const tabFromPath = (path) => parsePath(path).tab;
-const LIBRARY_ONLY = new Set(DZ_TABS.filter((t) => t.libraryOnly).map((t) => t.id));
-// A Library-only tool has no place in a project: there it is Create.
-const tabIn = (project, tab) => (project && LIBRARY_ONLY.has(tab) ? DEFAULT_TAB : tab);
-const pathFor = (project, tab) => (project ? `/p/${encodeURIComponent(project.slug)}/${tab}` : `/studio/${tab}`);
+// The Library has no project settings page: there "Projects" is the list of projects.
+const tabIn = (project, tab) => tab;
+const pathFor = (project, tab) => (project ? `/p/${encodeURIComponent(project.slug)}/${segOf(tab)}` : `/library/${segOf(tab)}`);
 const folderKey = (projectId) => `dz_folder_${projectId}`;
+const isLiked = () => typeof window !== 'undefined' && window.location.hash === '#liked';
+const plainClick = (e) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey;
 
 const NOTIFICATION_TTL = 12_000;
 const MAX_NOTIFICATIONS = 3;
@@ -123,6 +76,8 @@ export default function DzShell() {
   const [user, setUser] = useState(null);
   const [balance, setBalance] = useState(null);
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB);
+  const [liked, setLiked] = useState(false); // All work, Liked tab (/library/work#liked)
+  const [paletteOpen, setPaletteOpen] = useState(false); // ⌘K
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -151,9 +106,10 @@ export default function DzShell() {
   // Session check (the gateway already required sign-in) and initial tab.
   useEffect(() => {
     setActiveTab(tabFromPath(window.location.pathname));
+    setLiked(isLiked() || /\/liked\/?$/.test(window.location.pathname));
     try { setCollapsed(localStorage.getItem('dz_sidebar_collapsed') === '1'); } catch { /* storage is optional */ }
     dzFetchMe().then((u) => u && setUser(u)).catch((err) => console.error(err));
-    const onPop = () => { setActiveTab(tabFromPath(window.location.pathname)); loadProjectFromPath(); };
+    const onPop = () => { setActiveTab(tabFromPath(window.location.pathname)); setLiked(isLiked()); loadProjectFromPath(); };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -178,7 +134,6 @@ export default function DzShell() {
       const details = await dzProjectsApi.details(slug);
       if (seq !== navSeq.current) return;
       applyProject(details);
-      if (LIBRARY_ONLY.has(tab)) { setActiveTab(DEFAULT_TAB); window.history.replaceState(null, '', pathFor(details.project, DEFAULT_TAB)); }
       dzProjectsApi.touch(details.project.id).catch(() => {});
     } catch {
       if (seq !== navSeq.current) return;
@@ -315,9 +270,10 @@ export default function DzShell() {
     return () => clearInterval(timer);
   }, [user?.role]);
 
-  const openTab = useCallback((tabId) => {
+  const openTab = useCallback((tabId, { liked: wantLiked = false } = {}) => {
     if (!TAB_IDS.has(tabId)) return;
-    window.history.pushState(null, '', pathFor(project, tabId));
+    window.history.pushState(null, '', pathFor(project, tabId) + (wantLiked ? '#liked' : ''));
+    setLiked(wantLiked);
     setActiveTab(tabId);
     setMobileOpen(false);
   }, [project]);
@@ -332,6 +288,12 @@ export default function DzShell() {
     window.addEventListener('dz:use-element', onUse);
     return () => { window.removeEventListener(DZ_SEND_EVENT, onSend); window.removeEventListener('dz:use-element', onUse); };
   }, [openTab]);
+
+  useEffect(() => {
+    const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen((v) => !v); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const toggleSidebar = () => setCollapsed((prev) => {
     try { localStorage.setItem('dz_sidebar_collapsed', prev ? '0' : '1'); } catch { /* optional */ }
@@ -409,177 +371,176 @@ export default function DzShell() {
     openTab('upscale');
   };
 
-  // Splash while the session loads (instead of a black screen).
   // Splash until the session and the project in the URL are known (nothing can go to the wrong place).
   if (!user || (switching && !project && parsePath(typeof window !== 'undefined' ? window.location.pathname : '').slug)) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/25">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M16 10l6-3v10l-6-3" /></svg>
-        </div>
-        <span className="text-lg font-semibold text-foreground/80">Director</span>
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background">
+        <span className="h-10 w-10 rounded-xl bg-foreground" aria-hidden="true" />
+        <span className="text-lg font-semibold text-muted-foreground">Director</span>
       </div>
     );
   }
 
   const studioProps = { apiKey: DZ_SESSION_PLACEHOLDER, locale: 'en' };
-  const navLink = (tab) => {
-    const active = activeTab === tab.id;
-    const label = project && tab.projectLabel ? tab.projectLabel : tab.label;
-    const icon = project && tab.id === 'projects' ? ICONS.settings : ICONS[tab.id];
-    return (
-      <a
-        key={tab.id}
-        href={pathFor(project, tab.id)}
-        onClick={(e) => { if (e.button === 0 && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openTab(tab.id); } }}
-        aria-current={active ? 'page' : undefined}
-        title={isCollapsed ? label : undefined}
-        className={`relative flex items-center rounded-xl text-base font-semibold transition-colors
-          ${isCollapsed ? 'h-11 w-11 justify-center mx-auto' : 'px-3 py-2 gap-3'}
-          ${active ? 'bg-signal/15 text-signal border border-signal/25' : 'text-muted-foreground hover:text-foreground hover:bg-accent/60 border border-transparent'}`}
-      >
-        {active && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-primary" />}
-        <span className="flex-shrink-0">{icon}</span>
-        {!isCollapsed && <span className="truncate">{label}</span>}
-        {running[tab.id] > 0 && <span className={`${isCollapsed ? 'absolute top-1.5 right-1.5' : 'ml-auto'} h-2 w-2 rounded-full bg-primary animate-pulse`} />}
-      </a>
-    );
-  };
-  // Notifications move left of a right-hand panel instead of covering its button.
-  const rightPanelOpen = Boolean(upscaleDrawer) || activeTab === 'upscale';
   const isCollapsed = collapsed && !mobileOpen;
   const runningTabs = Object.keys(running);
+  const runningCount = runningTabs.reduce((n, t) => n + running[t], 0);
+  // Notifications move left of a right-hand panel instead of covering its button.
+  const rightPanelOpen = Boolean(upscaleDrawer) || activeTab === 'upscale';
+  const go = (tab) => (e) => { if (plainClick(e)) { e.preventDefault(); openTab(tab); } };
+
+  // Sidebar item (section 4.2): 34 px, radius 8, icon + label, optional count or running dot.
+  const NavItem = ({ tab, label, href, onClick, icon: Icon, active, dot, trailing, children }) => (
+    <a
+      href={href}
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      title={isCollapsed ? label : undefined}
+      className={cn('relative flex h-[34px] min-w-0 items-center rounded-md text-base font-medium transition-colors duration-state',
+        isCollapsed ? 'mx-auto w-10 justify-center' : 'gap-2.5 px-2.5',
+        active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
+    >
+      {Icon ? <Icon size={16} weight={active ? 'fill' : 'regular'} className="shrink-0" /> : children}
+      {!isCollapsed && <span className="truncate">{label}</span>}
+      {!isCollapsed && trailing}
+      {dot && <span className={cn('h-1.5 w-1.5 rounded-full bg-signal', isCollapsed ? 'absolute right-1.5 top-1.5' : 'ml-auto')} aria-label="Running" />}
+    </a>
+  );
+  const tabItem = (id) => {
+    const t = DZ_TABS.find((x) => x.id === id);
+    const label = project && t.projectLabel ? t.projectLabel : t.label;
+    return <NavItem key={id} tab={id} label={label} href={pathFor(project, id)} onClick={go(id)} icon={ICONS[id]} active={activeTab === id} dot={running[id] > 0} />;
+  };
+  const GroupTitle = ({ children, action }) => (isCollapsed
+    ? <div className="mx-3 my-2 h-px bg-border" />
+    : (
+      <div className="mb-1 mt-5 flex h-5 items-center justify-between px-2.5 first:mt-1">
+        <span className="text-overline uppercase text-muted-foreground">{children}</span>
+        {action}
+      </div>
+    ));
+  const activeProjects = projects.filter((p) => !p.archived);
 
   return (
     <div
-      className="h-screen bg-background flex flex-col overflow-hidden text-foreground relative"
+      className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground"
       onDragOver={(e) => e.preventDefault()}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       {dragging && (
-        <div className="fixed inset-0 z-[100] bg-signal/10 backdrop-blur-sm border-2 border-dashed border-signal/50 flex items-center justify-center pointer-events-none">
-          <div className="rounded-2xl border border-border bg-card px-6 py-4 text-lg font-semibold text-foreground">Drop files to use them as references</div>
+        <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center border-2 border-dashed border-signal/60 bg-scrim">
+          <div className="glass rounded-xl border border-border px-6 py-4 text-lg font-semibold text-foreground shadow-popover">Drop files to use them as references</div>
         </div>
       )}
 
-      {/* Header */}
-      <header className="flex-shrink-0 h-14 border-b border-border flex items-center justify-between px-4 bg-card/90 backdrop-blur-md z-50 gap-4">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setMobileOpen((v) => !v)} className="md:hidden p-2 rounded-lg bg-muted hover:bg-accent text-muted-foreground" aria-label="Menu">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+      {/* Header, 48 px (section 4.1) */}
+      <header className="z-50 grid h-12 flex-shrink-0 grid-cols-[1fr_minmax(0,360px)_1fr] items-center gap-3 border-b border-border bg-background px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <button type="button" onClick={() => setMobileOpen((v) => !v)} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:hidden" aria-label="Menu">
+            <List size={18} />
           </button>
-          <button onClick={toggleSidebar} className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg bg-muted hover:bg-accent text-muted-foreground hover:text-foreground border border-border" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={collapsed ? 'rotate-180' : ''}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /><path d="M14 9l-3 3 3 3" /></svg>
+          <button type="button" onClick={toggleSidebar} className="hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground md:flex" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+            <SidebarSimple size={18} />
           </button>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-signal/20">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M16 10l6-3v10l-6-3" /></svg>
-            </div>
-            <span className="text-lg font-bold tracking-tight hidden lg:block">Director</span>
-          </div>
-          {/* Where you are: Library or a project (and the folder new work goes to) */}
-          <div className="flex min-w-0 items-center gap-1">
-            <ProjectSwitcher ctx={{ project, folder }} projects={projects} onOpen={openProject} onNew={() => setNewProjectOpen(true)} onAll={() => openProject(null, 'projects')} />
-          </div>
-        </div>
-        <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={() => { setUpscaleDrawer(null); setChatOpen((v) => !v); }} aria-pressed={chatOpen} title="Chat with assistants"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-base font-semibold ${chatOpen ? 'border-signal/60 bg-signal/10 text-signal' : 'border-border text-foreground/90 hover:bg-accent'}`}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-            <span className="hidden sm:inline">Chat</span>
-          </button>
-          <ThemeToggle />
-          {balance ? (
-            <div className="hidden min-w-0 items-center gap-1.5 xl:flex" aria-label="Provider balances">
-              {balance.map((b) => (
-                <span key={b.id} title={b.hint} className={`flex items-center gap-2 rounded-full border px-3 py-1 text-base ${b.low ? 'border-warning/40 text-warning' : 'border-border text-foreground/90'}`}>
-                  <span className="text-muted-foreground">{b.name}</span>
-                  <span className="font-semibold tabular-nums">{b.text}</span>
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <span className="flex min-w-0 max-w-[180px] items-center gap-2 rounded-full border border-border px-3 py-1 text-base text-foreground/90" title={balance ? balance.map((b) => `${b.name} ${b.text}`).join(' · ') : user.displayName}>
-            <span className="h-2 w-2 shrink-0 rounded-full bg-success" />
-            <span className="truncate">{user.displayName}</span>
-          </span>
-          <a href={changes?.unseen ? '/dz/settings#changes' : '/dz/settings'} title={changes?.unseen ? `${changes.unseen} new provider change(s) — applied automatically` : undefined} className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-base font-semibold text-foreground/90 hover:bg-accent">
-            {changes?.unseen > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 min-w-5 h-5 px-1 rounded-full bg-primary text-[13px] leading-5 text-center font-bold text-primary-foreground">{changes.unseen}</span>
-            )}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 7 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 1.17 14H1a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 2.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 7 4.6 1.65 1.65 0 0 0 8 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.17l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.15.67.4.88.72.21.32.33.7.32 1.08V11a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-            <span className="hidden sm:inline">Settings</span>
+          <a href={pathFor(project, DEFAULT_TAB)} onClick={go(DEFAULT_TAB)} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-base font-semibold text-foreground">
+            <span className="h-[18px] w-[18px] rounded-[5px] bg-foreground" aria-hidden="true" />
+            <span className="hidden sm:inline">Director</span>
           </a>
+          {/* Workspace: Library or a project */}
+          <ProjectSwitcher ctx={{ project, folder }} projects={projects} onOpen={openProject} onNew={() => setNewProjectOpen(true)} onAll={() => openProject(null, 'projects')} />
+        </div>
+        <button type="button" onClick={() => setPaletteOpen(true)} className="hidden h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 text-left text-base text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground md:flex" aria-label="Search or run a command">
+          <MagnifyingGlass size={16} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Search or run a command</span>
+          <kbd className="rounded-xs border border-border px-1.5 font-sans text-xs text-muted-foreground">⌘K</kbd>
+        </button>
+        <div className="flex min-w-0 items-center justify-end gap-2">
+          {runningCount > 0 && (
+            <button type="button" onClick={() => openTab(runningTabs.includes(activeTab) ? activeTab : runningTabs[0])} title={runningTabs.map((t) => `${labelOf(t)}: ${running[t]}`).join(' · ')}
+              className="flex h-8 items-center gap-2 rounded-full border border-border px-3 text-sm font-medium text-foreground transition-colors duration-state hover:bg-accent">
+              <span className="h-1.5 w-1.5 rounded-full bg-signal" />
+              {runningCount} running
+            </button>
+          )}
+          <button type="button" onClick={() => { setUpscaleDrawer(null); setChatOpen((v) => !v); }} aria-pressed={chatOpen} aria-label="Assistant" title="Assistant"
+            className={cn('flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-state', chatOpen ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}>
+            <ChatCircle size={18} weight={chatOpen ? 'fill' : 'regular'} />
+          </button>
         </div>
       </header>
-      {/* The project's color under the header: you always see you're inside it */}
-      {project && <div className="h-[3px] w-full flex-shrink-0" style={{ background: project.color }} aria-hidden="true" />}
 
-      <div className="flex-1 min-h-0 flex relative overflow-hidden">
-        {mobileOpen && <div className="fixed inset-0 bg-overlay/70 z-40 md:hidden" onClick={() => setMobileOpen(false)} />}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {mobileOpen && <div className="fixed inset-0 z-40 bg-scrim md:hidden" onClick={() => setMobileOpen(false)} />}
 
-        {/* Sidebar */}
-        <aside className={`fixed top-14 bottom-0 left-0 md:static md:h-full z-30 bg-card/95 border-r border-border flex flex-col transition-all duration-300 flex-shrink-0 select-none
-          ${mobileOpen ? 'translate-x-0 w-64 z-50' : '-translate-x-full md:translate-x-0'} ${collapsed ? 'md:w-16' : 'md:w-56'}`}>
-          <nav aria-label="Navigation" className="flex-1 overflow-y-auto custom-scrollbar py-3 px-2 space-y-1">
-            {project && (
-              <>
-                <a href={pathFor(null, activeTab === 'projects' ? 'create' : activeTab)} onClick={(e) => { if (e.button === 0 && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openProject(null, activeTab === 'projects' ? 'create' : activeTab); setMobileOpen(false); } }}
-                  title={isCollapsed ? 'Back to Library' : undefined}
-                  className={`flex items-center rounded-xl text-base text-muted-foreground hover:text-foreground hover:bg-accent/60 ${isCollapsed ? 'h-11 w-11 justify-center mx-auto' : 'px-3 py-2 gap-3'}`}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-                  {!isCollapsed && <span>Library</span>}
-                </a>
-                {!isCollapsed && (
-                  <div className="flex min-w-0 items-center gap-2 px-3 pb-1 pt-1">
-                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: project.color }} />
-                    <span className="truncate text-lg font-bold text-foreground" title={project.name}>{project.name}</span>
-                    {project.archived && <span className="shrink-0 text-muted-foreground">· archived</span>}
-                  </div>
-                )}
-              </>
-            )}
-            {DZ_TABS.filter((t) => t.tool && !(project && t.libraryOnly)).map(navLink)}
-            {project && (
-              <div className="py-1">
-                <FolderTree project={project} folders={folders} current={folder} collapsed={isCollapsed}
-                  onPick={(id) => { pickFolder(id); if (!DZ_TABS.find((t) => t.id === activeTab)?.tool && !WORK_TABS[activeTab]) openTab('create'); setMobileOpen(false); }}
-                  onNew={(parent) => setFolderDialog({ mode: 'new', parent })}
-                  onRename={(f) => setFolderDialog({ mode: 'rename', folder: f })}
-                  onDelete={deleteFolder}
-                  onDropItems={(ids, folderId) => dropItems(ids, project.id, folderId)} />
+        {/* Sidebar, 224 px / 56 px collapsed (section 4.2) */}
+        <aside className={cn('fixed bottom-0 left-0 top-12 z-30 flex flex-shrink-0 select-none flex-col border-r border-border bg-background transition-[width,transform] duration-sheet ease-soft md:static md:h-full',
+          mobileOpen ? 'z-50 w-56 translate-x-0' : '-translate-x-full md:translate-x-0', collapsed ? 'md:w-14' : 'md:w-56')}>
+          <nav aria-label="Navigation" className="custom-scrollbar flex-1 overflow-y-auto px-2 pb-2 pt-3">
+            {GROUPS.map(([g, title]) => (
+              <div key={g}>
+                <GroupTitle>{title}</GroupTitle>
+                <div className="space-y-0.5">{DZ_TABS.filter((t) => t.group === g).map((t) => tabItem(t.id))}</div>
               </div>
-            )}
-            <div className="mx-2 my-2 border-t border-border" />
-            {DZ_TABS.filter((t) => !t.tool && (project || t.id !== 'projects')).map(navLink)}
-            {!project && (
-              <>
-                <div className="mx-2 my-2 border-t border-border" />
-                {!isCollapsed ? (
-                  <div className="flex items-center justify-between px-3 pb-1 pt-1">
-                    <a href="/studio/projects" onClick={(e) => { if (e.button === 0 && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openTab('projects'); } }} className="text-base font-semibold text-muted-foreground/80 hover:text-foreground">Projects</a>
-                    <button type="button" onClick={() => setNewProjectOpen(true)} className="rounded-md px-1.5 text-lg leading-6 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="New project" title="New project">+</button>
+            ))}
+
+            <GroupTitle action={(
+              <button type="button" onClick={() => setNewProjectOpen(true)} className="flex h-5 w-5 items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="New project" title="New project"><Plus size={14} /></button>
+            )}>
+              <a href="/library/projects" onClick={(e) => { if (plainClick(e)) { e.preventDefault(); openProject(null, 'projects'); } }} className="hover:text-foreground">Projects</a>
+            </GroupTitle>
+            <div className="space-y-0.5">
+              {(isCollapsed ? activeProjects.slice(0, 5) : activeProjects.slice(0, 8)).map((p) => {
+                const here = project?.id === p.id;
+                return (
+                  <div key={p.id}>
+                    <a href={pathFor(p, here ? activeTab : DEFAULT_TAB)}
+                      onClick={(e) => { if (plainClick(e)) { e.preventDefault(); if (!here) openProject(p, DEFAULT_TAB); setMobileOpen(false); } }}
+                      onDragOver={(e) => { if (Array.from(e.dataTransfer.types).includes('application/x-dz-items')) { e.preventDefault(); e.stopPropagation(); e.currentTarget.dataset.over = '1'; } }}
+                      onDragLeave={(e) => { delete e.currentTarget.dataset.over; }}
+                      onDrop={(e) => { delete e.currentTarget.dataset.over; const raw = e.dataTransfer.getData('application/x-dz-items'); if (!raw) return; e.preventDefault(); e.stopPropagation(); try { dropItems(JSON.parse(raw), p.id, null); } catch { /* not ours */ } }}
+                      title={isCollapsed ? p.name : undefined}
+                      className={cn('flex h-[34px] min-w-0 items-center rounded-md text-base font-medium transition-colors duration-state data-[over]:ring-2 data-[over]:ring-signal',
+                        isCollapsed ? 'mx-auto w-10 justify-center' : 'gap-2.5 px-2.5',
+                        here ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}>
+                      <span className="flex w-4 shrink-0 justify-center"><span className="h-2 w-2 rounded-full" style={{ background: p.color }} /></span>
+                      {!isCollapsed && <span className="truncate">{p.name}</span>}
+                    </a>
+                    {here && !isCollapsed && (
+                      <div className="ml-3 border-l border-border pl-1.5">
+                        <FolderTree project={project} folders={folders} current={folder} collapsed={false}
+                          onPick={(id) => { pickFolder(id); if (!DZ_TABS.find((t) => t.id === activeTab)?.group && !WORK_TABS[activeTab]) openTab(DEFAULT_TAB); setMobileOpen(false); }}
+                          onNew={(parent) => setFolderDialog({ mode: 'new', parent })}
+                          onRename={(f) => setFolderDialog({ mode: 'rename', folder: f })}
+                          onDelete={deleteFolder}
+                          onDropItems={(ids, folderId) => dropItems(ids, project.id, folderId)} />
+                        {tabItem('projects')}
+                      </div>
+                    )}
                   </div>
-                ) : navLink(DZ_TABS.find((t) => t.id === 'projects'))}
-                {!isCollapsed && projects.filter((p) => !p.archived).slice(0, 8).map((p) => (
-                  <a key={p.id} href={pathFor(p, 'create')}
-                    onClick={(e) => { if (e.button === 0 && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openProject(p, 'create'); setMobileOpen(false); } }}
-                    onDragOver={(e) => { if (Array.from(e.dataTransfer.types).includes('application/x-dz-items')) { e.preventDefault(); e.stopPropagation(); e.currentTarget.dataset.over = '1'; } }}
-                    onDragLeave={(e) => { delete e.currentTarget.dataset.over; }}
-                    onDrop={(e) => { delete e.currentTarget.dataset.over; const raw = e.dataTransfer.getData('application/x-dz-items'); if (!raw) return; e.preventDefault(); e.stopPropagation(); try { dropItems(JSON.parse(raw), p.id, null); } catch { /* not ours */ } }}
-                    className="flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-3 text-base text-muted-foreground hover:bg-accent/60 hover:text-foreground data-[over]:ring-2 data-[over]:ring-signal">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.color }} />
-                    <span className="truncate">{p.name}</span>
-                  </a>
-                ))}
-                {!isCollapsed && projects.filter((p) => !p.archived).length > 8 && (
-                  <button type="button" onClick={() => openTab('projects')} className="flex h-9 w-full items-center px-3 text-base text-muted-foreground hover:text-foreground">All projects…</button>
-                )}
-              </>
-            )}
+                );
+              })}
+              {project && !activeProjects.some((p) => p.id === project.id) && !isCollapsed && (
+                <div className="flex h-[34px] items-center gap-2.5 rounded-md bg-muted px-2.5 text-base font-medium text-foreground">
+                  <span className="flex w-4 justify-center"><span className="h-2 w-2 rounded-full" style={{ background: project.color }} /></span>
+                  <span className="truncate">{project.name}</span>{project.archived && <span className="text-sm text-muted-foreground">archived</span>}
+                </div>
+              )}
+              {!isCollapsed && activeProjects.length > 8 && (
+                <NavItem label="All projects…" href="/library/projects" onClick={(e) => { if (plainClick(e)) { e.preventDefault(); openProject(null, 'projects'); } }}><span className="w-4" /></NavItem>
+              )}
+              <NavItem label="New project" href="#new-project" onClick={(e) => { e.preventDefault(); setNewProjectOpen(true); }}><Plus size={16} className="shrink-0" /></NavItem>
+            </div>
+
+            <div className="mx-2.5 my-3 h-px bg-border" />
+            {tabItem('trash')}
           </nav>
+
+          {/* Account row: opens the account menu (balances, settings, theme, sign out) */}
+          <div className="border-t border-border p-2">
+            <AccountMenu user={user} balance={balance} changes={changes} collapsed={isCollapsed} />
+          </div>
         </aside>
 
         {/* Studios stay mounted, so running generations survive switching tabs */}
@@ -602,9 +563,6 @@ export default function DzShell() {
           <div className={activeTab === 'tools' ? 'h-full w-full' : 'hidden'}>
             <DzTools key={project?.id || 'library'} {...studioProps} {...callbacks('tools')} />
           </div>
-          <div className={activeTab === 'cinema' ? 'h-full w-full' : 'hidden'}>
-            <DzCinemaStudio {...studioProps} {...callbacks('cinema')} />
-          </div>
           <div className={activeTab === 'image' ? 'h-full w-full' : 'hidden'}>
             <DzCreateStudio mode="image" {...studioProps} {...callbacks('image')} droppedFiles={activeTab === 'image' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
@@ -613,7 +571,16 @@ export default function DzShell() {
           </div>
           {WORK_TABS[activeTab] && (
             <div className="h-full w-full">
-              <DzLibrary key={activeTab} section={WORK_TABS[activeTab]} onGenerationError={callbacks('library').onGenerationError} />
+              <DzLibrary key={activeTab} section={WORK_TABS[activeTab]} initialLiked={activeTab === 'library' && liked}
+                onLikedChange={(on) => { setLiked(on); window.history.replaceState(null, '', pathFor(project, 'library') + (on ? '#liked' : '')); }}
+                onGenerationError={callbacks('library').onGenerationError} />
+            </div>
+          )}
+          {activeTab === 'boards' && (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-8 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-muted-foreground"><Layout size={24} /></span>
+              <p className="text-lg font-semibold">Boards come later</p>
+              <p className="max-w-sm text-muted-foreground">Moodboards for a project: pictures, notes and references in one place. They are planned after the redesign.</p>
             </div>
           )}
           <div className={activeTab === 'upscale' ? 'h-full w-full' : 'hidden'}>
@@ -667,49 +634,49 @@ export default function DzShell() {
         </SidePanel>
 
         {imageMenu && (
-          <div role="menu" className="fixed z-[210] w-52 overflow-hidden rounded-xl border border-border bg-popover py-1 text-base shadow-[0_12px_32px_rgba(0,0,0,0.6)]" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
+          <div role="menu" className="glass fixed z-[210] w-52 overflow-hidden rounded-xl border border-border p-1 text-base shadow-popover" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
             {dzUpscaleSpec() && (
-              <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-foreground hover:bg-muted" onClick={() => { setUpscaleDrawer({ url: imageMenu.url, result: null }); setImageMenu(null); }}>Upscale…</button>
+              <button type="button" role="menuitem" className="block h-8 w-full rounded-md px-2.5 text-left font-medium text-foreground hover:bg-accent" onClick={() => { setUpscaleDrawer({ url: imageMenu.url, result: null }); setImageMenu(null); }}>Upscale…</button>
             )}
-            <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-foreground hover:bg-muted" onClick={() => { openInUpscaleTab(imageMenu.url); setImageMenu(null); }}>Open in Upscale tab</button>
-            <button type="button" role="menuitem" className="block w-full px-3 py-2 text-left text-foreground hover:bg-muted" onClick={() => { downloadUrl(imageMenu.url); setImageMenu(null); }}>Download</button>
+            <button type="button" role="menuitem" className="block h-8 w-full rounded-md px-2.5 text-left font-medium text-foreground hover:bg-accent" onClick={() => { openInUpscaleTab(imageMenu.url); setImageMenu(null); }}>Open in Upscale tab</button>
+            <button type="button" role="menuitem" className="block h-8 w-full rounded-md px-2.5 text-left font-medium text-foreground hover:bg-accent" onClick={() => { downloadUrl(imageMenu.url); setImageMenu(null); }}>Download</button>
           </div>
         )}
       </div>
 
-      {/* Notifications: dark cards, top-right under the header (never over the
-          prompt panel and its buttons). "Generating…" only for other tabs —
-          on the open one the card in the grid already shows it. */}
+      {/* Toasts (section 5.11): top centre, glass, radius 12. "Generating…" only for other
+          tabs — on the open one the tile in the grid already shows it. */}
       {(runningTabs.some((t) => t !== activeTab) || notifications.length > 0) && (
-        <div aria-live="polite" className={`fixed top-16 right-3 z-[200] flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none ${rightPanelOpen ? 'md:right-[440px]' : 'md:right-5'}`}>
+        <div aria-live="polite" className={cn('pointer-events-none fixed left-1/2 top-14 z-[200] flex w-[440px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2', rightPanelOpen && 'md:left-[calc(50%-220px)]')}>
           {runningTabs.filter((t) => t !== activeTab).map((tabId) => (
-            <div key={tabId} role="status" className="pointer-events-auto flex items-center gap-3 rounded-xl border border-border bg-popover/95 backdrop-blur-md px-3.5 py-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
-              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-signal/25 border-t-[#22d3ee]" />
+            <div key={tabId} role="status" className="dz-toast glass pointer-events-auto flex w-full items-center gap-3 rounded-xl border border-border px-3.5 py-2.5 text-base shadow-popover">
+              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-signal/25 border-t-signal" />
               <span className="font-semibold text-foreground">{labelOf(tabId)}</span>
               <span className="text-muted-foreground">generating{running[tabId] > 1 ? ` · ${running[tabId]}` : ''}…</span>
             </div>
           ))}
           {notifications.map((n) => (
-            <div key={n.id} role={n.type === 'error' ? 'alert' : 'status'} className="dz-toast pointer-events-auto flex items-start gap-3 overflow-hidden rounded-xl border border-border bg-popover/95 backdrop-blur-md p-2.5 pr-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
-              <span className={`w-1 self-stretch rounded-full ${n.type === 'error' ? 'bg-destructive' : 'bg-primary'}`} />
-              {n.type === 'success' && n.url && /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(n.url) && (
-                <img src={n.url} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover border border-border" />
-              )}
-              <div className="min-w-0 flex-1 py-0.5">
-                <p className="font-semibold text-foreground">
+            <div key={n.id} role={n.type === 'error' ? 'alert' : 'status'} className="dz-toast glass pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-border px-3.5 py-2.5 text-base shadow-popover">
+              {n.type === 'success' && n.url && /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(n.url)
+                ? <img src={n.url} alt="" className="h-9 w-9 shrink-0 rounded-sm border border-border object-cover" />
+                : <span className={cn('mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full', n.type === 'error' ? 'bg-destructive' : n.type === 'success' ? 'bg-success' : 'bg-muted-foreground')} />}
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-foreground">
                   {n.title || labelOf(n.tabId)} {n.type !== 'notice' && !n.title && <span className="font-normal text-muted-foreground">{n.type === 'error' ? '· failed' : '· ready'}</span>}
                 </p>
-                {n.type === 'error' && <p className="mt-0.5 line-clamp-2 text-base text-destructive" title={n.message}>{n.message}</p>}
-                {n.type === 'notice' && <p className="mt-0.5 line-clamp-3 text-base text-muted-foreground" title={n.message}>{n.message}</p>}
-                {n.type === 'success' && n.tabId !== activeTab && (
-                  <button type="button" onClick={() => { openTab(n.tabId); dismiss(n.id); }} className="mt-0.5 text-base font-semibold text-signal hover:text-signal">Open</button>
-                )}
+                {n.type === 'error' && <p className="mt-0.5 line-clamp-2 text-destructive" title={n.message}>{n.message}</p>}
+                {n.type === 'notice' && <p className="mt-0.5 line-clamp-3 text-muted-foreground" title={n.message}>{n.message}</p>}
               </div>
-              <button type="button" onClick={() => dismiss(n.id)} className="mt-0.5 h-6 w-6 shrink-0 rounded-md text-subtle hover:bg-accent hover:text-foreground" aria-label="Dismiss">✕</button>
+              {n.type === 'success' && n.tabId !== activeTab && (
+                <button type="button" onClick={() => { openTab(n.tabId); dismiss(n.id); }} className="shrink-0 rounded-md px-1.5 font-semibold text-foreground hover:bg-accent">Open</button>
+              )}
+              <button type="button" onClick={() => dismiss(n.id)} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Dismiss"><X size={14} /></button>
             </div>
           ))}
         </div>
       )}
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} project={project} projects={activeProjects}
+        onTab={(id, opts) => openTab(id, opts)} onProject={(p) => openProject(p, DEFAULT_TAB)} isAdmin={user.role === 'admin'} />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} colors={colors} onCreated={(p) => { reloadProjects(); openProject(p); }} />
       <NameDialog open={Boolean(folderDialog)} onOpenChange={(o) => { if (!o) setFolderDialog(null); }}
         title={folderDialog?.mode === 'rename' ? 'Rename folder' : folderDialog?.parent ? `New folder in “${folderDialog.parent.name}”` : 'New folder'}
@@ -723,7 +690,119 @@ export default function DzShell() {
         }} />
       {toElement && <ToElementDialog items={toElement} onClose={() => setToElement(null)} onError={(message) => push({ type: 'error', title: 'Elements', message })} />}
       <MoveDialog item={moveItem} onOpenChange={(o) => { if (!o) setMoveItem(null); }} projects={projects} />
-      <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.16,1,.3,1)}@keyframes dzToastIn{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}.dz-sheet{animation:dzDrawerIn 240ms cubic-bezier(.16,1,.3,1)}@keyframes dzDrawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>
+      <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.2,.8,.2,1)}@keyframes dzToastIn{from{transform:translateY(-12px);opacity:0}to{transform:none;opacity:1}}.dz-sheet{animation:dzDrawerIn 240ms cubic-bezier(.16,1,.3,1)}@keyframes dzDrawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>
     </div>
+  );
+}
+
+// Account menu (section 4.1/4.2): provider balances moved here from the header.
+function AccountMenu({ user, balance, changes, collapsed }) {
+  const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } = DropdownMenuParts;
+  const [theme, setTheme] = useTheme();
+  const initial = (user.displayName || user.username || '?').trim().charAt(0).toUpperCase();
+  const unseen = changes?.unseen || 0;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className={cn('flex w-full items-center rounded-md text-left transition-colors duration-state hover:bg-accent', collapsed ? 'h-10 justify-center' : 'h-11 gap-2.5 px-2')} aria-label="Account menu">
+          <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
+            {initial}
+            {unseen > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-signal" />}
+          </span>
+          {!collapsed && (
+            <>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-base font-medium leading-5 text-foreground">{user.displayName}</span>
+                <span className="block truncate text-xs capitalize text-muted-foreground">{user.role}</span>
+              </span>
+              <CaretUpDown size={14} className="shrink-0 text-muted-foreground" />
+            </>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-64">
+        {balance && (
+          <>
+            <DropdownMenuLabel className="text-overline uppercase text-muted-foreground">Provider balances</DropdownMenuLabel>
+            {balance.map((b) => (
+              <div key={b.id} title={b.hint} className="flex h-8 items-center justify-between px-2 text-base">
+                <span className="text-muted-foreground">{b.name}</span>
+                <span className={cn('font-medium tabular-nums', b.low ? 'text-warning' : 'text-foreground')}>{b.text}</span>
+              </div>
+            ))}
+            <DropdownMenuSeparator />
+          </>
+        )}
+        <DropdownMenuItem asChild>
+          <a href={unseen ? '/settings/changes' : '/settings'} className="h-8"><GearSix size={16} /> Settings
+            {unseen > 0 && <span className="ml-auto rounded-full bg-signal/15 px-1.5 text-xs font-semibold text-signal" title={`${unseen} new provider change(s) — applied automatically`}>{unseen}</span>}
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem className="h-8" onSelect={(e) => { e.preventDefault(); setTheme(theme === 'light' ? 'dark' : 'light'); }}>
+          {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />} {theme === 'light' ? 'Dark theme' : 'Light theme'}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="h-8" onSelect={() => { const f = document.createElement('form'); f.method = 'post'; f.action = '/logout'; document.body.appendChild(f); f.submit(); }}>
+          <SignOut size={16} /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ⌘K: go anywhere — screens, projects, settings, theme.
+const SETTINGS_LINKS = [
+  ['account', 'Settings · My password'], ['text-models', 'Settings · Text models'],
+  ['providers', 'Settings · Providers', true], ['changes', 'Settings · Provider changes', true], ['models', 'Settings · Recommended models', true], ['people', 'Settings · Accounts', true],
+];
+function CommandPalette({ open, onOpenChange, project, projects, onTab, onProject, isAdmin }) {
+  const { Dialog, DialogContent, DialogTitle } = DialogParts;
+  const [q, setQ] = useState('');
+  const [index, setIndex] = useState(0);
+  const [, setTheme] = useTheme();
+  useEffect(() => { if (open) { setQ(''); setIndex(0); } }, [open]);
+  const items = [
+    ...DZ_TABS.filter((t) => t.id !== 'projects').map((t) => ({ key: `t-${t.id}`, label: t.label, hint: project ? project.name : 'Library', icon: ICONS[t.id], run: () => onTab(t.id) })),
+    { key: 't-liked', label: 'Liked', hint: 'All work', icon: Images, run: () => onTab('library', { liked: true }) },
+    { key: 't-projects', label: project ? 'Project settings' : 'All projects', icon: FolderSimple, run: () => onTab('projects') },
+    ...projects.map((p) => ({ key: `p-${p.id}`, label: p.name, hint: 'Project', dot: p.color, run: () => onProject(p) })),
+    ...SETTINGS_LINKS.filter(([, , admin]) => isAdmin || !admin).map(([sec, label]) => ({ key: `s-${sec}`, label, icon: GearSix, run: () => { window.location.href = `/settings/${sec}`; } })),
+    { key: 'theme-dark', label: 'Dark theme', icon: Moon, run: () => setTheme('dark') },
+    { key: 'theme-light', label: 'Light theme', icon: Sun, run: () => setTheme('light') },
+  ];
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? items.filter((i) => `${i.label} ${i.hint || ''}`.toLowerCase().includes(needle)) : items;
+  const pick = (item) => { onOpenChange(false); item?.run(); };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="top-[18%] max-w-[560px] translate-y-0 gap-0 overflow-hidden p-0 [&>button]:hidden">
+        <DialogTitle className="sr-only">Search or run a command</DialogTitle>
+        <div className="flex h-12 items-center gap-2.5 border-b border-border px-4">
+          <MagnifyingGlass size={16} className="text-muted-foreground" />
+          <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setIndex(0); }} placeholder="Search or run a command"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => Math.min(i + 1, shown.length - 1)); }
+              if (e.key === 'ArrowUp') { e.preventDefault(); setIndex((i) => Math.max(i - 1, 0)); }
+              if (e.key === 'Enter') { e.preventDefault(); pick(shown[index]); }
+            }}
+            className="h-full min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none" />
+        </div>
+        <div role="listbox" className="custom-scrollbar max-h-[360px] overflow-y-auto p-1.5">
+          {shown.length === 0 && <p className="px-3 py-6 text-center text-muted-foreground">Nothing found.</p>}
+          {shown.map((item, i) => {
+            const Icon = item.icon;
+            return (
+              <button key={item.key} type="button" role="option" aria-selected={i === index} onMouseEnter={() => setIndex(i)} onClick={() => pick(item)}
+                className={cn('flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-base font-medium', i === index ? 'bg-accent text-foreground' : 'text-foreground')}>
+                <span className="flex w-4 justify-center text-muted-foreground">{Icon ? <Icon size={16} /> : <span className="h-2 w-2 rounded-full" style={{ background: item.dot }} />}</span>
+                <span className="truncate">{item.label}</span>
+                {item.hint && <span className="ml-auto truncate text-sm text-muted-foreground">{item.hint}</span>}
+                {i === index && <ArrowRight size={14} className={cn('shrink-0 text-muted-foreground', !item.hint && 'ml-auto')} />}
+              </button>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

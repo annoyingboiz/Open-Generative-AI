@@ -5,7 +5,6 @@ export { default as VideoStudio } from './components/VideoStudio';
 export { default as LipSyncStudio } from './components/LipSyncStudio';
 export { default as RecastStudio } from './components/RecastStudio';
 export { default as CinemaStudio } from './components/CinemaStudio';
-export { default as DzCinemaStudio } from './components/DzCinemaStudio'; // DZ
 export { default as DzUpscaleStudio, DzUpscalePanel } from './components/DzUpscale'; // DZ
 export { default as DzLibrary } from './components/DzLibrary'; // DZ
 export { default as DzCreateStudio, DZ_SEND_EVENT } from './components/DzCreateStudio'; // DZ

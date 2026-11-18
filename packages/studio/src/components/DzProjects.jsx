@@ -124,15 +124,14 @@ export function ProjectSwitcher({ ctx, projects = [], onOpen, onNew, onAll }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className={cn("flex h-9 min-w-0 max-w-[260px] items-center gap-2 rounded-full border px-3 text-base font-semibold transition-colors",
-            ctx.project ? "border-transparent text-foreground" : "border-border text-foreground/80 hover:bg-accent")}
-          style={ctx.project ? { background: `${ctx.project.color}26`, boxShadow: `inset 0 0 0 1px ${ctx.project.color}66` } : undefined}
+          type="button"
+          className="flex h-8 min-w-0 max-w-[240px] items-center gap-2 rounded-md border border-border px-2.5 text-base font-medium text-foreground transition-colors duration-state hover:bg-accent"
           aria-label={ctx.project ? `Project ${ctx.project.name}. Switch` : "Library. Switch to a project"}
         >
-          {ctx.project ? <Dot color={ctx.project.color} /> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>}
+          {ctx.project && <Dot color={ctx.project.color} />}
           <span className="truncate">{ctx.project ? ctx.project.name : "Library"}</span>
-          {ctx.project?.archived && <Badge variant="secondary">archived</Badge>}
-          <span className="opacity-60">▾</span>
+          {ctx.project?.archived && <span className="text-sm text-muted-foreground">archived</span>}
+          <svg width="12" height="12" viewBox="0 0 256 256" fill="currentColor" className="shrink-0 text-muted-foreground" aria-hidden="true"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" /></svg>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">

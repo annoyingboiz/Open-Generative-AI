@@ -397,7 +397,13 @@ export function createStoryboards({ db, projects, generations, log }) {
   }
 
   // The last frame of a shot's picked video becomes the next shot's start frame.
+  const continuing = new Set(); // user ids: one at a time each
   async function continueShot(user, id, body = {}) {
+    if (continuing.has(user.id)) throw new StoryboardError('Still taking the last frame of another shot — a moment.', 429);
+    continuing.add(user.id);
+    try { return await continueShotNow(user, id, body); } finally { continuing.delete(user.id); }
+  }
+  async function continueShotNow(user, id, body = {}) {
     let row = editable(user, id);
     const shots = parse(row.shots_json, []);
     const i = shots.findIndex((s) => s.id === String(body.shot || ''));
@@ -412,8 +418,17 @@ export function createStoryboards({ db, projects, generations, log }) {
     try {
       saved = await generations.saveUpload(user, { stream: fs.createReadStream(frame.path), mime: 'image/png', filename: `${String(shots[i].title || 'shot').slice(0, 40)} – last frame.png`, projectId: row.project_id || null });
     } finally { frame.cleanup(); }
-    row = editable(user, id);
-    if (!parse(row.shots_json, []).some((s) => s.id === next.id)) throw new StoryboardError('The next shot is gone — reload.', 404);
+    // The board may have changed meanwhile: same source video, same next shot — or nothing is kept.
+    try {
+      row = editable(user, id);
+      const now2 = parse(row.shots_json, []);
+      const j = now2.findIndex((s) => s.id === shots[i].id);
+      if (j < 0 || now2[j + 1]?.id !== next.id || parse(row.media_json, {})[shots[i].id]?.video !== url) throw new StoryboardError('The shots changed meanwhile — try again.', 409);
+    } catch (error) {
+      const made = /^\/media\/u\/([^.]+)\./.exec(saved?.url || '');
+      if (made) { try { generations.deleteUploads(user, [made[1]]); } catch { /* best effort */ } }
+      throw error;
+    }
     changeMedia(row, next.id, (m) => {
       m.frames.push({ url: saved.url, gen: null, at: now(), own: true, from: shots[i].id });
       if (m.frames.length > MAX_FRAMES) m.frames = m.frames.filter((x) => x.url === saved.url || x.url === m.frame).concat(m.frames.filter((x) => x.url !== saved.url && x.url !== m.frame).slice(-(MAX_FRAMES - 2)));

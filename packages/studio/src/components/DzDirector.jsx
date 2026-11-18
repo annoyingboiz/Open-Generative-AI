@@ -508,20 +508,23 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   // The last frame of a shot's video → the next shot's start frame.
   const continueFrom = async (shotId) => {
     const id = currentRef.current;
-    if (!id || !(await flush())) return;
+    if (!id || !(await flush()) || currentRef.current !== id) return;
     try { takeServer((await dzStoryboards.continueShot(id, shotId)).storyboard); } catch (e) { if (currentRef.current === id) onGenerationError?.(errText(e)); }
   };
   // Picked videos of the shots, in order → one video (made on our server, free).
   const [stitching, setStitching] = useState(false);
+  const stitchingRef = useRef(false);
   const stitchAll = async () => {
     const id = currentRef.current;
-    if (!id || !(await flush())) return;
+    if (!id || stitchingRef.current) return;
+    stitchingRef.current = true;
     setStitching(true);
     try {
+      if (!(await flush()) || currentRef.current !== id) return;
       await dzStoryboards.stitch(id, {});
       window.dispatchEvent(new CustomEvent("dz:history", { detail: { studio: "director" } }));
-      notify("Stitching the shots — the video appears under “Final cut” in a moment.", "success");
-    } catch (e) { onGenerationError?.(errText(e)); } finally { setStitching(false); }
+      if (currentRef.current === id) notify("Stitching the shots — the video appears under “Final cut” in a moment.", "success");
+    } catch (e) { if (currentRef.current === id) onGenerationError?.(errText(e)); } finally { stitchingRef.current = false; setStitching(false); }
   };
   // Shot prompts rewritten for the models chosen now (by their notes), without planning again.
   const [rewriting, setRewriting] = useState(null); // { done, total }
@@ -539,7 +542,7 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
     let failed = 0;
     const work = [...jobs];
     const worker = async () => {
-      for (let job = work.shift(); job; job = work.shift()) {
+      for (let job = work.shift(); job && currentRef.current === id; job = work.shift()) {
         try {
           const send = () => fetch("/dz/api/prompt/adapt", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
             body: JSON.stringify({ prompt: job.prompt, model: job.model, llm: llmChosen || undefined, context: { mode: job.model.kind === "image" ? "start frame (still image)" : "image-to-video (start frame attached)" } }) });

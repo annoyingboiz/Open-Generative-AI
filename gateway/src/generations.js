@@ -53,7 +53,10 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     settleDone: db.prepare('UPDATE generations SET cost_usd = COALESCE(?, cost_usd), cost_source = COALESCE(?, cost_source), settle_next_at = NULL, updated_at = ? WHERE id = ?'),
     pollError: db.prepare('UPDATE generations SET poll_errors = poll_errors + 1, next_poll_at = ?, updated_at = ? WHERE id = ?'),
     byId: db.prepare('SELECT * FROM generations WHERE id = ?'),
-    due: db.prepare(`SELECT * FROM generations WHERE status IN ('submitted','processing','downloading') AND next_poll_at <= ? ORDER BY next_poll_at LIMIT 10`),
+    // Work made here (provider 'dz') is not polled: it finishes by itself.
+    due: db.prepare(`SELECT * FROM generations WHERE status IN ('submitted','processing','downloading') AND provider != 'dz' AND next_poll_at <= ? ORDER BY next_poll_at LIMIT 10`),
+    setCompletedLocal: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, settle_next_at = ?, updated_at = ?, completed_at = ? WHERE id = ? AND status = 'processing'"),
+    setFailedLocal: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ? AND status = 'processing'"),
     trash: db.prepare('UPDATE generations SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL'),
     restore: db.prepare('UPDATE generations SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL AND purged_at IS NULL'),
     like: db.prepare('UPDATE generations SET liked_at = ? WHERE id = ?'),
@@ -88,6 +91,10 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   async function saveUpload(user, { stream, mime, filename, truncated = () => false, projectId = null, folderId = null }) {
     const saved = await storage.saveUpload(user.id, stream, mime);
     if (truncated()) { storage.remove(saved.path); return null; }
+    if (saved.bytes > maxUploadBytes || q.uploadBytes.get(user.id).b + saved.bytes > uploadQuotaBytes) {
+      storage.remove(saved.path);
+      throw new GenerationError(saved.bytes > maxUploadBytes ? 'The file is too large.' : 'Upload quota reached. Delete old uploads or ask the admin.', 413);
+    }
     q.insertUpload.run(saved.id, user.id, saved.path, mime, saved.bytes, filename || null, projectId, folderId, now());
     const ext = saved.path.split('.').pop();
     return { id: saved.id, url: `/media/u/${saved.id}.${ext}` };
@@ -662,12 +669,12 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       .then(async (out) => {
         let file;
         try { file = await storage.copyResult({ userId: user.id, generationId: id, index: 0, from: out.path, ext: out.ext }); } finally { out.cleanup?.(); }
-        q.setCompleted.run(JSON.stringify([{ path: file.path, mime: out.mime, bytes: file.bytes, ext: out.ext }]), now() + settleDelaysMs[0], now(), now(), id);
+        if (!q.setCompletedLocal.run(JSON.stringify([{ path: file.path, mime: out.mime, bytes: file.bytes, ext: out.ext }]), now() + settleDelaysMs[0], now(), now(), id).changes) { storage.remove(file.path); return; }
         if (onCompleted) Promise.resolve().then(() => onCompleted(q.byId.get(id))).catch((error) => log?.warn(`after ${id}: ${error.message}`));
       })
       .catch((error) => {
         log?.warn(`local edit ${id}: ${error.message}`);
-        q.setFailed.run(String(error.message || 'Failed').slice(0, 500), now(), now(), id);
+        q.setFailedLocal.run(String(error.message || 'Failed').slice(0, 500), now(), now(), id);
       });
     return { id };
   }

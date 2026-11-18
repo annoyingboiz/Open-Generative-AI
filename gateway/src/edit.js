@@ -54,11 +54,11 @@ export function stitch(files) {
       files.forEach((f) => args.push('-i', f.path));
       const parts = [];
       infos.forEach((info, i) => {
-        parts.push(`[${i}:v:0]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=${fps},format=yuv420p[v${i}]`);
+        parts.push(`[${i}:v:0]setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=${fps},format=yuv420p[v${i}]`);
         const dur = Math.max(0.1, info.duration || 0).toFixed(3);
         parts.push(info.audio
-          ? `[${i}:a:0]aformat=sample_rates=48000:channel_layouts=stereo,apad,atrim=0:${dur}[a${i}]`
-          : `anullsrc=channel_layout=stereo:sample_rate=48000,atrim=0:${dur}[a${i}]`);
+          ? `[${i}:a:0]asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo,apad,atrim=0:${dur},asetpts=PTS-STARTPTS[a${i}]`
+          : `anullsrc=channel_layout=stereo:sample_rate=48000,atrim=0:${dur},asetpts=PTS-STARTPTS[a${i}]`);
       });
       parts.push(`${infos.map((_, i) => `[v${i}][a${i}]`).join('')}concat=n=${infos.length}:v=1:a=1[v][a]`);
       const out = path.join(dir, 'stitched.mp4');
@@ -70,6 +70,15 @@ export function stitch(files) {
       throw error;
     }
   });
+}
+
+// Temp folders left by a restart in the middle of an edit.
+export function sweepTemp() {
+  try {
+    for (const name of fs.readdirSync(os.tmpdir())) {
+      if (/^dz-(stitch|frame)-/.test(name)) fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
+    }
+  } catch { /* nothing to sweep */ }
 }
 
 // The last frame of a video as a PNG (for the next shot's start frame).

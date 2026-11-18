@@ -33,7 +33,7 @@ import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
 import { cleanLook, renderLook, lookHints } from './look.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
-import { EditError } from './edit.js';
+import { EditError, sweepTemp } from './edit.js';
 import { storyboardPage } from './storyboard-print.js';
 import { createDirector, DirectorError } from './director.js';
 import { createAssistants, AssistantError } from './assistants.js';
@@ -86,6 +86,7 @@ export async function buildApp(config, { logger = true } = {}) {
     } catch (error) { app.log.warn(`telegram: ${error.message}`); }
   }
   configureLocal(config.localBridgeDir);
+  sweepTemp(); // edits cut short by a restart
   configureApimartFiles(path.join(config.dataDir, 'apimart-speech'));
   apimart.sweepFiles();
   setInterval(() => apimart.sweepFiles(), 3600_000).unref();

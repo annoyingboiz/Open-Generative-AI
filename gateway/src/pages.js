@@ -56,7 +56,9 @@ export function setupPage({ error, values = {} } = {}) {
 <label for="d">Your name</label><input id="d" name="displayName" value="${esc(values.displayName)}" required autofocus>
 <label for="u">Login</label><input id="u" name="username" autocomplete="username" value="${esc(values.username)}" required>
 <label for="p">Password (8+ characters)</label><input id="p" name="password" type="password" autocomplete="new-password" required minlength="8">
-<button class="btn primary full" type="submit">Create admin</button></form></div>`);
+<button class="btn primary full" type="submit">Create admin</button></form></div>
+<script>/* The installer opens /setup#code=…: fill it in, then drop it from the address (a fragment never reaches the server). */
+(function(){var m=/^#code=([A-Za-z0-9_-]{6,40})$/.exec(location.hash);if(m){var c=document.getElementById('c');if(c&&!c.value)c.value=m[1];history.replaceState(null,'',location.pathname);}})();</script>`);
 }
 
 function balanceCell(b) {

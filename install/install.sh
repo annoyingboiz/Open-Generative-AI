@@ -16,6 +16,9 @@ say()  { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '\033[33m%s\033[0m\n' "$*"; }
 die()  { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 open_url() { if [ "$OS" = Darwin ]; then open "$1"; elif command -v xdg-open >/dev/null; then xdg-open "$1" >/dev/null 2>&1 || true; fi; }
+# Something already listens on this local port?
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+MARK=".director-install" # this folder is a Director install (safe to update)
 
 say "Director — install / update into $DIR"
 
@@ -42,10 +45,15 @@ docker compose version >/dev/null 2>&1 || die "This Docker has no 'docker compos
 
 # 2. The code: git if there is one, otherwise a download (data and settings are kept).
 mkdir -p "$DIR"
+others="$(find "$DIR" -mindepth 1 -maxdepth 1 ! -name data ! -name .env ! -name "$MARK" -print -quit)"
+if [ -n "$others" ] && [ ! -f "$DIR/$MARK" ]; then
+  die "$DIR already has other files and is not a Director install. Choose another folder: DIRECTOR_DIR=/path/to/folder"
+fi
 if [ -d "$DIR/.git" ]; then
+  git -C "$DIR" remote get-url origin 2>/dev/null | grep -qi 'open-generative-ai' || die "$DIR/.git is not the Director repository."
   say "Updating the code…"
   git -C "$DIR" fetch --depth 1 origin "$BRANCH" && git -C "$DIR" checkout -q -B "$BRANCH" FETCH_HEAD
-elif command -v git >/dev/null 2>&1 && [ -z "$(find "$DIR" -mindepth 1 -maxdepth 1 ! -name data ! -name .env -print -quit)" ]; then
+elif command -v git >/dev/null 2>&1 && [ -z "$others" ]; then
   say "Downloading the code…"
   tmp="$(mktemp -d)"; git clone -q --depth 1 --branch "$BRANCH" "$REPO" "$tmp/src"
   cp -R "$tmp/src/." "$DIR/"; rm -rf "$tmp"
@@ -54,15 +62,18 @@ else
   tmp="$(mktemp -d)"
   owner_repo="${REPO#https://github.com/}"
   curl -fsSL "https://codeload.github.com/${owner_repo}/tar.gz/refs/heads/${BRANCH}" | tar -xz -C "$tmp" --strip-components=1
-  # Keep data/ and .env; replace everything else.
+  [ -f "$tmp/docker-compose.yml" ] || die "The download looks wrong (no docker-compose.yml)."
+  # Keep data/ and .env; the old code goes, the new one comes in.
+  find "$DIR" -mindepth 1 -maxdepth 1 ! -name data ! -name .env ! -name "$MARK" -exec rm -rf {} +
   (cd "$tmp" && tar -cf - .) | (cd "$DIR" && tar -xf -)
   rm -rf "$tmp"
 fi
+touch "$DIR/$MARK"
 cd "$DIR"
 
 # 3. Settings: a free port, data next to the code.
 if [ ! -f .env ]; then
-  while lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do PORT=$((PORT + 1)); done
+  while port_busy "$PORT"; do PORT=$((PORT + 1)); done
   cat > .env <<ENV
 # Director on this computer. Keys go into Settings in the app (stored encrypted in data/).
 PORT=$PORT
@@ -74,7 +85,13 @@ mkdir -p data
 
 # 4. Build and start (the first build takes a few minutes).
 say "Building and starting Director (first time: 5–10 minutes)…"
-docker compose -f docker-compose.yml -f deploy/compose.personal.yml up -d --build
+# The ChatGPT sign-in comes back on 127.0.0.1:1455 — if that port is taken, run without it.
+FILES=(-f docker-compose.yml -f deploy/compose.personal.yml)
+if port_busy 1455 && ! docker compose ps -q gateway 2>/dev/null | grep -q .; then
+  warn "Port 1455 is used by another program: ChatGPT sign-in will need the paste step (see Settings)."
+  FILES=(-f docker-compose.yml)
+fi
+docker compose "${FILES[@]}" up -d --build
 
 URL="http://localhost:$PORT"
 say "Waiting for Director to start…"
@@ -84,7 +101,7 @@ curl -fsS "$URL/healthz" >/dev/null 2>&1 || die "Director did not start. See: cd
 if [ -f data/setup-code ]; then
   CODE="$(tr -d ' \n' < data/setup-code)"
   say "Ready. First start: create your admin account (the setup code is filled in)."
-  open_url "$URL/setup?code=$CODE"
+  open_url "$URL/setup#code=$CODE"
   echo "If the browser didn't open: $URL/setup   setup code: $CODE"
 else
   say "Ready: $URL"

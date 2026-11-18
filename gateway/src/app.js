@@ -248,9 +248,7 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/setup', async (req, reply) => {
     if (auth.hasUsers()) return reply.redirect('/login');
     if (viaPublicTunnel(req)) return html(reply, setupPage({ error: 'Open this page from the local network to create the admin.' }), 403);
-    // The installer opens /setup?code=… on this computer: the code is filled in.
-    const code = typeof req.query?.code === 'string' && /^[A-Za-z0-9_-]{6,40}$/.test(req.query.code) ? req.query.code : '';
-    return html(reply, setupPage({ values: { setupCode: code } }));
+    return html(reply, setupPage());
   });
   app.post('/setup', async (req, reply) => {
     if (auth.hasUsers()) return reply.redirect('/login');

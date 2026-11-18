@@ -125,6 +125,9 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
   // A caret asked for by the engine (after an @ pick, an insert): kept for the next redraw,
   // which may come after it (React commits the new prompt later than the request).
   const wanted = useRef(null);
+  // Typing since the last outside redraw makes a late caret request stale.
+  const inputs = useRef(0);
+  const inputsAtRedraw = useRef(0);
   const root = useRef(null);
   const emitted = useRef(null);
   const tagMap = useMemo(() => new Map(tags.map((t) => [t.tag.toLowerCase(), t])), [tags]);
@@ -136,7 +139,11 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
       get value() { return root.current ? serialize(root.current) : ""; },
       get selectionStart() { const o = root.current && getOffset(root.current); return o ? o.start : (this.value || "").length; },
       get selectionEnd() { const o = root.current && getOffset(root.current); return o ? o.end : (this.value || "").length; },
-      setSelectionRange(a, b) { wanted.current = { start: a, end: b ?? a, at: Date.now() }; if (root.current) setOffset(root.current, a, b ?? a); },
+      setSelectionRange(a, b) {
+        if (inputs.current !== inputsAtRedraw.current) return; // the user already typed on
+        wanted.current = { start: a, end: b ?? a, at: Date.now() };
+        if (root.current) setOffset(root.current, a, b ?? a);
+      },
       focus() { root.current?.focus({ preventScroll: true }); },
       blur() { root.current?.blur(); },
     };
@@ -156,6 +163,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
     render(el, value, tagMap);
     el.dataset.chips = chipKey;
     emitted.current = value;
+    inputsAtRedraw.current = inputs.current;
     if ((focused || want) && off) setOffset(el, Math.min(off.start, value.length), Math.min(off.end, value.length));
     wanted.current = null;
   }, [value, chipKey, tagMap]);
@@ -192,6 +200,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
       onInput={(e) => {
         const el = root.current;
         wanted.current = null;
+        inputs.current += 1;
         let next = serialize(el);
         // Blocks or line breaks the browser made (drop, autocorrect): back to flat text + chips.
         const messy = [...el.childNodes].some((c) => c.nodeType === 1 && !c.dataset?.tag && !c.dataset?.end);

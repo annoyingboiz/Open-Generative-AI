@@ -7,10 +7,14 @@
 //   2. you allow "Use your ChatGPT plan";
 //   3. checks the ID token signature (OpenAI's JWKS), issuer, audience, nonce,
 //      expiry, and that the plan permission was really granted;
-//   4. writes the credentials ONLY to a pipe (never to the screen or a file),
-//      so they go straight to the server over SSH:
+//   4. sends the credentials straight to the server over SSH (never to the
+//      screen or a file). The SSH connection is checked BEFORE the sign-in
+//      and opened again only after it, so a long sign-in can't break it:
 //
-//   node connect-chatgpt.mjs | ssh stand 'cd ~/projects/ai-video-platform && docker compose exec -T gateway node src/import-chatgpt.mjs denis'
+//   node tools/connect-chatgpt.mjs --server stand --user zakraben
+//
+//   (--dir sets the project folder on the server, default ~/projects/ai-video-platform.
+//    Old way, still works: node tools/connect-chatgpt.mjs | ssh … import-chatgpt.mjs <user>)
 //
 // Kept on this Mac (no tokens): ~/.config/director-chatgpt/registration.json
 // with this Mac's host id and the issued client id, to reuse on reconnect.
@@ -20,7 +24,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const AUTH = 'https://auth.openai.com';
 const AUTHORIZE = `${AUTH}/api/accounts/authorize`;
@@ -34,11 +38,33 @@ const DIR = path.join(os.homedir(), '.config', 'director-chatgpt');
 const REG = path.join(DIR, 'registration.json');
 
 const say = (m) => process.stderr.write(`${m}\n`);
+const arg = (name) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
+const SAFE = /^[A-Za-z0-9._@-]+$/;
+const server = arg('server');
+const user = arg('user');
+const remoteDir = arg('dir') || '~/projects/ai-video-platform';
 const out = fs.fstatSync(1);
-if (!out.isFIFO() && !out.isSocket()) {
-  say('Pipe this into the server, so the tokens never show on screen:');
-  say("  node connect-chatgpt.mjs | ssh stand 'cd ~/projects/ai-video-platform && docker compose exec -T gateway node src/import-chatgpt.mjs denis'");
+const piped = out.isFIFO() || out.isSocket();
+if (server || user) {
+  if (!server || !user || !SAFE.test(server) || !SAFE.test(user) || !/^[~A-Za-z0-9._/-]+$/.test(remoteDir)) {
+    say('Usage: node tools/connect-chatgpt.mjs --server stand --user zakraben');
+    process.exit(2);
+  }
+} else if (!piped) {
+  say('Usage: node tools/connect-chatgpt.mjs --server stand --user zakraben');
+  say('(the tokens go straight to the server over SSH; they are never shown here)');
   process.exit(2);
+}
+const remoteCmd = (script) => `cd ${remoteDir} && docker compose exec -T gateway ${script}`;
+// Check the server first: a broken SSH would otherwise only show after the sign-in.
+if (server) {
+  say(`Checking the connection to ${server}…`);
+  const check = spawnSync('ssh', ['-o', 'ConnectTimeout=10', server, remoteCmd(`node -e "process.exit(require('fs').existsSync('src/import-chatgpt.mjs')?0:3)"`)], { stdio: ['ignore', 'inherit', 'inherit'] });
+  if (check.status !== 0) {
+    say(check.status === 3 ? 'The server does not have the import script yet (deploy the latest version first).' : `Can't reach the gateway on ${server} over SSH (exit ${check.status ?? check.signal}). Fix that first; nothing was signed in.`);
+    process.exit(1);
+  }
+  say('Server OK.');
 }
 
 const b64url = (buf) => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -160,7 +186,7 @@ if (reg.sub && claims.sub !== reg.sub) {
 // Remember the registration (no tokens) for the next sign-in.
 saveReg({ ...reg, client_id: result.clientId, email: claims.email || reg.email || '', sub: claims.sub, saved_at: Date.now() });
 
-process.stdout.write(JSON.stringify({
+const payload = JSON.stringify({
   client_id: result.clientId,
   access_token: tok.access_token,
   refresh_token: tok.refresh_token,
@@ -173,5 +199,15 @@ process.stdout.write(JSON.stringify({
   sub: claims.sub,
   issuer,
   saved_at: Date.now(),
-}));
+});
 say(`Signed in as ${claims.email || claims.sub}. Sending to the server…`);
+if (server) {
+  const child = spawn('ssh', ['-o', 'ConnectTimeout=10', server, remoteCmd(`node src/import-chatgpt.mjs ${user}`)], { stdio: ['pipe', 'inherit', 'inherit'] });
+  child.stdin.on('error', () => { /* reported by the exit code below */ });
+  child.stdin.end(payload);
+  const code = await new Promise((res) => child.on('close', (c) => res(c)));
+  if (code !== 0) { say(`The server did not take it (ssh exit ${code}). Run the command again.`); process.exit(1); }
+} else {
+  process.stdout.on('error', (e) => { say(`The server side closed early (${e.code}). Use: node tools/connect-chatgpt.mjs --server stand --user <you>`); process.exit(1); });
+  process.stdout.write(payload);
+}

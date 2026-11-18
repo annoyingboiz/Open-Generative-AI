@@ -1,6 +1,6 @@
 // Takes the ChatGPT credentials from the Mac helper on stdin and stores them
 // encrypted for one person here. Run on the server, inside the gateway:
-//   node tools/connect-chatgpt.mjs | ssh stand 'cd ~/projects/ai-video-platform && docker compose exec -T gateway node src/import-chatgpt.mjs denis'
+//   node tools/connect-chatgpt.mjs --server stand --user <username>   (on the Mac; it runs this over SSH)
 // Prints only the account e-mail and owner — never tokens.
 import { config } from './config.js';
 import { openDatabase } from './db.js';

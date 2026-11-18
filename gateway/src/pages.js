@@ -266,7 +266,7 @@ ${recent ? `<div class="section"><b>Recent calls</b><table style="margin-top:8px
 // through the browser), reconnect the same way, disconnect here.
 function chatgptBox(llm) {
   const st = llm.chatgpt || { connected: false };
-  const cmd = `node tools/connect-chatgpt.mjs | ssh stand 'cd ~/projects/ai-video-platform && docker compose exec -T gateway node src/import-chatgpt.mjs ${llm.username || 'USERNAME'}'`;
+  const cmd = `cd ~/Documents/Builds/ai-video-platform && node tools/connect-chatgpt.mjs --server stand --user ${llm.username || 'USERNAME'}`;
   const how = `<p class="muted" style="margin:8px 0 6px">On your Mac, in the project folder, run (it opens the OpenAI sign-in; allow “Use your ChatGPT plan”):</p>
   <pre style="white-space:pre-wrap;word-break:break-all;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;font-size:16px">${esc(cmd)}</pre>
   <p class="muted" style="margin:8px 0 0">Only you can use it here; it spends your ChatGPT plan, never API money. The tokens go straight to this server over SSH and are stored encrypted.</p>`;

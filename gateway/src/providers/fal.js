@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import { providerJson, providerFetch, ProviderHttpError } from './http.js';
 import { FAL_TOOL_ENDPOINTS, falTool } from './fal-tools.js';
+import { isVideoUpscaleEndpoint } from '../video-upscale.js';
 import { assertPublicHttpsUrl } from '../net-guard.js';
 
 const QUEUE = 'https://queue.fal.run';
@@ -74,7 +75,7 @@ export const fal = {
   },
 
   async submit({ apiKey, proxy }, { model, body }) {
-    if (!falTool(model)) throw new Error(`fal: ${model} is not one of our tools`);
+    if (!falTool(model) && !isVideoUpscaleEndpoint('fal', model)) throw new Error(`fal: ${model} is not one of our tools`);
     const data = await providerJson(`${QUEUE}/${model}`, {
       proxy,
       method: 'POST',

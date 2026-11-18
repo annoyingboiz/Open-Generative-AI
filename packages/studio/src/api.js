@@ -460,6 +460,27 @@ export async function dzUpscale(apiKey, { endpoint, onRequestId, ...params }) {
     return submitAndPoll(`p/fal/${endpoint}`, params, apiKey, onRequestId);
 }
 
+// DZ: video upscaling (fal + Atlas models from tools.videoUpscale). The body
+// carries our own keys (tool_model, target); the gateway builds the rest.
+export async function dzUpscaleVideo(apiKey, { provider, endpoint, onRequestId, ...params }) {
+    return dzWithMeta({ studio: 'upscale' }, () => submitAndPoll(`p/${provider}/${endpoint}`, params, apiKey, onRequestId));
+}
+// Price (or the reason there is none, e.g. "already 1080p") before upscaling.
+export async function dzVideoUpscaleQuote({ provider, endpoint, ...params }) {
+    try {
+        const response = await fetch(`${BASE_URL}/dz/api/quote`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: `p/${provider}/${endpoint}`, body: params }),
+        });
+        if (!response.ok) return { price: null, problem: response.status === 429 ? 'Too many price checks, wait a moment.' : null };
+        const data = await response.json();
+        return { price: data.price || null, problem: data.problem || null };
+    } catch {
+        return { price: null, problem: null };
+    }
+}
+
 export async function upscaleImage(apiKey, { model, image_url, resolution, upscale_factor, onRequestId }) {
     let endpoint = model;
     let payload = { image_url };

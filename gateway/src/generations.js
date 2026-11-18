@@ -73,6 +73,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
   };
   let onCompleted = null; // (row) => … after a job's files are saved (e.g. element videos)
+  let afterDownload = null; // async (row, saved) => … may change the saved files in place
   const outputRefCache = new Map(); // `${provider}:${genId}/${n}` -> { url, expiresAt }
 
   // ── Uploads ─────────────────────────────────────────────────────────────
@@ -120,6 +121,17 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const ref = await provider.upload(cfg, { path: output.path, mime: output.mime, name: output.path.split('/').pop(), kind: output.mime.split('/')[0] });
     outputRefCache.set(key, ref);
     return ref.url;
+  }
+
+  // A link the provider can read for one of our /media files (uploaded once,
+  // then reused — also by the generation that follows a price check).
+  const urlInflight = new Map();
+  function providerUrl(user, providerId, url) {
+    const key = `${user.id}|${providerId}|${url}`;
+    if (urlInflight.has(key)) return urlInflight.get(key);
+    const p = resolveMedia(user, providerId, providers.resolve(providerId), url).finally(() => urlInflight.delete(key));
+    urlInflight.set(key, p);
+    return p;
   }
 
   // ── Submit ──────────────────────────────────────────────────────────────
@@ -170,6 +182,10 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     for (let i = 0; i < providerOutputs.length; i += 1) {
       const file = await storage.downloadResult({ userId: row.user_id, generationId: row.id, index: i, url: providerOutputs[i], proxy: cfg.proxy });
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
+    }
+    // Fix-ups on the files before they show up (e.g. the sound back into an upscaled video).
+    if (afterDownload) {
+      try { await afterDownload(row, saved); } catch (error) { log?.warn(`after download ${row.id}: ${error.message}`); }
     }
     q.setCompleted.run(JSON.stringify(saved), now() + settleDelaysMs[0], now(), now(), row.id);
     // After-work (e.g. an element video) runs on its own: it never holds up other jobs.
@@ -558,6 +574,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     setOnCompleted(fn) { onCompleted = fn; },
+    setAfterDownload(fn) { afterDownload = fn; },
+    providerUrl,
     saveUpload, uploads, deleteUploads, submit, result, history, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in

@@ -14,6 +14,7 @@ import { assertPublicHttpsUrl } from '../net-guard.js';
 import { byteLimit } from '../storage.js';
 import { PROVIDERS, providerById } from '../providers/index.js';
 import { FAL_UPSCALE } from '../providers/fal-tools.js';
+import { videoUpscaleSpec } from '../video-upscale.js';
 import { buildAtlasVariant, buildApimartVariants, buildStudioLists, apimartPrice, STUDIO_MODES } from './build.js';
 import { fetchApimartDocs, buildApimartOverrides } from './apimart-docs.js';
 
@@ -54,7 +55,13 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
   // Tools on fal.ai (upscaling): available as soon as fal has a key — checked
   // on every request, not at the end of a catalog refresh.
   const falEnabled = () => providers.resolve('fal').enabled && Boolean(providers.resolve('fal').apiKey);
-  const currentTools = () => (falEnabled() ? { upscale: { provider: 'fal', ...FAL_UPSCALE } } : {});
+  const keyed = (id) => { const c = providers.resolve(id); return Boolean(c.enabled && c.apiKey); };
+  const currentTools = () => {
+    const tools = falEnabled() ? { upscale: { provider: 'fal', ...FAL_UPSCALE } } : {};
+    const video = videoUpscaleSpec(keyed); // models of providers that have a key
+    if (video) tools.videoUpscale = video;
+    return tools;
+  };
   let refreshing = null;
 
   const fileOf = (name) => path.join(dir, name);

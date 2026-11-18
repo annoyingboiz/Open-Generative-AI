@@ -261,12 +261,16 @@ export default function DzShell() {
 
   useEffect(() => {
     const onUpscale = (e) => { if (e.detail?.url) { setImageMenu(null); setUpscaleDrawer({ url: e.detail.url, result: null }); } };
+    // Videos open straight in the Upscale tab (big preview, before/after).
+    const onUpscaleVideo = (e) => { if (e.detail?.url) { setImageMenu(null); setUpscaleDrawer(null); setUpscaleTabPick({ url: e.detail.url, kind: 'video' }); openTabRef.current?.('upscale'); } };
+    window.addEventListener('dz:upscale-video', onUpscaleVideo);
     const closeMenu = () => setImageMenu(null);
     window.addEventListener('dz:upscale', onUpscale);
     window.addEventListener('click', closeMenu);
     window.addEventListener('scroll', closeMenu, true);
     return () => {
       window.removeEventListener('dz:upscale', onUpscale);
+      window.removeEventListener('dz:upscale-video', onUpscaleVideo);
       window.removeEventListener('click', closeMenu);
       window.removeEventListener('scroll', closeMenu, true);
     };
@@ -299,6 +303,8 @@ export default function DzShell() {
     setActiveTab(tabId);
     setMobileOpen(false);
   }, [project]);
+  const openTabRef = useRef(openTab);
+  openTabRef.current = openTab;
 
   // Animate in the Image tab → open the Video tab (it picks the picture up itself).
   useEffect(() => {

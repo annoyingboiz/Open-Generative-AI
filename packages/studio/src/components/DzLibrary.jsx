@@ -10,7 +10,7 @@ import { useDzContext } from "../dzContext.js";
 import { dzThumb } from "../api.js";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
-import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec } from "../dzCatalog.js";
+import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
 import { Segmented, Button, Input, cn, SelectParts } from "../ui/index.js";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
 
@@ -77,6 +77,9 @@ export function Viewer({ item, onClose }) {
     <div className="fixed inset-0 z-[150] flex flex-col bg-black/90 backdrop-blur-sm" onClick={onClose} role="dialog" aria-label="Preview">
       <div className="flex items-center justify-between gap-4 px-5 py-3 text-base text-foreground/90" onClick={(e) => e.stopPropagation()}>
         <span className="min-w-0 truncate">{item.prompt || item.name || ""}</span>
+        {isVideo && dzVideoUpscaleSpec() && /\/media\/[ug]\//.test(item.url || "") && (
+          <button type="button" onClick={() => { onClose(); dzOpenVideoUpscale(item.url); }} className="ml-auto flex-shrink-0 rounded-lg border border-white/15 px-3 py-1.5 text-foreground hover:bg-white/10">Upscale video</button>
+        )}
         <button type="button" onClick={onClose} className="h-9 w-9 flex-shrink-0 rounded-lg text-muted-foreground hover:bg-white/10 hover:text-white" aria-label="Close">✕</button>
       </div>
       {/* A click on the empty dark area closes; on the picture or video it doesn't. */}
@@ -271,6 +274,11 @@ export default function DzLibrary({ section = "all", onGenerationError }) {
         <IconButton title="Download" onClick={() => download(item.url, item.url.split("/").pop())}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
         </IconButton>
+        {dzVideoUpscaleSpec() && item.kind === "video" && (
+          <IconButton title="Upscale video (1080p / 2K / 4K)" onClick={() => dzOpenVideoUpscale(item.url)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+          </IconButton>
+        )}
         {canUpscale && item.kind === "image" && (
           <IconButton title="Upscale" onClick={() => dzOpenUpscale(item.url)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>

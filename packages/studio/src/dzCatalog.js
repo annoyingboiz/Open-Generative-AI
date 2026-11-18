@@ -54,5 +54,16 @@ export function dzOpenUpscale(url) {
   window.dispatchEvent(new CustomEvent('dz:upscale', { detail: { url } }));
 }
 
+// DZ: video upscaling models (fal + Atlas), present when one of them has a key.
+export function dzVideoUpscaleSpec() {
+  if (typeof window === 'undefined') return null;
+  return window.__DZ_CATALOG__?.tools?.videoUpscale || null;
+}
+// Opens the Upscale tab with this video.
+export function dzOpenVideoUpscale(url) {
+  if (typeof window === 'undefined' || !url) return;
+  window.dispatchEvent(new CustomEvent('dz:upscale-video', { detail: { url } }));
+}
+
 // Only our own files can be upscaled (the server prices them from the file).
 export const dzIsOwnImage = (url) => /^(?:https?:\/\/[^/]+)?\/media\/[ug]\//.test(String(url || ''));

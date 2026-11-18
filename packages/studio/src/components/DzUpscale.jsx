@@ -12,6 +12,8 @@ import { dzUpscale, uploadFile } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import { DzMediaBrowser } from "./DzMedia.jsx";
+import { Field, fieldApplies } from "./DzToolFields.jsx";
+import { DzVideoUpscaleView, useDzVideoUpscaleSpec } from "./DzVideoUpscale.jsx";
 import { useDzContext } from "../dzContext.js";
 import { Button, buttonVariants, Segmented, OptionSelect, Slider, Switch, Textarea, InfoTip, Tip, SectionLabel, Spinner, cn } from "../ui/index.js";
 
@@ -74,76 +76,6 @@ export function useDzUpscaleSpec() {
   return spec;
 }
 
-function FieldLabel({ field }) {
-  return (
-    <span className="flex items-center gap-2 text-base font-medium text-foreground">
-      {field.label}
-      <InfoTip text={field.hint} />
-    </span>
-  );
-}
-
-// One control, drawn from the server spec. Ranges without a default are
-// "Auto" (the model decides) until switched to manual.
-function Field({ field, value, onChange }) {
-  if (field.type === "bool") {
-    const on = value === undefined || value === null ? Boolean(field.default) : Boolean(value);
-    return (
-      <div className="flex items-center justify-between gap-3 py-2.5">
-        <FieldLabel field={field} />
-        <Switch checked={on} onCheckedChange={onChange} aria-label={field.label} />
-      </div>
-    );
-  }
-  if (field.type === "select") {
-    const current = value === undefined || value === null || value === "" ? field.default : value;
-    const options = [
-      ...(field.default == null ? [{ value: "__auto", label: "Auto" }] : []),
-      ...field.options.map((o) => ({ value: o, label: field.labels?.[o] || o })),
-    ];
-    return (
-      <div className="space-y-2 py-2.5">
-        <FieldLabel field={field} />
-        <Segmented size="sm" value={current ?? "__auto"} onChange={(v) => onChange(v === "__auto" ? null : v)} options={options} aria-label={field.label} />
-      </div>
-    );
-  }
-  if (field.type === "text") {
-    return (
-      <div className="space-y-2 py-2.5">
-        <FieldLabel field={field} />
-        <Textarea value={value || ""} maxLength={field.max} onChange={(e) => onChange(e.target.value)} placeholder="Describe the image (optional)" rows={3} />
-      </div>
-    );
-  }
-  const canAuto = field.default === null || field.default === undefined;
-  const isAuto = canAuto && (value === undefined || value === null || value === "");
-  const shown = isAuto ? field.start : (value === undefined || value === null || value === "" ? field.default : Number(value));
-  return (
-    <div className="space-y-1 py-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <FieldLabel field={field} />
-        <span className="flex items-center gap-2">
-          {canAuto && (
-            <Button
-              size="sm"
-              variant={isAuto ? "secondary" : "ghost"}
-              className={cn("h-8 px-2.5", isAuto && "text-primary")}
-              onClick={() => onChange(isAuto ? field.start : null)}
-              aria-pressed={isAuto}
-            >
-              Auto
-            </Button>
-          )}
-          <span className={cn("w-12 text-right tabular-nums", isAuto ? "text-muted-foreground/60" : "text-foreground")}>{field.step === 1 ? shown : Number(shown).toFixed(2)}</span>
-        </span>
-      </div>
-      <Slider min={field.min} max={field.max} step={field.step} value={[Number(shown)]} disabled={isAuto} onValueChange={([v]) => onChange(v)} aria-label={field.label} />
-    </div>
-  );
-}
-
-const fieldApplies = (field, valueOf) => !field.when || Object.entries(field.when).every(([k, want]) => valueOf(k) === want);
 const priceLabel = (m) => `${fmtUsd(m.price.usd)} / ${m.price.mp} MP${m.price.assumed ? " ≈" : ""}`;
 
 // Settings + price + Upscale. `imageUrl` must be one of our /media files.
@@ -340,7 +272,7 @@ function loadView() {
   try { return JSON.parse(localStorage.getItem(VIEW_KEY) || "{}") || {}; } catch { return {}; }
 }
 
-export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled }) {
+function DzImageUpscaleView({ apiKey, initial, isAdmin = false, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled }) {
   // The chosen image and its last result survive a page reload.
   const [source, setSource] = useState(() => initial?.url || null);
   const [result, setResult] = useState(null); // { url, source }
@@ -406,7 +338,7 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
   const upscales = recent.filter(isUpscale);
 
   return (
-    <div className="flex h-full w-full flex-col gap-5 overflow-hidden bg-background p-4 md:flex-row md:p-6">
+    <div className="flex h-full w-full flex-col gap-5 overflow-hidden md:flex-row">
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />
 
       {/* Image */}
@@ -480,6 +412,39 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
           onError={(msg) => { onGenerationEnd?.(); onGenerationError?.(msg); }}
         />
       </div>
+    </div>
+  );
+}
+
+// The Upscale tab: images (Topaz on fal) or videos (fal + Atlas models).
+const MODE_KEY = "dz_upscale_mode";
+export default function DzUpscaleStudio(props) {
+  const { initial, droppedFiles, onFilesHandled } = props;
+  const videoSpec = useDzVideoUpscaleSpec();
+  const [mode, setMode] = useState(() => {
+    if (initial?.url) return initial.kind === "video" ? "video" : "image";
+    try { return localStorage.getItem(MODE_KEY) === "video" ? "video" : "image"; } catch { return "image"; }
+  });
+  useEffect(() => { if (initial?.url) setMode(initial.kind === "video" ? "video" : "image"); }, [initial]);
+  useEffect(() => { try { localStorage.setItem(MODE_KEY, mode); } catch { /* optional */ } }, [mode]);
+  // A dropped video goes to the video side, an image to the image side.
+  const droppedVideo = Boolean(droppedFiles?.length && /^video\//.test(droppedFiles[0]?.type || ""));
+  useEffect(() => { if (droppedFiles?.length) setMode(droppedVideo && videoSpec ? "video" : "image"); }, [droppedFiles, droppedVideo, videoSpec]);
+  const showVideo = mode === "video" && Boolean(videoSpec);
+  return (
+    <div className="flex h-full w-full flex-col gap-4 overflow-hidden bg-background p-4 md:p-6">
+      {videoSpec && (
+        <Segmented className="self-start" value={showVideo ? "video" : "image"} onChange={setMode} aria-label="What to upscale"
+          options={[{ value: "image", label: "Image" }, { value: "video", label: "Video" }]} />
+      )}
+      <div className={cn("min-h-0 flex-1", showVideo && "hidden")}>
+        <DzImageUpscaleView {...props} initial={initial?.kind === "video" ? null : initial} droppedFiles={!droppedVideo ? droppedFiles : null} />
+      </div>
+      {videoSpec && (
+        <div className={cn("min-h-0 flex-1", !showVideo && "hidden")}>
+          <DzVideoUpscaleView {...props} initialPick={initial?.kind === "video" ? initial : null} droppedFiles={droppedVideo ? droppedFiles : null} onFilesHandled={onFilesHandled} />
+        </div>
+      )}
     </div>
   );
 }

@@ -31,6 +31,7 @@ import { createThumbs } from './thumbs.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
+import { VIDEO_UPSCALE, isVideoUpscaleEndpoint, videoUpscaleBody, providerPayload, videoUpscalePrice, videoInfo, outputSize, restoreAudio, VideoUpscaleError } from './video-upscale.js';
 import { imageSize } from './imagesize.js';
 
 const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico', '/dz/fonts/inter-latin.woff2', '/dz/fonts/inter-cyrillic.woff2']);
@@ -80,6 +81,22 @@ export async function buildApp(config, { logger = true } = {}) {
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations, log: app.log });
   generations.setOnCompleted((row) => elements.attachGenerated(row));
+  // Most video upscalers drop the sound: put the original's back in.
+  const userRow = db.prepare('SELECT id, role FROM users WHERE id = ?');
+  generations.setAfterDownload(async (row, saved) => {
+    if (row.studio !== 'upscale' || row.kind !== 'video') return;
+    const up = JSON.parse(row.meta_json || '{}').upscale;
+    if (!up?.audio || !up.source) return;
+    const owner = userRow.get(row.user_id);
+    const src = owner && generations.mediaFileForUrl(owner, up.source);
+    if (!src) return;
+    for (const out of saved) {
+      if (!/^video\//.test(out.mime || '')) continue;
+      const info = await videoInfo(out.path);
+      if (!info || info.audio) continue;
+      if (await restoreAudio(out.path, src.path)) out.bytes = fs.statSync(out.path).size;
+    }
+  });
   const chatgpt = createChatGpt({ db, masterKey, config, log: app.log });
   const llm = createLlm({ db, providers, generations, config, log: app.log, chatgpt });
   const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
@@ -468,7 +485,7 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/api/v1/account/balance', async () => ({ balance: null }));
 
   const sendGenError = (reply, error) => {
-    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError) return reply.code(error.status).send({ detail: error.message, error: error.message });
+    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError || error instanceof VideoUpscaleError) return reply.code(error.status).send({ detail: error.message, error: error.message });
     throw error;
   };
   // Where new work goes: ?project=&folder= (or _dz.project/_dz.folder) → checked ids.
@@ -500,6 +517,11 @@ export async function buildApp(config, { logger = true } = {}) {
   // everyone else goes through the field allowlist and pricing.
   function resolveEndpoint(user, providerId, modelId, mode) {
     const key = `p/${providerId}/${modelId}${mode ? `?m=${mode}` : ''}`;
+    // Video upscalers (fal + Atlas): our own spec, only with that provider's key.
+    if (isVideoUpscaleEndpoint(providerId, modelId)) {
+      const spec = catalog.tools().videoUpscale;
+      return !mode && spec?.models.some((m) => m.provider === providerId && m.endpoint === modelId) ? { key, tool: { tool: VIDEO_UPSCALE, kind: 'video' }, video: true } : null;
+    }
     // Tools on fal.ai (upscaling): their own field list and price rules.
     if (providerId === 'fal') {
       const tool = falTool(modelId);
@@ -513,6 +535,38 @@ export async function buildApp(config, { logger = true } = {}) {
   function providerBodyFor(resolved, providerId, modelId, body) {
     if (resolved.tool) return falBody(modelId, body);
     return resolved.variant ? toProviderBody(resolved.variant, body) : body;
+  }
+
+  // Video upscale: our copy of the video tells size, length and sound; the
+  // request is built for the chosen model and checked against its limits.
+  async function videoRequest(user, providerId, modelId, raw) {
+    const file = generations.mediaFileForUrl(user, raw?.video_url);
+    if (!file || !/^video\//.test(file.mime || '')) throw new VideoUpscaleError('Choose a video to upscale.');
+    const info = await videoInfo(file.path);
+    if (!info?.width || !info?.duration) throw new VideoUpscaleError('Could not read this video.');
+    const full = videoUpscaleBody(providerId, modelId, raw, info);
+    return { file, info, full, payload: providerPayload(full) };
+  }
+  // Atlas prices these by the video itself: it gets a copy first (reused by the upscale).
+  const videoQuotes = new Map();
+  async function videoPrice(user, providerId, modelId, req) {
+    const { info, full, payload } = req;
+    const output = outputSize(info, full.target);
+    const base = { input: { width: info.width, height: info.height, duration: Math.round(info.duration * 10) / 10, fps: info.fps, audio: info.audio }, output: { width: output.width, height: output.height } };
+    if (providerId !== 'atlas') {
+      const p = videoUpscalePrice(providerId, modelId, full, info);
+      return p ? { usd: p.usd, exact: p.exact, source: 'quote', ...base } : null;
+    }
+    const field = 'video' in payload ? 'video' : 'video_url';
+    const url = await generations.providerUrl(user, 'atlas', payload[field]);
+    const body = { ...payload, [field]: url };
+    const key = JSON.stringify([modelId, body]);
+    const hit = videoQuotes.get(key);
+    if (hit && Date.now() - hit.at < 30 * 60_000) return { ...hit.value, ...base };
+    const q = await providerById('atlas').quote(providers.resolve('atlas'), { model: modelId, body }).catch((error) => { app.log.warn(`video quote ${modelId}: ${error.message}`); return null; });
+    const value = q ? { usd: q.usd, exact: q.exact, source: 'quote' } : null;
+    if (value) { videoQuotes.set(key, { at: Date.now(), value }); if (videoQuotes.size > 500) videoQuotes.delete(videoQuotes.keys().next().value); }
+    return value ? { ...value, ...base } : null;
   }
 
   // Upscale prices depend on the input size: read it from our copy of the file.
@@ -543,6 +597,14 @@ export async function buildApp(config, { logger = true } = {}) {
     const resolved = resolveEndpoint(req.user, providerId, modelId, mode);
     if (!resolved) return reply.code(404).send({ error: 'Unknown model' });
     const { _dz: _ignored, ...body } = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
+    if (resolved.video) {
+      try {
+        return { price: await videoPrice(req.user, providerId, modelId, await videoRequest(req.user, providerId, modelId, body)) };
+      } catch (error) {
+        if (error instanceof VideoUpscaleError || error instanceof GenerationError) return { price: null, problem: error.message };
+        throw error;
+      }
+    }
     const providerBody = providerBodyFor(resolved, providerId, modelId, body);
     const price = await priceFor(req.user, resolved, providerId, modelId, providerBody);
     return { price };
@@ -562,6 +624,21 @@ export async function buildApp(config, { logger = true } = {}) {
       const metaText = dz?.meta && typeof dz.meta === 'object' ? JSON.stringify(dz.meta) : null;
       const meta = metaText && metaText.length <= 65_536 ? dz.meta : null;
       const { projectId, folderId } = contextOf(req.user, dz?.project, dz?.folder);
+      if (resolved.video) {
+        const vr = await videoRequest(req.user, providerId, modelId, requestBody);
+        const price = await videoPrice(req.user, providerId, modelId, vr);
+        if (req.user.monthly_limit_usd != null && !(price && price.exact && Number.isFinite(price.usd))) {
+          return reply.code(402).send({ detail: 'No exact price for this upscale, so it is not available with a spending limit.' });
+        }
+        const { id } = await generations.submit(req.user, {
+          providerId, modelId, body: vr.payload, endpoint: key, kind: 'video',
+          estCostUsd: price?.usd ?? null, estSource: price ? (price.exact ? 'quote' : 'quote~') : null,
+          studio: 'upscale',
+          meta: { ...(meta || {}), upscale: { model: vr.full.tool_model, target: vr.full.target, source: requestBody.video_url, input: price?.input || null, output: price?.output || null, audio: vr.info.audio } },
+          projectId, folderId,
+        });
+        return { request_id: id, id, status: 'processing' };
+      }
       const body = providerBodyFor(resolved, providerId, modelId, requestBody);
       if (resolved.tool && !generations.mediaFileForUrl(req.user, body.image_url)) {
         return reply.code(400).send({ detail: 'Choose an image to upscale.' });

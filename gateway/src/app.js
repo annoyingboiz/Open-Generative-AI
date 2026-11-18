@@ -75,7 +75,8 @@ export async function buildApp(config, { logger = true } = {}) {
   const quoter = createQuoter({ providers, log: app.log });
   const projects = createProjects({ db });
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
-  const elements = createElements({ db, projects, generations });
+  const elements = createElements({ db, projects, generations, log: app.log });
+  generations.setOnCompleted((row) => elements.attachGenerated(row));
   app.decorate('ctx', { db, auth, providers, config, catalog, generations });
   await app.register(cookie);
   await app.register(formbody);
@@ -605,7 +606,8 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/dz/api/elements', projectRoute((req) => elements.create(req.user, req.body || {})));
   app.patch('/dz/api/elements/:id', projectRoute((req) => elements.update(req.user, req.params.id, req.body || {})));
   app.delete('/dz/api/elements/:id', projectRoute((req) => elements.remove(req.user, req.params.id)));
-  app.post('/dz/api/elements/:id/copy', projectRoute((req) => elements.copy(req.user, req.params.id, { project: req.body?.project || null })));
+  app.post('/dz/api/elements/:id/copy', projectRoute((req) => elements.copy(req.user, req.params.id, { project: req.body?.project || null, duplicate: req.body?.duplicate === true })));
+  app.post('/dz/api/elements/:id/sync', projectRoute((req) => elements.sync(req.user, req.params.id)));
 
   // Names to add people to a project (signed-in users only; no roles, no limits).
   app.get('/dz/api/users', projectRoute(() => ({ users: projects.users() })));

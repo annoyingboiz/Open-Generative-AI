@@ -6,14 +6,18 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useDzContext } from "../dzContext.js";
 import { DzMediaPicker } from "./DzMedia.jsx";
-import { Button, Input, Textarea, Badge, Spinner, Segmented, cn, DialogParts, DropdownMenuParts, Popover, PopoverTrigger, PopoverContent } from "../ui/index.js";
+import { dzGenerate, dzWithMeta } from "../api.js";
+import { useDzQuote } from "./DzPrice.jsx";
+import { createEntries, chooseVariant, paramsOf, buildBody } from "../dzCreate.js";
+import { Button, Input, Textarea, Badge, Spinner, Segmented, cn, DialogParts, DropdownMenuParts, SelectParts, Popover, PopoverTrigger, PopoverContent } from "../ui/index.js";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } = DialogParts;
+const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } = DropdownMenuParts;
 
 export const ELEMENT_KINDS = [
   { value: "character", label: "Character" },
-  { value: "object", label: "Object" },
+  { value: "object", label: "Prop" },
   { value: "place", label: "Place" },
   { value: "other", label: "Other" },
 ];
@@ -33,6 +37,8 @@ export const dzElementsApi = {
   update: async (id, data) => { const r = await call("PATCH", `/dz/api/elements/${encodeURIComponent(id)}`, data); changed(); return r; },
   remove: async (id) => { const r = await call("DELETE", `/dz/api/elements/${encodeURIComponent(id)}`); changed(); return r; },
   copy: async (id, project) => { const r = await call("POST", `/dz/api/elements/${encodeURIComponent(id)}/copy`, { project: project || null }); changed(); return r; },
+  duplicate: async (id) => { const r = await call("POST", `/dz/api/elements/${encodeURIComponent(id)}/copy`, { duplicate: true }); changed(); return r; },
+  sync: async (id) => { const r = await call("POST", `/dz/api/elements/${encodeURIComponent(id)}/sync`); changed(); return r; },
 };
 
 // Elements of the current context (and, in a project, the Library's too).
@@ -62,119 +68,491 @@ const Thumb = ({ el, className }) => (el.images?.[0]
 
 // ── Editor ───────────────────────────────────────────────────────────────
 
-export function ElementEditor({ element, open, onOpenChange, onSaved, onError }) {
+// ── Shared bits ──────────────────────────────────────────────────────────
+
+const KIND_TABS = [
+  { value: "all", label: "All" },
+  { value: "character", label: "Characters" },
+  { value: "place", label: "Places" },
+  { value: "object", label: "Props" },
+  { value: "other", label: "Other" },
+];
+const TAG_PREFIX = { character: "char", object: "prop", place: "loc", other: "obj" };
+const CYR = { а: "a", б: "b", в: "v", г: "g", ґ: "g", д: "d", е: "e", є: "ye", ё: "e", ж: "zh", з: "z", и: "i", і: "i", ї: "yi", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" };
+export function suggestTag(name, kind) {
+  const latin = String(name || "").toLowerCase().split("").map((c) => CYR[c] ?? c).join("");
+  const slug = latin.normalize("NFKD").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 30) || "x";
+  return `${TAG_PREFIX[kind] || "obj"}_${slug}`;
+}
+const kindLabel = (k) => ELEMENT_KINDS.find((x) => x.value === k)?.label || k;
+// Ready-made names for views, by type (any label can be typed).
+const VIEW_LABELS = {
+  character: ["Front", "3/4 left", "3/4 right", "Profile", "Back", "Full body", "Face close-up", "Outfit"],
+  object: ["Front", "Side", "Top", "Back", "Detail", "In use"],
+  place: ["Wide", "Reverse", "Detail", "Night", "Day"],
+  other: ["Main", "Detail"],
+};
+// The prompt a video element starts from, by type (editable before generating).
+const VIDEO_TEMPLATES = {
+  character: "The same person as in the reference images, on a plain light-grey studio background. The face slowly turns from one profile to the other, then the camera moves slowly over the details of the face, hair and clothes. Even soft light, no music, no text.",
+  object: "The same object as in the reference images, on a slowly rotating turntable, plain light-grey studio background, one full 360° turn, even soft light, no text.",
+  place: "The same place as in the reference images, a slow smooth panorama across the whole space, natural light, no people, no text.",
+  other: "The subject of the reference images, slowly revealed from every side on a plain background, even soft light, no text.",
+};
+const VIDEO_LABEL = { character: "Turnaround", object: "360° turn", place: "Panorama", other: "Reveal" };
+
+function download(url) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = url.split("/").pop();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+const MediaTile = ({ url, video, className }) => (video
+  ? <video src={url} className={cn("object-cover", className)} muted playsInline preload="metadata" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
+  : <img src={url} alt="" className={cn("object-cover", className)} loading="lazy" />);
+
+// ── Editor (right-hand panel) ────────────────────────────────────────────
+
+const EMPTY = { name: "", kind: "character", tag: "", tagEdited: false, status: "active", description: "", notes: "", views: [], videos: [] };
+
+export function ElementEditor({ element, open, onOpenChange, onSaved, onError, onGenerateVideo, preset }) {
   const ctx = useDzContext();
-  const [form, setForm] = useState({ name: "", kind: "character", description: "", images: [], video: null });
+  const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false); // the picker is uploading
   const [picker, setPicker] = useState(null); // 'image' | 'video'
   useEffect(() => {
     if (!open) return;
-    setForm(element ? { name: element.name, kind: element.kind, description: element.description || "", images: element.images || [], video: element.video || null } : { name: "", kind: "character", description: "", images: [], video: null });
-  }, [open, element]);
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+    setForm(element ? {
+      name: element.name, kind: element.kind, tag: element.tag || "", tagEdited: true, status: element.status || "active",
+      description: element.description || "", notes: element.notes || "",
+      views: (element.views || element.images?.map((url) => ({ url, label: "" })) || []).map((v) => ({ ...v })),
+      videos: (element.videos || (element.video ? [{ url: element.video, label: "" }] : [])).map((v) => ({ ...v })),
+    } : { ...EMPTY, ...(preset || {}) });
+  }, [open, element]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (patch) => setForm((f) => {
+    const next = { ...f, ...patch };
+    // The tag follows the name and type until it is edited by hand.
+    if (!next.tagEdited && (patch.name !== undefined || patch.kind !== undefined)) next.tag = next.name.trim() ? suggestTag(next.name, next.kind) : "";
+    return next;
+  });
+  const setView = (i, patch) => setForm((f) => ({ ...f, views: f.views.map((v, j) => (j === i ? { ...v, ...patch } : v)) }));
+  const moveView = (i, d) => setForm((f) => {
+    const views = [...f.views];
+    const j = i + d;
+    if (j < 0 || j >= views.length) return f;
+    [views[i], views[j]] = [views[j], views[i]];
+    return { ...f, views };
+  });
+  const makeMain = (i) => setForm((f) => ({ ...f, views: [f.views[i], ...f.views.filter((_, j) => j !== i)] }));
   const save = async () => {
     setBusy(true);
     try {
-      const data = { name: form.name, kind: form.kind, description: form.description, images: form.images, video: form.video };
+      const data = { name: form.name, kind: form.kind, tag: form.tag || undefined, status: form.status, description: form.description, notes: form.notes, views: form.views, videos: form.videos };
       const r = element ? await dzElementsApi.update(element.id, data) : await dzElementsApi.create({ ...data, project: ctx.project?.id || null });
-      onOpenChange(false);
       onSaved?.(r.element);
+      onOpenChange(false);
     } catch (e) { onError?.(e.message); } finally { setBusy(false); }
   };
-  const canSave = form.name.trim() && (form.images.length || form.video) && !busy && !picking;
+  const canSave = form.name.trim() && (form.views.length || form.videos.length) && !busy && !picking;
+  const labels = VIEW_LABELS[form.kind] || VIEW_LABELS.other;
+  const nextLabel = () => labels.find((l) => !form.views.some((v) => v.label === l)) || "";
+  if (!open) return null;
   return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{element ? "Edit element" : `New element${ctx.project ? ` in ${ctx.project.name}` : ""}`}</DialogTitle>
-            <DialogDescription>A character, object or place to reuse across generations. The first picture is the main one.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <Input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="Name, e.g. Anna" maxLength={40} />
-              <Segmented value={form.kind} onChange={(kind) => set({ kind })} aria-label="Type" options={ELEMENT_KINDS} />
+    <aside className="flex h-full w-full flex-col border-l border-border bg-card md:w-[480px]" aria-label={element ? "Edit element" : "New element"}>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <h2 className="text-lg font-semibold">{element ? `Edit · ${element.name}` : `New element${ctx.project ? ` in ${ctx.project.name}` : ""}`}</h2>
+        <Button variant="ghost" size="icon" aria-label="Close" onClick={() => onOpenChange(false)}>✕</Button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto custom-scrollbar px-5 py-4">
+        <div className="space-y-2">
+          <span className="font-semibold">Type</span>
+          <Segmented value={form.kind} onChange={(kind) => set({ kind })} aria-label="Type" options={ELEMENT_KINDS} />
+        </div>
+        <div className="grid gap-3">
+          <label className="grid gap-1.5"><span className="font-semibold">Name</span>
+            <Input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Mike, Rock glass, Old Room Bar" maxLength={40} />
+          </label>
+          <label className="grid gap-1.5"><span className="font-semibold">Tag <span className="font-normal text-muted-foreground">— how prompts call it</span></span>
+            <div className="flex items-center gap-1 rounded-md border border-input bg-background pl-3">
+              <span className="text-muted-foreground">@</span>
+              <input value={form.tag} onChange={(e) => setForm((f) => ({ ...f, tag: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 40), tagEdited: true }))}
+                className="h-9 min-w-0 flex-1 bg-transparent pr-3 outline-none" placeholder="char_mike" aria-label="Tag" />
             </div>
-            <Textarea value={form.description} onChange={(e) => set({ description: e.target.value })} placeholder="Short description (optional) — models that take elements use it" maxLength={300} rows={2} />
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between"><span className="font-semibold">Pictures</span><span className="text-muted-foreground">{form.images.length}/8</span></div>
-              <div className="flex flex-wrap gap-2">
-                {form.images.map((url, i) => (
-                  <div key={url} className={cn("group relative h-24 w-24 overflow-hidden rounded-xl border", i === 0 ? "border-primary" : "border-border")}>
-                    <img src={url} alt="" className="h-full w-full object-cover" />
-                    {i === 0 && <span className="absolute left-1 top-1 rounded bg-primary px-1.5 text-[13px] font-bold text-primary-foreground">main</span>}
-                    <div className="absolute inset-x-1 bottom-1 flex justify-between opacity-0 transition group-hover:opacity-100">
-                      {i > 0 ? <button className="rounded bg-black/70 px-1.5 text-[13px] text-white" onClick={() => set({ images: [url, ...form.images.filter((u) => u !== url)] })}>Main</button> : <span />}
-                      <button aria-label="Remove" className="rounded bg-black/70 px-1.5 text-[13px] text-white" onClick={() => set({ images: form.images.filter((u) => u !== url) })}>✕</button>
-                    </div>
+          </label>
+          <div className="grid gap-1.5"><span className="font-semibold">Status</span>
+            <Segmented value={form.status} onChange={(status) => set({ status })} aria-label="Status" size="sm" className="w-auto"
+              options={[{ value: "active", label: "Active" }, { value: "draft", label: "Draft — hidden in Create" }]} />
+          </div>
+        </div>
+        <label className="grid gap-1.5">
+          <span className="flex justify-between font-semibold">Description <span className="font-normal text-muted-foreground tabular-nums">{form.description.length}/400</span></span>
+          <Textarea value={form.description} onChange={(e) => set({ description: e.target.value.slice(0, 400) })} rows={3}
+            placeholder="What must stay the same: look, size, materials, colours. Models that take elements read it." />
+        </label>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between"><span className="font-semibold">Views <span className="font-normal text-muted-foreground">— the first is the main one</span></span><span className="text-muted-foreground tabular-nums">{form.views.length}/24</span></div>
+          <div className="grid grid-cols-2 gap-3">
+            {form.views.map((v, i) => (
+              <div key={v.url} className={cn("overflow-hidden rounded-xl border", i === 0 ? "border-primary" : "border-border")}>
+                <div className="group relative">
+                  <img src={v.url} alt={v.label || ""} className="aspect-square w-full object-cover" />
+                  {i === 0 && <span className="absolute left-1.5 top-1.5 rounded-md bg-primary px-1.5 font-semibold text-primary-foreground">Main</span>}
+                  <div className="absolute inset-x-1.5 bottom-1.5 flex justify-between gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                    <span className="flex gap-1">
+                      <button type="button" aria-label="Move left" disabled={i === 0} onClick={() => moveView(i, -1)} className="h-8 w-8 rounded-md bg-black/75 text-white disabled:opacity-40">←</button>
+                      <button type="button" aria-label="Move right" disabled={i === form.views.length - 1} onClick={() => moveView(i, 1)} className="h-8 w-8 rounded-md bg-black/75 text-white disabled:opacity-40">→</button>
+                    </span>
+                    <span className="flex gap-1">
+                      {i > 0 && <button type="button" onClick={() => makeMain(i)} className="h-8 rounded-md bg-black/75 px-2 text-white">Main</button>}
+                      <button type="button" aria-label="Remove view" onClick={() => setForm((f) => ({ ...f, views: f.views.filter((_, j) => j !== i) }))} className="h-8 w-8 rounded-md bg-black/75 text-white">✕</button>
+                    </span>
                   </div>
-                ))}
-                {form.images.length < 8 && (
-                  <button type="button" onClick={() => setPicker("image")} aria-label="Add pictures"
-                    className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
-                    <span className="font-semibold">Add</span>
-                  </button>
-                )}
+                </div>
+                <input value={v.label || ""} onChange={(e) => setView(i, { label: e.target.value.slice(0, 40) })} list={`dz-view-labels-${form.kind}`}
+                  placeholder="Label, e.g. Profile" aria-label="View label" className="h-9 w-full bg-transparent px-2.5 outline-none" />
               </div>
+            ))}
+            {form.views.length < 24 && (
+              <button type="button" onClick={() => setPicker("image")} className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+                <span className="font-semibold">Add views</span>
+              </button>
+            )}
+          </div>
+          <datalist id={`dz-view-labels-${form.kind}`}>{labels.map((l) => <option key={l} value={l} />)}</datalist>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between"><span className="font-semibold">Videos</span><span className="text-muted-foreground tabular-nums">{form.videos.length}/8</span></div>
+          <p className="text-muted-foreground">Clips of the element (turnaround, walk…). Kling uses a person's clip directly; other models take it as a video reference.</p>
+          {form.videos.map((v, i) => (
+            <div key={v.url} className="flex items-center gap-3">
+              <video src={v.url} className="h-20 w-32 shrink-0 rounded-lg border border-border object-cover" muted controls preload="metadata" />
+              <Input value={v.label || ""} onChange={(e) => setForm((f) => ({ ...f, videos: f.videos.map((x, j) => (j === i ? { ...x, label: e.target.value.slice(0, 40) } : x)) }))} placeholder="Label, e.g. Turnaround" aria-label="Video label" />
+              <Button variant="ghost" size="icon" aria-label="Remove video" onClick={() => setForm((f) => ({ ...f, videos: f.videos.filter((_, j) => j !== i) }))}>✕</Button>
             </div>
-            <div className="grid gap-2">
-              <span className="font-semibold">Video element <span className="font-normal text-muted-foreground">(optional)</span></span>
-              <p className="text-muted-foreground">A short clip of the character. Kling uses it for real people (3–8 s); other models get it as a video reference.</p>
-              {form.video ? (
-                <div className="flex items-center gap-3">
-                  <video src={form.video} className="h-24 w-40 rounded-xl border border-border object-cover" muted controls preload="metadata" />
-                  <Button size="sm" variant="ghost" onClick={() => set({ video: null })}>Remove</Button>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => setPicker("video")}>Add video</Button>
-                </div>
-              )}
+          ))}
+          <div className="flex flex-wrap gap-2">
+            {form.videos.length < 8 && <Button size="sm" variant="secondary" onClick={() => setPicker("video")}>Add video</Button>}
+            {element && onGenerateVideo && form.views.length > 0 && <Button size="sm" variant="secondary" onClick={() => onGenerateVideo(element)}>Generate video element…</Button>}
+            {!element && <span className="text-muted-foreground">Save first to generate a video from the views.</span>}
+          </div>
+        </div>
+
+        <label className="grid gap-1.5"><span className="font-semibold">Notes <span className="font-normal text-muted-foreground">(for people: real size, where it's from…)</span></span>
+          <Textarea value={form.notes} onChange={(e) => set({ notes: e.target.value.slice(0, 2000) })} rows={3} />
+        </label>
+      </div>
+      <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+        <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+        <Button onClick={save} disabled={!canSave}>{busy ? <Spinner /> : element ? "Save" : "Create"}</Button>
+      </div>
+      <DzMediaPicker open={Boolean(picker)} onOpenChange={(o) => !o && setPicker(null)} accept={picker === "video" ? "video" : "image"}
+        max={picker === "video" ? Math.max(1, 8 - form.videos.length) : Math.max(1, 24 - form.views.length)} onError={onError} onUploading={setPicking}
+        title={picker === "video" ? "Videos of the element" : "Views of the element"}
+        onPick={(list) => setForm((f) => (picker === "video"
+          ? { ...f, videos: [...f.videos, ...list.filter((x) => !f.videos.some((v) => v.url === x.url)).map((x) => ({ url: x.url, label: "" }))].slice(0, 8) }
+          : (() => {
+            const used = new Set(f.views.map((v) => v.label));
+            const add = list.filter((x) => !f.views.some((v) => v.url === x.url)).map((x) => {
+              const label = labels.find((l) => !used.has(l)) || "";
+              used.add(label);
+              return { url: x.url, label };
+            });
+            return { ...f, views: [...f.views, ...add].slice(0, 24) };
+          })()))} />
+    </aside>
+  );
+}
+
+// ── Viewer ───────────────────────────────────────────────────────────────
+
+function ElementViewer({ element, onClose, onEdit, onGenerateVideo, onUse }) {
+  const media = element ? [...(element.views || []).map((v) => ({ ...v, video: false })), ...(element.videos || []).map((v) => ({ ...v, video: true }))] : [];
+  const [i, setI] = useState(0);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setI(0); setCopied(false); }, [element?.id]);
+  useEffect(() => {
+    if (!element) return undefined;
+    const onKey = (e) => {
+      if (e.key === "ArrowRight") setI((x) => Math.min(media.length - 1, x + 1));
+      if (e.key === "ArrowLeft") setI((x) => Math.max(0, x - 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [element, media.length]);
+  if (!element) return null;
+  const cur = media[Math.min(i, media.length - 1)];
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[92vh] max-w-[min(1200px,96vw)] gap-0 overflow-hidden p-0 sm:rounded-2xl">
+        <DialogTitle className="sr-only">{element.name}</DialogTitle>
+        <DialogDescription className="sr-only">Views and videos of the element</DialogDescription>
+        <div className="grid max-h-[92vh] md:grid-cols-[1fr_340px]">
+          <div className="flex min-h-0 flex-col bg-black">
+            <div className="flex min-h-[320px] flex-1 items-center justify-center p-4">
+              {cur ? (cur.video ? <video key={cur.url} src={cur.url} controls autoPlay className="max-h-[66vh] max-w-full rounded-lg" /> : <img src={cur.url} alt={cur.label || element.name} className="max-h-[66vh] max-w-full rounded-lg object-contain" />) : null}
+            </div>
+            {cur?.label && <div className="px-4 pb-2 text-center text-white/80">{cur.label}</div>}
+            <div className="flex gap-2 overflow-x-auto custom-scrollbar border-t border-white/10 p-3">
+              {media.map((m, j) => (
+                <button key={m.url} type="button" onClick={() => setI(j)} aria-label={m.label || (m.video ? "Video" : "View")}
+                  className={cn("relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2", j === i ? "border-primary" : "border-transparent opacity-70 hover:opacity-100")}>
+                  <MediaTile url={m.url} video={m.video} className="h-full w-full" />
+                  {m.video && <span className="absolute bottom-0.5 left-0.5 rounded bg-black/75 px-1 text-white">▶</span>}
+                </button>
+              ))}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={save} disabled={!canSave}>{busy ? <Spinner /> : "Save"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <DzMediaPicker open={Boolean(picker)} onOpenChange={(o) => !o && setPicker(null)} accept={picker === "video" ? "video" : "image"}
-        max={picker === "video" ? 1 : Math.max(1, 8 - form.images.length)} onError={onError} onUploading={setPicking}
-        title={picker === "video" ? "Video element" : "Pictures of the element"}
-        onPick={(list) => (picker === "video" ? set({ video: list[0]?.url || null }) : setForm((x) => ({ ...x, images: [...x.images, ...list.map((i) => i.url).filter((u) => !x.images.includes(u))].slice(0, 8) })))} />
-    </>
+          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
+            <div>
+              <div className="text-2xl font-bold">{element.name}</div>
+              <div className="text-muted-foreground">{kindLabel(element.kind)}{element.status === "draft" ? " · Draft" : ""}{element.author ? ` · ${element.author}` : ""}</div>
+            </div>
+            <button type="button" onClick={() => { navigator.clipboard?.writeText(`@${element.tag}`).then(() => setCopied(true)).catch(() => {}); }}
+              className="flex items-center justify-between rounded-xl bg-primary/15 px-3 py-2 text-left font-semibold text-primary hover:bg-primary/20" title="Copy the tag">
+              @{element.tag}<span className="font-normal">{copied ? "Copied" : "Copy"}</span>
+            </button>
+            {element.description && <p className="whitespace-pre-wrap text-foreground/90">{element.description}</p>}
+            {element.notes && <div><div className="font-semibold">Notes</div><p className="whitespace-pre-wrap text-muted-foreground">{element.notes}</p></div>}
+            <div className="text-muted-foreground">{(element.views || []).length} view{(element.views || []).length === 1 ? "" : "s"} · {(element.videos || []).length} video{(element.videos || []).length === 1 ? "" : "s"}</div>
+            <div className="mt-auto grid gap-2">
+              {element.status !== "draft" && <Button onClick={() => onUse(element)}>Use in Create</Button>}
+              <Button variant="secondary" onClick={() => onGenerateVideo(element)} disabled={!(element.views || []).length}>Generate video element…</Button>
+              <Button variant="secondary" onClick={() => onEdit(element)}>Edit</Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Generate video element ───────────────────────────────────────────────
+// A video model makes a clip from the element's own views; the clip joins the
+// element's videos when it is ready (the server attaches it, even if this page closes).
+
+export function VideoElementDialog({ element, onClose, onError, apiKey = "session" }) {
+  const entries = useMemo(() => (element ? createEntries("video").filter((e) => e.slots.some((s) => s.role === "reference" || s.role === "first")) : []), [element]);
+  const [entryKey, setEntryKey] = useState("");
+  const [chosen, setChosen] = useState([]);
+  const [prompt, setPrompt] = useState("");
+  const [label, setLabel] = useState("");
+  const [duration, setDuration] = useState(undefined);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!element) return;
+    setEntryKey(entries[0]?.key || "");
+    setChosen((element.views || []).map((v) => v.url));
+    setPrompt(VIDEO_TEMPLATES[element.kind] || VIDEO_TEMPLATES.other);
+    setLabel(VIDEO_LABEL[element.kind] || "Video");
+    setDuration(undefined);
+  }, [element?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const entry = entries.find((e) => e.key === entryKey) || null;
+  const refSlot = entry?.slots.find((s) => s.role === "reference");
+  // Views go in as references (up to the model's limit), or the main one as the start frame.
+  const files = chosen.slice(0, refSlot ? refSlot.max : 1).map((url) => ({ url }));
+  const attached = refSlot ? { reference: files } : { first: files.slice(0, 1) };
+  const variant = entry && files.length ? chooseVariant(entry, attached) : null;
+  const durationParam = variant ? paramsOf(variant.model).main.find((p) => p.key === "duration") : null;
+  const values = durationParam && duration !== undefined ? { duration } : {};
+  const body = variant ? buildBody(variant, { prompt, values, attached }) : null;
+  const { price, loading } = useDzQuote(apiKey, () => (body ? [dzGenerate, { endpoint: variant.model.endpoint, ...body }] : null));
+  const tooMany = refSlot && chosen.length > refSlot.max;
+  const run = async () => {
+    if (!variant || !body) return;
+    setBusy(true);
+    const meta = { kind: "video", entryKey: entry.key, modelName: `${entry.familyName} · ${entry.providerName}`, prompt, forElement: { id: element.id, label } };
+    const request = { endpoint: variant.model.endpoint, ...body };
+    onClose();
+    window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Video element", message: `Making “${label}” for ${element.name}. It joins the element when ready.` } }));
+    try {
+      await dzWithMeta({ studio: "create", meta }, () => dzGenerate(apiKey, request));
+      window.dispatchEvent(new CustomEvent("dz:elements"));
+      window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Video element", message: `“${label}” is ready in ${element.name}.` } }));
+    } catch (e) {
+      onError?.(String(e?.message || e));
+    } finally { setBusy(false); }
+  };
+  if (!element) return null;
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Generate video element · {element.name}</DialogTitle>
+          <DialogDescription>A video model makes a clip from the element's views. It is added to the element's videos when ready.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <span className="font-semibold">Views to use {refSlot ? <span className="font-normal text-muted-foreground">— up to {refSlot.max} for this model</span> : <span className="font-normal text-muted-foreground">— this model takes one start frame</span>}</span>
+            <div className="flex flex-wrap gap-2">
+              {(element.views || []).map((v) => {
+                const on = chosen.includes(v.url);
+                return (
+                  <button key={v.url} type="button" onClick={() => setChosen((c) => (on ? c.filter((u) => u !== v.url) : [...c, v.url]))} title={v.label || undefined}
+                    className={cn("relative h-20 w-20 overflow-hidden rounded-lg border-2", on ? "border-primary" : "border-border opacity-50")}>
+                    <img src={v.url} alt={v.label || ""} className="h-full w-full object-cover" />
+                    {on && <span className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground">{chosen.indexOf(v.url) + 1}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {tooMany && <p className="text-amber-300">Only the first {refSlot.max} chosen views go in.</p>}
+          </div>
+          <label className="grid gap-1.5"><span className="font-semibold">Model</span>
+            <Select value={entryKey} onValueChange={setEntryKey}>
+              <SelectTrigger aria-label="Model"><SelectValue placeholder="Pick a video model" /></SelectTrigger>
+              <SelectContent className="max-h-[360px]">{entries.map((e) => <SelectItem key={e.key} value={e.key}>{e.familyName} · {e.providerName}</SelectItem>)}</SelectContent>
+            </Select>
+          </label>
+          {durationParam && Array.isArray(durationParam.enum) && (
+            <label className="grid gap-1.5"><span className="font-semibold">Duration</span>
+              <Select value={String(duration ?? durationParam.default ?? durationParam.enum[0])} onValueChange={(v) => setDuration(durationParam.enum.find((x) => String(x) === v))}>
+                <SelectTrigger aria-label="Duration"><SelectValue /></SelectTrigger>
+                <SelectContent>{durationParam.enum.map((d) => <SelectItem key={String(d)} value={String(d)}>{Number(d) === -1 ? "Auto" : `${d} s`}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+          )}
+          <label className="grid gap-1.5"><span className="font-semibold">Prompt <span className="font-normal text-muted-foreground">— a template for this type, change it freely</span></span>
+            <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} />
+          </label>
+          <label className="grid gap-1.5"><span className="font-semibold">Name of the clip</span>
+            <Input value={label} onChange={(e) => setLabel(e.target.value.slice(0, 40))} />
+          </label>
+        </div>
+        <DialogFooter className="items-center gap-3">
+          <span className="mr-auto text-muted-foreground tabular-nums">{price ? `${price.exact ? "" : "≈ "}$${price.usd.toFixed(2)}` : loading ? "…" : entry?.priceLabel || ""}</span>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={run} disabled={!variant || !prompt.trim() || busy || !entries.length}>Generate</Button>
+        </DialogFooter>
+        {!entries.length && <p className="text-amber-300">No video model that takes pictures is available.</p>}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── "To element…" for chosen results ────────────────────────────────────
+
+export function ToElementDialog({ items, onClose, onError }) {
+  const { project, library, loaded, ctx } = useDzElements();
+  const list = (ctx.project ? project : library).filter((e) => !ctx.project?.archived);
+  const [target, setTarget] = useState("new");
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState("character");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setTarget("new"); setName(""); setKind("character"); }, [items]);
+  if (!items) return null;
+  const pics = items.filter((i) => i.kind !== "video" && i.url).map((i) => ({ url: i.url, label: "" }));
+  const vids = items.filter((i) => i.kind === "video" && i.url).map((i) => ({ url: i.url, label: "" }));
+  const run = async () => {
+    setBusy(true);
+    try {
+      if (target === "new") {
+        await dzElementsApi.create({ name, kind, views: pics, videos: vids.slice(0, 8), project: ctx.project?.id || null });
+      } else {
+        const el = list.find((e) => e.id === target);
+        const views = [...(el.views || []), ...pics.filter((p) => !(el.views || []).some((v) => v.url === p.url))].slice(0, 24);
+        const videos = [...(el.videos || []), ...vids.filter((p) => !(el.videos || []).some((v) => v.url === p.url))].slice(0, 8);
+        await dzElementsApi.update(el.id, { views, videos });
+      }
+      window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Elements", message: `Added ${pics.length + vids.length} file${pics.length + vids.length === 1 ? "" : "s"} to ${target === "new" ? name : list.find((e) => e.id === target)?.name}.` } }));
+      window.dispatchEvent(new CustomEvent("dz:moved"));
+      onClose();
+    } catch (e) { onError?.(e.message); } finally { setBusy(false); }
+  };
+  const row = (selected) => cn("flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left", selected ? "bg-primary/15" : "hover:bg-accent");
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add {items.length} to an element</DialogTitle>
+          <DialogDescription>Pictures become views, videos become its videos{ctx.project ? ` — elements of ${ctx.project.name}` : " — your Library's elements"}.</DialogDescription>
+        </DialogHeader>
+        <div className="grid max-h-[50vh] gap-1 overflow-y-auto">
+          <button type="button" className={row(target === "new")} onClick={() => setTarget("new")}><span className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-border">+</span> New element</button>
+          {target === "new" && (
+            <div className="grid gap-2 py-2 pl-14">
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" maxLength={40} autoFocus />
+              <Segmented value={kind} onChange={setKind} size="sm" aria-label="Type" options={ELEMENT_KINDS} />
+            </div>
+          )}
+          {!loaded && <div className="flex justify-center py-4"><Spinner /></div>}
+          {list.map((e) => (
+            <button key={e.id} type="button" className={row(target === e.id)} onClick={() => setTarget(e.id)}>
+              <Thumb el={e} className="h-10 w-10 rounded-md" />
+              <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{e.name}</span><span className="block truncate text-muted-foreground">@{e.tag} · {(e.views || []).length} views</span></span>
+            </button>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={run} disabled={busy || (target === "new" && !name.trim()) || (!pics.length && !vids.length)}>{busy ? <Spinner /> : "Add"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────
 
-export function DzElementsPage({ projects = [], onError }) {
+export function DzElementsPage({ projects = [], onError, apiKey = "session" }) {
   const { project, library, loaded, ctx } = useDzElements();
   const [editing, setEditing] = useState(null); // element | 'new' | null
-  // An open editor belongs to the context it was opened in.
-  useEffect(() => { setEditing(null); }, [ctx.project?.id]);
-  const list = ctx.project ? project : library;
+  const [viewing, setViewing] = useState(null);
+  const [videoFor, setVideoFor] = useState(null);
+  const [tab, setTab] = useState("all");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState("recent");
+  // Panels belong to the context they were opened in.
+  useEffect(() => { setEditing(null); setViewing(null); setVideoFor(null); }, [ctx.project?.id]);
+  const all = ctx.project ? project : library;
+  // Keep an open viewer in step with fresh data (a new video, an edit).
+  useEffect(() => { if (viewing) setViewing((v) => all.find((e) => e.id === v.id) || null); }, [all]); // eslint-disable-line react-hooks/exhaustive-deps
+  const needle = q.trim().toLowerCase();
+  const list = all
+    .filter((e) => tab === "all" || e.kind === tab)
+    .filter((e) => !needle || e.name.toLowerCase().includes(needle) || String(e.tag || "").includes(needle.replace(/^@/, "")) || String(e.description || "").toLowerCase().includes(needle))
+    .sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name) : b.updated_at - a.updated_at));
+  const counts = Object.fromEntries(KIND_TABS.map((t) => [t.value, t.value === "all" ? all.length : all.filter((e) => e.kind === t.value).length]));
   const targets = projects.filter((p) => !p.archived && p.id !== ctx.project?.id);
   const report = (e) => onError?.(e.message || String(e));
+  const archived = Boolean(ctx.project?.archived);
+  const use = (el) => { setViewing(null); window.dispatchEvent(new CustomEvent("dz:use-element", { detail: el })); };
   const card = (el) => (
     <div key={el.id} className="group overflow-hidden rounded-2xl border border-border bg-card">
-      <button className="block w-full" onClick={() => setEditing(el)}><Thumb el={el} className="aspect-square w-full" /></button>
+      <button className="relative block w-full" onClick={() => setViewing(el)}>
+        <Thumb el={el} className="aspect-square w-full" />
+        {el.status === "draft" && <span className="absolute left-2 top-2 rounded-md bg-black/75 px-2 font-semibold text-white">Draft</span>}
+        {(el.videos || []).length > 0 && <span className="absolute bottom-2 left-2 rounded-md bg-black/75 px-2 font-semibold text-white">▶ {el.videos.length}</span>}
+      </button>
       <div className="flex items-start gap-2 p-3">
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold">{el.name}</div>
+          <div className="truncate text-primary">@{el.tag}</div>
           <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
-            <span>{ELEMENT_KINDS.find((k) => k.value === el.kind)?.label}</span>
-            <span>· {el.images.length} pic{el.images.length === 1 ? "" : "s"}</span>
-            {el.video && <Badge variant="secondary">video</Badge>}
+            <span>{kindLabel(el.kind)}</span>
+            <span>· {(el.views || []).length} view{(el.views || []).length === 1 ? "" : "s"}</span>
+            {el.source_id && <span>· copy</span>}
             {el.author && <span>· {el.author}</span>}
           </div>
         </div>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button size="sm" variant="ghost" aria-label="More">⋯</Button></DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild><Button size="sm" variant="ghost" aria-label={`Actions: ${el.name}`}>⋯</Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuItem className="text-base" onSelect={() => setEditing(el)}>Edit</DropdownMenuItem>
+            <DropdownMenuItem className="text-base" onSelect={() => setViewing(el)}>View</DropdownMenuItem>
+            {!archived && <DropdownMenuItem className="text-base" onSelect={() => setEditing(el)}>Edit</DropdownMenuItem>}
+            {!archived && (el.views || []).length > 0 && <DropdownMenuItem className="text-base" onSelect={() => setVideoFor(el)}>Generate video element…</DropdownMenuItem>}
+            {el.status !== "draft" && <DropdownMenuItem className="text-base" onSelect={() => use(el)}>Use in Create</DropdownMenuItem>}
+            {!archived && <DropdownMenuItem className="text-base" onSelect={() => dzElementsApi.duplicate(el.id).catch(report)}>Duplicate</DropdownMenuItem>}
+            {el.source_id && !archived && (
+              <DropdownMenuItem className="text-base" onSelect={() => { if (window.confirm(`Take everything from the original again? Changes made to “${el.name}” here are replaced (its tag stays).`)) dzElementsApi.sync(el.id).catch(report); }}>Update from original</DropdownMenuItem>
+            )}
+            {el.images?.[0] && <DropdownMenuItem className="text-base" onSelect={() => download(el.images[0])}>Download main view</DropdownMenuItem>}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-muted-foreground">Copy to…</DropdownMenuLabel>
             {ctx.project && <DropdownMenuItem className="text-base" onSelect={() => dzElementsApi.copy(el.id, null).catch(report)}>My Library</DropdownMenuItem>}
@@ -191,36 +569,51 @@ export function DzElementsPage({ projects = [], onError }) {
     </div>
   );
   return (
-    <div className="h-full overflow-y-auto p-6 md:p-10">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-3xl font-bold text-foreground">
-              {ctx.project && <span className="h-3 w-3 rounded-full" style={{ background: ctx.project.color }} />}
-              {ctx.project ? `${ctx.project.name} · Elements` : "Elements"}
-            </h1>
-            <p className="text-lg text-muted-foreground">{ctx.project ? "Characters, objects and places of this project — everyone in it can use them. Copy one from your Library with “Copy to…”." : "Your characters, objects and places. Copy them into projects; a copy changes on its own."}</p>
-          </div>
-          {!ctx.project?.archived && <Button onClick={() => setEditing("new")}>+ New element</Button>}
-        </div>
-        {!loaded ? <div className="flex justify-center py-16"><Spinner /></div> : list.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-border p-10 text-center text-lg text-muted-foreground">No elements yet.</p>
-        ) : <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{list.map(card)}</div>}
-        {ctx.project && library.length > 0 && (
-          <>
-            <h2 className="mb-3 mt-10 text-xl font-semibold text-muted-foreground">From your Library — copy into this project</h2>
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-              {library.map((el) => (
-                <button key={el.id} onClick={() => dzElementsApi.copy(el.id, ctx.project.id).catch(report)} className="overflow-hidden rounded-xl border border-border text-left hover:border-primary" title="Copy into this project">
-                  <Thumb el={el} className="aspect-square w-full" />
-                  <div className="truncate px-2 py-1.5">{el.name} <span className="text-muted-foreground">+</span></div>
-                </button>
-              ))}
+    <div className="flex h-full">
+      <div className="min-w-0 flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h1 className="flex items-center gap-2 text-3xl font-bold text-foreground">
+                {ctx.project && <span className="h-3 w-3 rounded-full" style={{ background: ctx.project.color }} />}
+                {ctx.project ? `${ctx.project.name} · Elements` : "Elements"}
+              </h1>
+              <p className="text-lg text-muted-foreground">{ctx.project ? "Characters, props and places of this project — everyone in it can use them." : "Your characters, props and places. Copy them into projects; a copy changes on its own."}</p>
             </div>
-          </>
-        )}
+            {!archived && <Button onClick={() => { setViewing(null); setEditing("new"); }}>+ New element</Button>}
+          </div>
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <Segmented value={tab} onChange={setTab} size="sm" className="w-auto" aria-label="Type"
+              options={KIND_TABS.map((t) => ({ value: t.value, label: `${t.label}${counts[t.value] ? ` · ${counts[t.value]}` : ""}` }))} />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, @tag, description" className="h-9 w-[260px]" aria-label="Search elements" />
+            <Segmented value={sort} onChange={setSort} size="sm" className="w-auto" aria-label="Sort" options={[{ value: "recent", label: "Recent" }, { value: "name", label: "A–Z" }]} />
+          </div>
+          {!loaded ? <div className="flex justify-center py-16"><Spinner /></div> : list.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-border p-10 text-center text-lg text-muted-foreground">{all.length ? "Nothing matches." : "No elements yet."}</p>
+          ) : <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{list.map(card)}</div>}
+          {ctx.project && library.length > 0 && (
+            <>
+              <h2 className="mb-3 mt-10 text-xl font-semibold text-muted-foreground">From your Library — copy into this project</h2>
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                {library.map((el) => (
+                  <button key={el.id} disabled={archived} onClick={() => dzElementsApi.copy(el.id, ctx.project.id).catch(report)} className="overflow-hidden rounded-xl border border-border text-left hover:border-primary disabled:opacity-50" title="Copy into this project">
+                    <Thumb el={el} className="aspect-square w-full" />
+                    <div className="truncate px-2 py-1.5">{el.name} <span className="text-muted-foreground">+</span></div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
-      <ElementEditor element={editing === "new" ? null : editing} open={Boolean(editing)} onOpenChange={(o) => !o && setEditing(null)} onError={onError} />
+      {editing && (
+        <div className="fixed inset-0 z-40 md:static md:z-auto">
+          <ElementEditor element={editing === "new" ? null : editing} open onOpenChange={(o) => !o && setEditing(null)} onError={onError}
+            onSaved={() => setViewing(null)} onGenerateVideo={(el) => setVideoFor(el)} />
+        </div>
+      )}
+      <ElementViewer element={viewing} onClose={() => setViewing(null)} onEdit={(el) => { setViewing(null); setEditing(el); }} onGenerateVideo={(el) => setVideoFor(el)} onUse={use} />
+      <VideoElementDialog element={videoFor} onClose={() => setVideoFor(null)} onError={onError} apiKey={apiKey} />
     </div>
   );
 }
@@ -231,7 +624,8 @@ export function ElementPicker({ selected = [], onChange, max = 7, note }) {
   const { project, library, loaded, ctx } = useDzElements();
   const [q, setQ] = useState("");
   const ids = new Set(selected.map((e) => e.id));
-  const match = (e) => !q || e.name.toLowerCase().includes(q.toLowerCase());
+  // Drafts stay out of Create.
+  const match = (e) => e.status !== "draft" && (!q || e.name.toLowerCase().includes(q.toLowerCase()) || String(e.tag || "").includes(q.toLowerCase().replace(/^@/, "")));
   const toggle = (el) => {
     if (ids.has(el.id)) onChange(selected.filter((e) => e.id !== el.id));
     else if (selected.length < max) onChange([...selected, el]);
@@ -240,7 +634,7 @@ export function ElementPicker({ selected = [], onChange, max = 7, note }) {
     <button key={el.id} onClick={() => toggle(el)} disabled={!ids.has(el.id) && selected.length >= max}
       className={cn("flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left disabled:opacity-40", ids.has(el.id) ? "bg-primary/15" : "hover:bg-accent")}>
       <Thumb el={el} className="h-10 w-10 shrink-0 rounded-md" />
-      <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{el.name}</span><span className="block truncate text-muted-foreground">{ELEMENT_KINDS.find((k) => k.value === el.kind)?.label}{el.video ? " · video" : ""}</span></span>
+      <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{el.name}</span><span className="block truncate text-muted-foreground">@{el.tag} · {ELEMENT_KINDS.find((k) => k.value === el.kind)?.label}{el.video ? " · video" : ""}</span></span>
       {ids.has(el.id) && <span>✓</span>}
     </button>
   );

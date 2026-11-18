@@ -362,6 +362,17 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     });
   }, [elementLists]);
   const [uploads, setUploads] = useState(0); // files still uploading — Generate waits for them
+  // "Use in Create" on the Elements page adds the element here (Create tab only).
+  useEffect(() => {
+    if (mode !== "create") return undefined;
+    const on = (e) => {
+      const el = e.detail;
+      if (!el?.id) return;
+      setElements((list) => (list.some((x) => x.id === el.id) || list.length >= 7 ? list : [...list, el]));
+    };
+    window.addEventListener("dz:use-element", on);
+    return () => window.removeEventListener("dz:use-element", on);
+  }, [mode]);
   const [busy, setBusy] = useState(0);
   const [drawOpen, setDrawOpen] = useState(false);
   const promptRef = useRef(null);
@@ -575,7 +586,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     const q = mention.query.toLowerCase();
     const chosenIds = new Set(elements.map((e) => e.id));
     const others = canUseElements && elements.length < elementMax
-      ? [...elementLists.project, ...elementLists.library].filter((e, i, all) => !chosenIds.has(e.id) && all.findIndex((x) => x.id === e.id) === i && elementFits(entry, e))
+      ? [...elementLists.project, ...elementLists.library].filter((e, i, all) => !chosenIds.has(e.id) && all.findIndex((x) => x.id === e.id) === i && e.status !== "draft" && elementFits(entry, e))
       : [];
     // Each candidate's tag as it will be once added (next to the chosen ones only).
     const tagIfAdded = (e) => elementTags([...activeElements, e]).get(e.id);

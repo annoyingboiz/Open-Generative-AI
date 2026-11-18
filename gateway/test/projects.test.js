@@ -360,3 +360,67 @@ test('elements: personal and project, copies both ways with their own files', as
   res = await as('wife', 'GET', `/dz/api/elements?project=${proj.id}`);
   assert.equal(res.json().elements.length, 0);
 });
+
+test('elements v2: tags, labelled views and videos, draft, duplicate, update from Library, generated video joins the element', async () => {
+  let res = await as('admin', 'POST', '/dz/api/projects', { name: 'Elements v2' });
+  const proj = res.json().project;
+  const up = async (name) => {
+    const mp = multipart(name, 'image/png', PNG);
+    const r = await app.inject({ method: 'POST', url: '/api/v1/upload_file', headers: { cookie: cookies.admin, ...mp.headers }, payload: mp.payload });
+    return r.json().url;
+  };
+  const a = await up('a.png');
+  const b = await up('b.png');
+  res = await as('admin', 'POST', '/dz/api/elements', { name: 'Майк', kind: 'character', views: [{ url: a, label: 'Front' }, { url: b, label: '3/4 left' }], status: 'draft', notes: '180 cm' });
+  assert.equal(res.statusCode, 200, res.body);
+  const mike = res.json().element;
+  assert.equal(mike.tag, 'char_mayk');
+  assert.deepEqual(mike.views.map((v) => v.label), ['Front', '3/4 left']);
+  assert.deepEqual(mike.images, [a, b]);
+  assert.equal(mike.status, 'draft');
+  assert.equal(mike.notes, '180 cm');
+  // The same name gets the next free tag; a taken tag is refused; a bad tag too.
+  res = await as('admin', 'POST', '/dz/api/elements', { name: 'Майк', kind: 'character', views: [a] });
+  assert.equal(res.json().element.tag, 'char_mayk_2');
+  res = await as('admin', 'PATCH', `/dz/api/elements/${res.json().element.id}`, { tag: 'char_mayk' });
+  assert.equal(res.statusCode, 409);
+  res = await as('admin', 'PATCH', `/dz/api/elements/${mike.id}`, { tag: '1 bad' });
+  assert.equal(res.statusCode, 400);
+  res = await as('admin', 'PATCH', `/dz/api/elements/${mike.id}`, { tag: '@char_mike', status: 'active', views: [{ url: b, label: 'Main now' }, { url: a, label: 'Front' }] });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(res.json().element.tag, 'char_mike');
+  assert.equal(res.json().element.images[0], b);
+  // Too long a description.
+  res = await as('admin', 'PATCH', `/dz/api/elements/${mike.id}`, { description: 'x'.repeat(401) });
+  assert.equal(res.statusCode, 400);
+
+  // Duplicate in place; copy to a project keeps the tag there; update from Library.
+  res = await as('admin', 'POST', `/dz/api/elements/${mike.id}/copy`, { duplicate: true });
+  assert.equal(res.json().element.name, 'Майк copy');
+  assert.equal(res.json().element.source_id, null);
+  res = await as('admin', 'POST', `/dz/api/elements/${mike.id}/copy`, { project: proj.id });
+  const copy = res.json().element;
+  assert.equal(copy.tag, 'char_mike');
+  res = await as('admin', 'PATCH', `/dz/api/elements/${mike.id}`, { name: 'Mike', notes: 'new notes' });
+  res = await as('admin', 'POST', `/dz/api/elements/${copy.id}/sync`);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(res.json().element.name, 'Mike');
+  assert.equal(res.json().element.notes, 'new notes');
+  assert.equal(res.json().element.tag, 'char_mike');
+  res = await as('admin', 'POST', `/dz/api/elements/${mike.id}/sync`);
+  assert.equal(res.statusCode, 409);
+
+  // A generation made for the element: its result becomes a labelled video of it.
+  apimart.poll = async () => ({ state: 'completed', outputs: [`http://127.0.0.1:${files.address().port}/clip.png`], costUsd: 0.1 });
+  res = await as('admin', 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'turn', _dz: { studio: 'create', meta: { forElement: { id: copy.id, label: 'Turnaround' } } } });
+  assert.equal(res.statusCode, 200, res.body);
+  app.ctx.db.prepare('UPDATE generations SET next_poll_at = 0 WHERE id = ?').run(res.json().id);
+  await app.ctx.generations.tick();
+  apimart.poll = async () => ({ state: 'processing' });
+  res = await as('admin', 'GET', `/dz/api/elements?project=${proj.id}`);
+  const got = res.json().elements.find((e) => e.id === copy.id);
+  assert.equal(got.videos.length, 1);
+  assert.equal(got.videos[0].label, 'Turnaround');
+  assert.match(got.videos[0].url, /^\/media\/u\//);
+  assert.equal(got.video, got.videos[0].url);
+});

@@ -1,7 +1,12 @@
-// Elements: named subjects (a character, an object, a place) with pictures —
-// the first is the main one — and an optional video. They live in the user's
-// Library (personal) or in a project (every member). Moving between the two is
-// always a copy: edits never reach the other copy.
+// Elements: named subjects (a character, a prop, a place, …) to reuse across
+// generations. Each has:
+//   tag      — its @name in prompts (@char_mike), unique where it lives
+//   views    — any number of labelled pictures, the first is the main one
+//   videos   — several labelled clips (uploaded, or generated from its views)
+//   description (rules for models, ≤400), notes (free text), draft/active
+// They live in the user's Library (personal) or in a project (every member).
+// Moving between the two is always a copy; a copy can be refreshed from its
+// source ("Update from Library").
 import { newId } from './storage.js';
 import { now } from './db.js';
 
@@ -10,36 +15,82 @@ export class ElementError extends Error {
 }
 
 const KINDS = ['character', 'object', 'place', 'other'];
-const MAX_IMAGES = 8;
+const STATUSES = ['draft', 'active'];
+const MAX_VIEWS = 24;
+const MAX_VIDEOS = 8;
 const MAX_NAME = 40;
-const MAX_DESC = 300;
+const MAX_DESC = 400;
+const MAX_NOTES = 2000;
+const MAX_LABEL = 40;
+const TAG_PREFIX = { character: 'char', object: 'prop', place: 'loc', other: 'obj' };
+const TAG_RE = /^[a-z][a-z0-9_]{1,39}$/;
+const CYR = { а: 'a', б: 'b', в: 'v', г: 'g', ґ: 'g', д: 'd', е: 'e', є: 'ye', ё: 'e', ж: 'zh', з: 'z', и: 'i', і: 'i', ї: 'yi', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
 
-export function createElements({ db, projects, generations }) {
+// "Анна" (character) → "char_anna".
+export function tagFor(name, kind) {
+  const latin = String(name || '').toLowerCase().split('').map((c) => CYR[c] ?? c).join('');
+  const slug = latin.normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'x';
+  return `${TAG_PREFIX[kind] || 'obj'}_${slug}`;
+}
+
+export function createElements({ db, projects, generations, log }) {
   const q = {
-    insert: db.prepare(`INSERT INTO elements (id, owner_id, project_id, name, kind, description, images_json, video_url, source_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    insert: db.prepare(`INSERT INTO elements (id, owner_id, project_id, name, kind, description, images_json, video_url, source_id, tag, status, notes, views_json, videos_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     byId: db.prepare('SELECT * FROM elements WHERE id = ? AND deleted_at IS NULL'),
     personal: db.prepare('SELECT * FROM elements WHERE owner_id = ? AND project_id IS NULL AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500'),
     inProject: db.prepare('SELECT * FROM elements WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500'),
-    update: db.prepare('UPDATE elements SET name = ?, kind = ?, description = ?, images_json = ?, video_url = ?, updated_at = ? WHERE id = ?'),
+    update: db.prepare(`UPDATE elements SET name = ?, kind = ?, description = ?, tag = ?, status = ?, notes = ?, views_json = ?, videos_json = ?,
+      images_json = ?, video_url = ?, updated_at = ? WHERE id = ?`),
+    setVideos: db.prepare('UPDATE elements SET videos_json = ?, video_url = ?, updated_at = ? WHERE id = ?'),
     remove: db.prepare('UPDATE elements SET deleted_at = ? WHERE id = ?'),
     author: db.prepare('SELECT display_name FROM users WHERE id = ?'),
+    user: db.prepare('SELECT * FROM users WHERE id = ?'),
+    tagTakenPersonal: db.prepare('SELECT id FROM elements WHERE owner_id = ? AND project_id IS NULL AND tag = ? AND deleted_at IS NULL'),
+    tagTakenProject: db.prepare('SELECT id FROM elements WHERE project_id = ? AND tag = ? AND deleted_at IS NULL'),
+    noTag: db.prepare('SELECT * FROM elements WHERE tag IS NULL'),
+    setTag: db.prepare('UPDATE elements SET tag = ? WHERE id = ?'),
   };
 
-  const view = (row, user) => ({
-    id: row.id,
-    name: row.name,
-    kind: row.kind,
-    description: row.description,
-    images: JSON.parse(row.images_json || '[]'),
-    video: row.video_url || null,
-    project_id: row.project_id || null,
-    source_id: row.source_id || null,
-    mine: row.owner_id === user.id,
-    author: row.owner_id === user.id ? undefined : q.author.get(row.owner_id)?.display_name || '',
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  });
+  const takenBy = (ownerId, projectId, tag) => (projectId ? q.tagTakenProject.get(projectId, tag) : q.tagTakenPersonal.get(ownerId, tag))?.id || null;
+  // The wanted tag, or the first free "<tag>_2", "<tag>_3", … where it lives.
+  function freeTag(ownerId, projectId, wanted, selfId = null) {
+    const base = wanted.slice(0, 36);
+    for (let n = 1; n < 1000; n += 1) {
+      const t = n === 1 ? base : `${base}_${n}`;
+      const by = takenBy(ownerId, projectId, t);
+      if (!by || by === selfId) return t;
+    }
+    throw new ElementError('No free tag left for this name.', 409);
+  }
+  // Elements made before tags existed get one.
+  for (const row of q.noTag.all()) q.setTag.run(freeTag(row.owner_id, row.project_id, tagFor(row.name, row.kind), row.id), row.id);
+
+  const parse = (text) => { try { const v = JSON.parse(text || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+  const view = (row, user) => {
+    const views = parse(row.views_json);
+    const videos = parse(row.videos_json);
+    return {
+      id: row.id,
+      name: row.name,
+      kind: row.kind,
+      tag: row.tag,
+      status: row.status || 'active',
+      description: row.description,
+      notes: row.notes || '',
+      views,
+      videos,
+      // For older callers: the pictures and the first video.
+      images: views.map((v) => v.url),
+      video: videos[0]?.url || null,
+      project_id: row.project_id || null,
+      source_id: row.source_id || null,
+      mine: row.owner_id === user.id,
+      author: row.owner_id === user.id ? undefined : q.author.get(row.owner_id)?.display_name || '',
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  };
 
   // Personal: the owner only. In a project: its current members.
   function visible(user, id) {
@@ -48,28 +99,54 @@ export function createElements({ db, projects, generations }) {
     if (!ok) throw new ElementError('Element not found.', 404);
     return row;
   }
+  function editable(user, id) {
+    const row = visible(user, id);
+    if (row.project_id && projects.get(user, row.project_id).project.archived_at) throw new ElementError('The project is archived.', 409);
+    return row;
+  }
 
   // Where an element goes: personal (null) or a project the user is in (not archived).
   const scopeOf = (user, project) => (project && project !== 'none' ? projects.target(user, String(project), null).projectId : null);
 
-  function clean({ name, kind, description }, current = {}) {
-    const n = String(name ?? current.name ?? '').replace(/\s+/g, ' ').trim();
+  function clean(body, current = {}) {
+    const n = String(body.name ?? current.name ?? '').replace(/\s+/g, ' ').trim();
     if (!n) throw new ElementError('Give the element a name.');
     if (n.length > MAX_NAME) throw new ElementError(`The name is too long (max ${MAX_NAME}).`);
-    const k = kind ?? current.kind ?? 'character';
+    const k = body.kind ?? current.kind ?? 'character';
     if (!KINDS.includes(k)) throw new ElementError('Unknown element type.');
-    const d = String(description ?? current.description ?? '').trim();
+    const d = String(body.description ?? current.description ?? '').trim();
     if (d.length > MAX_DESC) throw new ElementError(`The description is too long (max ${MAX_DESC}).`);
-    return { name: n, kind: k, description: d };
+    const notes = String(body.notes ?? current.notes ?? '').trim();
+    if (notes.length > MAX_NOTES) throw new ElementError(`Notes are too long (max ${MAX_NOTES}).`);
+    const status = body.status ?? current.status ?? 'active';
+    if (!STATUSES.includes(status)) throw new ElementError('Unknown status.');
+    let tag = body.tag != null && body.tag !== '' ? String(body.tag).trim().replace(/^@/, '').toLowerCase() : null;
+    if (tag && !TAG_RE.test(tag)) throw new ElementError('A tag is 2–40 Latin letters, digits or _, starting with a letter.');
+    return { name: n, kind: k, description: d, notes, status, tag };
   }
 
-  // Every picture/video becomes a file in the element's own scope.
-  async function adoptAll(user, projectId, images, video) {
-    const list = [...new Set(Array.isArray(images) ? images.filter((u) => typeof u === 'string' && u) : [])].slice(0, MAX_IMAGES);
-    const v = typeof video === 'string' && video ? video : null;
-    // All files checked first, then copied together (nothing half-done on an error).
-    const out = await generations.adoptMany(user, v ? [...list, v] : list, { projectId });
-    return { images: v ? out.slice(0, -1) : out, video: v ? out[out.length - 1] : null };
+  // [{ url, label }] from views/videos (or the older images/video fields).
+  const media = (list, max, what) => {
+    const out = [];
+    for (const x of Array.isArray(list) ? list : []) {
+      const url = typeof x === 'string' ? x : typeof x?.url === 'string' ? x.url : '';
+      if (!url || out.some((o) => o.url === url)) continue;
+      out.push({ url, label: String(typeof x === 'object' && x?.label ? x.label : '').replace(/\s+/g, ' ').trim().slice(0, MAX_LABEL) });
+    }
+    if (out.length > max) throw new ElementError(`Too many ${what} (max ${max}).`);
+    return out;
+  };
+  const viewsIn = (body, fallback) => (body.views !== undefined ? media(body.views, MAX_VIEWS, 'views') : body.images !== undefined ? media(body.images, MAX_VIEWS, 'views') : fallback);
+  const videosIn = (body, fallback) => (body.videos !== undefined ? media(body.videos, MAX_VIDEOS, 'videos') : body.video !== undefined ? media(body.video ? [body.video] : [], MAX_VIDEOS, 'videos') : fallback);
+
+  // Every file becomes a file in the element's own scope (all or nothing).
+  async function adoptAll(user, projectId, views, videos) {
+    const urls = [...views, ...videos].map((x) => x.url);
+    const out = await generations.adoptMany(user, urls, { projectId });
+    return {
+      views: views.map((v, i) => ({ ...v, url: out[i] })),
+      videos: videos.map((v, i) => ({ ...v, url: out[views.length + i] })),
+    };
   }
 
   function list(user, { project } = {}) {
@@ -80,31 +157,44 @@ export function createElements({ db, projects, generations }) {
     return { elements: q.personal.all(user.id).map((r) => view(r, user)) };
   }
 
-  async function create(user, body = {}) {
-    const projectId = scopeOf(user, body.project);
-    const fields = clean(body);
-    const { images, video } = await adoptAll(user, projectId, body.images, body.video);
-    if (!images.length && !video) throw new ElementError('Add at least one picture or a video.');
+  function insert(user, projectId, f, views, videos, sourceId, tag) {
     const id = newId('el');
     const t = now();
-    q.insert.run(id, user.id, projectId, fields.name, fields.kind, fields.description, JSON.stringify(images), video, null, t, t);
-    return { element: view(q.byId.get(id), user) };
+    q.insert.run(id, user.id, projectId, f.name, f.kind, f.description, JSON.stringify(views.map((v) => v.url)), videos[0]?.url || null, sourceId,
+      tag, f.status, f.notes, JSON.stringify(views), JSON.stringify(videos), t, t);
+    return q.byId.get(id);
+  }
+
+  async function create(user, body = {}) {
+    const projectId = scopeOf(user, body.project);
+    const f = clean(body);
+    const wantedViews = viewsIn(body, []);
+    const wantedVideos = videosIn(body, []);
+    if (!wantedViews.length && !wantedVideos.length) throw new ElementError('Add at least one picture or a video.');
+    const tag = f.tag ? (takenBy(user.id, projectId, f.tag) ? null : f.tag) : freeTag(user.id, projectId, tagFor(f.name, f.kind));
+    if (!tag) throw new ElementError(`The tag @${f.tag} is already used here.`, 409);
+    const { views, videos } = await adoptAll(user, projectId, wantedViews, wantedVideos);
+    return { element: view(insert(user, projectId, f, views, videos, null, tag), user) };
   }
 
   // Anyone who sees it can edit it (personal: the owner; project: members).
   async function update(user, id, body = {}) {
-    const row = visible(user, id);
-    if (row.project_id && projects.get(user, row.project_id).project.archived_at) throw new ElementError('The project is archived.', 409);
-    const fields = clean(body, row);
-    let images = JSON.parse(row.images_json || '[]');
-    let video = row.video_url;
-    if (body.images !== undefined || body.video !== undefined) {
-      const adopted = await adoptAll(user, row.project_id || null, body.images !== undefined ? body.images : images, body.video !== undefined ? body.video : video);
-      images = adopted.images;
-      video = adopted.video;
+    const row = editable(user, id);
+    const f = clean(body, row);
+    let tag = row.tag;
+    if (f.tag && f.tag !== row.tag) {
+      const by = takenBy(row.owner_id, row.project_id, f.tag);
+      if (by && by !== row.id) throw new ElementError(`The tag @${f.tag} is already used here.`, 409);
+      tag = f.tag;
     }
-    if (!images.length && !video) throw new ElementError('Add at least one picture or a video.');
-    q.update.run(fields.name, fields.kind, fields.description, JSON.stringify(images), video, now(), row.id);
+    let views = viewsIn(body, parse(row.views_json));
+    let videos = videosIn(body, parse(row.videos_json));
+    if (body.views !== undefined || body.images !== undefined || body.videos !== undefined || body.video !== undefined) {
+      ({ views, videos } = await adoptAll(user, row.project_id || null, views, videos));
+    }
+    if (!views.length && !videos.length) throw new ElementError('Add at least one picture or a video.');
+    q.update.run(f.name, f.kind, f.description, tag, f.status, f.notes, JSON.stringify(views), JSON.stringify(videos),
+      JSON.stringify(views.map((v) => v.url)), videos[0]?.url || null, now(), row.id);
     return { element: view(q.byId.get(row.id), user) };
   }
 
@@ -119,16 +209,55 @@ export function createElements({ db, projects, generations }) {
   }
 
   // A copy into the Library (project: null) or into a project — files included.
-  async function copy(user, id, { project = null } = {}) {
+  // `duplicate: true` makes a second one in the same place.
+  async function copy(user, id, { project = null, duplicate = false } = {}) {
     const row = visible(user, id);
-    const projectId = scopeOf(user, project);
-    if ((row.project_id || null) === projectId && (projectId || row.owner_id === user.id)) throw new ElementError('It is already there.', 409);
-    const { images, video } = await adoptAll(user, projectId, JSON.parse(row.images_json || '[]'), row.video_url);
-    const newIdValue = newId('el');
-    const t = now();
-    q.insert.run(newIdValue, user.id, projectId, row.name, row.kind, row.description, JSON.stringify(images), video, row.id, t, t);
-    return { element: view(q.byId.get(newIdValue), user) };
+    const projectId = duplicate ? (row.project_id || null) : scopeOf(user, project);
+    if (duplicate && row.project_id) editable(user, id);
+    if (!duplicate && (row.project_id || null) === projectId && (projectId || row.owner_id === user.id)) throw new ElementError('It is already there.', 409);
+    const { views, videos } = await adoptAll(user, projectId, parse(row.views_json), parse(row.videos_json));
+    const f = { name: row.name, kind: row.kind, description: row.description, notes: row.notes || '', status: row.status || 'active' };
+    const tag = freeTag(user.id, projectId, row.tag || tagFor(row.name, row.kind));
+    return { element: view(insert(user, projectId, duplicate ? { ...f, name: `${row.name} copy`.slice(0, MAX_NAME) } : f, views, videos, duplicate ? null : row.id, tag), user) };
   }
 
-  return { list, create, update, remove, copy, visible, kinds: KINDS };
+  // A copy takes everything from its source again (its own tag and status stay).
+  async function sync(user, id) {
+    const row = editable(user, id);
+    if (!row.source_id) throw new ElementError('This element is not a copy.', 409);
+    let src;
+    try { src = visible(user, row.source_id); } catch { throw new ElementError('The original is gone or you no longer see it.', 404); }
+    const { views, videos } = await adoptAll(user, row.project_id || null, parse(src.views_json), parse(src.videos_json));
+    q.update.run(src.name, src.kind, src.description, row.tag, row.status || 'active', src.notes || '', JSON.stringify(views), JSON.stringify(videos),
+      JSON.stringify(views.map((v) => v.url)), videos[0]?.url || null, now(), row.id);
+    return { element: view(q.byId.get(row.id), user) };
+  }
+
+  // A finished generation made "for an element" (Generate video element): its
+  // result joins the element's videos, under the label given at submit time.
+  async function attachGenerated(gen) {
+    let meta = null;
+    try { meta = gen.meta_json ? JSON.parse(gen.meta_json) : null; } catch { return; }
+    const target = meta?.forElement;
+    if (!target?.id || gen.status !== 'completed') return;
+    const user = q.user.get(gen.user_id);
+    if (!user) return;
+    try {
+      const row = editable(user, target.id);
+      const outputs = JSON.parse(gen.outputs_json || '[]');
+      if (!outputs.length) return;
+      const url = `/media/g/${gen.id}/0.${outputs[0].ext}`;
+      const [own] = await generations.adoptMany(user, [url], { projectId: row.project_id || null });
+      const fresh = q.byId.get(row.id);
+      if (!fresh) return;
+      const videos = parse(fresh.videos_json);
+      if (videos.length >= MAX_VIDEOS || videos.some((v) => v.url === own)) return;
+      videos.push({ url: own, label: String(target.label || 'Generated').slice(0, MAX_LABEL), from: gen.id });
+      q.setVideos.run(JSON.stringify(videos), videos[0]?.url || null, now(), row.id);
+    } catch (error) {
+      log?.warn?.(`element video for ${target.id}: ${error.message}`);
+    }
+  }
+
+  return { list, create, update, remove, copy, sync, attachGenerated, visible, kinds: KINDS };
 }

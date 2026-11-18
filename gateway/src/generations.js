@@ -67,6 +67,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
     listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
   };
+  let onCompleted = null; // (row) => … after a job's files are saved (e.g. element videos)
   const outputRefCache = new Map(); // `${provider}:${genId}/${n}` -> { url, expiresAt }
 
   // ── Uploads ─────────────────────────────────────────────────────────────
@@ -166,6 +167,9 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
     q.setCompleted.run(JSON.stringify(saved), now() + settleDelaysMs[0], now(), now(), row.id);
+    if (onCompleted) {
+      try { await onCompleted(q.byId.get(row.id)); } catch (error) { log?.warn(`after ${row.id}: ${error.message}`); }
+    }
   }
 
   // The real charge of a finished job, settled by the worker (survives
@@ -524,6 +528,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
 
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
+    setOnCompleted(fn) { onCompleted = fn; },
     saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in

@@ -159,6 +159,18 @@ const MIGRATIONS = [
   CREATE INDEX elements_owner ON elements(owner_id, updated_at DESC) WHERE project_id IS NULL;
   CREATE INDEX elements_project ON elements(project_id, updated_at DESC) WHERE project_id IS NOT NULL;
   `,
+  // 9: elements v2 — a tag (@char_mike), draft/active, notes, any number of
+  // labelled views (first = main) and several labelled videos.
+  `
+  ALTER TABLE elements ADD COLUMN tag TEXT;
+  ALTER TABLE elements ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+  ALTER TABLE elements ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+  ALTER TABLE elements ADD COLUMN views_json TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE elements ADD COLUMN videos_json TEXT NOT NULL DEFAULT '[]';
+  UPDATE elements SET
+    views_json = COALESCE((SELECT json_group_array(json_object('url', value, 'label', '')) FROM json_each(elements.images_json)), '[]'),
+    videos_json = CASE WHEN video_url IS NOT NULL THEN json_array(json_object('url', video_url, 'label', '')) ELSE '[]' END;
+  `,
 ];
 
 export function openDatabase(dataDir) {

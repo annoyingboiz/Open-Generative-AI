@@ -204,6 +204,7 @@ export function GridToolbar({ ctx, sel, title, inTrash = false, children, canSel
             <Button size="sm" variant="secondary" disabled={!n || busy} onClick={() => openMove("move")}>Move to…</Button>
             <Button size="sm" variant="secondary" disabled={!n || busy} onClick={() => openMove("copy")}>Copy to…</Button>
             <Button size="sm" variant="secondary" disabled={!n || busy} onClick={downloadAll}>Download</Button>
+            <Button size="sm" variant="secondary" disabled={!n || busy} onClick={() => window.dispatchEvent(new CustomEvent("dz:to-element", { detail: { items: sel.chosen } }))}>To element…</Button>
             <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={!n || busy} onClick={() => run("trash", "Moved to trash")}>Trash</Button>
           </>
         )}

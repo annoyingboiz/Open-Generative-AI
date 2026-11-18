@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DzCinemaStudio, DzCreateStudio, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
-  DzProjectsPage, DzElementsPage, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
+  DzProjectsPage, DzElementsPage, ToElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
 
@@ -125,6 +125,7 @@ export default function DzShell() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [folderDialog, setFolderDialog] = useState(null); // { mode: 'new', parent } | { mode: 'rename', folder }
   const [moveItem, setMoveItem] = useState(null);
+  const [toElement, setToElement] = useState(null); // chosen results → an element
   // Only the latest project switch counts; until the first one resolves the studios wait.
   const navSeq = useRef(0);
   const [switching, setSwitching] = useState(true);
@@ -219,6 +220,11 @@ export default function DzShell() {
     window.addEventListener('dz:move', onMove);
     return () => window.removeEventListener('dz:move', onMove);
   }, []);
+  useEffect(() => {
+    const onTo = (e) => { if (e.detail?.items?.length) setToElement(e.detail.items); };
+    window.addEventListener('dz:to-element', onTo);
+    return () => window.removeEventListener('dz:to-element', onTo);
+  }, []);
   // Messages from anywhere (Move / Copy / Trash on many items, …).
   useEffect(() => {
     const onNotify = (e) => { if (e.detail?.message) push({ type: e.detail.type === 'error' ? 'error' : 'notice', title: e.detail.title, message: e.detail.message }); };
@@ -297,8 +303,10 @@ export default function DzShell() {
   // Animate in the Image tab → open the Video tab (it picks the picture up itself).
   useEffect(() => {
     const onSend = (e) => { if (e.detail?.to === 'video') openTab('video'); };
+    const onUse = () => openTab('create');
     window.addEventListener(DZ_SEND_EVENT, onSend);
-    return () => window.removeEventListener(DZ_SEND_EVENT, onSend);
+    window.addEventListener('dz:use-element', onUse);
+    return () => { window.removeEventListener(DZ_SEND_EVENT, onSend); window.removeEventListener('dz:use-element', onUse); };
   }, [openTab]);
 
   const toggleSidebar = () => setCollapsed((prev) => {
@@ -550,7 +558,7 @@ export default function DzShell() {
             <DzCreateStudio {...studioProps} {...callbacks('create')} droppedFiles={activeTab === 'create' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
           <div className={activeTab === 'elements' ? 'h-full w-full' : 'hidden'}>
-            {activeTab === 'elements' && <DzElementsPage projects={projects} onError={(message) => push({ type: 'error', tabId: 'elements', message })} />}
+            {activeTab === 'elements' && <DzElementsPage projects={projects} apiKey={DZ_SESSION_PLACEHOLDER} onError={(message) => push({ type: 'error', tabId: 'elements', message })} />}
           </div>
           <div className={activeTab === 'projects' ? 'h-full w-full' : 'hidden'}>
             {activeTab === 'projects' && (
@@ -669,6 +677,7 @@ export default function DzShell() {
           setFolders(r.folders || []);
           pickFolder(r.folder.id);
         }} />
+      {toElement && <ToElementDialog items={toElement} onClose={() => setToElement(null)} onError={(message) => push({ type: 'error', title: 'Elements', message })} />}
       <MoveDialog item={moveItem} onOpenChange={(o) => { if (!o) setMoveItem(null); }} projects={projects} />
       <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.16,1,.3,1)}@keyframes dzToastIn{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}.dz-sheet{animation:dzDrawerIn 240ms cubic-bezier(.16,1,.3,1)}@keyframes dzDrawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>
     </div>

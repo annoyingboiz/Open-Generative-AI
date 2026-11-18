@@ -85,8 +85,7 @@ export function RequestView({ label, endpoint, body, look, size, enabled = true,
             {data.model.id} · {data.model.provider}
             {rules ? ` · rules: ${rules.name}${rules.generic ? " (general)" : ""}` : look ? "" : " · no camera look"}
           </p>
-          {data.baked && <p className="text-muted-foreground">The camera look is already in this prompt (written in by “Adapt to model”), so it isn't added again.</p>}
-          {rules && look && !data.baked && (
+          {rules && look && (
             <p className="text-muted-foreground">
               {rules.place === "blocks" ? `Camera → “${rules.camera}:” block; light and era → “${rules.style}:” block.` : PLACE[rules.place]}
             </p>

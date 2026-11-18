@@ -10,8 +10,6 @@ test('look: only known ids; names used before 18.11 are mapped', () => {
   const old = cleanLook({ on: true, camera: 'Classic 16mm Film', lens: 'Halation Diffusion', focal: 8, aperture: 'f/11' });
   assert.deepEqual([old.camera, old.lens, old.focal, old.aperture, old.filter], ['film-16', 'clean', 12, 'f/11', 'diffusion']);
   assert.equal(cleanLook({ on: false, era: '1980s' }).on, false);
-  assert.equal(cleanLook({ on: true, camera: 'digital', baked: true }).baked, true);
-  assert.equal(cleanLook({ on: true, camera: 'digital', baked: 'yes' }).baked, undefined);
 });
 
 test('look: each model gets it in its place', () => {
@@ -35,6 +33,13 @@ test('look: each model gets it in its place', () => {
   assert.match(sj.style, /golden-hour.*1970s/);
   const vj = JSON.parse(renderLook('{"subject":"woman"}', look, { kind: 'video', memo: memos.veo }));
   assert.ok(vj.cinematography && vj.style, 'Veo JSON keys');
+  const vo = JSON.parse(renderLook('{"Cinematography":{"shot":"wide"}}', look, { kind: 'video', memo: memos.veo }));
+  assert.equal(vo.Cinematography.shot, 'wide');
+  assert.match(vo.Cinematography.look, /35mm film/, 'an object block gets the look as its own field');
+  // An adapted Veo prompt in blocks: the look joins the blocks instead of a first sentence.
+  const vb = renderLook('Cinematography: wide shot.\nSubject: a woman.\nStyle: muted.', look, { kind: 'video', memo: memos.veo });
+  assert.match(vb, /^Cinematography: wide shot; shot on 35mm film/m);
+  assert.match(vb, /^Style: muted; warm low golden-hour/m);
   assert.equal(renderLook('[1,2]', look, { kind: 'image' }), '[1,2]');
 });
 

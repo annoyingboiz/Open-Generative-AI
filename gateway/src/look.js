@@ -141,8 +141,6 @@ export function cleanLook(input) {
   const aperture = APERTURES.find((a) => a.f === raw.aperture)?.f || null;
   const filter = byId(FILTERS, raw.filter)?.id || (raw.lens === 'Halation Diffusion' ? 'diffusion' : null);
   const out = {
-    // Already written into the prompt by "Adapt to model": recorded, not added again.
-    ...(raw.baked === true ? { baked: true } : {}),
     on: raw.on !== false && Boolean(camera || lens || focal || aperture),
     camera, lens, focal, aperture, filter,
     era: byId(ERAS, raw.era)?.id || null,
@@ -246,6 +244,9 @@ export function renderLook(prompt, look, { kind = 'video', memo = null } = {}) {
         const k = Object.keys(out).find((x) => x.toLowerCase() === name.toLowerCase());
         if (k === undefined) out[name.toLowerCase()] = t;
         else if (typeof out[k] === 'string') out[k] = out[k].trim() ? `${out[k].trim().replace(/[.;,\s]+$/, '')}; ${t}` : t;
+        else if (Array.isArray(out[k])) out[k] = [...out[k], t];
+        else if (out[k] && typeof out[k] === 'object') out[k] = { ...out[k], look: [out[k].look, t].filter((x) => typeof x === 'string' && x).join('; ') };
+        else out[k] = t;
       };
       if (rule.camera) put(rule.camera, [w.camera, w.move].filter(Boolean).join(', '));
       else { put('camera', w.camera); put('camera_movement', w.move); }
@@ -255,7 +256,10 @@ export function renderLook(prompt, look, { kind = 'video', memo = null } = {}) {
     } catch { /* not JSON after all: plain text */ }
   }
 
-  if (rule.place === 'blocks') {
+  // A prompt already written in the model's labeled blocks (e.g. by "Adapt to
+  // model"): the look joins those blocks, whatever the model's usual place.
+  const hasLabel = (label) => label && new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`, 'im').test(text);
+  if (rule.place === 'blocks' || hasLabel(rule.camera) || hasLabel(rule.style)) {
     const camLabel = rule.camera || 'Camera';
     const styleLabel = rule.style || camLabel;
     let out = text;

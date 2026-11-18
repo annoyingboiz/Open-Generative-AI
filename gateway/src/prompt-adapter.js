@@ -3,7 +3,6 @@
 // from the official guides, editable in the repo). The user sees the result,
 // edits it and only then generates; nothing is rewritten without the button.
 import fs from 'node:fs';
-import { cleanLook, renderLook } from './look.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -134,20 +133,16 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     // The model's name from our own catalog, not from the request.
     const modelName = clean(familyName(family) || memo.name, 80);
     const ctx = body.context && typeof body.context === 'object' ? body.context : {};
-    // The camera look (camera, lens, light, era, move) goes in as part of the
-    // prompt, so the rewrite puts it into the model's blocks; the answer then
-    // carries it ("baked") and the app does not add it again.
-    const look = cleanLook(body.look);
-    const lookText = look ? renderLook('', { ...look, baked: false }, { kind, memo: null }).trim() : '';
-    const prompt = lookText ? `${typed}\n\n${lookText}` : typed;
-    if (prompt.length > MAX_PROMPT + 2000) throw new AdaptError(`The prompt is too long (max ${MAX_PROMPT} characters).`);
+    // The camera look is not part of the rewrite: the server merges it into
+    // the rewritten prompt's camera / style blocks on every send (src/look.js).
+    const prompt = typed;
     const tags = tagsIn(typed);
     let original = null;
     if (/^[[{]/.test(typed)) { try { original = JSON.parse(typed); } catch { original = null; } }
     // The answer's format: asked for (text / JSON), else the same as the prompt.
     const json = body.as === 'json' ? true : body.as === 'text' ? false : original != null;
     const system = systemPrompt({ memo, modelName, kind, json });
-    const userMsg = (extra = '') => `PROMPT:\n${prompt}\n\nCONTEXT (data):\n${JSON.stringify({ ...contextBlock(look ? { ...ctx, camera: undefined } : ctx, tags, json), ...(look ? { camera_look_in_prompt: 'the last paragraph of the prompt is the chosen camera, lens, light, era and camera move: keep all of it and put each part into the right block' } : {}) }, null, 2)}${extra}`;
+    const userMsg = (extra = '') => `PROMPT:\n${prompt}\n\nCONTEXT (data):\n${JSON.stringify(contextBlock(ctx, tags, json), null, 2)}${extra}`;
     const ask = (extra = '') => llm.chat(user, { model: body.llm || undefined, system, prompt: userMsg(extra), purpose: 'adapt-prompt', maxTokens: 2500, temperature: 0.3 });
     let r = await ask();
     let out = parseAnswer(r.text);
@@ -170,8 +165,11 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       try { parsed = JSON.parse(out.prompt); } catch { throw new AdaptError('The text model broke the JSON. Try again or pick another text model.', 424); }
       // Rebuilt by the model's blocks: still JSON, not empty, roughly as rich as yours.
       const size = (v) => JSON.stringify(v).length;
-      if (!parsed || typeof parsed !== 'object' || !Object.keys(parsed).length) throw new AdaptError('The text model returned empty JSON. Try again or pick another text model.', 424);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.keys(parsed).length) throw new AdaptError('The text model returned empty JSON. Try again or pick another text model.', 424);
       if (original != null && size(parsed) < size(original) * 0.6) throw new AdaptError('The text model left out part of your JSON. Try again or pick another text model.', 424);
+      // Text → JSON: the values together should still carry most of what you wrote.
+      const words = (v) => (typeof v === 'string' ? v.length : v && typeof v === 'object' ? Object.values(v).reduce((n, x) => n + words(x), 0) : 0);
+      if (original == null && typed.length > 200 && words(parsed) < typed.length * 0.4) throw new AdaptError('The text model left out part of your prompt. Try again or pick another text model.', 424);
       out.prompt = JSON.stringify(parsed, null, 2);
     }
     return {
@@ -179,7 +177,6 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       changes: out.changes,
       lostTags: lost.map((t) => `@${t}`),
       format: json ? 'json' : 'text',
-      lookIncluded: Boolean(look),
       memo: { id: memo.id, name: memo.name, generic: memo.generic, blocks: memo.blocks },
       llm: r.model, costUsd: r.costUsd == null ? null : Math.round(cost * 1e6) / 1e6, ms,
     };

@@ -641,7 +641,6 @@ export async function buildApp(config, { logger = true } = {}) {
     const look = cleanLook(rawLook);
     if (!variant || !look || variant.model?.hasPrompt === false) return { prompt, look: null, memo: null };
     const memo = adapter.memoFor(variant.family, variant.kind === 'image' ? 'image' : 'video');
-    if (look.baked) return { prompt, look, memo, baked: true };
     return { prompt: renderLook(prompt, look, { kind: variant.kind, memo }), look, memo };
   }
 
@@ -727,7 +726,6 @@ export async function buildApp(config, { logger = true } = {}) {
       // The provider body exactly as Generate builds it (shown only up to a size).
       body: JSON.stringify(sent).length <= 120_000 ? sent : { note: 'Request too large to show.' },
       model: { provider: providerId, id: variant.providerModel, family: variant.family },
-      baked: Boolean(built.baked),
       rules: built.memo ? { memo: built.memo.id, name: built.memo.name, generic: built.memo.generic, place: built.memo.look?.place || 'end', camera: built.memo.look?.camera || null, style: built.memo.look?.style || null } : null,
       hints: built.look ? lookHints(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],
     };

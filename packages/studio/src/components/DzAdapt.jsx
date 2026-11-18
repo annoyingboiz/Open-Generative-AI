@@ -57,6 +57,8 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
   const [state, setState] = useState({ busy: false, error: "", result: null });
   // Text or JSON out: starts as your prompt is, switch to compare.
   const [as, setAs] = useState(() => (/^\s*[{[]/.test(prompt || "") ? "json" : "text"));
+  const asRef = useRef(as);
+  asRef.current = as;
   const [text, setText] = useState("");
   const [notes, setNotes] = useState(null); // { name, body, sources } when shown
   const [myDefault, setMyDefault] = useState(null); // set here: the new default
@@ -69,7 +71,9 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
   const run = async (format = as) => {
     setState({ busy: true, error: "", result: null });
     try {
-      const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined, as: format, look: look || undefined });
+      const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined, as: format });
+      // Switched Text / JSON while this one ran: run again in the new format.
+      if (asRef.current !== format) { run(asRef.current); return; }
       setState({ busy: false, error: "", result: r });
       setText(r.prompt);
     } catch (e) {
@@ -105,7 +109,7 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
               <div className="mb-1.5 text-muted-foreground">Text model</div>
               <OptionSelect aria-label="Text model" value={chosen} onValueChange={setLlmId} options={options.length ? options : [{ value: "", label: loaded ? "No text models available" : "Loading…" }]} />
             </div>
-            <Segmented className="w-auto" value={as} onChange={(v) => { setAs(v); if (loaded && !state.busy) run(v); }} aria-label="Answer as"
+            <Segmented className="w-auto" value={as} onChange={(v) => { setAs(v); asRef.current = v; if (loaded && !state.busy) run(v); }} aria-label="Answer as"
               options={[{ value: "text", label: "Text" }, { value: "json", label: "JSON" }]} />
             <Button variant="secondary" onClick={() => run()} disabled={state.busy || !loaded}>{state.busy ? <><Spinner className="h-4 w-4" /> Rewriting…</> : r ? "Try again" : "Rewrite"}</Button>
             <Button variant="ghost" onClick={showNotes}>{notes ? "Hide notes" : "Model notes"}</Button>
@@ -124,7 +128,7 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
             </div>
           )}
 
-          {look && <p className="text-muted-foreground">Your camera look (camera, lens, light, era, move) goes into the rewrite, into this model's blocks — it won't be added again on Generate.</p>}
+          {look && <p className="text-muted-foreground">Your camera look (camera, lens, light, era, move) is not rewritten: on every send the server adds it into this model's camera and style blocks — see “Sent to the model” below.</p>}
           <details className="rounded-xl border border-border px-4 py-2">
             <summary className="cursor-pointer text-muted-foreground">Your prompt</summary>
             <p className="mt-2 whitespace-pre-wrap">{prompt}</p>
@@ -147,7 +151,7 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
               {request?.endpoint && text.trim() && (
                 <details className="rounded-xl border border-border px-4 py-2" open>
                   <summary className="cursor-pointer font-semibold">Sent to the model with “Use this”</summary>
-                  <div className="mt-3"><RequestView endpoint={request.endpoint} body={{ ...(request.body || {}), prompt: text }} look={look ? { ...look, baked: Boolean(r.lookIncluded) } : null} /></div>
+                  <div className="mt-3"><RequestView endpoint={request.endpoint} body={{ ...(request.body || {}), prompt: text }} look={look || null} /></div>
                 </details>
               )}
             </div>
@@ -156,7 +160,7 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onUse(text, { lookIncluded: Boolean(r?.lookIncluded), look, format: r?.format })} disabled={!r || !text.trim()}>Use this</Button>
+          <Button onClick={() => onUse(text)} disabled={!r || !text.trim() || state.busy}>Use this</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

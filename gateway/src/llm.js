@@ -13,6 +13,7 @@ import { providerFetch } from './providers/http.js';
 import { newId } from './storage.js';
 import { now } from './db.js';
 
+// Provider-side failures use 424, not 502: Cloudflare swaps a 502 body for its own page.
 export class LlmError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
@@ -219,8 +220,8 @@ export function createLlm({ db, providers, generations, config, log }) {
     let data;
     try {
       data = /^\s*data:/.test(raw) ? fromSse(raw) : JSON.parse(raw);
-    } catch { throw new LlmError(r.ok ? 'The model answered in an unexpected format.' : `The provider refused (HTTP ${r.status}).`, 502); }
-    if (!r.ok || data.error) throw new LlmError(String(data.error?.message || data.message || `HTTP ${r.status}`).slice(0, 300), 502);
+    } catch { throw new LlmError(r.ok ? 'The model answered in an unexpected format.' : `The provider refused (HTTP ${r.status}).`, 424); }
+    if (!r.ok || data.error) throw new LlmError(String(data.error?.message || data.message || `HTTP ${r.status}`).slice(0, 300), 424);
     const choice = data.choices?.[0];
     return { text: textOf(choice?.message?.content).trim(), usage: { in: Number(data.usage?.prompt_tokens || 0), out: Number(data.usage?.completion_tokens || 0) }, finish: choice?.finish_reason || null };
   }
@@ -252,7 +253,8 @@ export function createLlm({ db, providers, generations, config, log }) {
     let r;
     try {
       // Thinking models answer much faster without the thinking pass.
-      const thinks = (lastGood.get('local') || []).find((x) => x.model === model)?.thinking;
+      const known = lastGood.get('local') || (await sourceList('local')).models || [];
+      const thinks = known.find((x) => x.model === model)?.thinking;
       r = await fetch(`${ollamaUrl}/api/chat`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(LOCAL_TIMEOUT_MS),
         body: JSON.stringify({ model, messages, stream: false, ...(thinks ? { think: false } : {}), options: { num_predict: maxTokens, ...(temperature != null ? { temperature } : {}) } }),
@@ -270,7 +272,7 @@ export function createLlm({ db, providers, generations, config, log }) {
         throw new LlmError('The local machine is busy right now (its graphics cards are doing other work). Try again later or pick a cloud model.', 503);
       }
       if (/not found|pull/i.test(msg)) throw new LlmError(`The model ${model} is not on the local machine.`, 404);
-      throw new LlmError(`Local model error: ${msg.slice(0, 200)}`, 502);
+      throw new LlmError(`Local model error: ${msg.slice(0, 200)}`, 424);
     }
     return { text: textOf(data.message?.content).trim(), usage: { in: Number(data.prompt_eval_count || 0), out: Number(data.eval_count || 0) }, finish: data.done_reason || null };
   }
@@ -327,7 +329,7 @@ export function createLlm({ db, providers, generations, config, log }) {
           ? 'The model spent all its tokens thinking and wrote nothing. Try again with a bigger limit or another model.'
           : 'The model returned an empty answer.';
         q.finish.run(out.usage.in, out.usage.out, costUsd ?? worst ?? 0, ms, 'failed', msg, callId);
-        throw new LlmError(msg, 502);
+        throw new LlmError(msg, 424);
       }
       q.finish.run(out.usage.in, out.usage.out, costUsd ?? worst ?? 0, ms, 'ok', null, callId);
       return { text: out.text, model: id, usage: out.usage, costUsd, priceKnown: costUsd != null, ms, finish: out.finish };
@@ -335,7 +337,7 @@ export function createLlm({ db, providers, generations, config, log }) {
       if (!out) q.finish.run(0, 0, 0, Date.now() - started, 'failed', String(error.message).slice(0, 300), callId);
       if (error instanceof LlmError) throw error;
       log?.warn?.(`llm ${id}: ${error.message}`);
-      throw new LlmError(error?.name === 'TimeoutError' ? 'The model took too long to answer.' : `The model could not be reached: ${error.message}`, 502);
+      throw new LlmError(error?.name === 'TimeoutError' ? 'The model took too long to answer.' : `The model could not be reached: ${error.message}`, 424);
     }
   }
 

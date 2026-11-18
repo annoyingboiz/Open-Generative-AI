@@ -155,7 +155,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       if ([400, 422].includes(error.status)) {
         try { onProviderRejected?.({ provider: providerId, endpoint, model: modelId, status: error.status, message: error.message, params: Object.keys(clean), body: clean }); } catch { /* reporting is best effort */ }
       }
-      throw error instanceof GenerationError ? error : new GenerationError(`${provider.name}: ${error.message}`, 502);
+      throw error instanceof GenerationError ? error : new GenerationError(`${provider.name}: ${error.message}`, 424); // not 502: Cloudflare would replace the message
     }
     return { id };
   }

@@ -90,7 +90,7 @@ test('chat on the local machine: free, logged, works even at a $0 limit; busy an
   assert.equal(lastChat.think, false, 'thinking models are asked not to think');
   mode = 'empty';
   res = await as('kid', 'POST', '/dz/api/llm/chat', { model: 'local:qwen3.5:9b', prompt: 'hi', purpose: 'empty' });
-  assert.equal(res.statusCode, 502);
+  assert.equal(res.statusCode, 424);
   assert.match(res.json().error, /thinking/);
   assert.equal(app.ctx.db.prepare("SELECT completion_tokens FROM llm_calls WHERE purpose = 'empty'").get().completion_tokens, 64);
   mode = 'ok';

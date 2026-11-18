@@ -117,7 +117,10 @@ export async function buildApp(config, { logger = true } = {}) {
   };
   const chatgpt = createChatGpt({ db, masterKey, config, log: app.log });
   const llm = createLlm({ db, providers, generations, config, log: app.log, chatgpt });
-  const adapter = createPromptAdapter({ llm, log: app.log });
+  const familyNames = () => new Map(catalog.families().map((f) => [f.key, f.name]));
+  const adapter = createPromptAdapter({ llm, log: app.log, familyName: (key) => familyNames().get(key) || null });
+  // Adapting costs a text-model call: at most 2 at once and 20 a minute per person.
+  const adaptLoad = new Map(); // userId -> { running, times[] }
   const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
   if (config.startWorkers !== false) setInterval(() => { try { thumbs.prune(); pruneAudio(); } catch { /* ignore */ } }, 24 * 3600_000).unref?.();
   if (config.startWorkers !== false) {
@@ -325,10 +328,16 @@ export async function buildApp(config, { logger = true } = {}) {
   });
   // Adapt a prompt to an image/video model by its prompting notes.
   app.post('/dz/api/prompt/adapt', async (req, reply) => {
+    const load = adaptLoad.get(req.user.id) || { running: 0, times: [] };
+    load.times = load.times.filter((t) => Date.now() - t < 60_000);
+    if (load.running >= 2 || load.times.length >= 20) return reply.code(429).send({ error: 'Too many rewrites at once — wait a moment.' });
+    load.running += 1;
+    load.times.push(Date.now());
+    adaptLoad.set(req.user.id, load);
     try { return await adapter.adapt(req.user, req.body || {}); } catch (error) {
       if (error instanceof AdaptError) return reply.code(error.status).send({ error: error.message });
       return llmError(reply, error);
-    }
+    } finally { load.running -= 1; }
   });
   app.get('/dz/api/prompt/notes', async (req, reply) => {
     reply.header('cache-control', 'private, no-store');

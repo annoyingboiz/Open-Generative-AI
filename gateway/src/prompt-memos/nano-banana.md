@@ -22,7 +22,7 @@ sources:
 - Camera/look vocabulary works: "low-angle, shallow depth of field (f/1.8)", "macro lens", "aerial view", "GoPro", "disposable-camera flash", "1980s color film, slightly grainy".
 - Lighting: "three-point softbox", "chiaroscuro, hard contrast", "golden-hour backlight".
 - Name materials precisely ("navy tweed", "matte ceramic mug").
-- Aspect ratio and resolution are settings, not prompt words.
+- Aspect ratio and resolution are set as parameters (those win); still describe the format and composition in words — vertical poster, wide cinematic frame, square packshot.
 - JSON prompts work well for complex scenes — keep the user's JSON structure.
 
 **Example:** A fashion model in a tailored brown dress holding a structured handbag, posing confidently against a seamless cherry-red backdrop. Medium-full shot, center-framed. Fashion editorial, medium-format analog film, pronounced grain, soft cinematic key light.

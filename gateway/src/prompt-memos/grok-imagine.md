@@ -2,7 +2,7 @@
 id: grok-imagine
 name: xAI Grok Imagine (video)
 kind: video
-match: "^grok-imagine-video"
+match: "^grok-imagine"
 sources:
   - https://docs.x.ai/docs/guides/video-generation
   - xAI Grok Imagine video page (describe subject, action, camera movement, lighting, mood, sound)

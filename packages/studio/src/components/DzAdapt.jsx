@@ -3,7 +3,7 @@
 // DZ: "Adapt to model" — a text model rewrites the prompt by the prompting
 // notes of the chosen image/video model (gateway: /dz/api/prompt/adapt).
 // You see the new version, edit it, and only "Use this" puts it in the prompt.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDzLlmModels } from "../dzLlm.js";
 import { Button, Textarea, OptionSelect, Spinner, DialogParts, cn } from "../ui/index.js";
 
@@ -66,8 +66,9 @@ function AdaptDialog({ prompt, model, context, onClose, onUse }) {
       setState({ busy: false, error: String(e?.message || e), result: null });
     }
   };
-  // Starts by itself once the text models are known.
-  useEffect(() => { if (loaded && !state.result && !state.busy && !state.error) run(); }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Starts by itself once the text models are known — once (React may run effects twice).
+  const started = useRef(false);
+  useEffect(() => { if (loaded && !started.current) { started.current = true; run(); } }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showNotes = async () => {
     if (notes) { setNotes(null); return; }

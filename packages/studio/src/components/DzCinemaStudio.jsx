@@ -1466,7 +1466,8 @@ export default function DzCinemaStudio({
                     mode: hasRefs ? "image with reference images" : "text-to-image",
                     aspect: effectiveAspect || undefined,
                     camera: buildCinemaPrompt("", settings.camera, settings.lens, settings.focal, settings.aperture).replace(/^[\s,]+/, ""),
-                    tags: uploadedImages.slice(0, maxRefs || 0).map((_, i) => ({ tag: `image${i + 1}`, label: "Reference image" })),
+                    // Cinema sends the prompt as it is (no @tag translation): references stay untagged.
+                    untaggedReferences: Math.min(uploadedImages.length, maxRefs || 0),
                   }}
                   onUse={(p) => setSettings((prev) => ({ ...prev, prompt: p }))}
                 />

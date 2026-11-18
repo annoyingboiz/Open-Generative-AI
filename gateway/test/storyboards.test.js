@@ -187,6 +187,27 @@ test('storyboards: personal or in a project, plan saves shots, stale edits get 4
   assert.equal(res.json().storyboard.media[s1.id].frames.length, 1);
   assert.equal((await as('kid', 'POST', `/dz/api/storyboards/${mine.id}/media`, { shot: s1.id, kind: 'frame', op: 'unpick' })).statusCode, 404);
 
+  // A generation made elsewhere (another place) never joins the board.
+  app.ctx.storyboards.attachGenerated({ ...row, id: 'gen_elsewhere', project_id: 'prj_other' });
+  // Trashed: the board marks it gone and no longer shows it as picked.
+  app.ctx.generations.trash({ id: app.ctx.db.prepare("SELECT id FROM users WHERE username = 'admin'").get().id, role: 'admin' }, genId);
+  res = await as('admin', 'GET', `/dz/api/storyboards/${mine.id}`);
+  assert.equal(res.json().storyboard.media[s1.id].frames.length, 1);
+  assert.equal(res.json().storyboard.media[s1.id].frames[0].gone, true);
+  assert.equal(res.json().storyboard.media[s1.id].frame, null);
+  res = await as('admin', 'POST', `/dz/api/storyboards/${mine.id}/media`, { shot: s1.id, kind: 'frame', op: 'pick', url: m.frames[0].url });
+  assert.equal(res.statusCode, 409);
+
+  // A plan from an old revision is refused before any text-model call.
+  let calls = 0;
+  app.ctx.llm.chat = async () => { calls += 1; return { text: JSON.stringify(PLAN), model: 'local:test', costUsd: 0, ms: 3 }; };
+  try {
+    res = await as('admin', 'POST', `/dz/api/storyboards/${mine.id}/plan`, { rev: 1, scene: 'x', image: { family: 'dz-nano-banana-pro' }, video: { family: 'dz-kling-3' } });
+  } finally { app.ctx.llm.chat = realChat; }
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.json().storyboard.rev, 3);
+  assert.equal(calls, 0);
+
   // Removing a shot drops its media; removing the picked frame picks the next one.
   res = await as('admin', 'PATCH', `/dz/api/storyboards/${mine.id}`, { rev: 3, shots: [sb.shots.find((s) => s.id === s2.id)] });
   assert.equal(res.statusCode, 200, res.body);
@@ -211,5 +232,10 @@ test('storyboards: personal or in a project, plan saves shots, stale edits get 4
   const hers = res.json().storyboard;
   assert.equal((await as('wife', 'DELETE', `/dz/api/storyboards/${shared.id}`)).statusCode, 403);
   assert.equal((await as('admin', 'DELETE', `/dz/api/storyboards/${hers.id}`)).statusCode, 200);
+  // An archived project is read only: no edits, no deleting.
+  await as('admin', 'PATCH', `/dz/api/projects/${proj.id}`, { archived: true });
+  assert.equal((await as('admin', 'DELETE', `/dz/api/storyboards/${shared.id}`)).statusCode, 409);
+  assert.equal((await as('wife', 'PATCH', `/dz/api/storyboards/${shared.id}`, { rev: 2, scene: 'x' })).statusCode, 409);
+  assert.equal((await as('wife', 'GET', `/dz/api/storyboards/${shared.id}`)).statusCode, 200);
   assert.equal((await as('wife', 'GET', `/dz/api/storyboards/${hers.id}`)).statusCode, 404);
 });

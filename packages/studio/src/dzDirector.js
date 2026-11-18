@@ -6,8 +6,8 @@ import {
   promptTags, translateTags, mergeElements, elementsInputOf, klingElementPairs, elementTags, DEFAULT_CAMERA,
 } from "./dzCreate.js";
 
-async function call(method, url, body) {
-  const res = await fetch(url, { method, credentials: "same-origin", headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+async function call(method, url, body, { keepalive = false } = {}) {
+  const res = await fetch(url, { method, credentials: "same-origin", keepalive, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(data.error || data.detail || `HTTP ${res.status}`);
@@ -22,7 +22,7 @@ export const dzStoryboards = {
   list: (project) => call("GET", `/dz/api/storyboards${project ? `?project=${enc(project)}` : ""}`),
   create: (data) => call("POST", "/dz/api/storyboards", data),
   get: (id) => call("GET", `/dz/api/storyboards/${enc(id)}`),
-  update: (id, data) => call("PATCH", `/dz/api/storyboards/${enc(id)}`, data),
+  update: (id, data, opts) => call("PATCH", `/dz/api/storyboards/${enc(id)}`, data, opts),
   remove: (id) => call("DELETE", `/dz/api/storyboards/${enc(id)}`),
   media: (id, data) => call("POST", `/dz/api/storyboards/${enc(id)}/media`, data),
   plan: (id, data) => call("POST", `/dz/api/storyboards/${enc(id)}/plan`, data),

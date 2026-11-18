@@ -70,9 +70,13 @@ function Strip({ items, picked, running, kind, onPick, onRemove, onOpen }) {
     <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-1">
       {items.map((x) => (
         <div key={x.url} className={cn("group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2", x.url === picked ? "border-primary" : "border-transparent")}>
-          <button type="button" className="h-full w-full" onClick={() => (x.url === picked ? onOpen(x.url) : onPick(x.url))} title={x.url === picked ? "Picked — click to view" : "Use this one"}>
-            {kind === "video" ? <video src={x.url} className="h-full w-full object-cover" muted preload="metadata" /> : <img src={dzThumb(x.url, 160)} alt="" className="h-full w-full object-cover" />}
-          </button>
+          {x.gone ? (
+            <span className="flex h-full w-full items-center justify-center bg-muted px-1 text-center text-[11px] leading-tight text-muted-foreground" title="Sent to Trash or moved out of here">Not here</span>
+          ) : (
+            <button type="button" className="h-full w-full" onClick={() => (x.url === picked ? onOpen(x.url) : onPick(x.url))} title={x.url === picked ? "Picked — click to view" : "Use this one"}>
+              {kind === "video" ? <video src={x.url} className="h-full w-full object-cover" muted preload="metadata" /> : <img src={dzThumb(x.url, 160)} alt="" className="h-full w-full object-cover" />}
+            </button>
+          )}
           <button type="button" onClick={() => onRemove(x.url)} aria-label="Remove from this shot" title="Remove from this shot (stays in All work)"
             className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -225,6 +229,9 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   const saving = useRef(null); // the save in flight (a promise)
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  // The board on screen: answers about another board (a slow load, a refresh
+  // or a change sent before switching) are ignored.
+  const currentRef = useRef(null);
 
   const textModels = useTextModels();
   const [llmId, setLlmId] = useState(() => { try { return localStorage.getItem(LLM_KEY) || ""; } catch { return ""; } });
@@ -241,7 +248,7 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   }, [scope, onGenerationError]);
 
   const takeServer = useCallback((sb, { force = false } = {}) => {
-    if (!sb) return;
+    if (!sb || sb.id !== currentRef.current) return;
     setMedia(sb.media || {});
     setJobs(sb.jobs || []);
     if (force || !dirtyRef.current) {
@@ -255,12 +262,16 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
 
   const open = useCallback(async (id) => {
     clearTimeout(saveTimer.current);
+    currentRef.current = id || null;
     setCurrentId(id);
     setDraft(null); setMedia({}); setJobs([]); setPlanInfo(null);
     dirtyRef.current = false;
     try { localStorage.setItem(boardKey(scope), id || ""); } catch { /* optional */ }
     if (!id) return;
-    try { takeServer((await dzStoryboards.get(id)).storyboard, { force: true }); } catch (e) { onGenerationError?.(errText(e)); setCurrentId(null); }
+    try { takeServer((await dzStoryboards.get(id)).storyboard, { force: true }); } catch (e) {
+      if (currentRef.current !== id) return;
+      onGenerationError?.(errText(e)); currentRef.current = null; setCurrentId(null);
+    }
   }, [scope, takeServer, onGenerationError]);
 
   useEffect(() => {
@@ -277,28 +288,45 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   }, [scope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Saving (debounced, with the revision we started from) ───────────────
-  const save = useCallback(async () => {
-    if (saving.current) { await saving.current; }
+  // Resolves true when everything on screen is saved; false after a conflict
+  // (the board was reloaded) or an error — then nothing may build on the draft.
+  const save = useCallback(async ({ keepalive = false } = {}) => {
+    if (saving.current) { if (!(await saving.current)) return false; }
     const d = draftRef.current;
-    if (!d || !dirtyRef.current) return;
+    if (!d || d.id !== currentRef.current) return false;
+    if (!dirtyRef.current) return true;
     const ver = editVer.current;
     setSaveState("saving");
     const p = (async () => {
       try {
-        const r = await dzStoryboards.update(d.id, { rev: revRef.current, name: d.name, scene: d.scene, look: d.look, settings: d.settings, shots: d.shots });
+        const r = await dzStoryboards.update(d.id, { rev: revRef.current, name: d.name, scene: d.scene, look: d.look, settings: d.settings, shots: d.shots }, { keepalive });
+        if (d.id !== currentRef.current) return false;
         revRef.current = r.storyboard.rev;
-        if (editVer.current === ver) { dirtyRef.current = false; setSaveState("saved"); }
+        const clean = editVer.current === ver;
+        if (clean) { dirtyRef.current = false; setSaveState("saved"); }
         setMedia(r.storyboard.media || {});
         setJobs(r.storyboard.jobs || []);
         setBoards((list) => list.map((b) => (b.id === d.id ? { ...b, name: d.name, shots: d.shots.length } : b)));
+        return clean;
       } catch (e) {
+        if (d.id !== currentRef.current) return false;
         if (e.status === 409 && e.storyboard) { takeServer(e.storyboard, { force: true }); notify(errText(e)); } else { setSaveState("unsaved"); onGenerationError?.(`Not saved: ${errText(e)}`); }
+        return false;
       }
     })();
     saving.current = p;
-    try { await p; } finally { if (saving.current === p) saving.current = null; }
+    try { return await p; } finally { if (saving.current === p) saving.current = null; }
   }, [takeServer, onGenerationError]);
-  const flush = useCallback(async () => { clearTimeout(saveTimer.current); if (dirtyRef.current) await save(); else if (saving.current) await saving.current; }, [save]);
+  // Save now (and again if more was typed meanwhile); true when all is saved.
+  const flush = useCallback(async () => {
+    clearTimeout(saveTimer.current);
+    for (let i = 0; i < 3; i += 1) {
+      if (saving.current && !(await saving.current)) return false;
+      if (!dirtyRef.current) return true;
+      if (!(await save()) && !dirtyRef.current) return false;
+    }
+    return !dirtyRef.current;
+  }, [save]);
 
   const edit = useCallback((fn) => {
     if (readOnly) return;
@@ -311,10 +339,10 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   }, [save, readOnly]);
   const saveRef = useRef(save);
   saveRef.current = save;
-  useEffect(() => () => { clearTimeout(saveTimer.current); if (dirtyRef.current) saveRef.current(); }, []);
-  // Save on leaving the page.
+  useEffect(() => () => { clearTimeout(saveTimer.current); if (dirtyRef.current) saveRef.current({ keepalive: true }); }, []);
+  // Save on leaving the page (keepalive: the request outlives the page).
   useEffect(() => {
-    const onHide = () => { if (dirtyRef.current) save(); };
+    const onHide = () => { if (dirtyRef.current) save({ keepalive: true }); };
     window.addEventListener("pagehide", onHide);
     return () => window.removeEventListener("pagehide", onHide);
   }, [save]);
@@ -360,10 +388,10 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   const elements = useMemo(() => (settings.elements || []).map((id) => allElements.find((e) => e.id === id)).filter((e) => e && e.status !== "draft"), [settings.elements, allElements]);
 
   // ── Board actions ──────────────────────────────────────────────────────
-  const switchTo = async (id) => { if (id === currentId) return; await flush(); open(id); };
+  const switchTo = async (id) => { if (id === currentId) return; await flush(); open(id); }; // a failed save was reported; switching still works
   const createBoard = async () => {
     try {
-      await flush();
+      if (draftRef.current && !(await flush())) return;
       const r = await dzStoryboards.create({ project: scope || null, name: "Untitled scene", settings: imageEntry && videoEntry ? { image: imageEntry.key, video: videoEntry.key, frames: 1 } : {} });
       setBoards((list) => [{ id: r.storyboard.id, name: r.storyboard.name, shots: 0, cover: null, mine: true }, ...list]);
       open(r.storyboard.id);
@@ -388,7 +416,10 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
     setPlanning(true);
     setPlanInfo(null);
     try {
-      await flush();
+      // Plan from what is saved — exactly what is on screen now.
+      if (!(await flush())) return;
+      const draft = draftRef.current;
+      if (!draft?.scene?.trim()) return;
       const audio = [videoValues.generate_audio, videoValues.audio, videoValues.sound, videoValues.enable_audio].find((v) => typeof v === "boolean");
       const r = await dzStoryboards.plan(draft.id, {
         rev: revRef.current, scene: draft.scene, count: settings.count || "auto",
@@ -418,18 +449,23 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   const addShot = () => edit((d) => ({ ...d, shots: [...d.shots, emptyShot()] }));
 
   const changeMedia = async (body) => {
-    try { takeServer((await dzStoryboards.media(draft.id, body)).storyboard); } catch (e) { onGenerationError?.(errText(e)); }
+    const id = currentRef.current;
+    if (!id) return;
+    try { takeServer((await dzStoryboards.media(id, body)).storyboard); } catch (e) { if (currentRef.current === id) onGenerationError?.(errText(e)); }
   };
   const addFrame = async (shotId, url) => {
-    await flush();
-    changeMedia({ shot: shotId, kind: "frame", op: "add", url });
+    if (!(await flush())) return; // the shot must be saved before a file joins it
+    await changeMedia({ shot: shotId, kind: "frame", op: "add", url });
   };
 
   // One step of a shot: ×frames for start frames, one video. Each is its own job;
   // the server puts the result into the shot (also after a reload).
   const run = async (shot, step, req) => {
     if (!req?.body || !draft) return;
-    await flush();
+    // The shot must be on the server before its job (the result joins it there).
+    if (!(await flush())) return;
+    const boardId = currentRef.current;
+    if (!draftRef.current?.shots.some((s) => s.id === shot.id)) return;
     const key = `${shot.id}:${step}`;
     const n = step === "frame" ? frames : 1;
     const entry = step === "frame" ? imageEntry : videoEntry;
@@ -439,9 +475,9 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
       modelName: `${entry.familyName} · ${entry.providerName}`,
       prompt: step === "frame" ? shot.frame_prompt : shot.motion_prompt,
       values: Object.fromEntries(Object.entries(req.body).filter(([k, v]) => k !== "prompt" && k !== "elements" && (typeof v !== "string" || !v.startsWith("/media/")))),
-      forShot: { board: draft.id, shot: shot.id, step },
+      forShot: { board: boardId, shot: shot.id, step },
       shotTitle: shot.title || "",
-      boardName: draft.name,
+      boardName: draftRef.current?.name || "",
     };
     const one = async () => {
       setLocal((l) => ({ ...l, [key]: (l[key] || 0) + 1 }));
@@ -470,7 +506,9 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
     const list = shotsWithoutFrame.map((s) => ({ s, req: frameRequest({ entry: imageEntry, shot: s, look, values: frameValues, elements }) })).filter((x) => x.req.body);
     const queue = [...list];
     const worker = async () => { while (queue.length) { const { s, req } = queue.shift(); await run(s, "frame", req); } };
-    await Promise.all([worker(), worker(), worker()]);
+    // At most ~6 jobs at once (the server allows 8 per person): ×1 → 6 shots, ×4 → 1 shot at a time.
+    const workers = Math.max(1, Math.floor(6 / frames));
+    await Promise.all(Array.from({ length: Math.min(workers, queue.length) }, worker));
   };
 
   const jobsFor = (shotId) => jobs.filter((j) => j.shot === shotId && !dismissed.has(j.id));

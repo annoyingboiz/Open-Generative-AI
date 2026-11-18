@@ -855,7 +855,7 @@ export async function buildApp(config, { logger = true } = {}) {
     planLoad.set(req.user.id, load);
     try {
       const body = req.body || {};
-      storyboards.editable(req.user, req.params.id); // before spending a text-model call
+      storyboards.checkRev(req.user, req.params.id, body.rev); // before spending a text-model call
       const plan = await director.plan(req.user, body);
       const { storyboard } = storyboards.applyPlan(req.user, req.params.id, Number(body.rev), plan);
       return { storyboard, plan: { memos: plan.memos, llm: plan.llm, costUsd: plan.costUsd, ms: plan.ms } };

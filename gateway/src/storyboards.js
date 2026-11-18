@@ -80,11 +80,35 @@ export function createStoryboards({ db, projects, generations, log }) {
     remove: db.prepare('UPDATE storyboards SET deleted_at = ? WHERE id = ?'),
     user: db.prepare('SELECT * FROM users WHERE id = ?'),
     author: db.prepare('SELECT display_name FROM users WHERE id = ?'),
-    jobs: db.prepare(`SELECT id, user_id, status, error, meta_json, created_at, completed_at FROM generations
+    jobs: db.prepare(`SELECT id, user_id, project_id, status, error, meta_json, created_at, completed_at FROM generations
       WHERE created_at > ? AND deleted_at IS NULL AND instr(meta_json, ?) > 0 ORDER BY created_at`),
+    genState: db.prepare('SELECT id, project_id, deleted_at, purged_at FROM generations WHERE id = ?'),
+    uploadState: db.prepare('SELECT id, project_id FROM uploads WHERE id = ?'),
     forShotJobs: db.prepare(`SELECT * FROM generations WHERE status = 'completed' AND completed_at > ? AND instr(meta_json, '"forShot"') > 0 ORDER BY completed_at LIMIT 500`),
   };
 
+  // A file of the board that can't be opened from it any more (sent to Trash,
+  // purged, or moved out of the board's place) is marked `gone`.
+  function isGone(row, url) {
+    const place = row.project_id || null;
+    let m = /^\/media\/g\/([^/]+)\//.exec(url);
+    if (m) { const g = q.genState.get(m[1]); return !g || g.deleted_at != null || g.purged_at != null || (g.project_id || null) !== place; }
+    m = /^\/media\/u\/([^.]+)\./.exec(url);
+    if (m) { const u = q.uploadState.get(m[1]); return !u || (u.project_id || null) !== place; }
+    return true;
+  }
+  function withState(row, media) {
+    const goneUrl = (url) => isGone(row, url);
+    const out = {};
+    for (const [shotId, m] of Object.entries(media || {})) {
+      const mark = (list) => (list || []).map((x) => (goneUrl(x.url) ? { ...x, gone: true } : x));
+      const frames = mark(m.frames);
+      const videos = mark(m.videos);
+      const live = (list, url) => (url && list.some((x) => x.url === url && !x.gone) ? url : null);
+      out[shotId] = { ...m, frames, videos, frame: live(frames, m.frame), video: live(videos, m.video) };
+    }
+    return out;
+  }
   const view = (row, user, extra = {}) => ({
     id: row.id,
     name: row.name,
@@ -92,7 +116,7 @@ export function createStoryboards({ db, projects, generations, log }) {
     look: cleanLook(parse(row.look_json, {})),
     settings: parse(row.settings_json, {}),
     shots: parse(row.shots_json, []),
-    media: parse(row.media_json, {}),
+    media: withState(row, parse(row.media_json, {})),
     rev: row.rev,
     project_id: row.project_id || null,
     mine: row.owner_id === user.id,
@@ -130,6 +154,9 @@ export function createStoryboards({ db, projects, generations, log }) {
     for (const g of q.jobs.all(now() - 2 * 86_400_000, `"board":"${row.id}"`)) {
       const f = parse(g.meta_json, {})?.forShot;
       if (!f || f.board !== row.id || !shots.has(f.shot)) continue;
+      // Only jobs that could join this board: same place, made by someone who can edit it.
+      if ((g.project_id || null) !== (row.project_id || null)) continue;
+      if (row.project_id ? !projects.isMember(g.user_id, row.project_id) : g.user_id !== row.owner_id) continue;
       const step = f.step === 'video' ? 'video' : 'frame';
       if (ACTIVE.has(g.status)) out.push({ id: g.id, shot: f.shot, step, status: 'running', since: g.created_at });
       else if (g.status === 'completed' && !has(f.shot, g.id) && now() - (g.completed_at || 0) < 10 * 60_000) out.push({ id: g.id, shot: f.shot, step, status: 'running', since: g.created_at });
@@ -144,7 +171,7 @@ export function createStoryboards({ db, projects, generations, log }) {
       storyboards: rows.map((r) => {
         const shots = parse(r.shots_json, []);
         const media = parse(r.media_json, {});
-        const cover = shots.map((s) => media[s.id]?.frame).find(Boolean) || null;
+        const cover = shots.map((s) => media[s.id]?.frame).find((u) => u && !isGone(r, u)) || null;
         return { id: r.id, name: r.name, shots: shots.length, cover, updated_at: r.updated_at, mine: r.owner_id === user.id };
       }),
     };
@@ -205,7 +232,7 @@ export function createStoryboards({ db, projects, generations, log }) {
 
   // Personal: the owner. Project: the author or the project owner.
   function remove(user, id) {
-    const row = visible(user, id);
+    const row = editable(user, id);
     if (row.project_id && row.owner_id !== user.id && projects.roleIn(user.id, row.project_id) !== 'owner') {
       throw new StoryboardError('Only the author or the project owner can delete it.', 403);
     }
@@ -240,8 +267,15 @@ export function createStoryboards({ db, projects, generations, log }) {
       // Your own picture as the start frame: copied into the board's place.
       if (kind !== 'frame') throw new StoryboardError('Only a frame can be added.');
       const [own] = await generations.adoptMany(user, [url], { projectId: row.project_id || null });
-      row = editable(user, id);
-      shotOf(row, shotId);
+      try {
+        row = editable(user, id);
+        shotOf(row, shotId);
+      } catch (error) {
+        // The board or shot changed while copying: the fresh copy is not kept.
+        const made = own !== url && /^\/media\/u\/([^.]+)\./.exec(own);
+        if (made) { try { generations.deleteUploads(user, [made[1]]); } catch { /* best effort */ } }
+        throw error;
+      }
       changeMedia(row, shotId, (m) => {
         if (!m.frames.some((x) => x.url === own)) m.frames.push({ url: own, gen: null, at: now(), own: true });
         if (m.frames.length > MAX_FRAMES) m.frames = m.frames.filter((x) => x.url === m.frame).concat(m.frames.filter((x) => x.url !== m.frame).slice(-(MAX_FRAMES - 1)));
@@ -250,7 +284,10 @@ export function createStoryboards({ db, projects, generations, log }) {
     } else if (body.op === 'pick' || body.op === 'remove') {
       changeMedia(row, shotId, (m) => {
         if (!m[listKey].some((x) => x.url === url)) throw new StoryboardError('Not one of this shot\'s files.', 404);
-        if (body.op === 'pick') m[kind] = url;
+        if (body.op === 'pick') {
+          if (isGone(row, url)) throw new StoryboardError('That file is in the Trash or was moved out of here.', 409);
+          m[kind] = url;
+        }
         else {
           m[listKey] = m[listKey].filter((x) => x.url !== url);
           if (m[kind] === url) m[kind] = m[listKey].at(-1)?.url || null;
@@ -273,6 +310,8 @@ export function createStoryboards({ db, projects, generations, log }) {
     let row;
     try { row = editable(user, f.board); } catch { return; } // gone, or no longer theirs to change
     if (!parse(row.shots_json, []).some((s) => s.id === f.shot)) return;
+    // Made in the board's place (its project, or the owner's Library) — or everyone could not open it.
+    if ((gen.project_id || null) !== (row.project_id || null)) return;
     const step = f.step === 'video' ? 'video' : 'frame';
     const want = step === 'video' ? 'video/' : 'image/';
     const outputs = parse(gen.outputs_json, []);
@@ -309,5 +348,16 @@ export function createStoryboards({ db, projects, generations, log }) {
     });
   }
 
-  return { list, create, get, update, remove, media, attachGenerated, attachPending, applyPlan, editable, visible };
+  // Before a paid plan: the studio's revision must still be current.
+  function checkRev(user, id, rev) {
+    const row = editable(user, id);
+    if (!Number.isInteger(Number(rev)) || Number(rev) !== row.rev) {
+      const err = new StoryboardError('This storyboard changed meanwhile — reloaded. Plan again.', 409);
+      err.storyboard = view(row, user, { jobs: jobsOf(row) });
+      throw err;
+    }
+    return row;
+  }
+
+  return { list, create, get, update, remove, media, attachGenerated, attachPending, applyPlan, editable, visible, checkRev };
 }

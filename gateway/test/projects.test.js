@@ -441,3 +441,32 @@ test('elements v2: tags, labelled views and videos, draft, duplicate, update fro
   res = await as('admin', 'GET', `/dz/api/elements?project=${proj.id}`);
   assert.equal(res.json().elements.find((e) => e.id === copy.id).videos.length, 1);
 });
+
+test('uploads can be deleted by their uploader, not by others, and not while an element shows them', async () => {
+  const up = async (who, name) => {
+    const mp = multipart(name, 'image/png', PNG);
+    const r = await app.inject({ method: 'POST', url: '/api/v1/upload_file', headers: { cookie: cookies[who], ...mp.headers }, payload: mp.payload });
+    return r.json().url;
+  };
+  const a = await up('admin', 'scribble.png');
+  const b = await up('admin', 'keep.png');
+  const idOf = (url) => url.split('/').pop().split('.')[0];
+  let res = await as('admin', 'POST', '/dz/api/elements', { name: 'Keeper', views: [b] });
+  assert.equal(res.statusCode, 200, res.body);
+  res = await as('wife', 'POST', '/api/v1/uploads/delete', { ids: [idOf(a)] });
+  assert.deepEqual(res.json().done, []);
+  // In the Library, "all" lists personal elements and those of every project I'm in.
+  res = await as('admin', 'GET', '/dz/api/elements?project=all');
+  const all = res.json().elements;
+  assert.ok(all.some((e) => !e.project_id) && all.some((e) => e.project_id && e.project_name));
+  res = await as('kid', 'GET', '/dz/api/elements?project=all');
+  assert.ok(res.json().elements.every((e) => !e.project_id || e.project_name));
+  assert.equal(res.json().elements.some((e) => e.name === 'Keeper'), false);
+  res = await as('admin', 'POST', '/api/v1/uploads/delete', { ids: [idOf(a), idOf(b)] });
+  assert.deepEqual(res.json().done, [idOf(a)]);
+  assert.match(res.json().failed[0].error, /Keeper/);
+  res = await as('admin', 'GET', a);
+  assert.equal(res.statusCode, 404);
+  res = await as('admin', 'GET', b);
+  assert.equal(res.statusCode, 200);
+});

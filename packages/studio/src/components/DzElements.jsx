@@ -44,17 +44,22 @@ export const dzElementsApi = {
 // Elements of the current context (and, in a project, the Library's too).
 export function useDzElements() {
   const ctx = useDzContext();
-  const [state, setState] = useState({ project: [], library: [], loaded: false });
+  // project: this project's · library: personal · others: (in the Library) every project's I'm in
+  const [state, setState] = useState({ project: [], library: [], others: [], loaded: false });
   const key = ctx.project?.id || "";
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
-        const [lib, proj] = await Promise.all([dzElementsApi.list(null), key ? dzElementsApi.list(key) : Promise.resolve({ elements: [] })]);
-        if (alive) setState({ project: proj.elements || [], library: lib.elements || [], loaded: true });
+        const [lib, proj] = await Promise.all([
+          key ? dzElementsApi.list(null) : dzElementsApi.list("all"),
+          key ? dzElementsApi.list(key) : Promise.resolve({ elements: [] }),
+        ]);
+        const all = lib.elements || [];
+        if (alive) setState({ project: proj.elements || [], library: all.filter((e) => !e.project_id), others: all.filter((e) => e.project_id), loaded: true });
       } catch { if (alive) setState((s) => ({ ...s, loaded: true })); }
     };
-    setState({ project: [], library: [], loaded: false });
+    setState({ project: [], library: [], others: [], loaded: false });
     load();
     window.addEventListener("dz:elements", load);
     return () => { alive = false; window.removeEventListener("dz:elements", load); };
@@ -162,7 +167,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError, o
   const nextLabel = () => labels.find((l) => !form.views.some((v) => v.label === l)) || "";
   if (!open) return null;
   return (
-    <aside className="flex h-full w-full flex-col border-l border-border bg-card md:w-[480px]" aria-label={element ? "Edit element" : "New element"}>
+    <aside className="flex h-full w-full flex-col border-l border-border bg-card shadow-2xl" aria-label={element ? "Edit element" : "New element"}>
       <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
         <h2 className="text-lg font-semibold">{element ? `Edit · ${element.name}` : `New element${ctx.project ? ` in ${ctx.project.name}` : ""}`}</h2>
         <Button variant="ghost" size="icon" aria-label="Close" onClick={() => onOpenChange(false)}>✕</Button>
@@ -196,7 +201,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError, o
 
         <div className="space-y-2">
           <div className="flex items-center justify-between"><span className="font-semibold">Views <span className="font-normal text-muted-foreground">— the first is the main one</span></span><span className="text-muted-foreground tabular-nums">{form.views.length}/24</span></div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {form.views.map((v, i) => (
               <div key={v.url} className={cn("overflow-hidden rounded-xl border", i === 0 ? "border-primary" : "border-border")}>
                 <div className="group relative">
@@ -630,8 +635,9 @@ export function DzElementsPage({ projects = [], onError, apiKey = "session" }) {
           )}
         </div>
       </div>
+      {/* The editor slides over the page (it doesn't push it), wide enough for views. */}
       {editing && (
-        <div className="fixed inset-0 z-40 md:static md:z-auto">
+        <div className="fixed inset-y-0 right-0 top-14 z-40 w-full md:w-[min(720px,70vw)]">
           <ElementEditor element={editing === "new" ? null : editing} open onOpenChange={(o) => !o && setEditing(null)} onError={onError}
             onSaved={() => setViewing(null)} onGenerateVideo={(el) => setVideoFor(el)} />
         </div>
@@ -645,7 +651,7 @@ export function DzElementsPage({ projects = [], onError, apiKey = "session" }) {
 // ── Picker in Create ─────────────────────────────────────────────────────
 
 export function ElementPicker({ selected = [], onChange, max = 7, note }) {
-  const { project, library, loaded, ctx } = useDzElements();
+  const { project, library, others, loaded, ctx } = useDzElements();
   const [q, setQ] = useState("");
   const ids = new Set(selected.map((e) => e.id));
   // Drafts stay out of Create.
@@ -664,6 +670,7 @@ export function ElementPicker({ selected = [], onChange, max = 7, note }) {
   );
   const proj = project.filter(match);
   const lib = library.filter(match);
+  const oth = (others || []).filter(match);
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -678,7 +685,9 @@ export function ElementPicker({ selected = [], onChange, max = 7, note }) {
           {ctx.project && proj.map(row)}
           {lib.length > 0 && <div className="px-1 py-1 text-muted-foreground">{ctx.project ? "My Library" : "My elements"}</div>}
           {lib.map(row)}
-          {loaded && !proj.length && !lib.length && <p className="px-1 py-4 text-muted-foreground">No elements yet. Make them on the Elements page.</p>}
+          {oth.length > 0 && <div className="px-1 py-1 text-muted-foreground">From my projects</div>}
+          {oth.map(row)}
+          {loaded && !proj.length && !lib.length && !oth.length && <p className="px-1 py-4 text-muted-foreground">No elements yet. Make them on the Elements page.</p>}
         </div>
         <p className="px-1 pt-2 text-muted-foreground">Up to {max} for this model.</p>
       </PopoverContent>

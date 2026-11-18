@@ -204,7 +204,7 @@ export function mergeElements(entry, attached, elements = []) {
 }
 
 // ── Our prompt tags ─────────────────────────────────────────────────────────
-// The prompt uses our own tags, whatever the model: @img1, @video1, @audio1 for
+// The prompt uses our own tags, whatever the model: @image1, @video1, @audio1 for
 // attached files and @char_mike / @prop_glass / @loc_bar / @obj_x for elements.
 // At send time each becomes what this model understands (@Image3, @image_3,
 // @element_1, …) — or plain words when the model has no @-syntax.
@@ -239,7 +239,7 @@ export function elementFits(entry, e) {
 
 // Every tag the prompt can use now, with what it turns into for this model.
 //   [{ tag, to, label, kind: 'file'|'element', role?, url?, element?, unused? }]
-// References are numbered on their own (@img1 = the first reference image the
+// References are numbered on their own (@image1 = the first reference image the
 // model gets), frames have their own tags (@first, @middle, @last). A model
 // with no reference input numbers its frames as images instead.
 const FRAME_WORDS = { first: "the start frame", middle: "the middle frame", last: "the end frame" };
@@ -260,7 +260,7 @@ export function promptTags({ attached = {}, syntax = null, elements = [], elemen
   for (const f of attached.reference || []) {
     n += 1;
     if (f.element) { if (!firstImage.has(f.element)) firstImage.set(f.element, n); continue; }
-    out.push({ tag: `img${n}`, to: syntax ? syntax.image(n) : `image ${n}`, label: ROLE_INFO.reference?.label || "Reference", kind: "file", role: "reference", url: f.url });
+    out.push({ tag: `image${n}`, to: syntax ? syntax.image(n) : `image ${n}`, label: ROLE_INFO.reference?.label || "Reference", kind: "file", role: "reference", url: f.url });
   }
   let v = 0;
   const firstVideo = new Map();
@@ -288,11 +288,18 @@ export function promptTags({ attached = {}, syntax = null, elements = [], elemen
 // The prompt with our tags turned into the model's own words. Anything else
 // that starts with @ (a model tag typed by hand, an e-mail) stays as it is.
 // Inside a JSON prompt the replacement is escaped for a JSON string, so a name
-// with quotes can't break it. A tag is a whole word: "abc@img1" is left alone.
+// with quotes can't break it. A tag is a whole word: "abc@image1" is left alone.
 export const TAG_RE = /(^|[^\p{L}\p{N}_@])@([a-z][a-z0-9_]*)(?![\p{L}\p{N}_])/giu;
 export function translateTags(prompt, tags = []) {
   if (!tags.length) return prompt;
   const map = new Map(tags.map((t) => [t.tag.toLowerCase(), t.to]));
+  // Other spellings people type: @img1, @image_1, @video_1.
+  for (const t of tags) {
+    const m = /^(image|video|audio)(\d+)$/.exec(t.tag);
+    if (!m) continue;
+    map.set(`${m[1]}_${m[2]}`, t.to);
+    if (m[1] === "image") map.set(`img${m[2]}`, t.to);
+  }
   const text = String(prompt || "");
   const json = parseJsonPrompt(text).ok;
   return text.replace(TAG_RE, (all, pre, name) => {

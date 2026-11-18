@@ -1,8 +1,8 @@
 "use client";
 
 // DZ: choosing several results at once — in All work and in every tool's grid.
-//   · "Select" (or Cmd/Ctrl-click, Shift-click) starts choosing;
-//   · Shift-click picks a range, Cmd/Ctrl-click one more;
+//   · only "Select" starts choosing (a plain click always opens the result);
+//   · while choosing, a click picks one, Shift-click a range;
 //   · Move to… / Copy to… / Download / Trash for what is chosen;
 //   · cards can be dragged onto a folder or a project in the sidebar.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -74,7 +74,7 @@ export function useDzSelection(items) {
 
   // A click on a card: true when it was a choosing click (the card then does nothing else).
   const click = useCallback((item, e) => {
-    if (!selecting && !(e.shiftKey || e.metaKey || e.ctrlKey)) return false;
+    if (!selecting) return false;
     e.preventDefault?.();
     toggle(item, e);
     return true;
@@ -96,9 +96,9 @@ export function useDzSelection(items) {
   return { selecting, start: () => setSelecting(true), clear, click, toggle, selectAll, chosen, has: (id) => selected.has(id), count: selected.size, dragProps };
 }
 
-// The round tick in a card's top-left corner. Shows on hover, stays while choosing.
+// The round tick in a card's top-left corner — only while choosing.
 export function SelectBox({ sel, item, className }) {
-  if (!item.url) return null;
+  if (!item.url || !sel?.selecting) return null;
   const on = sel.has(item.id);
   return (
     <button

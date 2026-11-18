@@ -46,6 +46,7 @@ export function createElements({ db, projects, generations, log }) {
     remove: db.prepare('UPDATE elements SET deleted_at = ? WHERE id = ?'),
     author: db.prepare('SELECT display_name FROM users WHERE id = ?'),
     user: db.prepare('SELECT * FROM users WHERE id = ?'),
+    projectName: db.prepare('SELECT name, color, archived_at FROM projects WHERE id = ?'),
     tagTakenPersonal: db.prepare('SELECT id FROM elements WHERE owner_id = ? AND project_id IS NULL AND tag = ? AND deleted_at IS NULL'),
     tagTakenProject: db.prepare('SELECT id FROM elements WHERE project_id = ? AND tag = ? AND deleted_at IS NULL'),
     noTag: db.prepare('SELECT id, owner_id, project_id, name, kind FROM elements WHERE tag IS NULL AND deleted_at IS NULL'),
@@ -173,6 +174,16 @@ export function createElements({ db, projects, generations, log }) {
   }
 
   function list(user, { project } = {}) {
+    // Everything the user can use from the Library: personal plus every project they are in.
+    if (project === 'all') {
+      const out = q.personal.all(user.id).map((r) => view(r, user));
+      for (const pid of projects.memberProjectIds(user.id)) {
+        const p = q.projectName.get(pid);
+        if (!p) continue;
+        for (const r of q.inProject.all(pid)) out.push({ ...view(r, user), project_name: p.name, project_color: p.color });
+      }
+      return { elements: out };
+    }
     if (project && project !== 'none') {
       const p = projects.get(user, String(project)).project;
       return { elements: q.inProject.all(p.id).map((r) => view(r, user)) };

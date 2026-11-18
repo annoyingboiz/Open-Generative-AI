@@ -38,6 +38,12 @@ export const dzLibrary = {
     return r;
   },
   async purge(id) { const r = await call("DELETE", `/api/v1/predictions/${encodeURIComponent(id)}`); changed(); return r; },
+  // Delete uploaded files for good: { done, failed }.
+  async deleteUploads(ids) {
+    const r = await call("POST", "/api/v1/uploads/delete", { ids });
+    window.dispatchEvent(new CustomEvent("dz:history", { detail: { status: "upload" } }));
+    return r;
+  },
   uploads(params = {}) {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]));
     return call("GET", `/api/v1/uploads?${q}`);

@@ -64,7 +64,7 @@ function IconButton({ title, onClick, danger, children }) {
   );
 }
 
-function Viewer({ item, onClose }) {
+export function Viewer({ item, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -94,7 +94,7 @@ function Card({ item, view, onOpen, actions, sel }) {
   const studio = STUDIO_LABEL[item.studio] || null;
   const on = sel?.has(item.id);
   return (
-    <div className={cn("group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-white/20", selectedRing(on))} {...(sel ? sel.dragProps(item) : {})}>
+    <div className={cn("group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-white/20", selectedRing(on))} {...(sel && view !== "uploads" ? sel.dragProps(item) : {})}>
       {sel && <SelectBox sel={sel} item={item} />}
       <button type="button" className="relative block w-full" onClick={(e) => { if (sel?.click(item, e)) return; if (item.url) onOpen(item); }} disabled={!item.url}>
         {!item.url ? (
@@ -115,8 +115,8 @@ function Card({ item, view, onOpen, actions, sel }) {
         )}
         {isVideo && item.url && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-base font-semibold text-foreground">Video</span>}
       </button>
-      {item.url && view !== "uploads" && !sel?.selecting && (
-        <div className="absolute right-2 top-2 flex flex-col gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+      {(item.url || item.status === "failed") && actions && !sel?.selecting && (
+        <div className={cn("absolute right-2 top-2 flex flex-col gap-2 transition-opacity", item.url ? "opacity-100 md:opacity-0 md:group-hover:opacity-100" : "opacity-100")}>
           {actions}
         </div>
       )}
@@ -143,8 +143,24 @@ function Grid({ children }) {
   return <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{children}</div>;
 }
 
-function Uploads({ onOpen, project }) {
+// Uploaded files: open, download, delete (one or chosen ones). A file an element
+// still shows can't be deleted — the message names the element.
+function Uploads({ onOpen, project, onError }) {
   const [items, setItems] = useState(null);
+  const sel = useDzSelection(items || []);
+  const [busy, setBusy] = useState(false);
+  const remove = async (ids) => {
+    setBusy(true);
+    try {
+      const r = await dzLibrary.deleteUploads(ids);
+      const done = r.done?.length || 0;
+      const failed = r.failed || [];
+      window.dispatchEvent(new CustomEvent("dz:notify", { detail: failed.length
+        ? { type: done ? "success" : "error", title: "Uploads", message: `Deleted ${done} of ${ids.length}. ${failed[0].error}` }
+        : { type: "success", title: "Uploads", message: `Deleted ${done} file${done === 1 ? "" : "s"}.` } }));
+      if (done) { setItems((list) => (list || []).filter((u) => !r.done.includes(u.id))); sel.clear(); }
+    } catch (e) { onError?.(String(e?.message || e)); } finally { setBusy(false); }
+  };
   useEffect(() => {
     let cancelled = false;
     setItems(null);
@@ -158,11 +174,42 @@ function Uploads({ onOpen, project }) {
   if (!items) return <p className="py-16 text-center text-base text-muted-foreground">Loading…</p>;
   if (!items.length) return <p className="py-16 text-center text-base text-muted-foreground">Nothing uploaded yet. Files you add as references show up here.</p>;
   return (
-    <Grid>
-      {items.map((u) => (
-        <Card key={u.id} view="uploads" onOpen={onOpen} item={{ ...u, kind: u.mime.split("/")[0], status: "completed" }} />
-      ))}
-    </Grid>
+    <>
+      <div className="mb-4 flex min-h-[40px] flex-wrap items-center gap-2">
+        {sel.selecting ? (
+          <>
+            <span className="font-semibold tabular-nums">{sel.count ? `${sel.count} selected` : "Choose files"}</span>
+            <Button size="sm" variant="ghost" onClick={sel.selectAll}>Select all</Button>
+            <Button size="sm" variant="destructive" disabled={!sel.count || busy}
+              onClick={() => { if (window.confirm(`Delete ${sel.count} file${sel.count === 1 ? "" : "s"} for good? This can't be undone.`)) remove(sel.chosen.map((u) => u.id)); }}>Delete forever</Button>
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={sel.clear}>Cancel</Button>
+          </>
+        ) : (
+          <>
+            <span className="text-muted-foreground">Uploaded files are deleted for good (no trash).</span>
+            <Button size="sm" variant="secondary" className="ml-auto" onClick={sel.start}>Select</Button>
+          </>
+        )}
+      </div>
+      <Grid>
+        {items.map((u) => {
+          const item = { ...u, kind: u.mime.split("/")[0], status: "completed" };
+          return (
+            <Card key={u.id} view="uploads" onOpen={onOpen} item={item} sel={sel}
+              actions={(
+                <>
+                  <IconButton title="Download" onClick={() => download(u.url, u.name || u.url.split("/").pop())}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                  </IconButton>
+                  <IconButton title="Delete forever" danger onClick={() => { if (window.confirm(`Delete “${u.name || "this file"}” for good?`)) remove([u.id]); }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+                  </IconButton>
+                </>
+              )} />
+          );
+        })}
+      </Grid>
+    </>
   );
 }
 
@@ -193,6 +240,13 @@ export default function DzLibrary({ section = "all", onGenerationError }) {
   const filtered = type !== "all" || tool !== "any" || likedOnly || Boolean(search);
 
   const actionsFor = (item) => {
+    if (!item.url && !inTrash) {
+      return item.status === "failed" ? (
+        <IconButton title="Delete (move to trash)" danger onClick={() => lib.trash(item.id).catch(report)}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+        </IconButton>
+      ) : null;
+    }
     if (inTrash) {
       return (
         <>
@@ -255,7 +309,7 @@ export default function DzLibrary({ section = "all", onGenerationError }) {
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-5 md:px-6">
         {uploads ? (
-          <Uploads onOpen={setOpen} project={ctx.project?.id} />
+          <Uploads onOpen={setOpen} project={ctx.project?.id} onError={report} />
         ) : !lib.loaded ? (
           <p className="py-16 text-center text-base text-muted-foreground">Loading…</p>
         ) : lib.items.length === 0 ? (

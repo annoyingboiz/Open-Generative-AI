@@ -64,6 +64,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     uploadBytes: db.prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM uploads WHERE user_id = ?'),
     activeJobs: db.prepare("SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('submitting','submitted','processing','downloading')"),
     deleteUpload: db.prepare('DELETE FROM uploads WHERE id = ?'),
+    elementsUsing: db.prepare(`SELECT name FROM elements WHERE deleted_at IS NULL AND (views_json LIKE ?1 OR videos_json LIKE ?1 OR images_json LIKE ?1) LIMIT 1`),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, project_id, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
     listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
@@ -481,6 +482,30 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     };
   }
 
+  // Delete uploaded files for good (file and record). Personal: the uploader.
+  // In a project: the uploader or the project owner. A file an element still
+  // shows is kept (remove it from the element first).
+  function deleteUploads(user, ids) {
+    const list = [...new Set((Array.isArray(ids) ? ids : [ids]).filter((x) => typeof x === 'string' && x))];
+    if (!list.length) throw new GenerationError('Nothing selected.', 400);
+    if (list.length > 200) throw new GenerationError('Select at most 200 files at once.', 400);
+    const done = [];
+    const failed = [];
+    for (const id of list) {
+      const up = q.upload.get(id);
+      if (!up || !canSee(user, up)) { failed.push({ id, error: 'Not found.' }); continue; }
+      const mayDelete = up.user_id === user.id || (up.project_id && projects?.roleIn(user.id, up.project_id) === 'owner');
+      if (!mayDelete) { failed.push({ id, error: 'Only the person who uploaded it (or the project owner) can delete it.' }); continue; }
+      const url = `/media/u/${up.id}.${up.path.split('.').pop()}`;
+      const el = q.elementsUsing.get(`%"${url}"%`);
+      if (el) { failed.push({ id, error: `The element “${el.name}” uses it.` }); continue; }
+      storage.remove(up.path);
+      q.deleteUpload.run(up.id);
+      done.push(id);
+    }
+    return { ok: failed.length === 0, done, failed };
+  }
+
   // A copy of a file the user can see, as an upload in the given scope (personal
   // or a project) — e.g. an element's pictures, so everyone who sees the element
   // sees its files. An upload already in that scope is reused as is.
@@ -530,7 +555,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   return {
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     setOnCompleted(fn) { onCompleted = fn; },
-    saveUpload, uploads, submit, result, history, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
+    saveUpload, uploads, deleteUploads, submit, result, history, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

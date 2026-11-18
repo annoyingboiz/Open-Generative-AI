@@ -624,6 +624,9 @@ export async function buildApp(config, { logger = true } = {}) {
   app.delete('/api/v1/predictions/:id', async (req, reply) => {
     try { return generations.purge(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
   });
+  app.post('/api/v1/uploads/delete', async (req, reply) => {
+    try { return generations.deleteUploads(req.user, req.body?.ids); } catch (error) { return sendGenError(reply, error); }
+  });
   app.get('/api/v1/uploads', async (req, reply) => {
     try { return generations.uploads(req.user, req.query); } catch (error) { return sendGenError(reply, error); }
   });

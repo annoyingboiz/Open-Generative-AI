@@ -16,6 +16,7 @@ import DrawModal from "./DrawModal.jsx";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
 import { DzMediaPicker } from "./DzMedia.jsx";
+import { Viewer } from "./DzLibrary.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, promptTags, translateTags, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
@@ -294,7 +295,7 @@ function CameraPanel({ camera, setCamera }) {
   );
 }
 
-function ResultCard({ item, onUse, onReuse, onLike, onTrash, sel }) {
+function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel }) {
   const isVideo = item.kind === "video";
   const canUpscale = !isVideo && dzUpscaleSpec() && dzIsOwnImage(item.url);
   const Icon = ({ title, onClick, children, danger }) => (
@@ -308,8 +309,17 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash, sel }) {
       onClickCapture={(e) => { if (sel?.click(item, e)) e.stopPropagation(); }}>
       {sel && <SelectBox sel={sel} item={item} />}
       {!item.url ? <DzPendingTile status={item.status} error={item.error} className="aspect-square w-full" />
-        : isVideo ? <video src={item.url} className="aspect-square w-full bg-black object-cover" muted loop playsInline preload="metadata" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
-          : <img src={item.url} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />}
+        : (
+          <button type="button" className="block w-full cursor-zoom-in" onClick={() => onOpen?.(item)} aria-label="Open">
+            {isVideo ? <video src={item.url} className="aspect-square w-full bg-black object-cover" muted loop playsInline preload="metadata" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
+              : <img src={item.url} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />}
+          </button>
+        )}
+      {!item.url && item.status === "failed" && !sel?.selecting && (
+        <div className="absolute right-2 top-2">
+          <Icon title="Delete (move to trash)" danger onClick={() => onTrash(item.id)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg></Icon>
+        </div>
+      )}
       {item.url && !sel?.selecting && (
         <div className="absolute right-2 top-2 flex flex-col gap-1.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
           <DzLikeButton id={item.id} liked={item.liked} onChange={onLike} className="h-9 w-9" />
@@ -355,7 +365,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const elementLists = useDzElements();
   useEffect(() => {
     if (!elementLists.loaded) return;
-    const fresh = new Map([...elementLists.library, ...elementLists.project].map((e) => [e.id, e]));
+    const fresh = new Map([...elementLists.library, ...elementLists.project, ...(elementLists.others || [])].map((e) => [e.id, e]));
     setElements((prev) => {
       const next = prev.map((e) => fresh.get(e.id)).filter((e) => e && e.status !== "draft");
       return next.length === prev.length && next.every((e, i) => e === prev[i]) ? prev : next;
@@ -453,6 +463,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   // (Image shows upscales and Draw to Edit too; Create shows all).
   // Create shows both kinds (with a filter); Image and Video their own.
   const [kindFilter, setKindFilter] = useState("all");
+  const [viewing, setViewing] = useState(null); // a result opened in the viewer
   const showKind = mode === "image" ? "image" : mode === "video" ? "video" : kindFilter === "all" ? null : kindFilter;
   const history = useDzHistory({ ...(showKind ? { kind: showKind } : {}), ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
   const sel = useDzSelection(history.items);
@@ -595,17 +606,21 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     if (!mention) return [];
     const q = mention.query.toLowerCase();
     const chosenIds = new Set(elements.map((e) => e.id));
-    const others = canUseElements && elements.length < elementMax
-      ? [...elementLists.project, ...elementLists.library].filter((e, i, all) => !chosenIds.has(e.id) && all.findIndex((x) => x.id === e.id) === i && e.status !== "draft" && elementFits(entry, e))
-      : [];
+    // Every element the user can use here (this project + Library; in the
+    // Library also every project's). One that can't go in says why.
+    const candidates = [...elementLists.project, ...elementLists.library, ...(elementLists.others || [])]
+      .filter((e, i, all) => !chosenIds.has(e.id) && all.findIndex((x) => x.id === e.id) === i && e.status !== "draft");
+    const whyNot = (e) => (!canUseElements || !elementFits(entry, e) ? "this model takes no reference pictures"
+      : elements.length >= elementMax ? `this model takes up to ${elementMax} elements` : null);
     // Each candidate's tag as it will be once added (next to the chosen ones only).
     const tagIfAdded = (e) => elementTags([...activeElements, e]).get(e.id);
     const list = [
       ...tags.map((t) => ({ ...t, add: false })),
-      ...others.map((e) => ({ tag: tagIfAdded(e), label: e.name, kind: "element", element: e, url: e.images?.[0] || null, add: true })),
+      ...candidates.map((e) => ({ tag: tagIfAdded(e), label: e.project_name ? `${e.name} · ${e.project_name}` : e.name, kind: "element", element: e, url: e.images?.[0] || null, add: true, disabled: whyNot(e) })),
     ];
-    return list.filter((o) => !q || o.tag.toLowerCase().includes(q) || String(o.label || "").toLowerCase().includes(q)).slice(0, 8);
-  }, [mention, tags, elements, elementLists, canUseElements, elementMax, activeElements]);
+    return list.filter((o) => !q || o.tag.toLowerCase().includes(q) || String(o.label || "").toLowerCase().includes(q))
+      .sort((a, b) => Number(Boolean(a.disabled)) - Number(Boolean(b.disabled))).slice(0, 10);
+  }, [mention, tags, elements, elementLists, canUseElements, elementMax, activeElements, entry]);
   const readMention = (el) => {
     const pos = el.selectionStart ?? 0;
     const m = /(^|[^\p{L}\p{N}_@])@([\p{L}\p{N}_]*)$/u.exec(el.value.slice(0, pos));
@@ -613,7 +628,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   };
   const pickMention = (o) => {
     const el = promptRef.current;
-    if (!mention || !el) return;
+    if (!mention || !el || o.disabled) return;
     const end = el.selectionStart ?? prompt.length;
     const text = `@${o.tag} `;
     const next = `${prompt.slice(0, mention.start)}${text}${prompt.slice(end).replace(/^\s+/, "")}`;
@@ -623,10 +638,10 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     requestAnimationFrame(() => { el.focus(); const p = mention.start + text.length; el.setSelectionRange(p, p); });
   };
   const onPromptKey = (e) => {
-    if (mention && mentionOptions.length) {
+    if (mention && mentionOptions.some((o) => !o.disabled)) {
       if (e.key === "ArrowDown") { e.preventDefault(); setMention((m) => ({ ...m, index: (m.index + 1) % mentionOptions.length })); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); setMention((m) => ({ ...m, index: (m.index - 1 + mentionOptions.length) % mentionOptions.length })); return; }
-      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMention(mentionOptions[Math.min(mention.index, mentionOptions.length - 1)]); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); const o = mentionOptions[Math.min(mention.index, mentionOptions.length - 1)]; pickMention(o.disabled ? mentionOptions.find((x) => !x.disabled) : o); return; }
       if (e.key === "Escape") { e.preventDefault(); setMention(null); return; }
     }
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
@@ -657,7 +672,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
         ) : (
           <div className="mx-auto grid max-w-[1600px] grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
             {items.map((item) => (
-              <ResultCard key={item.id} item={item} sel={sel} onUse={applyResult} onReuse={reuse} onLike={history.like} onTrash={(id) => history.trash(id).catch((e) => onGenerationError?.(String(e?.message || e)))} />
+              <ResultCard key={item.id} item={item} sel={sel} onOpen={setViewing} onUse={applyResult} onReuse={reuse} onLike={history.like} onTrash={(id) => history.trash(id).catch((e) => onGenerationError?.(String(e?.message || e)))} />
             ))}
           </div>
         )}
@@ -723,15 +738,20 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
             placeholder={kind === "video" ? "Describe the shot: subject, action, mood… (plain text or JSON)" : "Describe the image… (plain text or JSON)"}
             className={cn("min-h-[88px] max-h-[45vh] resize-y rounded-2xl text-base", jsonPrompt.json && "font-mono")}
           />
+          {mention && mentionOptions.length === 0 && (
+            <div className="rounded-xl border border-border bg-popover px-3 py-2 text-muted-foreground">
+              {mention.query ? `Nothing called “${mention.query}”.` : "Nothing to tag yet."} Attach files with “+” (they become @image1, @image2…) or make elements on the Elements page.
+            </div>
+          )}
           {mention && mentionOptions.length > 0 && (
             <div role="listbox" aria-label="Tags" className="max-h-72 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl">
               {mentionOptions.map((o, i) => (
-                <button key={`${o.tag}-${o.add}`} type="button" role="option" aria-selected={i === mention.index}
-                  onMouseDown={(e) => { e.preventDefault(); pickMention(o); }}
-                  className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left", i === mention.index ? "bg-accent" : "hover:bg-accent/60")}>
+                <button key={`${o.tag}-${o.add}-${o.element?.id || ""}`} type="button" role="option" aria-selected={i === mention.index} aria-disabled={Boolean(o.disabled)}
+                  onMouseDown={(e) => { e.preventDefault(); pickMention(o); }} title={o.disabled ? `Can't add: ${o.disabled}` : undefined}
+                  className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left", o.disabled ? "cursor-not-allowed opacity-50" : i === mention.index ? "bg-accent" : "hover:bg-accent/60")}>
                   {o.url ? <img src={o.url} alt="" className="h-8 w-8 rounded-md object-cover" /> : <span className="h-8 w-8 rounded-md bg-muted" />}
                   <span className="font-semibold text-primary">@{o.tag}</span>
-                  <span className="truncate text-muted-foreground">{o.label}{o.add ? " · add element" : ""}</span>
+                  <span className="truncate text-muted-foreground">{o.label}{o.disabled ? ` · ${o.disabled}` : o.add ? " · add element" : ""}</span>
                   {!o.add && o.to && <span className="ml-auto shrink-0 text-muted-foreground">→ {o.to}</span>}
                 </button>
               ))}
@@ -827,6 +847,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
         </div>
       </div>
       <DrawModal isOpen={drawOpen} onClose={() => setDrawOpen(false)} apiKey={apiKey} batchSize={1} studio={mode} onError={onGenerationError} onDone={() => window.dispatchEvent(new CustomEvent("dz:history", { detail: { studio: mode } }))} />
+      <Viewer item={viewing} onClose={() => setViewing(null)} />
     </div>
   );
 }

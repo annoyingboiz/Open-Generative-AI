@@ -171,6 +171,9 @@ export function ModelPicker({ entries, entry, onPick }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("recommended");
+  // No recommended models here (Tools, Audio): open on All instead of an empty list.
+  const hasRecommended = entries.some((e) => e.recommended != null);
+  const shownTab = tab === "recommended" && !hasRecommended ? "all" : tab;
   const vendors = useMemo(() => {
     const seen = new Map();
     for (const e of entries) if (!seen.has(e.vendorName)) seen.set(e.vendorName, e.vendorLogo);
@@ -179,11 +182,11 @@ export function ModelPicker({ entries, entry, onPick }) {
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     let list = entries;
-    if (tab === "recommended") list = entries.filter((e) => e.recommended != null);
-    else if (tab !== "all") list = entries.filter((e) => e.vendorName === tab);
+    if (shownTab === "recommended") list = entries.filter((e) => e.recommended != null);
+    else if (shownTab !== "all") list = entries.filter((e) => e.vendorName === shownTab);
     if (needle) list = entries.filter((e) => `${e.familyName} ${e.providerName} ${e.vendorName}`.toLowerCase().includes(needle));
     return list;
-  }, [entries, q, tab]);
+  }, [entries, q, shownTab]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -197,9 +200,9 @@ export function ModelPicker({ entries, entry, onPick }) {
         <div className="space-y-3 border-b border-border p-3">
           <ScrollTabs
             aria-label="Model groups"
-            value={q ? "all" : tab}
+            value={q ? "all" : shownTab}
             onChange={(v) => { setTab(v); setQ(""); }}
-            items={[{ value: "recommended", label: "★ Recommended" }, { value: "all", label: "All" }, ...vendors.map((v) => ({ value: v.name, label: v.name, icon: <Logo src={v.logo} name={v.name} size={20} className="rounded-md" /> }))]}
+            items={[...(hasRecommended ? [{ value: "recommended", label: "★ Recommended" }] : []), { value: "all", label: "All" }, ...vendors.map((v) => ({ value: v.name, label: v.name, icon: <Logo src={v.logo} name={v.name} size={20} className="rounded-md" /> }))]}
           />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search models…" autoFocus />
         </div>

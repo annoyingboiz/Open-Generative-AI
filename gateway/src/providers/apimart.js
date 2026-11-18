@@ -138,6 +138,6 @@ export const apimart = {
     if (!response.ok || !data.url) throw new Error(`APIMart upload failed: HTTP ${response.status} ${data?.error?.message || ''}`);
     // 3 days is the free tier (7+ days is billed and needs "pay-as-you-go uploads").
     // Re-upload a few hours before expiry so a running job never gets a dead link.
-    return { url: data.url, expiresAt: (data.expires_at ? data.expires_at * 1000 : Date.now() + 3 * 86_400_000) - 6 * 3_600_000 };
+    return { url: String(data.url).replace(/\s/g, (c) => encodeURIComponent(c)), expiresAt: (data.expires_at ? data.expires_at * 1000 : Date.now() + 3 * 86_400_000) - 6 * 3_600_000 };
   },
 };

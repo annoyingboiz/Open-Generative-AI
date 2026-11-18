@@ -82,6 +82,21 @@ async function quoteRequest(endpoint, payload) {
 // generate* functions reach submitAndPoll synchronously, so the value is read
 // before the first await. The gateway stores it and never sends it on.
 let DZ_CURRENT_META = null;
+// DZ: an error a person can read. JSON → its message; an HTML page (a proxy or
+// Cloudflare error while the server restarts) → a short note instead of markup.
+export function dzReadableError(status, text) {
+    const t = String(text || '').trim();
+    try {
+        const j = JSON.parse(t);
+        const m = j.detail || j.error?.message || j.error || j.message;
+        if (m) return String(m);
+    } catch { /* not JSON */ }
+    if (/^<(!doctype|html)/i.test(t) || /<\/(html|body)>/i.test(t)) {
+        return status >= 500 ? `The server is unavailable right now (HTTP ${status}). Try again in a minute.` : `Request failed (HTTP ${status}).`;
+    }
+    return `HTTP ${status}${t ? `: ${t.slice(0, 200)}` : ''}`;
+}
+
 export function dzWithMeta(meta, fn) {
     const previous = DZ_CURRENT_META;
     DZ_CURRENT_META = meta;
@@ -105,7 +120,7 @@ async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 
     if (!response.ok) {
         const errText = await response.text();
         notifyAuthRequired(response.status, errText);
-        throw new Error(`API Request Failed: ${response.status} ${response.statusText} - ${errText.slice(0, 100)}`);
+        throw new Error(dzReadableError(response.status, errText));
     }
     const submitData = await response.json();
     const requestId = submitData.request_id || submitData.id;

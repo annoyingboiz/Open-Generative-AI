@@ -95,8 +95,11 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       if (!canSee(user, up)) throw new GenerationError('Reference file not found.', 404);
       const refs = JSON.parse(up.provider_refs || '{}');
       const cached = refs[providerId];
-      if (cached && cached.expiresAt > Date.now() + 3_600_000) return cached.url;
-      const ref = await provider.upload(cfg, { path: up.path, mime: up.mime, name: up.original_name, kind: up.mime.split('/')[0] });
+      // A link with spaces (from an earlier upload named with spaces) is not reused.
+      if (cached && cached.expiresAt > Date.now() + 3_600_000 && !/\s/.test(cached.url)) return cached.url;
+      // The provider names its link after the file: send a safe name, never the user's
+      // (spaces, Cyrillic, … break the link — "URL contains unescaped whitespace").
+      const ref = await provider.upload(cfg, { path: up.path, mime: up.mime, name: up.path.split('/').pop(), kind: up.mime.split('/')[0] });
       refs[providerId] = ref;
       q.setUploadRefs.run(JSON.stringify(refs), up.id);
       return ref.url;

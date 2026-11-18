@@ -249,6 +249,25 @@ test('copy to another place: new item with its own files, free; batch move/trash
   assert.equal(res.json().items.length, 1);
 });
 
+test('a reference file named with spaces reaches the provider under a safe name', async () => {
+  const { payload, headers } = multipart('My bar photo 1.png', 'image/png', PNG);
+  let res = await app.inject({ method: 'POST', url: '/api/v1/upload_file', headers: { ...headers, cookie: cookies.admin }, payload });
+  assert.equal(res.statusCode, 200, res.body);
+  const url = res.json().url;
+  const seen = [];
+  const prev = apimart.upload;
+  apimart.upload = async (cfg, f) => { seen.push(f.name); return { url: 'https://cdn.apimart.example/My bar photo 1.png', expiresAt: Date.now() + 86_400_000 }; };
+  const sent = [];
+  const prevSubmit = apimart.submit;
+  apimart.submit = async (cfg, { body }) => { sent.push(body); return { taskId: 'task_sp' }; };
+  try {
+    res = await as('admin', 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'x', image_urls: [url], _dz: { studio: 'create' } });
+    assert.equal(res.statusCode, 200, res.body);
+  } finally { apimart.upload = prev; apimart.submit = prevSubmit; }
+  assert.ok(seen.length && !/\s/.test(seen[0]), `uploaded as ${seen[0]}`);
+  assert.equal(sent[0].image_urls[0], 'https://cdn.apimart.example/My bar photo 1.png', 'the test stub skips the provider wrapper');
+});
+
 test('deleting a folder keeps its work (moves up); archive stops new work', async () => {
   let res = await as('admin', 'DELETE', `/dz/api/folders/${folder.id}`);
   assert.equal(res.statusCode, 200, res.body);

@@ -488,7 +488,10 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const trimmed = merged.trimmed || (nativeDropped.length ? { dropped: nativeDropped, cut: 0 } : null);
   const finalPrompt = composePrompt(translateTags(prompt, tags));
   // The look goes to the server, which writes it into the prompt for this model.
-  const look = useMemo(() => lookOf(camera, kind === "video" ? move : ""), [camera, kind, move]);
+  const rawLook = useMemo(() => lookOf(camera, kind === "video" ? move : ""), [camera, kind, move]);
+  // After "Adapt to model" with this exact look, the look is already in the prompt.
+  const [bakedLook, setBakedLook] = useState(null);
+  const look = useMemo(() => (rawLook && bakedLook && bakedLook === JSON.stringify(rawLook) && prompt.trim() ? { ...rawLook, baked: true } : rawLook), [rawLook, bakedLook, prompt]);
   const usedTags = useMemo(() => {
     const names = new Set([...String(prompt).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()));
     return tags.filter((t) => names.has(t.tag.toLowerCase()));
@@ -857,7 +860,11 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           <DzHints hints={sentPreview.data?.hints || []} />
           <div className="flex flex-wrap items-center justify-end gap-2">
             {variant && <Button variant="ghost" size="sm" onClick={() => setSentOpen(true)}>Sent to the model</Button>}
-            {adaptModel && prompt.trim() && <DzAdaptButton prompt={prompt} model={adaptModel} context={adaptContext} onUse={(p) => setPrompt(p)} />}
+            {adaptModel && prompt.trim() && (
+              <DzAdaptButton prompt={prompt} model={adaptModel} context={adaptContext} look={rawLook}
+                request={variant ? { endpoint: variant.model.endpoint, body: quoteBody ? { ...quoteBody } : null } : null}
+                onUse={(p, info) => { setPrompt(p); setBakedLook(info?.lookIncluded && rawLook ? JSON.stringify(rawLook) : null); }} />
+            )}
           </div>
           {jsonPrompt.json && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

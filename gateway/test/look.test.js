@@ -10,6 +10,8 @@ test('look: only known ids; names used before 18.11 are mapped', () => {
   const old = cleanLook({ on: true, camera: 'Classic 16mm Film', lens: 'Halation Diffusion', focal: 8, aperture: 'f/11' });
   assert.deepEqual([old.camera, old.lens, old.focal, old.aperture, old.filter], ['film-16', 'clean', 12, 'f/11', 'diffusion']);
   assert.equal(cleanLook({ on: false, era: '1980s' }).on, false);
+  assert.equal(cleanLook({ on: true, camera: 'digital', baked: true }).baked, true);
+  assert.equal(cleanLook({ on: true, camera: 'digital', baked: 'yes' }).baked, undefined);
 });
 
 test('look: each model gets it in its place', () => {
@@ -25,9 +27,14 @@ test('look: each model gets it in its place', () => {
   const img = renderLook('A portrait', look, { kind: 'image', memo: memos['nano-banana'] });
   assert.match(img, /^A portrait\. Shot on 35mm film/);
   assert.doesNotMatch(img, /dolly/, 'no camera move for pictures');
-  const json = JSON.parse(renderLook('{"subject":"woman","lighting":"mine"}', look, { kind: 'image' }));
-  assert.equal(json.lighting, 'mine', 'the user key wins');
+  const json = JSON.parse(renderLook('{"subject":"woman","Lighting":"mine"}', look, { kind: 'image' }));
+  assert.match(json.Lighting, /^mine; warm low golden-hour/, 'added to the user key, any letter case');
   assert.match(json.camera, /35mm film/);
+  const sj = JSON.parse(renderLook('{"subject":"woman","camera":"medium shot"}', look, { kind: 'video', memo: memos.seedance }));
+  assert.match(sj.camera, /^medium shot; shot on 35mm film.*dolly-in/);
+  assert.match(sj.style, /golden-hour.*1970s/);
+  const vj = JSON.parse(renderLook('{"subject":"woman"}', look, { kind: 'video', memo: memos.veo }));
+  assert.ok(vj.cinematography && vj.style, 'Veo JSON keys');
   assert.equal(renderLook('[1,2]', look, { kind: 'image' }), '[1,2]');
 });
 

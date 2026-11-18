@@ -3,6 +3,7 @@
 // from the official guides, editable in the repo). The user sees the result,
 // edits it and only then generates; nothing is rewritten without the button.
 import fs from 'node:fs';
+import { cleanLook, renderLook } from './look.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -96,7 +97,7 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       '2. Write in English. Keep dialogue lines and on-screen text in the language the user wrote them, in the syntax the notes give.',
       '3. Keep every @tag listed in tags_in_prompt exactly as written: never rename, translate, merge or drop one, and do not invent new @tags. Put them where the notes say references go and say what each one is for (see references in the context).',
       json
-        ? '4. Structure: the prompt is JSON — answer with a JSON object whose keys are the blocks listed under "JSON prompts" in the Output format section. Move every piece of the user\'s information into the right key; drop nothing (keep a user key that fits no block as it is).'
+        ? '4. Structure: answer with a JSON object (the prompt may be JSON or plain text) whose keys are the blocks listed under "JSON prompts" in the Output format section (if the notes list none, use the blocks of the Output format as lowercase keys). Move every piece of the user\'s information into the right key; drop nothing (keep a user key that fits no block as it is). The "prompt" field of your answer is this JSON object as a string.'
         : '4. Structure: write the answer exactly in the Output format section of the notes — its blocks, order and labels (or prose, if it says so). Plain text, no markdown.',
       '5. Numeric settings (duration, resolution, aspect-ratio numbers) are set by the app: don\'t write them into the prompt; words about format and composition are fine. If camera_added_by_app is given, don\'t contradict it.',
       '6. Follow the length guidance in the notes.',
@@ -123,9 +124,9 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
   const tagsIn = (s) => [...new Set([...String(s).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()))];
 
   async function adapt(user, body = {}) {
-    const prompt = String(body.prompt || '').trim();
-    if (!prompt) throw new AdaptError('Write a prompt first.');
-    if (prompt.length > MAX_PROMPT) throw new AdaptError(`The prompt is too long (max ${MAX_PROMPT} characters).`);
+    const typed = String(body.prompt || '').trim();
+    if (!typed) throw new AdaptError('Write a prompt first.');
+    if (typed.length > MAX_PROMPT) throw new AdaptError(`The prompt is too long (max ${MAX_PROMPT} characters).`);
     const kind = body.model?.kind === 'image' ? 'image' : 'video';
     const family = String(body.model?.family || '').slice(0, 120);
     const memo = memoFor(family, kind);
@@ -133,12 +134,20 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     // The model's name from our own catalog, not from the request.
     const modelName = clean(familyName(family) || memo.name, 80);
     const ctx = body.context && typeof body.context === 'object' ? body.context : {};
-    const tags = tagsIn(prompt);
-    let json = false;
+    // The camera look (camera, lens, light, era, move) goes in as part of the
+    // prompt, so the rewrite puts it into the model's blocks; the answer then
+    // carries it ("baked") and the app does not add it again.
+    const look = cleanLook(body.look);
+    const lookText = look ? renderLook('', { ...look, baked: false }, { kind, memo: null }).trim() : '';
+    const prompt = lookText ? `${typed}\n\n${lookText}` : typed;
+    if (prompt.length > MAX_PROMPT + 2000) throw new AdaptError(`The prompt is too long (max ${MAX_PROMPT} characters).`);
+    const tags = tagsIn(typed);
     let original = null;
-    if (/^[[{]/.test(prompt)) { try { original = JSON.parse(prompt); json = true; } catch { json = false; } }
+    if (/^[[{]/.test(typed)) { try { original = JSON.parse(typed); } catch { original = null; } }
+    // The answer's format: asked for (text / JSON), else the same as the prompt.
+    const json = body.as === 'json' ? true : body.as === 'text' ? false : original != null;
     const system = systemPrompt({ memo, modelName, kind, json });
-    const userMsg = (extra = '') => `PROMPT:\n${prompt}\n\nCONTEXT (data):\n${JSON.stringify(contextBlock(ctx, tags, json), null, 2)}${extra}`;
+    const userMsg = (extra = '') => `PROMPT:\n${prompt}\n\nCONTEXT (data):\n${JSON.stringify({ ...contextBlock(look ? { ...ctx, camera: undefined } : ctx, tags, json), ...(look ? { camera_look_in_prompt: 'the last paragraph of the prompt is the chosen camera, lens, light, era and camera move: keep all of it and put each part into the right block' } : {}) }, null, 2)}${extra}`;
     const ask = (extra = '') => llm.chat(user, { model: body.llm || undefined, system, prompt: userMsg(extra), purpose: 'adapt-prompt', maxTokens: 2500, temperature: 0.3 });
     let r = await ask();
     let out = parseAnswer(r.text);
@@ -162,13 +171,15 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       // Rebuilt by the model's blocks: still JSON, not empty, roughly as rich as yours.
       const size = (v) => JSON.stringify(v).length;
       if (!parsed || typeof parsed !== 'object' || !Object.keys(parsed).length) throw new AdaptError('The text model returned empty JSON. Try again or pick another text model.', 424);
-      if (size(parsed) < size(original) * 0.6) throw new AdaptError('The text model left out part of your JSON. Try again or pick another text model.', 424);
+      if (original != null && size(parsed) < size(original) * 0.6) throw new AdaptError('The text model left out part of your JSON. Try again or pick another text model.', 424);
       out.prompt = JSON.stringify(parsed, null, 2);
     }
     return {
       prompt: out.prompt.trim(),
       changes: out.changes,
       lostTags: lost.map((t) => `@${t}`),
+      format: json ? 'json' : 'text',
+      lookIncluded: Boolean(look),
       memo: { id: memo.id, name: memo.name, generic: memo.generic, blocks: memo.blocks },
       llm: r.model, costUsd: r.costUsd == null ? null : Math.round(cost * 1e6) / 1e6, ms,
     };

@@ -8,6 +8,8 @@ sources:
   - https://lumalabs.ai/learning-center/articles/luma-video-models-field-guide
 blocks: [Camera, Action, Environment, Physics, Light, Mood]
 look: start
+look_camera: Camera
+look_style: Light
 ---
 # Luma Ray 3 — prompt notes
 

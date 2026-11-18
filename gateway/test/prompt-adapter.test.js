@@ -101,3 +101,23 @@ test('a dropped @tag is asked for again; JSON stays JSON; junk is refused', asyn
   // Real catalog keys carry "dz-".
   for (const [k, kind, id] of [['dz-kling-4', 'video', 'kling'], ['dz-grok-imagine-1.5-video-ext', 'video', 'grok-imagine'], ['dz-veo-3.1-lite', 'video', 'veo'], ['dz-nano-banana-pro', 'image', 'nano-banana'], ['dz-minimax-h-3-max', 'video', 'minimax'], ['dz-gpt-image-2.6-flare', 'image', 'gpt-image']]) assert.equal(a.memoFor(k, kind).id, id, k);
 });
+
+test('text → JSON on request, with the camera look put into the blocks', async () => {
+  const llm = fakeLlm([JSON.stringify({ prompt: { subject: 'a woman', action: 'walks', camera: 'shot on 35mm film, 50mm', style: 'golden hour' }, changes: ['JSON by blocks'] })]);
+  const a = createPromptAdapter({ llm });
+  const r = await a.adapt({ id: 1 }, {
+    prompt: 'a woman walks through a market', as: 'json',
+    model: { family: 'dz-seedance-2-5', kind: 'video' },
+    look: { on: true, camera: 'film-35', lens: 'clean', focal: 50, aperture: 'f/2.8', light: 'golden-hour' },
+  });
+  assert.equal(r.format, 'json');
+  assert.equal(r.lookIncluded, true);
+  assert.equal(JSON.parse(r.prompt).camera, 'shot on 35mm film, 50mm');
+  assert.match(llm.calls[0].prompt, /a woman walks through a market\n\nShot on 35mm film camera/);
+  assert.match(llm.calls[0].system, /answer with a JSON object \(the prompt may be JSON or plain text\)/);
+  // JSON → text when asked.
+  const llm2 = fakeLlm([JSON.stringify({ prompt: 'Subject: a woman.', changes: [] })]);
+  const r2 = await createPromptAdapter({ llm: llm2 }).adapt({ id: 1 }, { prompt: '{"subject":"a woman"}', as: 'text', model: { family: 'dz-seedance-2-5', kind: 'video' } });
+  assert.equal(r2.format, 'text');
+  assert.equal(r2.lookIncluded, false);
+});

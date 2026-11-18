@@ -8,6 +8,8 @@ sources:
   - https://ai.google.dev/gemini-api/docs/video (Veo prompt guide)
 blocks: [Cinematography, Subject, Action, Context, Style, Audio]
 look: start
+look_camera: Cinematography
+look_style: Style
 ---
 # Veo 3.1 — prompt notes
 

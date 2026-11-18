@@ -141,6 +141,8 @@ export function cleanLook(input) {
   const aperture = APERTURES.find((a) => a.f === raw.aperture)?.f || null;
   const filter = byId(FILTERS, raw.filter)?.id || (raw.lens === 'Halation Diffusion' ? 'diffusion' : null);
   const out = {
+    // Already written into the prompt by "Adapt to model": recorded, not added again.
+    ...(raw.baked === true ? { baked: true } : {}),
     on: raw.on !== false && Boolean(camera || lens || focal || aperture),
     camera, lens, focal, aperture, filter,
     era: byId(ERAS, raw.era)?.id || null,
@@ -230,19 +232,29 @@ export function renderLook(prompt, look, { kind = 'video', memo = null } = {}) {
   const parts = [w.camera, w.move, w.light, w.era];
   if (!parts.some(Boolean)) return raw;
 
-  // A JSON prompt stays JSON: the look goes in as its own keys (the user's keys win).
+  const rule = memo?.look || {};
+  // A JSON prompt stays JSON: the look goes into the model's own keys (its
+  // camera / style blocks, any letter case), added to what is already there.
   const text = raw.trim();
   if (/^[{[]/.test(text)) {
     try {
       const value = JSON.parse(text);
       if (Array.isArray(value) || !value || typeof value !== 'object') return raw; // a list has no place for keys
-      const add = { camera: w.camera, camera_movement: w.move, lighting: w.light, era: w.era };
-      const keep = Object.fromEntries(Object.entries(add).filter(([k, v]) => v && !(k in value)));
-      return Object.keys(keep).length ? JSON.stringify({ ...value, ...keep }, null, 2) : raw;
+      const out = { ...value };
+      const put = (name, t) => {
+        if (!t) return;
+        const k = Object.keys(out).find((x) => x.toLowerCase() === name.toLowerCase());
+        if (k === undefined) out[name.toLowerCase()] = t;
+        else if (typeof out[k] === 'string') out[k] = out[k].trim() ? `${out[k].trim().replace(/[.;,\s]+$/, '')}; ${t}` : t;
+      };
+      if (rule.camera) put(rule.camera, [w.camera, w.move].filter(Boolean).join(', '));
+      else { put('camera', w.camera); put('camera_movement', w.move); }
+      if (rule.style) put(rule.style, [w.light, w.era].filter(Boolean).join(', '));
+      else { put('lighting', w.light); put('era', w.era); }
+      return JSON.stringify(out, null, 2);
     } catch { /* not JSON after all: plain text */ }
   }
 
-  const rule = memo?.look || {};
   if (rule.place === 'blocks') {
     const camLabel = rule.camera || 'Camera';
     const styleLabel = rule.style || camLabel;

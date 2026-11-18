@@ -5,7 +5,8 @@
 // You see the new version, edit it, and only "Use this" puts it in the prompt.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDzLlmModels } from "../dzLlm.js";
-import { Button, Textarea, OptionSelect, Spinner, DialogParts, cn } from "../ui/index.js";
+import { Button, Textarea, OptionSelect, Spinner, DialogParts, Segmented, cn } from "../ui/index.js";
+import { RequestView } from "./DzSentPanel.jsx";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } = DialogParts;
 const LLM_KEY = "dz_adapt_llm";
@@ -32,7 +33,9 @@ function useAdaptModels() {
   return { options, def: llm.default, loaded: llm.loaded };
 }
 
-export function DzAdaptButton({ prompt, onUse, model, context, className }) {
+// look: the chosen camera look (ids) — the rewrite puts it into the model's blocks.
+// request: { endpoint, body } of the current model, to show what will be sent.
+export function DzAdaptButton({ prompt, onUse, model, context, className, look = null, request = null }) {
   const [open, setOpen] = useState(false);
   const can = Boolean(prompt?.trim() && model?.kind);
   return (
@@ -42,16 +45,18 @@ export function DzAdaptButton({ prompt, onUse, model, context, className }) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" /></svg>
         Adapt to model
       </Button>
-      {open && <AdaptDialog prompt={prompt} model={model} context={context} onClose={() => setOpen(false)} onUse={(p) => { onUse(p); setOpen(false); }} />}
+      {open && <AdaptDialog prompt={prompt} model={model} context={context} look={look} request={request} onClose={() => setOpen(false)} onUse={(p, info) => { onUse(p, info); setOpen(false); }} />}
     </>
   );
 }
 
-function AdaptDialog({ prompt, model, context, onClose, onUse }) {
+function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) {
   const { options, def, loaded } = useAdaptModels();
   const [llmId, setLlmId] = useState(() => { try { return localStorage.getItem(LLM_KEY) || ""; } catch { return ""; } });
   const chosen = options.some((o) => o.value === llmId) ? llmId : def || options[0]?.value || "";
   const [state, setState] = useState({ busy: false, error: "", result: null });
+  // Text or JSON out: starts as your prompt is, switch to compare.
+  const [as, setAs] = useState(() => (/^\s*[{[]/.test(prompt || "") ? "json" : "text"));
   const [text, setText] = useState("");
   const [notes, setNotes] = useState(null); // { name, body, sources } when shown
   const [myDefault, setMyDefault] = useState(null); // set here: the new default
@@ -61,10 +66,10 @@ function AdaptDialog({ prompt, model, context, onClose, onUse }) {
   };
   useEffect(() => { try { if (llmId) localStorage.setItem(LLM_KEY, llmId); } catch { /* optional */ } }, [llmId]);
 
-  const run = async () => {
+  const run = async (format = as) => {
     setState({ busy: true, error: "", result: null });
     try {
-      const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined });
+      const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined, as: format, look: look || undefined });
       setState({ busy: false, error: "", result: r });
       setText(r.prompt);
     } catch (e) {
@@ -100,7 +105,9 @@ function AdaptDialog({ prompt, model, context, onClose, onUse }) {
               <div className="mb-1.5 text-muted-foreground">Text model</div>
               <OptionSelect aria-label="Text model" value={chosen} onValueChange={setLlmId} options={options.length ? options : [{ value: "", label: loaded ? "No text models available" : "Loading…" }]} />
             </div>
-            <Button variant="secondary" onClick={run} disabled={state.busy || !loaded}>{state.busy ? <><Spinner className="h-4 w-4" /> Rewriting…</> : r ? "Try again" : "Rewrite"}</Button>
+            <Segmented className="w-auto" value={as} onChange={(v) => { setAs(v); if (loaded && !state.busy) run(v); }} aria-label="Answer as"
+              options={[{ value: "text", label: "Text" }, { value: "json", label: "JSON" }]} />
+            <Button variant="secondary" onClick={() => run()} disabled={state.busy || !loaded}>{state.busy ? <><Spinner className="h-4 w-4" /> Rewriting…</> : r ? "Try again" : "Rewrite"}</Button>
             <Button variant="ghost" onClick={showNotes}>{notes ? "Hide notes" : "Model notes"}</Button>
           </div>
           <div className="-mt-2 text-muted-foreground">
@@ -117,6 +124,7 @@ function AdaptDialog({ prompt, model, context, onClose, onUse }) {
             </div>
           )}
 
+          {look && <p className="text-muted-foreground">Your camera look (camera, lens, light, era, move) goes into the rewrite, into this model's blocks — it won't be added again on Generate.</p>}
           <details className="rounded-xl border border-border px-4 py-2">
             <summary className="cursor-pointer text-muted-foreground">Your prompt</summary>
             <p className="mt-2 whitespace-pre-wrap">{prompt}</p>
@@ -136,13 +144,19 @@ function AdaptDialog({ prompt, model, context, onClose, onUse }) {
               {r.changes?.length > 0 && (
                 <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">{r.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
               )}
+              {request?.endpoint && text.trim() && (
+                <details className="rounded-xl border border-border px-4 py-2" open>
+                  <summary className="cursor-pointer font-semibold">Sent to the model with “Use this”</summary>
+                  <div className="mt-3"><RequestView endpoint={request.endpoint} body={{ ...(request.body || {}), prompt: text }} look={look ? { ...look, baked: Boolean(r.lookIncluded) } : null} /></div>
+                </details>
+              )}
             </div>
           )}
         </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onUse(text)} disabled={!r || !text.trim()}>Use this</Button>
+          <Button onClick={() => onUse(text, { lookIncluded: Boolean(r?.lookIncluded), look, format: r?.format })} disabled={!r || !text.trim()}>Use this</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

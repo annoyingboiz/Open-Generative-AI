@@ -239,3 +239,14 @@ test('storyboards: personal or in a project, plan saves shots, stale edits get 4
   assert.equal((await as('wife', 'GET', `/dz/api/storyboards/${shared.id}`)).statusCode, 200);
   assert.equal((await as('wife', 'GET', `/dz/api/storyboards/${hers.id}`)).statusCode, 404);
 });
+
+test('storyboard print page escapes everything and shows the picked frames', async () => {
+  const { storyboardPage } = await import('../src/storyboard-print.js');
+  const html = storyboardPage({ name: '<b>x</b>', scene: 's"', look: { camera: 'film-35', focal: 50 }, shots: [{ id: 'a', title: '<script>', action: 'run', camera: 'phone', move: 'orbit' }], media: { a: { frame: '/media/g/gen_1/0.png' } } }, { aspect: '9:16' });
+  assert.ok(!html.includes('<script>') && html.includes('&lt;script&gt;'));
+  assert.match(html, /aspect-ratio:9\/16/);
+  assert.match(html, /\/media\/g\/gen_1\/0\.png\?w=960/);
+  assert.match(html, /35mm Film · 50mm/);
+  assert.match(html, /Phone/);
+  assert.match(html, /Orbit/);
+});

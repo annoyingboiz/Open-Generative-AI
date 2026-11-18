@@ -16,6 +16,8 @@ import { dzSetStudioState, DZ_INSERT_EVENT } from "../dzStudioState.js";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import { DzMediaPicker } from "./DzMedia.jsx";
 import { Viewer } from "./DzLibrary.jsx";
+import { useDzHistory } from "../dzLibrary.js";
+import { DzPendingTile } from "./DzLikeButton.jsx";
 import { ModelPicker, ParamControl, CameraPanel } from "./DzCreateStudio.jsx";
 import { createEntries, chooseVariant, paramsOf, DEFAULT_CAMERA, lookData, normalizeCamera, lookLabel } from "../dzCreate.js";
 import DzSentPanel, { useDzPromptPreview, DzHints } from "./DzSentPanel.jsx";
@@ -81,7 +83,7 @@ function Strip({ items, picked, running, kind, onPick, onRemove, onOpen }) {
 function ShotCard({
   shot, index, total, look, media, jobs, local, aspect, readOnly, apiKey,
   frameEntry, videoEntry, frameValues, videoValues, elements, frames, dur,
-  onChange, onMove, onDuplicate, onDelete, onRun, onMedia, onOpen, onAddFrame, onDismiss,
+  onChange, onMove, onDuplicate, onDelete, onRun, onMedia, onOpen, onAddFrame, onDismiss, onContinue, hasNext,
 }) {
   const m = media || { frames: [], videos: [], frame: null, video: null };
   const set = (k, v) => onChange({ ...shot, [k]: v });
@@ -97,6 +99,7 @@ function ShotCard({
   const running = (step) => Math.max(jobs.filter((j) => j.step === step && j.status === "running").length, local[step] || 0);
   const failed = jobs.filter((j) => j.status === "failed");
   const [picker, setPicker] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const d = fitDuration(shot.duration, dur);
   const durOptions = dur.list.length ? dur.list : dur.range ? Array.from({ length: Math.min(30, dur.range.max - dur.range.min + 1) }, (_, i) => dur.range.min + i) : [];
   const price = (p, n = 1) => (p.price ? `${p.price.exact ? "" : "≈ "}${fmtUsd(p.price.usd * n)}` : "");
@@ -183,6 +186,13 @@ function ShotCard({
           <Textarea value={shot.motion_prompt} onChange={(e) => set("motion_prompt", e.target.value)} disabled={readOnly} rows={5} placeholder="Motion prompt (for the video model)" className="min-h-[96px] resize-y" />
           <div className="flex flex-wrap items-center gap-2">
             <Button className="rounded-xl" disabled={readOnly || !vr.body} onClick={() => onRun("video", vr)} title={vr.problem || undefined}>Make video</Button>
+            {m.video && hasNext && (
+              <Tip text="The last frame of this video becomes the next shot's start frame — the next shot continues the motion">
+                <span><Button variant="secondary" className="rounded-xl" disabled={readOnly || continuing} onClick={async () => { setContinuing(true); try { await onContinue(); } finally { setContinuing(false); } }}>
+                  {continuing ? <><Spinner className="h-4 w-4" /> Taking the last frame…</> : "Next shot starts here"}
+                </Button></span>
+              </Tip>
+            )}
             <span className={cn("tabular-nums", videoPrice.loading ? "text-muted-foreground/60" : "text-muted-foreground")}>{price(videoPrice)}</span>
           </div>
           {m.frame && vr.problem && <p className="text-amber-300">{vr.problem}</p>}
@@ -195,6 +205,30 @@ function ShotCard({
           <button type="button" onClick={() => onDismiss(j.id)} className="text-red-200/70 hover:text-red-100" aria-label="Dismiss">✕</button>
         </div>
       ))}
+    </section>
+  );
+}
+
+// The board's stitched videos (newest first), from the Library.
+function FinalCut({ boardId, onOpen }) {
+  const history = useDzHistory({ studio: "director", kind: "video", board: boardId }, { limit: 12 });
+  if (!history.items.length) return null;
+  return (
+    <section className="space-y-2 rounded-2xl border border-border bg-card/60 p-3 md:p-4" aria-label="Final cut">
+      <span className="font-semibold">Final cut</span>
+      <div className="flex gap-3 overflow-x-auto custom-scrollbar pb-1">
+        {history.items.map((item) => (
+          <div key={item.id} className="w-64 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/40">
+            {item.url ? (
+              <video src={item.url} controls playsInline preload="metadata" className="aspect-video w-full bg-black object-contain" />
+            ) : <DzPendingTile status={item.status} error={item.error} label="Stitching" className="aspect-video w-full" />}
+            <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-muted-foreground">
+              <span className="truncate">{(item.meta?.stitch?.shots || []).length} shots · {new Date(item.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+              {item.url && <button type="button" className="font-semibold text-primary hover:underline" onClick={() => onOpen(item.url)}>Open</button>}
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -471,6 +505,60 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
     if (!id) return;
     try { takeServer((await dzStoryboards.media(id, body)).storyboard); } catch (e) { if (currentRef.current === id) onGenerationError?.(errText(e)); }
   };
+  // The last frame of a shot's video → the next shot's start frame.
+  const continueFrom = async (shotId) => {
+    const id = currentRef.current;
+    if (!id || !(await flush())) return;
+    try { takeServer((await dzStoryboards.continueShot(id, shotId)).storyboard); } catch (e) { if (currentRef.current === id) onGenerationError?.(errText(e)); }
+  };
+  // Picked videos of the shots, in order → one video (made on our server, free).
+  const [stitching, setStitching] = useState(false);
+  const stitchAll = async () => {
+    const id = currentRef.current;
+    if (!id || !(await flush())) return;
+    setStitching(true);
+    try {
+      await dzStoryboards.stitch(id, {});
+      window.dispatchEvent(new CustomEvent("dz:history", { detail: { studio: "director" } }));
+      notify("Stitching the shots — the video appears under “Final cut” in a moment.", "success");
+    } catch (e) { onGenerationError?.(errText(e)); } finally { setStitching(false); }
+  };
+  // Shot prompts rewritten for the models chosen now (by their notes), without planning again.
+  const [rewriting, setRewriting] = useState(null); // { done, total }
+  const rewritePrompts = async () => {
+    const id = currentRef.current;
+    if (!id || !draft || !imageEntry || !videoEntry) return;
+    const jobs = [];
+    draft.shots.forEach((s) => {
+      if (s.frame_prompt?.trim()) jobs.push({ shot: s.id, key: "frame_prompt", prompt: s.frame_prompt, model: { family: imageEntry.family, name: imageEntry.familyName, kind: "image" } });
+      if (s.motion_prompt?.trim()) jobs.push({ shot: s.id, key: "motion_prompt", prompt: s.motion_prompt, model: { family: videoEntry.family, name: videoEntry.familyName, kind: "video" } });
+    });
+    if (!jobs.length) return;
+    if (!window.confirm(`Rewrite ${jobs.length} prompt${jobs.length === 1 ? "" : "s"} for ${imageEntry.familyName} and ${videoEntry.familyName} with your text model? Each is a small text-model call.`)) return;
+    setRewriting({ done: 0, total: jobs.length });
+    let failed = 0;
+    const work = [...jobs];
+    const worker = async () => {
+      for (let job = work.shift(); job; job = work.shift()) {
+        try {
+          const send = () => fetch("/dz/api/prompt/adapt", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ prompt: job.prompt, model: job.model, llm: llmChosen || undefined, context: { mode: job.model.kind === "image" ? "start frame (still image)" : "image-to-video (start frame attached)" } }) });
+          let res = await send();
+          // The server allows 20 rewrites a minute: wait and go on.
+          for (let tries = 0; res.status === 429 && tries < 8; tries += 1) { await new Promise((r) => setTimeout(r, 8000)); res = await send(); }
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.prompt) throw new Error(data.error || `HTTP ${res.status}`);
+          if (currentRef.current !== id) return;
+          edit((d) => ({ ...d, shots: d.shots.map((x) => (x.id === job.shot && x[job.key] === job.prompt ? { ...x, [job.key]: data.prompt } : x)) }));
+        } catch { failed += 1; }
+        setRewriting((r) => (r ? { ...r, done: r.done + 1 } : r));
+      }
+    };
+    await Promise.all([worker(), worker()]);
+    setRewriting(null);
+    if (failed) onGenerationError?.(`${failed} prompt${failed === 1 ? "" : "s"} could not be rewritten — try again.`);
+  };
+
   const addFrame = async (shotId, url) => {
     if (!(await flush())) return; // the shot must be saved before a file joins it
     await changeMedia({ shot: shotId, kind: "frame", op: "add", url });
@@ -518,6 +606,7 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
 
   // "Frames for all shots": shots with no frame yet, three at a time.
   const shotsWithoutFrame = (draft?.shots || []).filter((s) => !media[s.id]?.frame && !jobs.some((j) => j.shot === s.id && j.step === "frame" && j.status === "running") && !local[`${s.id}:frame`]);
+  const shotsWithVideo = draft ? draft.shots.filter((x) => media[x.id]?.video).length : 0;
   const firstReq = shotsWithoutFrame[0] ? frameRequest({ entry: imageEntry, shot: shotsWithoutFrame[0], look, values: frameValues, elements }) : null;
   const allFramesPrice = useDzQuote(apiKey, () => (firstReq?.body ? [dzGenerate, { endpoint: firstReq.variant.model.endpoint, ...firstReq.body }] : null), shotsWithoutFrame.length * frames);
   const runAllFrames = async () => {
@@ -658,6 +747,15 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
             {draft.shots.length > 0 && (
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-semibold">{draft.shots.length} shot{draft.shots.length === 1 ? "" : "s"}</span>
+                <Button variant="secondary" className="rounded-xl" disabled={readOnly || stitching || shotsWithVideo < 2} onClick={stitchAll}
+                  title={shotsWithVideo < 2 ? "Pick a video in at least two shots" : `Stitch the picked videos of ${shotsWithVideo} shots into one video`}>
+                  {stitching ? <><Spinner className="h-4 w-4" /> Starting…</> : `Stitch ${shotsWithVideo >= 2 ? `${shotsWithVideo} shots` : "shots"} into one video`}
+                </Button>
+                <Button variant="ghost" className="rounded-xl" onClick={() => window.open(dzStoryboards.printUrl(draft.id, String(aspectValue || "")), "_blank", "noopener")}>Export (print / PDF)</Button>
+                <Button variant="ghost" className="rounded-xl" disabled={readOnly || Boolean(rewriting) || !imageEntry || !videoEntry} onClick={rewritePrompts}
+                  title="Rewrite every shot's prompts for the image and video models chosen above, by their notes — without planning again">
+                  {rewriting ? <><Spinner className="h-4 w-4" /> Rewriting {rewriting.done}/{rewriting.total}…</> : "Rewrite prompts for these models"}
+                </Button>
                 {shotsWithoutFrame.length > 0 && (
                   <>
                     <Button variant="secondary" className="rounded-xl" disabled={readOnly || !firstReq?.body} onClick={runAllFrames}>
@@ -669,13 +767,16 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
               </div>
             )}
 
+            <FinalCut boardId={draft.id} onOpen={(url) => setViewing({ url, kind: "video", prompt: `${draft.name || "Scene"} — final cut` })} />
+
             {draft.shots.map((s, i) => (
               <ShotCard key={s.id} shot={s} index={i} total={draft.shots.length} look={look} media={media[s.id]} jobs={jobsFor(s.id)} local={localFor(s.id)}
                 aspect={aspect} readOnly={readOnly} apiKey={apiKey} frameEntry={imageEntry} videoEntry={videoEntry} frameValues={frameValues} videoValues={videoValues}
                 elements={elements} frames={frames} dur={dur}
                 onChange={(next) => setShot(i, next)} onMove={(dir) => moveShot(i, dir)} onDuplicate={() => duplicateShot(i)} onDelete={() => deleteShot(i)}
                 onRun={(step, req) => run(s, step, req)} onMedia={changeMedia} onOpen={(url, kind) => setViewing({ url, kind, prompt: s.title || `Shot ${i + 1}` })}
-                onAddFrame={(url) => addFrame(s.id, url)} onDismiss={(id) => setDismissed((set) => new Set([...set, id]))} />
+                onAddFrame={(url) => addFrame(s.id, url)} onDismiss={(id) => setDismissed((set) => new Set([...set, id]))}
+                hasNext={i < draft.shots.length - 1} onContinue={() => continueFrom(s.id)} />
             ))}
             {!readOnly && (
               <div className="flex justify-center pb-8">

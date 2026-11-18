@@ -33,6 +33,8 @@ import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
 import { cleanLook, renderLook, lookHints } from './look.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
+import { EditError } from './edit.js';
+import { storyboardPage } from './storyboard-print.js';
 import { createDirector, DirectorError } from './director.js';
 import { createAssistants, AssistantError } from './assistants.js';
 import { createThumbs } from './thumbs.js';
@@ -583,7 +585,7 @@ export async function buildApp(config, { logger = true } = {}) {
 
   const sendGenError = (reply, error) => {
     if (error instanceof StoryboardError && error.storyboard) return reply.code(error.status).send({ detail: error.message, error: error.message, storyboard: error.storyboard });
-    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError || error instanceof VideoUpscaleError || error instanceof StoryboardError || error instanceof DirectorError || error instanceof AssistantError) return reply.code(error.status).send({ detail: error.message, error: error.message });
+    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError || error instanceof VideoUpscaleError || error instanceof StoryboardError || error instanceof EditError || error instanceof DirectorError || error instanceof AssistantError) return reply.code(error.status).send({ detail: error.message, error: error.message });
     throw error;
   };
   // Where new work goes: ?project=&folder= (or _dz.project/_dz.folder) → checked ids.
@@ -937,6 +939,20 @@ export async function buildApp(config, { logger = true } = {}) {
   app.patch('/dz/api/storyboards/:id', projectRoute((req) => storyboards.update(req.user, req.params.id, req.body || {})));
   app.delete('/dz/api/storyboards/:id', projectRoute((req) => storyboards.remove(req.user, req.params.id)));
   app.post('/dz/api/storyboards/:id/media', projectRoute((req) => storyboards.media(req.user, req.params.id, req.body || {})));
+  // Picked shot videos → one video (made here with ffmpeg, free; shows in the Library).
+  app.post('/dz/api/storyboards/:id/stitch', projectRoute((req) => storyboards.stitchShots(req.user, req.params.id, req.body || {})));
+  // The last frame of a shot's video → the next shot's start frame.
+  app.post('/dz/api/storyboards/:id/continue', projectRoute((req) => storyboards.continueShot(req.user, req.params.id, req.body || {})));
+  // The storyboard as a page to print or save as PDF.
+  app.get('/dz/storyboards/:id/print', async (req, reply) => {
+    try {
+      const { storyboard } = storyboards.get(req.user, req.params.id);
+      return reply.type('text/html; charset=utf-8').header('cache-control', 'private, no-store').send(storyboardPage(storyboard, { aspect: req.query?.aspect }));
+    } catch (error) {
+      if (error instanceof StoryboardError || error instanceof ProjectError) return reply.code(error.status).type('text/plain').send(error.message);
+      throw error;
+    }
+  });
   // The AI Director plans the shots and saves them into the storyboard.
   app.post('/dz/api/storyboards/:id/plan', async (req, reply) => {
     reply.header('cache-control', 'private, no-store');

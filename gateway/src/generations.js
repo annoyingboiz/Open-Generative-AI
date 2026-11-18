@@ -59,6 +59,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     like: db.prepare('UPDATE generations SET liked_at = ? WHERE id = ?'),
     expired: db.prepare('SELECT * FROM generations WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < ?'),
     tombstone: db.prepare("UPDATE generations SET purged_at = ?, outputs_json = '[]', provider_outputs_json = '[]', updated_at = ? WHERE id = ?"),
+    // Work made on this server (stitched shots…) that a restart cut short.
+    staleLocalEdits: db.prepare("UPDATE generations SET status = 'failed', error = 'Interrupted (the server restarted). Try again.', updated_at = ?, completed_at = ? WHERE provider = 'dz' AND status = 'processing'"),
     staleSubmitting: db.prepare("UPDATE generations SET status = 'failed', error = 'Interrupted while sending to the provider. Try again.', updated_at = ?, completed_at = ? WHERE status = 'submitting' AND created_at < ?"),
     deleteRow: db.prepare('DELETE FROM generations WHERE id = ?'),
     // Pictures and videos plus text-model calls.
@@ -388,7 +390,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   const KINDS = new Set(['image', 'video', 'audio']);
   //   project=<id> (that project; folder=<id>|root narrows it) · project=none (personal only)
   //   no project → the user's Library: their own items plus their projects' items.
-  function history(user, { cursor, limit = 50, studio, kind, tool, liked, trash: inTrash, status, project, folder, q: search } = {}) {
+  function history(user, { cursor, limit = 50, studio, kind, tool, board, liked, trash: inTrash, status, project, folder, q: search } = {}) {
     const where = ['purged_at IS NULL'];
     const args = [];
     if (project === 'none') {
@@ -417,6 +419,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     if (KINDS.has(kind)) { where.push('kind = ?'); args.push(kind); }
     // Tools tab: one tool's results (Lip Sync, Motion Control…).
     if (typeof tool === 'string' && /^[a-z]{2,20}$/.test(tool)) { where.push("json_extract(meta_json, '$.tool') = ?"); args.push(tool); }
+    // Director: the stitched videos of one storyboard.
+    if (typeof board === 'string' && /^[a-z0-9_]{4,40}$/i.test(board)) { where.push("json_extract(meta_json, '$.stitch.board') = ?"); args.push(board); }
     if (liked === '1' || liked === true) where.push('liked_at IS NOT NULL');
     if (status === 'completed' || status === 'failed') { where.push('status = ?'); args.push(status); }
     if (status === 'processing') where.push("status IN ('submitting','submitted','processing','downloading')");
@@ -642,6 +646,32 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   }
   const adoptMedia = async (user, url, opts) => (await adoptMany(user, [url], opts))[0];
 
+  // Made on this server, not by a provider (shots stitched into one video…):
+  // a Library item that shows as running until `make()` gives the file
+  // ({ path, ext, mime }), free. `make` gets nothing and must clean up after itself.
+  function addLocalEdit(user, { kind = 'video', prompt = '', studio = null, meta = null, projectId = null, folderId = null, make }) {
+    if (user.role !== 'admin' && q.activeJobs.get(user.id).n >= maxActiveJobsPerUser) {
+      throw new GenerationError(`Too many generations running (${maxActiveJobsPerUser}). Wait for some to finish.`, 429);
+    }
+    const id = newId('gen');
+    const t = now();
+    q.insert.run(id, user.id, 'dz/edit', 'dz', 'edit', kind, String(prompt).slice(0, 32000), '{}', 0, 'estimate', studio, meta == null ? null : JSON.stringify(meta), projectId, folderId, t, t);
+    q.setPolled.run('processing', t + 6 * 3600_000, t, id); // the provider worker leaves it alone
+    Promise.resolve()
+      .then(() => make())
+      .then(async (out) => {
+        let file;
+        try { file = await storage.copyResult({ userId: user.id, generationId: id, index: 0, from: out.path, ext: out.ext }); } finally { out.cleanup?.(); }
+        q.setCompleted.run(JSON.stringify([{ path: file.path, mime: out.mime, bytes: file.bytes, ext: out.ext }]), now() + settleDelaysMs[0], now(), now(), id);
+        if (onCompleted) Promise.resolve().then(() => onCompleted(q.byId.get(id))).catch((error) => log?.warn(`after ${id}: ${error.message}`));
+      })
+      .catch((error) => {
+        log?.warn(`local edit ${id}: ${error.message}`);
+        q.setFailed.run(String(error.message || 'Failed').slice(0, 500), now(), now(), id);
+      });
+    return { id };
+  }
+
   // Same for a /media/... link from a request body (e.g. an upscale input).
   function mediaFileForUrl(user, url) {
     const m = typeof url === 'string' && LOCAL_MEDIA_RE.exec(url);
@@ -654,11 +684,12 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,
     cachedProviderUrl,
-    saveUpload, uploads, deleteUploads, submit, result, history, cancel, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
+    saveUpload, addLocalEdit, uploads, deleteUploads, submit, result, history, cancel, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.
       q.staleSubmitting.run(now(), now(), now() - 10 * 60_000);
+      q.staleLocalEdits.run(now(), now());
       if (!timer) {
         timer = setInterval(tick, 2000);
         timer.unref?.();

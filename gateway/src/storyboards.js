@@ -10,7 +10,9 @@
 //             pick / remove / add.
 import { newId } from './storage.js';
 import { now } from './db.js';
+import fs from 'node:fs';
 import { cleanShot, DEFAULT_LOOK } from './director.js';
+import { stitch as stitchVideos, lastFrame as lastVideoFrame } from './edit.js';
 import { cleanLook as cleanCameraLook } from './look.js';
 
 export class StoryboardError extends Error {
@@ -367,5 +369,58 @@ export function createStoryboards({ db, projects, generations, log }) {
     return row;
   }
 
-  return { list, create, get, update, remove, media, attachGenerated, attachPending, applyPlan, editable, visible, checkRev };
+  // The picked videos of the board's shots (all, or the ones asked for), in
+  // shot order, stitched into one video — a new item in the board's place.
+  function stitchShots(user, id, body = {}) {
+    const row = editable(user, id);
+    const shots = parse(row.shots_json, []);
+    const media = parse(row.media_json, {});
+    const want = Array.isArray(body.shots) && body.shots.length ? new Set(body.shots.map(String)) : null;
+    const chosen = shots.filter((s) => (!want || want.has(s.id)) && media[s.id]?.video);
+    if (chosen.length < 2) throw new StoryboardError('Pick a video in at least two shots first.');
+    const files = chosen.map((s, i) => {
+      const url = media[s.id].video;
+      const file = !isGone(row, url) && generations.mediaFileForUrl(user, url);
+      if (!file?.path) throw new StoryboardError(`Shot ${shots.indexOf(s) + 1} (${s.title || 'untitled'}): its video is gone — pick another one.`, 409);
+      return { path: file.path, n: i };
+    });
+    const name = String(row.name || 'Scene').slice(0, 120);
+    const { id: genId } = generations.addLocalEdit(user, {
+      kind: 'video',
+      prompt: `${name} — ${chosen.length} shots stitched`,
+      studio: 'director',
+      meta: { stitch: { board: row.id, shots: chosen.map((s) => s.id) }, modelName: 'Stitched shots · this server', boardName: name },
+      projectId: row.project_id || null,
+      make: () => stitchVideos(files),
+    });
+    return { id: genId };
+  }
+
+  // The last frame of a shot's picked video becomes the next shot's start frame.
+  async function continueShot(user, id, body = {}) {
+    let row = editable(user, id);
+    const shots = parse(row.shots_json, []);
+    const i = shots.findIndex((s) => s.id === String(body.shot || ''));
+    if (i < 0) throw new StoryboardError('That shot is gone — reload.', 404);
+    const next = shots[i + 1];
+    if (!next) throw new StoryboardError('Add a shot after this one first.');
+    const url = parse(row.media_json, {})[shots[i].id]?.video;
+    const file = url && !isGone(row, url) && generations.mediaFileForUrl(user, url);
+    if (!file?.path) throw new StoryboardError('Pick a video for this shot first.');
+    const frame = await lastVideoFrame(file.path);
+    let saved;
+    try {
+      saved = await generations.saveUpload(user, { stream: fs.createReadStream(frame.path), mime: 'image/png', filename: `${String(shots[i].title || 'shot').slice(0, 40)} – last frame.png`, projectId: row.project_id || null });
+    } finally { frame.cleanup(); }
+    row = editable(user, id);
+    if (!parse(row.shots_json, []).some((s) => s.id === next.id)) throw new StoryboardError('The next shot is gone — reload.', 404);
+    changeMedia(row, next.id, (m) => {
+      m.frames.push({ url: saved.url, gen: null, at: now(), own: true, from: shots[i].id });
+      if (m.frames.length > MAX_FRAMES) m.frames = m.frames.filter((x) => x.url === saved.url || x.url === m.frame).concat(m.frames.filter((x) => x.url !== saved.url && x.url !== m.frame).slice(-(MAX_FRAMES - 2)));
+      m.frame = saved.url;
+    });
+    return get(user, id);
+  }
+
+  return { list, create, get, update, remove, media, stitchShots, continueShot, attachGenerated, attachPending, applyPlan, editable, visible, checkRev };
 }

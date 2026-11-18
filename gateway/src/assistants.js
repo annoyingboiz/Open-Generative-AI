@@ -14,12 +14,13 @@ const MAX_NAME = 60;
 const MAX_DESC = 300;
 const MAX_RULES = 20_000;
 const MAX_TEXT_FILE = 100_000;
-const MAX_TEXT_TOTAL = 200_000;
+const MAX_TEXT_TOTAL = 120_000;
 const MAX_FILES = 30;
 const MAX_KNOWLEDGE_IMAGES = 2;   // a model takes 4 pictures per message: 2 from knowledge, 2+ from you
 const MAX_MESSAGES = 300;
 const MAX_MESSAGE = 20_000;
-const HISTORY_CHARS = 36_000;     // what of the chat goes back to the model (newest first)
+const HISTORY_CHARS = 36_000;     // what of the chat goes back to the model (newest first), at most
+const INPUT_BUDGET = 190_000;     // everything sent (llm.chat takes up to 200k for us); history gets what is left
 const MODEL_RE = /^(local|apimart|atlas|chatgpt):.+/;
 const parse = (t, fallback) => { try { const v = JSON.parse(t || ''); return v ?? fallback; } catch { return fallback; } };
 const line = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -181,12 +182,20 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
       const f = generations.mediaFileForUrl(user, body.url);
       if (!f || !String(f.mime || '').startsWith('image/')) throw new AssistantError('Pick a picture.');
       const [own] = await generations.adoptMany(user, [body.url], { projectId: row.project_id || null });
-      file = { id: newId('kf'), name: line(body.name, 80) || 'Picture', kind: 'image', url: own };
+      file = { id: newId('kf'), name: line(body.name, 80) || 'Picture', kind: 'image', url: own, copied: own !== body.url };
     } else throw new AssistantError('Add a text or a picture.');
     // Read again after the copy (an await): someone may have changed it meanwhile.
-    row = editable(user, id);
-    const fresh = filesOf(row);
-    if (fresh.length >= MAX_FILES) throw new AssistantError(`Up to ${MAX_FILES} files.`);
+    const dropCopy = () => {
+      const made = file.kind === 'image' && file.copied && /^\/media\/u\/([^.]+)\./.exec(file.url);
+      if (made) { try { generations.deleteUploads(user, [made[1]]); } catch { /* best effort */ } }
+    };
+    let fresh;
+    try {
+      row = editable(user, id);
+      fresh = filesOf(row);
+      if (fresh.length >= MAX_FILES) throw new AssistantError(`Up to ${MAX_FILES} files.`);
+      if (file.kind === 'image' && fresh.filter((f) => f.kind === 'image').length >= MAX_KNOWLEDGE_IMAGES) throw new AssistantError(`Up to ${MAX_KNOWLEDGE_IMAGES} pictures in an assistant's knowledge.`);
+    } catch (error) { dropCopy(); throw error; }
     fresh.push(file);
     q.update.run(row.name, row.description, row.rules, row.model, row.model_notes, JSON.stringify(fresh), now(), row.id);
     return { assistant: view(q.byId.get(row.id), user) };
@@ -201,8 +210,12 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
   function removeFile(user, id, fileId) {
     const row = editable(user, id);
     const files = filesOf(row);
-    if (!files.some((f) => f.id === fileId)) throw new AssistantError('File not found.', 404);
+    const gone = files.find((f) => f.id === fileId);
+    if (!gone) throw new AssistantError('File not found.', 404);
     q.update.run(row.name, row.description, row.rules, row.model, row.model_notes, JSON.stringify(files.filter((f) => f.id !== fileId)), now(), row.id);
+    // Its copy of a picture goes too, unless something else still uses it (deleteUploads checks).
+    const made = gone.kind === 'image' && gone.copied && /^\/media\/u\/([^.]+)\./.exec(gone.url || '');
+    if (made) { try { generations.deleteUploads(user, [made[1]]); } catch { /* kept */ } }
     return { assistant: view(q.byId.get(row.id), user) };
   }
 
@@ -260,6 +273,7 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
   }
 
   const load = new Map(); // userId -> running calls
+  const busyChats = new Set(); // one answer at a time per chat (keeps the order)
   async function send(user, chatId, body = {}) {
     const chat = chatOf(user, chatId);
     const assistant = visible(user, chat.assistant_id);
@@ -272,46 +286,59 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     const model = String(body.model || assistant.model || '') || undefined;
     if (model && !MODEL_RE.test(model)) throw new AssistantError('Unknown text model.');
     if ((load.get(user.id) || 0) >= 2) throw new AssistantError('Two answers are already being written — wait a moment.', 429);
+    if (busyChats.has(chat.id)) throw new AssistantError('Wait for the answer in this chat first.', 409);
     // Pictures: the knowledge ones first (they must still be visible to this user), then yours.
     const knowledgeImages = filesOf(assistant).filter((f) => f.kind === 'image').map((f) => f.url)
       .filter((u) => generations.mediaFileForUrl(user, u)).slice(0, Math.max(0, 4 - images.length));
-    // History: newest messages that fit, text only (pictures go with the message they were sent with).
+    const system = systemFor(assistant, body.context);
+    const current = (text || 'See the attached picture.') + contextNote(body.context);
+    // History: newest messages that fit what is left of the budget, text only
+    // (pictures go with the message they were sent with).
+    const room = Math.min(HISTORY_CHARS, INPUT_BUDGET - system.length - current.length);
     const history = [];
     let size = 0;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
       if (m.error) continue;
-      size += (m.content || '').length;
-      if (size > HISTORY_CHARS) break;
+      size += (m.content || '').length + 60;
+      if (size > room) break;
       history.unshift({ role: m.role, content: m.images?.length ? `${m.content || ''}\n[${m.images.length} picture(s) were attached here]` : m.content || '' });
     }
-    const userMsg = { role: 'user', content: text, images, at: now() };
     load.set(user.id, (load.get(user.id) || 0) + 1);
+    busyChats.add(chat.id);
     let answer;
+    let userMsg;
     try {
+      // Your pictures are copied into your own space, so the chat keeps them
+      // even if the originals move, leave a project or are deleted.
+      const own = images.length ? await generations.adoptMany(user, images, { projectId: null }) : [];
+      userMsg = { role: 'user', content: text, images: own, at: now() };
       const r = await llm.chat(user, {
         model,
-        system: systemFor(assistant, body.context),
-        messages: [...history, { role: 'user', content: (text || 'See the attached picture.') + contextNote(body.context) }],
-        images: [...knowledgeImages, ...images],
+        system,
+        messages: [...history, { role: 'user', content: current }],
+        images: [...knowledgeImages, ...own],
         purpose: 'assistant',
         maxTokens: 4000,
+        maxInputChars: 200_000,
       });
       answer = { role: 'assistant', content: r.text, model: r.model, costUsd: r.costUsd ?? null, ms: r.ms, at: now() };
     } catch (error) {
-      if (!error?.status) throw error;
+      if (!error?.status || !userMsg) { load.set(user.id, (load.get(user.id) || 1) - 1); busyChats.delete(chat.id); throw error; }
       answer = { role: 'assistant', content: '', error: error.message, model: model || null, at: now() };
     } finally {
-      load.set(user.id, (load.get(user.id) || 1) - 1);
+      if (userMsg) { load.set(user.id, (load.get(user.id) || 1) - 1); }
     }
     // Save: the user message and the answer go after whatever the chat has now.
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const cur = chatOf(user, chatId);
-      const list = parse(cur.messages_json, []);
-      list.push(userMsg, answer);
-      const title = cur.title === 'New chat' && text ? line(text, 60) : cur.title;
-      if (q.chatSave.run(title, JSON.stringify(list.slice(-MAX_MESSAGES)), Math.max(now(), cur.updated_at + 1), cur.id, cur.updated_at).changes) break;
-    }
+    try {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const cur = chatOf(user, chatId);
+        const list = parse(cur.messages_json, []);
+        list.push(userMsg, answer);
+        const title = cur.title === 'New chat' && text ? line(text, 60) : cur.title;
+        if (q.chatSave.run(title, JSON.stringify(list.slice(-MAX_MESSAGES)), Math.max(now(), cur.updated_at + 1), cur.id, cur.updated_at).changes) break;
+      }
+    } finally { busyChats.delete(chat.id); }
     return { chat: chatView(chatOf(user, chatId)), answer };
   }
 

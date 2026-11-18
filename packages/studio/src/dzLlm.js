@@ -28,15 +28,16 @@ export function useDzLlmModels() {
 
 // Text models to pick from: your default first, then the recommended ones
 // (OptionSelect options: value, label, description, meta).
-export function useDzTextModelOptions() {
+export function useDzTextModelOptions({ all = false } = {}) {
   const llm = useDzLlmModels();
   return useMemo(() => {
     const list = llm.models || [];
-    const pick = list.filter((m) => m.recommended || m.id === llm.default);
+    // all: every text model you can use (recommended first); otherwise the short list.
+    const pick = all ? [...list.filter((m) => m.recommended), ...list] : list.filter((m) => m.recommended || m.id === llm.default);
     const seen = new Set();
     const options = [...pick.filter((m) => m.id === llm.default), ...pick]
       .filter((m) => (seen.has(m.id) ? false : seen.add(m.id)))
       .map((m) => ({ value: m.id, label: m.name, vision: Boolean(m.vision), description: m.id === llm.default ? "Your default" : m.source === "chatgpt" ? "Your ChatGPT plan" : m.source === "local" ? "This server, free" : m.source === "atlas" ? "Atlas" : "APIMart", meta: m.free ? "free" : m.price ? `$${(+m.price.out).toFixed(2)}/1M` : "" }));
     return { options, def: llm.default, loaded: llm.loaded, all: list };
-  }, [llm]);
+  }, [llm, all]);
 }

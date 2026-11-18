@@ -376,8 +376,8 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
 
   // Side chat: it sees the scene and the video model; "Insert" puts text into the scene.
   useEffect(() => {
-    dzSetStudioState("director", { model: videoEntry ? { family: videoEntry.family, name: videoEntry.familyName, kind: "video" } : null, prompt: draft?.scene || "" });
-  }, [videoEntry, draft?.scene]);
+    dzSetStudioState("director", { model: videoEntry ? { family: videoEntry.family, name: videoEntry.familyName, kind: "video" } : null, prompt: draft?.scene || "", writable: Boolean(draft) && !readOnly });
+  }, [videoEntry, draft, readOnly]);
   const editRef = useRef(edit);
   editRef.current = edit;
   useEffect(() => {

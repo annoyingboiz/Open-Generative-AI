@@ -206,8 +206,7 @@ function AssistantEditor({ assistant, modelOptions, onSaved, onDeleted, onBack, 
 export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, onInsert, getStudio, apiKey }) {
   const ctx = useDzContext();
   const projectId = ctx.project?.id || null;
-  const readOnly = Boolean(ctx.project?.archived);
-  const textModels = useDzTextModelOptions();
+  const textModels = useDzTextModelOptions({ all: true });
   const [lists, setLists] = useState({ personal: [], project: [], templates: [], loaded: false });
   const [assistantId, setAssistantId] = useState(() => { try { return localStorage.getItem(LAST_KEY) || ""; } catch { return ""; } });
   const [chats, setChats] = useState([]);
@@ -224,27 +223,48 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
 
   const all = useMemo(() => [...lists.project, ...lists.personal], [lists]);
   const assistant = all.find((a) => a.id === assistantId) || all[0] || null;
+  // A project's assistant in an archived project is read only; your own ones never are.
+  const readOnly = Boolean(assistant?.project_id && ctx.project?.archived);
 
+  // Answers that arrive after you switched (project, assistant, chat) are dropped.
+  const listSeq = useRef(0);
   const loadLists = useCallback(async () => {
-    try { const r = await dzAssistants.list(projectId); setLists({ ...r, loaded: true }); return r; } catch (e) { notify(String(e.message || e)); setLists((l) => ({ ...l, loaded: true })); return null; }
+    const seq = ++listSeq.current;
+    try {
+      const r = await dzAssistants.list(projectId);
+      if (seq === listSeq.current) setLists({ ...r, loaded: true });
+      return r;
+    } catch (e) { if (seq === listSeq.current) { notify(String(e.message || e)); setLists((l) => ({ ...l, loaded: true })); } return null; }
   }, [projectId]);
+  useEffect(() => { setLists((l) => ({ ...l, project: [], loaded: false })); }, [projectId]);
   useEffect(() => { if (open) loadLists(); }, [open, loadLists]);
   useEffect(() => { try { if (assistant?.id) localStorage.setItem(LAST_KEY, assistant.id); } catch { /* optional */ } }, [assistant?.id]);
   useEffect(() => { setModel(""); }, [assistant?.id]);
 
   // Chats of the assistant: open the latest (or none yet).
   const chatSeq = useRef(0);
+  const [loadingChat, setLoadingChat] = useState(false);
   const loadChats = useCallback(async (aid, pick) => {
     const seq = ++chatSeq.current;
-    if (!aid) { setChats([]); setChat(null); return; }
+    setChats([]);
+    setChat(null);
+    if (!aid) return;
+    setLoadingChat(true);
     try {
       const r = await dzAssistants.chats(aid);
       if (seq !== chatSeq.current) return;
       setChats(r.chats);
       const id = pick || r.chats[0]?.id;
-      setChat(id ? (await dzAssistants.chat(id)).chat : null);
-    } catch (e) { notify(String(e.message || e)); }
+      const c = id ? (await dzAssistants.chat(id)).chat : null;
+      if (seq === chatSeq.current) setChat(c);
+    } catch (e) { if (seq === chatSeq.current) notify(String(e.message || e)); } finally { if (seq === chatSeq.current) setLoadingChat(false); }
   }, []);
+  const openChat = async (id) => {
+    const seq = ++chatSeq.current;
+    if (!id) { setChat(null); return; }
+    setLoadingChat(true);
+    try { const c = (await dzAssistants.chat(id)).chat; if (seq === chatSeq.current) setChat(c); } catch (e) { notify(String(e.message || e)); } finally { if (seq === chatSeq.current) setLoadingChat(false); }
+  };
   useEffect(() => { if (open && assistant?.id) loadChats(assistant.id); }, [open, assistant?.id, loadChats]);
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [chat?.messages?.length, sending]);
 
@@ -258,11 +278,13 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
   };
 
   const send = async () => {
-    if (!assistant || sending || (!text.trim() && !images.length)) return;
+    if (!assistant || sending || loadingChat || (!text.trim() && !images.length)) return;
     setSending(true);
+    const seq = chatSeq.current;
     try {
       let c = chat;
       if (!c || c.assistant_id !== assistant.id) c = (await dzAssistants.newChat(assistant.id)).chat;
+      if (seq !== chatSeq.current) return;
       const studio = getStudio?.() || null;
       const pending = { role: "user", content: text.trim(), images: images.map((x) => x.url), at: Date.now() };
       setChat({ ...c, messages: [...(c.messages || []), pending] });
@@ -272,12 +294,11 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
       setImages([]);
       try {
         const r = await dzAssistants.send(c.id, { text: sentText, images: sentImages.map((x) => x.url), model: model || undefined, context: studio ? { tab: activeTab, model: studio.model, prompt: studio.prompt } : { tab: activeTab } });
+        if (seq !== chatSeq.current) return; // you moved on: the answer is saved in its chat
         setChat(r.chat);
         setChats((list) => [{ id: r.chat.id, title: r.chat.title, updated_at: r.chat.updated_at, n: r.chat.messages.length }, ...list.filter((x) => x.id !== r.chat.id)]);
       } catch (e) {
-        setText(sentText);
-        setImages(sentImages);
-        setChat(c);
+        if (seq === chatSeq.current) { setText(sentText); setImages(sentImages); setChat(c); }
         notify(String(e.message || e));
       }
     } catch (e) { notify(String(e.message || e)); } finally { setSending(false); }
@@ -342,11 +363,11 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
                   <SelectItem value="__new">+ New assistant…</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="secondary" className="h-10 rounded-xl" disabled={!assistant} onClick={() => { setChat(null); setText(""); }}>New chat</Button>
+              <Button variant="secondary" className="h-10 rounded-xl" disabled={!assistant} onClick={() => { chatSeq.current += 1; setChat(null); setText(""); }}>New chat</Button>
             </div>
             {chats.length > 0 && (
               <div className="flex items-center gap-2">
-                <Select value={chat?.id || "__none"} onValueChange={async (v) => { if (v === "__none") { setChat(null); return; } try { setChat((await dzAssistants.chat(v)).chat); } catch (e) { notify(String(e.message || e)); } }}>
+                <Select value={chat?.id || "__none"} onValueChange={(v) => openChat(v === "__none" ? null : v)}>
                   <SelectTrigger aria-label="Chat" className="h-9 min-w-0 flex-1 rounded-lg border-transparent bg-muted"><SelectValue /></SelectTrigger>
                   <SelectContent className="max-h-[360px]">
                     <SelectItem value="__none">New chat</SelectItem>
@@ -373,7 +394,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
                 <p>Write a message{assistant.modelNotes ? " — it knows the prompting rules of the model open in the studio" : ""}. Pictures can be attached.</p>
               </div>
             )}
-            {(chat?.messages || []).map((m, i) => <Message key={i} m={m} canInsert={canInsert} onInsert={onInsert} onOpen={(u) => setViewing(u)} />)}
+            {(chat?.messages || []).map((m, i) => <Message key={i} m={m} canInsert={typeof canInsert === "function" ? canInsert() : canInsert} onInsert={onInsert} onOpen={(u) => setViewing(u)} />)}
             {sending && <div className="flex items-center gap-2 text-muted-foreground"><Spinner className="h-4 w-4" /> Writing…</div>}
           </div>
 
@@ -399,7 +420,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
               <div className="min-w-0 flex-1">
                 <OptionSelect value={effectiveModel} onValueChange={setModel} options={modelOptions} placeholder={textModels.loaded ? "Text model" : "Loading…"} aria-label="Text model" className="min-h-9 py-1" />
               </div>
-              <Button className="h-9 rounded-lg px-4" disabled={!assistant || sending || (!text.trim() && !images.length)} onClick={send}>{sending ? <Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> : "Send"}</Button>
+              <Button className="h-9 rounded-lg px-4" disabled={!assistant || sending || loadingChat || (!text.trim() && !images.length)} onClick={send}>{sending ? <Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> : "Send"}</Button>
             </div>
           </div>
           <DzMediaPicker open={picker} onOpenChange={setPicker} accept="image" max={Math.max(1, 4 - images.length)} apiKey={apiKey} onError={notify} title="Pictures for the chat"

@@ -70,6 +70,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     activeJobs: db.prepare("SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('submitting','submitted','processing','downloading')"),
     deleteUpload: db.prepare('DELETE FROM uploads WHERE id = ?'),
     // Exact text search (instr, not LIKE: "_" in ids is not a wildcard). ?1 = "/media/u/<id>."
+    assistantsUsing: db.prepare('SELECT name FROM assistants WHERE deleted_at IS NULL AND instr(files_json, ?) > 0 LIMIT 1'),
     elementsUsing: db.prepare(`SELECT name FROM elements WHERE deleted_at IS NULL AND (instr(views_json, ?1) > 0 OR instr(videos_json, ?1) > 0 OR instr(images_json, ?1) > 0 OR instr(COALESCE(video_url, ''), ?1) > 0) LIMIT 1`),
     runningUsing: db.prepare(`SELECT id FROM generations WHERE status IN ('submitting','submitted','processing','downloading') AND instr(params_json, ?1) > 0 LIMIT 1`),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, project_id, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
@@ -581,6 +582,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       if (!mayDelete) { failed.push({ id, error: 'Only the person who uploaded it (or the project owner) can delete it.' }); continue; }
       const ref = `/media/u/${up.id}.`;
       const el = q.elementsUsing.get(ref);
+      const as = !el && q.assistantsUsing.get(ref);
+      if (as) { failed.push({ id, error: `The assistant “${as.name}” uses it.` }); continue; }
       if (el) { failed.push({ id, error: `The element “${el.name}” uses it.` }); continue; }
       if (q.runningUsing.get(ref)) { failed.push({ id, error: 'A generation that is still running uses it. Try again when it finishes.' }); continue; }
       storage.remove(up.path);

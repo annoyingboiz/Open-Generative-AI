@@ -240,7 +240,9 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
     if (body.prompt) msgs.push({ role: 'user', content: String(body.prompt) });
     if (!msgs.some((m) => m.role === 'user' && m.content.trim())) throw new LlmError('Nothing to send.');
     const size = msgs.reduce((n, m) => n + m.content.length, 0);
-    if (size > MAX_INPUT_CHARS) throw new LlmError(`The text is too long (max ${MAX_INPUT_CHARS} characters).`);
+    // Callers that budget their own input (assistants: rules + knowledge + history) may go higher.
+    const cap = Math.min(200_000, Math.max(MAX_INPUT_CHARS, Number(body.maxInputChars) || 0));
+    if (size > cap) throw new LlmError(`The text is too long (max ${cap} characters).`);
     return msgs;
   }
 

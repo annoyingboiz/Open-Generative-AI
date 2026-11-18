@@ -613,7 +613,7 @@ export default function DzShell() {
 
         {/* Side chat with assistants: answers go into the prompt of the open studio. */}
         <DzChatPanel open={chatOpen} onOpenChange={setChatOpen} activeTab={activeTab} apiKey={DZ_SESSION_PLACEHOLDER}
-          canInsert={INSERT_TABS.has(activeTab)}
+          canInsert={() => INSERT_TABS.has(activeTab) && dzGetStudioState(activeTab)?.writable !== false}
           getStudio={() => dzGetStudioState(activeTab)}
           onInsert={(text, how) => window.dispatchEvent(new CustomEvent(DZ_INSERT_EVENT, { detail: { tab: activeTab, text, how } }))} />
 

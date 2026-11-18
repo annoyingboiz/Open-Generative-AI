@@ -122,7 +122,8 @@ export function createStoryboards({ db, projects, generations, log }) {
     scene: row.scene,
     look: cleanLook(parse(row.look_json, {})),
     settings: parse(row.settings_json, {}),
-    shots: parse(row.shots_json, []),
+    // Shots saved before 18.11 carry camera names: shown with today's ids.
+    shots: parse(row.shots_json, []).map((s) => (isObj(s) ? cleanShot(s, { id: s.id }) : s)).filter(isObj),
     media: withState(row, parse(row.media_json, {})),
     rev: row.rev,
     project_id: row.project_id || null,

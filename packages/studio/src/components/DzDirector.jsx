@@ -136,7 +136,7 @@ function ShotCard({
           <DzSentPanel open={sentOpen} onOpenChange={setSentOpen} title={`Shot ${index + 1} · sent to the models`}
             requests={[
               ...(fr.variant ? [{ label: "1 · Start frame", endpoint: fr.variant.model.endpoint, body: fr.body || { prompt: fr.prompt || "" }, look: fr.look || null, size: shot.size, problem: fr.body ? null : fr.problem }] : []),
-              ...(vrQuote.variant ? [{ label: "2 · Video", endpoint: vrQuote.variant.model.endpoint, body: vrQuote.body || { prompt: vrQuote.prompt || "" }, look: vrQuote.look || null, problem: vrQuote.body ? null : vrQuote.problem }] : []),
+              ...(vr.variant || vrQuote.variant ? [{ label: "2 · Video", endpoint: (vr.variant || vrQuote.variant).model.endpoint, body: vr.body || null, look: vr.look || null, problem: vr.body ? null : vr.problem || "Pick a start frame first." }] : []),
             ]} />
         </div>
 

@@ -702,10 +702,10 @@ export async function buildApp(config, { logger = true } = {}) {
   // model's words and place) and the whole request body — shown in the
   // studio's "Sent to the model" drawer so people can see and experiment.
   const previewThrottle = new Map(); // userId -> [timestamps]
-  app.post('/dz/api/prompt/preview', async (req, reply) => {
+  app.post('/dz/api/prompt/preview', { bodyLimit: 256 * 1024 }, async (req, reply) => {
     const t = Date.now();
     const recent = (previewThrottle.get(req.user.id) || []).filter((x) => t - x < 60_000);
-    if (recent.length >= 120) return reply.code(429).send({ error: 'Too many previews, slow down.' });
+    if (recent.length >= 60) return reply.code(429).send({ error: 'Too many previews, slow down.' });
     recent.push(t);
     previewThrottle.set(req.user.id, recent);
     const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([a-z0-9]+))?$/i.exec(String(req.body?.endpoint || ''));
@@ -714,7 +714,7 @@ export async function buildApp(config, { logger = true } = {}) {
     const resolved = resolveEndpoint(req.user, providerId, modelId, mode);
     if (!resolved?.variant) return reply.code(404).send({ error: 'Unknown model' });
     const { _dz: _ignored, ...body } = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
-    const typed = typeof body.prompt === 'string' ? body.prompt.slice(0, 32000) : '';
+    const typed = typeof body.prompt === 'string' ? body.prompt : '';
     const built = finalPrompt(resolved, typed, req.body?.look);
     if (built.look && built.prompt.trim()) body.prompt = built.prompt;
     const variant = resolved.variant;
@@ -723,7 +723,8 @@ export async function buildApp(config, { logger = true } = {}) {
     return {
       prompt: typeof sent[promptField] === 'string' ? sent[promptField] : null,
       promptField,
-      body: sent,
+      // The provider body exactly as Generate builds it (shown only up to a size).
+      body: JSON.stringify(sent).length <= 120_000 ? sent : { note: 'Request too large to show.' },
       model: { provider: providerId, id: variant.providerModel, family: variant.family },
       rules: built.memo ? { memo: built.memo.id, name: built.memo.name, generic: built.memo.generic, place: built.memo.look?.place || 'end', camera: built.memo.look?.camera || null, style: built.memo.look?.style || null } : null,
       hints: built.look ? lookHints(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],

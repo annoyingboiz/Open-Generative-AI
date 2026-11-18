@@ -59,7 +59,7 @@ export const shotCamera = (shot, look = {}) => normalizeCamera({
   lens: shot.lens || look.lens || DEFAULT_CAMERA.lens,
   focal: shot.focal || look.focal || DEFAULT_CAMERA.focal,
   aperture: shot.aperture || look.aperture || DEFAULT_CAMERA.aperture,
-  filter: look.filter || null,
+  filter: shot.filter || look.filter || null,
   era: look.era || null,
   light: look.light || null,
 });

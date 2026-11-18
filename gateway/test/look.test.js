@@ -46,3 +46,9 @@ test('look: the browser gets labels, not prompt words', () => {
   assert.ok(c.cameras.length >= 9 && c.lenses.length >= 9 && c.eras.length && c.lights.length && c.moves.length);
   assert.ok(!JSON.stringify(c).includes('Kodak'));
 });
+
+test('look: planner answers and old shots keep their look', async () => {
+  const { cleanShot } = await import('../src/director.js');
+  const s = cleanShot({ camera: 'film-35 (Classic film grain and color)', lens: 'Halation Diffusion', focal: '14mm', aperture: 'f/4' }, { id: 's1' });
+  assert.deepEqual([s.camera, s.lens, s.filter, s.focal, s.aperture], ['film-35', 'clean', 'diffusion', 16, 'f/4']);
+});

@@ -128,8 +128,12 @@ const byId = (list, id) => list.find((x) => x.id === id) || null;
 const nearestFocal = (n) => FOCALS.reduce((best, f) => (Math.abs(f.mm - n) < Math.abs(best.mm - n) ? f : best), FOCALS[0]).mm;
 
 // A look from the browser (or a saved one), made safe: known ids only.
-export function cleanLook(raw) {
-  if (!raw || typeof raw !== 'object') return null;
+// "film-35 (Classic film grain)" → "film-35": text models sometimes copy the description.
+const idOf = (v) => (typeof v === 'string' ? v.replace(/\s*\(.*\)\s*$/, '').trim() : v);
+
+export function cleanLook(input) {
+  if (!input || typeof input !== 'object') return null;
+  const raw = { ...input, camera: idOf(input.camera), lens: idOf(input.lens), era: idOf(input.era), light: idOf(input.light), move: idOf(input.move), filter: idOf(input.filter) };
   const camera = byId(CAMERAS, raw.camera)?.id || LEGACY_CAMERA[raw.camera] || null;
   const lens = byId(LENSES, raw.lens)?.id || LEGACY_LENS[raw.lens] || null;
   let focal = Number(String(raw.focal ?? '').replace(/mm$/i, ''));

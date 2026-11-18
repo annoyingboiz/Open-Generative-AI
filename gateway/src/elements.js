@@ -27,6 +27,7 @@ const TAG_RE = /^[a-z][a-z0-9_]{1,39}$/;
 const CYR = { а: 'a', б: 'b', в: 'v', г: 'g', ґ: 'g', д: 'd', е: 'e', є: 'ye', ё: 'e', ж: 'zh', з: 'z', и: 'i', і: 'i', ї: 'yi', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
 
 // "Анна" (character) → "char_anna".
+const RESERVED_TAG = /^(start|end|first|last|middle|mid_?\d+|img_?\d+|vid_?\d+|aud_?\d+|image_?\d+|video_?\d+|audio_?\d+)$/i;
 export function tagFor(name, kind) {
   const latin = String(name || '').toLowerCase().split('').map((c) => CYR[c] ?? c).join('');
   const slug = latin.normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'x';
@@ -146,6 +147,8 @@ export function createElements({ db, projects, generations, log }) {
     if (!STATUSES.includes(status)) throw new ElementError('Unknown status.');
     let tag = body.tag != null && body.tag !== '' ? String(body.tag).trim().replace(/^@/, '').toLowerCase() : null;
     if (tag && !TAG_RE.test(tag)) throw new ElementError('A tag is 2–40 Latin letters, digits or _, starting with a letter.');
+    // Attachments use these names in prompts (@start, @img1…); an element can't.
+    if (tag && RESERVED_TAG.test(tag)) throw new ElementError(`@${tag} is used for attached files — pick another tag (e.g. @char_${tag}).`);
     return { name: n, kind: k, description: d, notes, status, tag };
   }
 

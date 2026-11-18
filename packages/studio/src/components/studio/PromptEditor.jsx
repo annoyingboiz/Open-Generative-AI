@@ -17,7 +17,7 @@ function serialize(root) {
   let out = "";
   const walk = (node) => {
     for (const c of node.childNodes) {
-      if (c.nodeType === 3) out += c.nodeValue;
+      if (c.nodeType === 3) out += c.nodeValue.replace(/\u00a0/g, " ");
       else if (c.nodeType === 1) {
         if (c.dataset?.tag) { out += `@${c.dataset.tag}`; continue; }
         if (c.tagName === "BR") { if (!c.dataset?.end) out += "\n"; continue; }
@@ -119,7 +119,8 @@ const hasLooseTag = (root, tagMap) => [...root.childNodes].some((c) => c.nodeTyp
   return end < c.nodeValue.length;
 }));
 
-export default function PromptEditor({ value, onChange, tags, inputRef, json, placeholder, onKeyDown, onKeyUp, onClick, onFocus, onBlur, onPasteFiles, className }) {
+export default function PromptEditor({ value, onChange, tags, inputRef, json, placeholder, onKeyDown, onKeyUp, onClick, onFocus, onBlur, onPasteFiles, className, ariaProps }) {
+  const composing = useRef(false);
   const root = useRef(null);
   const emitted = useRef(null);
   const tagMap = useMemo(() => new Map(tags.map((t) => [t.tag.toLowerCase(), t])), [tags]);
@@ -144,6 +145,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
     const el = root.current;
     if (!el) return;
     if (value === emitted.current && el.dataset.chips === chipKey) return;
+    if (composing.current && value === emitted.current) return; // new chips wait for the IME to finish
     const focused = document.activeElement === el;
     const off = focused ? getOffset(el) : null;
     render(el, value, tagMap);
@@ -153,7 +155,10 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
   }, [value, chipKey, tagMap]);
 
   const emit = (next) => { emitted.current = next; onChange(next); };
+  // Typed edits go through the browser (so ⌘Z undoes them); the rest redraws.
+  const insertNative = (text) => (typeof document !== "undefined" && document.execCommand ? document.execCommand("insertText", false, text) : false);
   const replaceSelection = (text) => {
+    if (insertNative(text)) return;
     const el = root.current;
     const v = serialize(el);
     const off = getOffset(el) || { start: v.length, end: v.length };
@@ -174,12 +179,13 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
       suppressContentEditableWarning
       spellCheck={!json}
       data-placeholder={placeholder}
+      {...ariaProps}
       className={cn("custom-scrollbar max-h-[330px] min-h-[44px] overflow-y-auto whitespace-pre-wrap break-words outline-none",
         "empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]", json ? "font-mono text-[13px] leading-5" : "text-prompt", className)}
       onInput={(e) => {
         const el = root.current;
         let next = serialize(el);
-        if (!e.nativeEvent.isComposing && hasLooseTag(el, tagMap)) {
+        if (!e.nativeEvent.isComposing && !composing.current && hasLooseTag(el, tagMap)) {
           const off = getOffset(el);
           render(el, next, tagMap);
           if (off) setOffset(el, off.start, off.end);
@@ -189,7 +195,11 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
         if (!next) el.textContent = "";
         emit(next);
       }}
+      onCompositionStart={() => { composing.current = true; }}
+      onCompositionEnd={() => { composing.current = false; const el = root.current; if (el && hasLooseTag(el, tagMap)) { const off = getOffset(el); const v = serialize(el); render(el, v, tagMap); if (off) setOffset(el, off.start, off.end); emit(v); } }}
       onKeyDown={(e) => {
+        // While an IME composes, Enter picks its candidate: leave the keys to it.
+        if (e.nativeEvent.isComposing || e.keyCode === 229 || composing.current) return;
         onKeyDown?.(e);
         if (e.defaultPrevented) return;
         if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); replaceSelection("\n"); }

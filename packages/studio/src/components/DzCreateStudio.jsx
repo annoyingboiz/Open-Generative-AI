@@ -43,7 +43,7 @@ function normalizeSaved(raw) {
   if (s.kind === "image" || s.kind === "video") out.kind = s.kind;
   if (isObj(s.modelByKind)) out.modelByKind = Object.fromEntries(Object.entries(s.modelByKind).filter(([, v]) => typeof v === "string"));
   if (isObj(s.valuesByKind)) out.valuesByKind = { image: cleanValues(s.valuesByKind.image), video: cleanValues(s.valuesByKind.video) };
-  if (typeof s.prompt === "string") out.prompt = migrateTags(s.prompt);
+  if (typeof s.prompt === "string") out.prompt = s.prompt; // tags migrated below, once the elements are known
   if (isObj(s.camera)) out.camera = Object.fromEntries(Object.entries(s.camera).filter(([, v]) => isScalar(v)));
   if (typeof s.move === "string") out.move = s.move;
   if ([1, 2, 3, 4].includes(s.count)) out.count = s.count;
@@ -52,8 +52,11 @@ function normalizeSaved(raw) {
     images: Array.isArray(e.images) ? e.images.filter((u) => typeof u === "string").slice(0, 8) : [], video: typeof e.video === "string" ? e.video : null,
   }));
   if (isObj(s.attached)) out.attached = Object.fromEntries(Object.entries(s.attached).filter(([role]) => ROLE_INFO[role]).map(([role, list]) => [role, cleanFiles(list)]));
+  if (typeof out.prompt === "string") out.prompt = migrateTags(out.prompt, keepTags(out.elements));
   return out;
 }
+// The element tags a prompt may use (never rewritten by the 19.11 tag migration).
+const keepTags = (els) => (els || []).flatMap((e) => [elementTags(els).get(e.id), e.tag && String(e.tag).replace(/^@/, "")]).filter(Boolean);
 const load = (store) => { try { return normalizeSaved(JSON.parse(localStorage.getItem(store) || "{}")); } catch { return {}; } };
 
 // One engine, three tabs: Create (image + video), Image, Video.
@@ -680,7 +683,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (fixedKind && m.kind && m.kind !== fixedKind) return;
     if (m.entryKey) setModelByKind((prev) => ({ ...prev, [m.kind || kind]: m.entryKey }));
     if (m.values) setValuesByKind((prev) => ({ ...prev, [m.kind || kind]: cleanValues(m.values) }));
-    if (typeof m.prompt === "string") setPrompt(migrateTags(m.prompt));
+    if (typeof m.prompt === "string") setPrompt(migrateTags(m.prompt, keepTags(elements)));
     if (m.camera) setCamera(normalizeCamera(m.camera, { auto: mode === "create" }));
     setMove(m.move || "");
     if (isObj(m.attached)) setAttached(normalizeSaved({ attached: m.attached }).attached || {});

@@ -216,8 +216,11 @@ export function mergeElements(entry, attached, elements = []) {
 // @element_1, …) — or plain words when the model has no @-syntax.
 const CYR = { а: "a", б: "b", в: "v", г: "g", ґ: "g", д: "d", е: "e", є: "ye", ё: "e", ж: "zh", з: "z", и: "i", і: "i", ї: "yi", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" };
 const TAG_PREFIX = { character: "char", object: "prop", place: "loc", other: "obj" };
+// Names the attachments use (and used before 19.11): an element never gets one.
+const RESERVED_TAG = /^(start|end|first|last|middle|mid_?\d+|img_?\d+|vid_?\d+|aud_?\d+|image_?\d+|video_?\d+|audio_?\d+)$/i;
 export function elementTag(e) {
-  if (e?.tag) return String(e.tag).replace(/^@/, "");
+  const own = e?.tag ? String(e.tag).replace(/^@/, "") : null;
+  if (own) return RESERVED_TAG.test(own) ? `el_${own}` : own;
   const latin = String(e?.name || "").toLowerCase().split("").map((c) => CYR[c] ?? c).join("");
   const slug = latin.normalize("NFKD").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "x";
   return `${TAG_PREFIX[e?.kind] || "obj"}_${slug}`;
@@ -308,16 +311,20 @@ function OLD_SPELLINGS(tag) {
   if (m[1] === "mid") return [`mid_${m[2]}`];
   return [`${m[1]}_${m[2]}`, `${LONG[m[1]]}${m[2]}`, `${LONG[m[1]]}_${m[2]}`];
 }
-// Prompts written before 19.11 use the long names: rewrite them once (saved
-// state, reused results). Element tags (char_… / prop_…) are not touched.
+// Prompts written before 19.11 use the long names the app gave attachments
+// (@image1, @first…): rewrite them once (saved state, reused results). Names in
+// `keep` (the prompt's own element tags) and spellings the app never made
+// (@image_1, typed for a model) are left as they are.
 const OLD_TAG = { first: "start", last: "end", middle: "mid1" };
-export function migrateTags(prompt) {
+export function migrateTags(prompt, keep = null) {
   const text = String(prompt ?? "");
   if (!text.includes("@")) return text;
+  const kept = new Set([...(keep || [])].map((x) => String(x).toLowerCase()));
   return text.replace(TAG_RE, (all, pre, name) => {
     const low = name.toLowerCase();
+    if (kept.has(low)) return all;
     if (OLD_TAG[low]) return `${pre}@${OLD_TAG[low]}`;
-    const m = /^(image|video|audio)_?(\d+)$/.exec(low);
+    const m = /^(image|video|audio)(\d+)$/.exec(low);
     if (m) return `${pre}@${{ image: "img", video: "vid", audio: "aud" }[m[1]]}${m[2]}`;
     return all;
   });

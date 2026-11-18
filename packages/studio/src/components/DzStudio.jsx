@@ -352,20 +352,25 @@ function PromptField({ engine, onFocusChange, mentionGroups, onPasteFiles }) {
       <PromptEditor value={prompt} onChange={(v) => { setPrompt(v); requestAnimationFrame(() => promptRef.current && readMention(promptRef.current)); }} tags={tags} inputRef={promptRef} json={jsonPrompt.json}
         placeholder="Describe the shot. Type @ to use an element or anything you attached."
         onKeyDown={onPromptKey}
-        onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key) && !mention) readMention(promptRef.current); }}
+        onKeyUp={(e) => {
+          // Left/Right/Home/End always re-read the @ word under the caret; Up/Down move in the open list.
+          if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key) || (!mention && ["ArrowUp", "ArrowDown"].includes(e.key))) readMention(promptRef.current);
+        }}
+        ariaProps={{ "aria-autocomplete": "list", "aria-expanded": Boolean(mention && mentionGroups.length), "aria-controls": mention ? "dz-mention-list" : undefined,
+          "aria-activedescendant": mention && mentionGroups.length ? `dz-mention-${mention.index}` : undefined }}
         onClick={() => readMention(promptRef.current)}
         onFocus={() => { setFocused(true); onFocusChange(true); }}
         onBlur={() => { setFocused(false); onFocusChange(false); setTimeout(() => setMention(null), 150); }}
         onPasteFiles={onPasteFiles}
         className={cn("rounded-[10px] px-3 py-2.5 caret-signal transition-colors duration-state", focused && "bg-muted shadow-[inset_0_0_0_1px_hsl(var(--input))]")} />
       {mention && (
-        <div className="glass absolute bottom-[calc(100%+8px)] left-0 z-30 w-[420px] rounded-xl border border-border p-1.5 shadow-popover" role="listbox" aria-label="Tags">
+        <div id="dz-mention-list" className="glass absolute bottom-[calc(100%+8px)] left-0 z-30 w-[420px] rounded-xl border border-border p-1.5 shadow-popover" role="listbox" aria-label="Tags">
           {mentionGroups.length === 0 && <p className="px-2.5 py-2 text-sm text-muted-foreground">{mention.query ? `Nothing called “${mention.query}”.` : "Nothing to tag yet."} Attach files with + or make elements.</p>}
           {mentionGroups.map(([title, list]) => (
             <div key={title} className="py-0.5">
               <div className="px-2.5 py-1"><Overline>{title}</Overline></div>
               {list.map(({ o, i }) => (
-                <button key={`${o.tag}-${o.element?.id || ""}`} type="button" role="option" aria-selected={i === mention.index} aria-disabled={Boolean(o.disabled)}
+                <button key={`${o.tag}-${o.element?.id || ""}`} id={`dz-mention-${i}`} type="button" role="option" aria-selected={i === mention.index} aria-disabled={Boolean(o.disabled)}
                   onMouseDown={(e) => { e.preventDefault(); engine.pickMention(o); }} title={o.disabled ? `Can't add: ${o.disabled}` : undefined}
                   className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2 text-left", o.disabled ? "cursor-not-allowed opacity-50" : i === mention.index ? "bg-accent" : "hover:bg-accent")}>
                   {o.url ? <img src={dzThumb(o.url, 64)} alt="" className="h-7 w-7 rounded-xs object-cover" /> : <span className="h-7 w-7 rounded-xs bg-muted" />}

@@ -384,6 +384,8 @@ test('elements v2: tags, labelled views and videos, draft, duplicate, update fro
   assert.equal(res.json().element.tag, 'char_mayk_2');
   res = await as('admin', 'PATCH', `/dz/api/elements/${res.json().element.id}`, { tag: 'char_mayk' });
   assert.equal(res.statusCode, 409);
+  res = await as('admin', 'PATCH', `/dz/api/elements/${mike.id}`, { tag: 'img1' });
+  assert.equal(res.statusCode, 400, 'attachment names (@img1, @start…) are not element tags');
   res = await as('admin', 'PATCH', `/dz/api/elements/${mike.id}`, { tag: '1 bad' });
   assert.equal(res.statusCode, 400);
   res = await as('admin', 'PATCH', `/dz/api/elements/${mike.id}`, { tag: '@char_mike', status: 'active', views: [{ url: b, label: 'Main now' }, { url: a, label: 'Front' }] });

@@ -505,7 +505,7 @@ export async function buildApp(config, { logger = true } = {}) {
       const { _dz: dz, ...requestBody } = req.body || {};
       const studio = ['create', 'cinema', 'image', 'video', 'upscale'].includes(dz?.studio) ? dz.studio : null;
       const metaText = dz?.meta && typeof dz.meta === 'object' ? JSON.stringify(dz.meta) : null;
-      const meta = metaText && metaText.length <= 16_384 ? dz.meta : null;
+      const meta = metaText && metaText.length <= 65_536 ? dz.meta : null;
       const { projectId, folderId } = contextOf(req.user, dz?.project, dz?.folder);
       const body = providerBodyFor(resolved, providerId, modelId, requestBody);
       if (resolved.tool && !generations.mediaFileForUrl(req.user, body.image_url)) {

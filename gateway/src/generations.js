@@ -138,7 +138,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const { onRequestId: _ignored, ...clean } = body || {};
     const id = newId('gen');
     const t = now();
-    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 4000), JSON.stringify(clean), estCostUsd, estSource, studio, meta == null ? null : JSON.stringify(meta), projectId, folderId, t, t);
+    q.insert.run(id, user.id, endpoint, providerId, modelId, model.kind, String(clean.prompt || '').slice(0, 32000), JSON.stringify(clean), estCostUsd, estSource, studio, meta == null ? null : JSON.stringify(meta), projectId, folderId, t, t);
     try {
       const resolved = await resolveMedia(user, providerId, cfg, clean);
       const { taskId } = await provider.submit(cfg, { kind: model.kind, model: modelId, body: resolved });

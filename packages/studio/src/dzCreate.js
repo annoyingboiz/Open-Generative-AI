@@ -351,23 +351,49 @@ export const CAMERA_MOVES = [
 ];
 
 // The final prompt: what the user wrote, plus camera look and movement.
+// A prompt written as JSON (structured prompts for image models): an object
+// or a list. Returns { json: false } for plain text, { json: true, ok, value }
+// when it parses, { json: true, ok: false, error } when it looks like JSON but doesn't.
+export function parseJsonPrompt(text) {
+  const t = String(text || "").trim();
+  if (!/^[[{]/.test(t)) return { json: false };
+  try {
+    const value = JSON.parse(t);
+    return value && typeof value === "object" ? { json: true, ok: true, value } : { json: false };
+  } catch (e) {
+    return { json: true, ok: false, error: String(e?.message || e).replace(/^JSON\.parse: /, "") };
+  }
+}
+
+// The prompt as sent: the user's text plus Camera and the camera move.
+// Plain text gets them appended; a JSON object gets them as its own keys
+// ("camera", "camera_movement"), so it stays valid JSON. A JSON object
+// without additions is sent exactly as written.
 export function composePrompt(prompt, { kind, camera, move }) {
-  const parts = [String(prompt || "").trim()];
+  const text = String(prompt || "").trim();
+  const extra = {};
   if (camera?.on) {
     const persp = FOCAL[camera.focal] || "";
-    parts.push(
+    extra.camera = [
       `shot on a ${CAMERA[camera.camera] || camera.camera}`,
       `using a ${LENS[camera.lens] || camera.lens} at ${camera.focal}mm${persp ? ` (${persp})` : ""}`,
       `aperture ${camera.aperture}`,
       APERTURE[camera.aperture] || "",
       "cinematic lighting, natural color science, high dynamic range",
-    );
+    ].filter((p) => p && p.trim()).join(", ");
   }
   if (kind === "video" && move) {
     const m = CAMERA_MOVES.find((x) => x.id === move);
-    if (m) parts.push(m.text);
+    if (m) extra.camera_movement = m.text;
   }
-  return parts.filter((p) => p && p.trim()).join(", ");
+  if (!Object.keys(extra).length) return text;
+  const parsed = parseJsonPrompt(text);
+  if (parsed.ok && !Array.isArray(parsed.value)) {
+    const keep = {};
+    for (const [k, v] of Object.entries(extra)) if (!(k in parsed.value)) keep[k] = v; // the user's own key wins
+    return Object.keys(keep).length ? JSON.stringify({ ...parsed.value, ...keep }, null, 2) : text;
+  }
+  return [text, ...Object.values(extra)].filter((p) => p && p.trim()).join(", ");
 }
 
 export const DEFAULT_CAMERA = { on: false, camera: "Full-Frame Cine Digital", lens: "Premium Modern Prime", focal: 35, aperture: "f/4" };

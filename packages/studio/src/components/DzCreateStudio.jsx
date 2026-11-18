@@ -17,7 +17,7 @@ import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
-  mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
+  parseJsonPrompt, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
   ROLE_INFO, CAMERA, LENS, FOCAL, APERTURE, CAMERA_ASSETS, CAMERA_MOVES, DEFAULT_CAMERA,
 } from "../dzCreate.js";
 import {
@@ -395,6 +395,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const syntax = variant ? refSyntaxFor(variant.model) : null;
   const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, merged.attached);
   const finalPrompt = composePrompt(prompt, { kind, camera, move });
+  const jsonPrompt = useMemo(() => parseJsonPrompt(prompt), [prompt]);
   const needsPrompt = variant?.model.promptRequired;
   const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
   const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
@@ -627,10 +628,23 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); } }}
-            rows={3}
-            placeholder={kind === "video" ? "Describe the shot: subject, action, mood…" : "Describe the image…"}
-            className="min-h-[88px] rounded-2xl text-base"
+            rows={jsonPrompt.json ? 8 : 3}
+            spellCheck={!jsonPrompt.json}
+            placeholder={kind === "video" ? "Describe the shot: subject, action, mood… (plain text or JSON)" : "Describe the image… (plain text or JSON)"}
+            className={cn("min-h-[88px] max-h-[45vh] resize-y rounded-2xl text-base", jsonPrompt.json && "font-mono")}
           />
+          {jsonPrompt.json && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {jsonPrompt.ok ? (
+                <>
+                  <span className="text-emerald-300">JSON prompt — sent as written{camera.on || (kind === "video" && move) ? "; Camera is added as its own keys" : ""}.</span>
+                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setPrompt(JSON.stringify(jsonPrompt.value, null, 2))}>Format</button>
+                </>
+              ) : (
+                <span className="text-amber-300">Looks like JSON but has an error: {jsonPrompt.error}. It will be sent as plain text.</span>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             {!fixedKind && <Segmented className="w-auto" value={kind} onChange={setKind} aria-label="Image or video" options={[{ value: "image", label: "Image" }, { value: "video", label: "Video" }]} />}

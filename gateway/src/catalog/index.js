@@ -15,7 +15,8 @@ import { byteLimit } from '../storage.js';
 import { PROVIDERS, providerById } from '../providers/index.js';
 import { FAL_UPSCALE } from '../providers/fal-tools.js';
 import { videoUpscaleSpec } from '../video-upscale.js';
-import { buildAtlasVariant, buildApimartVariants, buildStudioLists, apimartPrice, STUDIO_MODES } from './build.js';
+import { buildAtlasVariant, buildApimartVariants, buildLocalVariants, buildStudioLists, apimartPrice, STUDIO_MODES } from './build.js';
+import { LOCAL_MODELS } from '../providers/local.js';
 import { fetchApimartDocs, buildApimartOverrides } from './apimart-docs.js';
 
 const require = createRequire(import.meta.url);
@@ -46,12 +47,12 @@ function writeJsonAtomic(file, data) {
   fs.renameSync(`${file}.tmp`, file);
 }
 
-export function createCatalog({ dataDir, providers, log, getRecommended = () => DEFAULT_RECOMMENDED, changes = null, fetchDocs = fetchApimartDocs }) {
+export function createCatalog({ dataDir, providers, log, getRecommended = () => DEFAULT_RECOMMENDED, changes = null, fetchDocs = fetchApimartDocs, localEnabled = () => false }) {
   const dir = path.join(dataDir, 'catalog');
   const schemaDir = path.join(dir, 'atlas-schemas');
   fs.mkdirSync(schemaDir, { recursive: true });
   const raw = {}; // providerId -> { fetchedAt, list }
-  let built = { variants: new Map(), lists: Object.fromEntries(STUDIO_MODES.map((m) => [m, []])), builtAt: 0, listsJson: '{}' };
+  let built = { variants: new Map(), lists: Object.fromEntries(STUDIO_MODES.map((m) => [m, []])), builtAt: 0, listsJson: '{}', publicListsJson: '{}' };
   // Tools on fal.ai (upscaling): available as soon as fal has a key — checked
   // on every request, not at the end of a catalog refresh.
   const falEnabled = () => providers.resolve('fal').enabled && Boolean(providers.resolve('fal').apiKey);
@@ -96,12 +97,16 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
         variants.push(...buildApimartVariants(model, overrides[model.id], apimartPrice(prices[model.id])));
       }
     }
+    // This server's models (admins only: the lists for everyone else leave them out).
+    if (localEnabled()) variants.push(...buildLocalVariants());
     const lists = buildStudioLists(variants, { recommended: getRecommended() || [] });
+    const publicLists = Object.fromEntries(Object.entries(lists).map(([mode, list]) => [mode, list.filter((m) => m.dzProvider !== 'local')]));
     built = {
       variants: new Map(variants.map((v) => [v.key, v])),
       lists,
       builtAt: Date.now(),
       listsJson: JSON.stringify(lists),
+      publicListsJson: JSON.stringify(publicLists),
     };
     log?.info(`catalog: built ${variants.length} studio models (${STUDIO_MODES.map((m) => `${m} ${lists[m].length}`).join(', ')})`);
   }
@@ -262,6 +267,7 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     },
     // Model kind lookup for direct calls (/api/v1/p/<provider>/<model>).
     model(providerId, modelId) {
+      if (providerId === 'local') return LOCAL_MODELS[modelId] && localEnabled() ? { id: modelId, kind: 'video' } : null;
       const entry = raw[providerId]?.list?.find((m) => (providerId === 'atlas' ? m.model : m.id) === modelId);
       if (!entry) return null;
       const kind = providerId === 'atlas' ? KIND_ATLAS[entry.type] : providerId === 'fal' ? entry.kind : KIND_APIMART[entry.category];
@@ -282,8 +288,9 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
       return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
     },
     thumbnail,
-    clientScript() {
-      const json = `{"builtAt":${built.builtAt},"lists":${built.listsJson},"tools":${JSON.stringify(currentTools())}}`;
+    clientScript(user = null) {
+      const lists = user?.role === 'admin' ? built.listsJson : built.publicListsJson;
+      const json = `{"builtAt":${built.builtAt},"lists":${lists},"tools":${JSON.stringify(currentTools())}}`;
       return `window.__DZ_CATALOG__=${json.replace(/</g, '\\u003c')};\n`;
     },
     stats() {

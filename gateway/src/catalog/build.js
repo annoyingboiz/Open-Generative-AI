@@ -8,7 +8,7 @@ import { studioFieldsFromSchema, HIDDEN_FIELDS } from './schema.js';
 export const STUDIO_MODES = ['t2i', 'i2i', 't2v', 'i2v', 'v2v'];
 const KIND_OF_MODE = { t2i: 'image', i2i: 'image', t2v: 'video', i2v: 'video', v2v: 'video' };
 const MODE_SUFFIX = { t2i: 'text-to-image', i2i: 'image-to-image', t2v: 'text-to-video', i2v: 'image-to-video', v2v: 'video-to-video' };
-const PROVIDER_NAME = { apimart: 'APIMart', atlas: 'Atlas' };
+const PROVIDER_NAME = { apimart: 'APIMart', atlas: 'Atlas', local: 'This server' };
 
 // Vendor → logo key used by the studio (providerLogos.js) and a display name.
 const VENDORS = {
@@ -37,6 +37,7 @@ function vendorOf(id) {
 
 export function priceLabel(price) {
   if (!price || !Number.isFinite(price.usd)) return '';
+  if (price.usd === 0 && !price.byResolution) return 'free';
   // Same format as the studio's price label: $0.70, $0.035, $0.008.
   const fmt = (v) => (v >= 0.1 ? v.toFixed(2) : (v >= 0.01 ? v.toFixed(3) : v.toFixed(4)).replace(/0+$/, '').replace(/\.$/, ''));
   const values = price.byResolution ? Object.values(price.byResolution).filter(Number.isFinite) : [];
@@ -215,6 +216,65 @@ export function buildApimartVariants(model, override, price) {
         price,
       },
     });
+  }
+  return out;
+}
+
+// ── This server (local ComfyUI through h3-bridge) ─────────────────────────
+// Static: what the bridge runs. H3: start frame (FL2VA) or up to 9 references
+// (Ref2VA, refs are <Picture N> in the prompt), sound on by default; Wan 2.2:
+// text or start frame, silent. Free; "Turbo" = the speed LoRAs (4–8 steps).
+
+const LOCAL = [
+  {
+    model: 'minimax-h3', family: 'minimax-h-3', familyName: 'MiniMax H3', vendor: 'minimax',
+    description: 'MiniMax H3 on this server (2× RTX 3090). Free; one job at a time — waits while the machine is busy. 768p 8 s ≈ 30 min, Turbo is several times faster.',
+    resolutions: ['480p', '576p', '720p', '768p'], durations: [3, 4, 5, 6, 8, 10], sound: true, refSyntax: 'PictureN',
+    variants: [
+      { id: 'minimax-h3-r2v', mode: 't2v', media: {} },
+      { id: 'minimax-h3-i2v', mode: 'i2v', media: { image: { field: 'image', title: 'Start frame' } }, required: ['image'] },
+      { id: 'minimax-h3-r2v', mode: 'i2v', media: { reference_images: { field: 'image', title: 'References', max: 9 } }, required: ['reference_images'] },
+    ],
+  },
+  {
+    model: 'wan-2.2', family: 'wan-2.2', familyName: 'Wan 2.2', vendor: 'alibaba',
+    description: 'Wan 2.2 14B on this server. Free, silent; one job at a time — waits while the machine is busy.',
+    resolutions: ['480p', '576p', '720p'], durations: [2, 3, 4, 5], sound: false,
+    variants: [
+      { id: 'wan-2.2', mode: 't2v', media: {} },
+      { id: 'wan-2.2', mode: 'i2v', media: { image: { field: 'image', title: 'Start frame' } }, required: ['image'] },
+    ],
+  },
+];
+
+export function buildLocalVariants() {
+  const out = [];
+  const price = { usd: 0, unit: 'clip' };
+  for (const m of LOCAL) {
+    for (const v of m.variants) {
+      const inputs = {
+        prompt: { name: 'prompt', title: 'Prompt', type: 'string' },
+        resolution: { name: 'resolution', title: 'Resolution', type: 'string', enum: m.resolutions, default: '720p' },
+        duration: { name: 'duration', title: 'Duration', type: 'int', enum: m.durations, default: 5 },
+        turbo: { name: 'turbo', title: 'Turbo (faster, slightly less detail)', type: 'boolean', default: true },
+        ...(m.sound ? { generate_audio: { name: 'generate_audio', title: 'Sound', type: 'boolean', default: true } } : {}),
+        seed: { name: 'seed', title: 'Seed', type: 'int', minValue: 0, maxValue: 2147483647, description: 'Empty: a new one each time' },
+      };
+      const fields = { inputs, hasPrompt: true, promptRequired: true, required: v.required || [] };
+      for (const [name, media] of Object.entries(v.media)) {
+        const array = (media.max || 1) > 1;
+        inputs[name] = { name, title: media.title, type: array ? 'array' : 'string', field: media.field, ...(array ? { maxItems: media.max, items: { type: 'string' } } : {}) };
+        if (array) fields.maxImages = media.max;
+        else fields.imageField = name;
+      }
+      const endpoint = `p/local/${v.id}?m=${v.mode}`;
+      const model = studioModel({
+        provider: 'local', mode: v.mode, slug: `${v.id}${v.media.reference_images ? '-refs' : ''}`, endpoint, family: m.family,
+        familyName: m.familyName, vendorId: m.vendor, fields, price, description: m.description,
+      });
+      if (m.refSyntax) model.dzRefSyntax = m.refSyntax;
+      out.push({ key: endpoint, provider: 'local', providerModel: v.id, mode: v.mode, kind: 'video', family: m.family, model, server: { rename: {}, allowed: null, drop: [], fixed: {}, price } });
+    }
   }
   return out;
 }

@@ -18,6 +18,7 @@ import { openDatabase } from './db.js';
 import { loadMasterKey, newToken } from './crypto.js';
 import { createAuth, createLoginThrottle, publicUser, SESSION_COOKIE, UserError } from './auth.js';
 import { PROVIDERS, providerById, createProviderSettings, fetchBalances } from './providers/index.js';
+import { local, configureLocal, localConfigured } from './providers/local.js';
 import { validateProxyUrl } from './providers/http.js';
 import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
@@ -79,7 +80,8 @@ export async function buildApp(config, { logger = true } = {}) {
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }), signal: AbortSignal.timeout(10_000) });
     } catch (error) { app.log.warn(`telegram: ${error.message}`); }
   }
-  const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended, changes });
+  configureLocal(config.localBridgeDir);
+  const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended, changes, localEnabled: localConfigured });
   const quoter = createQuoter({ providers, log: app.log });
   const projects = createProjects({ db });
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
@@ -616,8 +618,11 @@ export async function buildApp(config, { logger = true } = {}) {
       const tool = falTool(modelId);
       return tool && !mode && catalog.hasTool(tool.tool.id) ? { key, tool } : null;
     }
+    // This server's GPU: admins only.
+    if (providerId === 'local' && user.role !== 'admin') return null;
     const variant = catalog.variant(key);
     if (!variant && user.role !== 'admin') return null;
+    if (providerId === 'local' && !variant) return null;
     return { key, variant };
   }
 
@@ -671,6 +676,7 @@ export async function buildApp(config, { logger = true } = {}) {
 
   async function priceFor(user, resolved, providerId, modelId, providerBody) {
     if (resolved.tool) return toolQuote(user, modelId, providerBody);
+    if (providerId === 'local') return { usd: 0, exact: true, source: 'quote' };
     return quoter.quote({ providerId, modelId, providerBody, variant: resolved.variant });
   }
 
@@ -784,8 +790,21 @@ export async function buildApp(config, { logger = true } = {}) {
     // no-store, not no-cache: Cloudflare's "Browser Cache TTL" rewrote no-cache
     // to max-age=14400, so browsers kept a 4-hour-old model list.
     .header('cache-control', 'private, no-store, max-age=0')
-    .send(catalog.clientScript()));
+    .send(catalog.clientScript(req.user)));
 
+  // Stop a job that is still waiting or running (this server's jobs).
+  app.post('/api/v1/predictions/:id/cancel', async (req, reply) => {
+    try { return await generations.cancel(req.user, req.params.id); } catch (error) {
+      if (error.status && !(error instanceof GenerationError)) return reply.code(error.status >= 500 ? 424 : error.status).send({ detail: error.message, error: error.message });
+      return sendGenError(reply, error);
+    }
+  });
+  // This server: is the bridge up, what is waiting or running (admins).
+  app.get('/dz/api/local/status', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    if (req.user.role !== 'admin' || !localConfigured()) return reply.code(404).send({ error: 'Not found' });
+    try { return await local.status(); } catch (error) { return { ok: false, error: error.message }; }
+  });
   app.get('/api/v1/predictions/:id/result', async (req, reply) => {
     try { return generations.result(req.user, req.params.id); } catch (error) { return sendGenError(reply, error); }
   });

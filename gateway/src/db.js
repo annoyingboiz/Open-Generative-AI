@@ -219,6 +219,10 @@ const MIGRATIONS = [
   CREATE INDEX storyboards_owner ON storyboards(owner_id, updated_at DESC) WHERE project_id IS NULL;
   CREATE INDEX storyboards_project ON storyboards(project_id, updated_at DESC) WHERE project_id IS NOT NULL;
   `,
+  // 13: a short line about a running job (e.g. "Waiting for the GPU: …" on this server).
+  `
+  ALTER TABLE generations ADD COLUMN note TEXT;
+  `,
 ];
 
 export function openDatabase(dataDir) {

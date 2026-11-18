@@ -41,6 +41,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     setSubmitted: db.prepare("UPDATE generations SET provider_task_id = ?, status = 'submitted', next_poll_at = ?, updated_at = ? WHERE id = ?"),
     setFailed: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     setPolled: db.prepare('UPDATE generations SET status = ?, next_poll_at = ?, poll_errors = 0, updated_at = ? WHERE id = ?'),
+    setNote: db.prepare('UPDATE generations SET note = ? WHERE id = ?'),
     setDownloading: db.prepare("UPDATE generations SET status = 'downloading', provider_outputs_json = ?, cost_usd = COALESCE(?, cost_usd), cost_source = CASE WHEN ? IS NOT NULL THEN 'provider' ELSE cost_source END, updated_at = ? WHERE id = ?"),
     setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, settle_next_at = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     settleDue: db.prepare('SELECT * FROM generations WHERE settle_next_at IS NOT NULL AND settle_next_at <= ? ORDER BY settle_next_at LIMIT 10'),
@@ -160,7 +161,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const provider = providerById(providerId);
     if (!provider) throw new GenerationError(`Unknown provider: ${providerId}`, 404);
     const cfg = providers.resolve(providerId);
-    if (!cfg.enabled || !cfg.apiKey) throw new GenerationError(`${provider.name} is not configured. Add its key in Settings.`, 409);
+    if (!cfg.enabled || (!provider.noKey && !cfg.apiKey)) throw new GenerationError(`${provider.name} is not configured. Add its key in Settings.`, 409);
     const model = kind ? { id: modelId, kind } : catalog.model(providerId, modelId);
     if (!model) throw new GenerationError(`${provider.name} has no model "${modelId}" (catalog may need a refresh).`, 404);
     if (user.monthly_limit_usd != null) {
@@ -195,7 +196,16 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   async function download(row, providerOutputs) {
     const cfg = providers.resolve(row.provider);
     const saved = [];
+    const provider = providerById(row.provider);
     for (let i = 0; i < providerOutputs.length; i += 1) {
+      // This server's results are files in the bridge folder: copied, not downloaded.
+      if (provider?.resultFile) {
+        const from = provider.resultFile(providerOutputs[i]);
+        if (!from) throw new Error('Bad result reference');
+        const file = await storage.copyResult({ userId: row.user_id, generationId: row.id, index: i, from, ext: 'mp4' });
+        saved.push({ path: file.path, mime: 'video/mp4', bytes: file.bytes, ext: 'mp4' });
+        continue;
+      }
       const file = await storage.downloadResult({ userId: row.user_id, generationId: row.id, index: i, url: providerOutputs[i], proxy: cfg.proxy });
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
@@ -256,8 +266,9 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     } else if (res.state === 'failed') {
       q.setFailed.run(String(res.error || 'Generation failed').slice(0, 1000), now(), now(), row.id);
     } else {
-      const wait = age > SLOW_POLL_AFTER_MS ? SLOW_POLL_MS : (POLL_MS[kind] || 3000);
+      const wait = row.provider === 'local' ? 10_000 : age > SLOW_POLL_AFTER_MS ? SLOW_POLL_MS : (POLL_MS[kind] || 3000);
       q.setPolled.run('processing', now() + wait, now(), row.id);
+      if ((res.note || null) !== (row.note || null)) q.setNote.run(res.note ? String(res.note).slice(0, 300) : null, row.id);
     }
   }
 
@@ -340,6 +351,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       cost_usd: row.cost_usd ?? row.est_cost_usd,
       cost_final: row.cost_usd != null,
       error: row.error,
+      note: row.status === 'completed' || row.status === 'failed' ? null : row.note || null,
+      cancellable: Boolean(providerById(row.provider)?.cancel) && ['submitted', 'processing'].includes(row.status) && row.user_id === user?.id,
       created_at: row.created_at,
       timestamp: new Date(row.created_at).toISOString(),
       project_id: row.project_id || null,
@@ -415,6 +428,18 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const row = visible(user, id);
     if (row.user_id !== user.id) throw new GenerationError('Only the author can do this.', 403);
     return row;
+  }
+
+  // Stop a job that is still waiting or running (providers that can: this server).
+  async function cancel(user, id) {
+    const row = owned(user, id);
+    const provider = providerById(row.provider);
+    if (!provider?.cancel) throw new GenerationError('This provider can\'t stop a job once it is sent.', 409);
+    if (!['submitted', 'processing'].includes(row.status) || !row.provider_task_id) throw new GenerationError('It is not running any more.', 409);
+    await provider.cancel(providers.resolve(row.provider), row.provider_task_id);
+    q.setFailed.run('Cancelled.', now(), now(), row.id);
+    q.setNote.run(null, row.id);
+    return { ok: true };
   }
 
   function trash(user, id) {
@@ -605,7 +630,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,
     cachedProviderUrl,
-    saveUpload, uploads, deleteUploads, submit, result, history, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
+    saveUpload, uploads, deleteUploads, submit, result, history, cancel, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

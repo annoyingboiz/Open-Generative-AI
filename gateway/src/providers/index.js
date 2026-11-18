@@ -4,6 +4,7 @@
 import { apimart } from './apimart.js';
 import { atlas } from './atlas.js';
 import { fal } from './fal.js';
+import { local } from './local.js';
 import { encrypt, decrypt, maskSecret } from '../crypto.js';
 import { now } from '../db.js';
 
@@ -17,7 +18,9 @@ function maskProxy(value) {
     return u.password || u.username ? u.toString() : value;
   } catch { return value || ''; }
 }
-export const providerById = (id) => PROVIDERS.find((p) => p.id === id);
+// "This server" (local ComfyUI through h3-bridge) has no key, balance or catalog
+// to refresh, so it is not in PROVIDERS — but jobs find it by id.
+export const providerById = (id) => PROVIDERS.find((p) => p.id === id) || (id === local.id ? local : undefined);
 
 export function createProviderSettings({ db, masterKey, envDefaults }) {
   const getRow = db.prepare('SELECT * FROM provider_settings WHERE provider = ?');

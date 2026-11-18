@@ -1,0 +1,12 @@
+# DZ: for Director on your own computer (install/install.sh, install.ps1).
+#   docker compose -f docker-compose.yml -f deploy/compose.personal.yml up -d --build
+# Adds the ChatGPT sign-in callback: after you sign in, OpenAI sends the
+# browser to 127.0.0.1:1455 — on this computer that reaches Director itself,
+# so connecting your ChatGPT plan in Settings needs no copy-pasting.
+services:
+  gateway:
+    environment:
+      DZ_CHATGPT_LOOPBACK: "1"
+      DZ_CHATGPT_LOOPBACK_HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:1455:1455"

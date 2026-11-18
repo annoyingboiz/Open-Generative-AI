@@ -11,7 +11,14 @@ reworked to run on your own provider accounts:
   optional monthly spending limits;
 - **no third-party calls from the browser** — no analytics, no CDNs.
 
-## Run it
+## Install on your computer (one command)
+
+Mac / Linux: `curl -fsSL https://raw.githubusercontent.com/annoyingboiz/Open-Generative-AI/dz/step-2-gateway/install/install.sh | bash`
+Windows (PowerShell): `irm https://raw.githubusercontent.com/annoyingboiz/Open-Generative-AI/dz/step-2-gateway/install/install.ps1 | iex`
+
+Details: `docs/install.md`.
+
+## Run it (manually)
 
 ```bash
 git clone <this repo> director && cd director

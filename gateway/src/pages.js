@@ -52,7 +52,7 @@ export function loginPage({ error, next = '/studio', username = '' } = {}) {
 export function setupPage({ error, values = {} } = {}) {
   return layout('First start', `<div class="center"><form class="card" method="post" action="/setup">
 <h1>First start</h1><p class="sub">Create the admin account. Only the admin sees provider keys and creates accounts for others.</p>${flash(error)}
-<label for="c">Setup code (from the server log or DATA_DIR/setup-code)</label><input id="c" name="setupCode" autocomplete="off" required>
+<label for="c">Setup code (from the server log or DATA_DIR/setup-code)</label><input id="c" name="setupCode" autocomplete="off" required value="${esc(values.setupCode)}">
 <label for="d">Your name</label><input id="d" name="displayName" value="${esc(values.displayName)}" required autofocus>
 <label for="u">Login</label><input id="u" name="username" autocomplete="username" value="${esc(values.username)}" required>
 <label for="p">Password (8+ characters)</label><input id="p" name="password" type="password" autocomplete="new-password" required minlength="8">

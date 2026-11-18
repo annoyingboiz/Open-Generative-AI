@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dzUpscale, uploadFile } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
+import { DzMediaBrowser } from "./DzMedia.jsx";
 import { useDzContext } from "../dzContext.js";
 import { Button, buttonVariants, Segmented, OptionSelect, Slider, Switch, Textarea, InfoTip, Tip, SectionLabel, Spinner, cn } from "../ui/index.js";
 
@@ -351,7 +352,6 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
   }, [source, result]);
   const [recent, setRecent] = useState([]);
   const [uploads, setUploads] = useState([]);
-  const [pickTab, setPickTab] = useState("generated");
   const [uploading, setUploading] = useState(false);
   const [picker, setPicker] = useState(false);
   const fileInput = useRef(null);
@@ -402,9 +402,7 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
   }, [droppedFiles, upload, onFilesHandled]);
 
   const upscales = recent.filter(isUpscale);
-  const sources = recent.filter((i) => !isUpscale(i));
 
-  const pickList = pickTab === "uploads" ? uploads : sources;
   return (
     <div className="flex h-full w-full flex-col gap-5 overflow-hidden bg-background p-4 md:flex-row md:p-6">
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />
@@ -419,37 +417,18 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
               <img src={source} alt="To upscale" className="absolute inset-0 h-full w-full object-contain" />
             )
           ) : (
-            <div className="flex h-full flex-col overflow-hidden">
-              <div className="flex flex-col items-center justify-center gap-3 border-b border-border px-6 py-10 text-center">
-                <div className="text-xl font-semibold text-foreground">Choose an image to upscale</div>
-                <div className="max-w-md text-base text-muted-foreground">Drop a file anywhere, upload one, or pick one of your images below.</div>
-                <div className="flex gap-2 pt-1">
-                  <Button onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <><Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> Uploading…</> : "Upload from computer"}</Button>
-                  {source && <Button variant="secondary" onClick={() => setPicker(false)}>Cancel</Button>}
+            <div className="flex h-full flex-col overflow-hidden p-4">
+              <div className="flex flex-wrap items-center gap-3 pb-3">
+                <div className="mr-auto">
+                  <div className="text-xl font-semibold text-foreground">Choose an image to upscale</div>
+                  <div className="text-base text-muted-foreground">Drop a file anywhere, upload one, or pick from your work.</div>
                 </div>
+                {uploading && <span className="flex items-center gap-2 text-muted-foreground"><Spinner className="h-4 w-4" /> Uploading…</span>}
+                {source && <Button variant="secondary" onClick={() => setPicker(false)}>Cancel</Button>}
               </div>
-              <div className="px-4 pt-4">
-                <Segmented
-                  className="inline-flex"
-                  size="sm"
-                  value={pickTab}
-                  onChange={setPickTab}
-                  aria-label="Images to choose from"
-                  options={[{ value: "generated", label: `Generated · ${sources.length}` }, { value: "uploads", label: `Uploads · ${uploads.length}` }]}
-                />
-              </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-                {pickList.length === 0 ? (
-                  <p className="py-8 text-center text-base text-muted-foreground">{pickTab === "uploads" ? "Nothing uploaded yet." : "No generated images yet."}</p>
-                ) : (
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-                    {pickList.map((item) => (
-                      <button key={item.id} type="button" onClick={() => { setSource(item.url); setResult(null); setPicker(false); }} className="group relative aspect-square overflow-hidden rounded-xl border border-border transition-colors hover:border-primary">
-                        <img src={item.url} alt={item.prompt?.slice(0, 40) || item.name || "Image"} loading="lazy" className="h-full w-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div className="min-h-0 flex-1">
+                <DzMediaBrowser inline accept="image" max={1} apiKey={apiKey} onError={onGenerationError}
+                  onConfirm={(list) => { if (list[0]?.url) { setSource(list[0].url); setResult(null); setPicker(false); loadHistory(); } }} />
               </div>
             </div>
           )}

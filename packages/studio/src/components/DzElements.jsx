@@ -4,8 +4,8 @@
 // an optional video, in the Library or in a project. Copies between them.
 // The page, the editor, and the picker used in Create.
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { uploadFile } from "../api.js";
 import { useDzContext } from "../dzContext.js";
+import { DzMediaPicker } from "./DzMedia.jsx";
 import { Button, Input, Textarea, Badge, Spinner, Segmented, cn, DialogParts, DropdownMenuParts, Popover, PopoverTrigger, PopoverContent } from "../ui/index.js";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } = DialogParts;
@@ -60,63 +60,18 @@ const Thumb = ({ el, className }) => (el.images?.[0]
   ? <img src={el.images[0]} alt="" className={cn("object-cover", className)} loading="lazy" />
   : el.video ? <video src={el.video} className={cn("object-cover", className)} muted playsInline preload="metadata" /> : <div className={cn("bg-muted", className)} />);
 
-// ── Picking pictures/videos from recent work ─────────────────────────────
-
-function RecentPicker({ kind, open, onOpenChange, onPick }) {
-  const ctx = useDzContext();
-  const [items, setItems] = useState(null);
-  useEffect(() => {
-    if (!open) return;
-    setItems(null);
-    const scope = ctx.project ? `&project=${encodeURIComponent(ctx.project.id)}` : "";
-    Promise.all([
-      fetch(`/api/v1/history?kind=${kind}&status=completed&limit=60${scope}`).then((r) => r.json()).catch(() => ({ items: [] })),
-      fetch(`/api/v1/uploads?kind=${kind}&limit=60${scope}`).then((r) => r.json()).catch(() => ({ items: [] })),
-    ]).then(([h, u]) => setItems([...(h.items || []).filter((i) => i.url).map((i) => ({ url: i.url, key: i.id })), ...(u.items || []).map((i) => ({ url: i.url, key: i.id }))]));
-  }, [open, kind, ctx.project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader><DialogTitle>Pick {kind === "video" ? "a video" : "pictures"}</DialogTitle><DialogDescription>From your recent work and uploads{ctx.project ? " in this project" : ""}.</DialogDescription></DialogHeader>
-        {!items ? <div className="flex justify-center py-10"><Spinner /></div> : items.length === 0 ? <p className="py-10 text-center text-muted-foreground">Nothing yet.</p> : (
-          <div className="grid max-h-[60vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-5">
-            {items.map((i) => (
-              <button key={i.key} onClick={() => { onPick(i.url); if (kind === "video") onOpenChange(false); }} className="overflow-hidden rounded-lg border border-border hover:border-primary">
-                {kind === "video" ? <video src={i.url} className="aspect-square w-full object-cover" muted preload="metadata" /> : <img src={i.url} alt="" className="aspect-square w-full object-cover" loading="lazy" />}
-              </button>
-            ))}
-          </div>
-        )}
-        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Done</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ── Editor ───────────────────────────────────────────────────────────────
 
 export function ElementEditor({ element, open, onOpenChange, onSaved, onError }) {
   const ctx = useDzContext();
   const [form, setForm] = useState({ name: "", kind: "character", description: "", images: [], video: null });
   const [busy, setBusy] = useState(false);
-  const [uploading, setUploading] = useState(0);
   const [picker, setPicker] = useState(null); // 'image' | 'video'
-  const fileInput = useRef(null);
-  const videoInput = useRef(null);
   useEffect(() => {
     if (!open) return;
     setForm(element ? { name: element.name, kind: element.kind, description: element.description || "", images: element.images || [], video: element.video || null } : { name: "", kind: "character", description: "", images: [], video: null });
   }, [open, element]);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
-  const upload = async (files, asVideo) => {
-    setUploading((n) => n + 1);
-    try {
-      for (const f of files) {
-        const url = await uploadFile("session", f);
-        if (asVideo) set({ video: url }); else setForm((x) => ({ ...x, images: [...x.images, url].slice(0, 8) }));
-      }
-    } catch (e) { onError?.(e.message); } finally { setUploading((n) => n - 1); }
-  };
   const save = async () => {
     setBusy(true);
     try {
@@ -126,7 +81,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError })
       onSaved?.(r.element);
     } catch (e) { onError?.(e.message); } finally { setBusy(false); }
   };
-  const canSave = form.name.trim() && (form.images.length || form.video) && !uploading && !busy;
+  const canSave = form.name.trim() && (form.images.length || form.video) && !busy;
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -155,14 +110,13 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError })
                   </div>
                 ))}
                 {form.images.length < 8 && (
-                  <div className="flex h-24 flex-col justify-center gap-1">
-                    <Button size="sm" variant="secondary" onClick={() => fileInput.current?.click()}>Upload</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setPicker("image")}>From work</Button>
-                  </div>
+                  <button type="button" onClick={() => setPicker("image")} aria-label="Add pictures"
+                    className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+                    <span className="font-semibold">Add</span>
+                  </button>
                 )}
-                {uploading > 0 && <div className="flex h-24 w-24 items-center justify-center"><Spinner /></div>}
               </div>
-              <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(e) => { upload([...e.target.files]); e.target.value = ""; }} />
             </div>
             <div className="grid gap-2">
               <span className="font-semibold">Video element <span className="font-normal text-muted-foreground">(optional)</span></span>
@@ -174,11 +128,9 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError })
                 </div>
               ) : (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => videoInput.current?.click()}>Upload video</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setPicker("video")}>From work</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setPicker("video")}>Add video</Button>
                 </div>
               )}
-              <input ref={videoInput} type="file" accept="video/mp4,video/quicktime,video/webm" hidden onChange={(e) => { upload([...e.target.files].slice(0, 1), true); e.target.value = ""; }} />
             </div>
           </div>
           <DialogFooter>
@@ -187,8 +139,10 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError })
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <RecentPicker kind={picker || "image"} open={Boolean(picker)} onOpenChange={(o) => !o && setPicker(null)}
-        onPick={(url) => (picker === "video" ? set({ video: url }) : setForm((x) => (x.images.includes(url) ? x : { ...x, images: [...x.images, url].slice(0, 8) })))} />
+      <DzMediaPicker open={Boolean(picker)} onOpenChange={(o) => !o && setPicker(null)} accept={picker === "video" ? "video" : "image"}
+        max={picker === "video" ? 1 : Math.max(1, 8 - form.images.length)} onError={onError}
+        title={picker === "video" ? "Video element" : "Pictures of the element"}
+        onPick={(list) => (picker === "video" ? set({ video: list[0]?.url || null }) : setForm((x) => ({ ...x, images: [...x.images, ...list.map((i) => i.url).filter((u) => !x.images.includes(u))].slice(0, 8) })))} />
     </>
   );
 }

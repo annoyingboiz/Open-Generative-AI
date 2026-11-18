@@ -15,6 +15,7 @@ import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
+import { DzMediaPicker } from "./DzMedia.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
@@ -220,8 +221,10 @@ function ModelPicker({ entries, entry, onPick }) {
   );
 }
 
-function MediaSlot({ role, max, files, onAdd, onRemove, uploading }) {
-  const input = useRef(null);
+// A slot: its files and "+", which opens the shared picker (uploads,
+// generations, liked, elements, or a new upload).
+function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKey, onError }) {
+  const [picker, setPicker] = useState(false);
   const info = ROLE_INFO[role];
   const full = files.length >= max;
   return (
@@ -241,7 +244,7 @@ function MediaSlot({ role, max, files, onAdd, onRemove, uploading }) {
         {!full && (
           <button
             type="button"
-            onClick={() => input.current?.click()}
+            onClick={() => setPicker(true)}
             disabled={uploading}
             className="flex h-16 w-16 items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
             aria-label={`Add ${info.label.toLowerCase()}`}
@@ -250,7 +253,8 @@ function MediaSlot({ role, max, files, onAdd, onRemove, uploading }) {
           </button>
         )}
       </div>
-      <input ref={input} type="file" accept={ACCEPT[info.kind]} multiple={max > 1} className="hidden" onChange={(e) => { onAdd([...(e.target.files || [])]); e.target.value = ""; }} />
+      <DzMediaPicker open={picker} onOpenChange={setPicker} accept={info.kind} max={Math.max(1, max - files.length)} apiKey={apiKey} onError={onError}
+        title={`${info.label}${max > 1 ? ` · ${max - files.length} more` : ""}`} onPick={onPick} />
     </div>
   );
 }
@@ -455,6 +459,16 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     if (videos.length) addFiles(has("video") ? "video" : "source", videos);
   }, [droppedFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Files chosen in the picker (already on our server).
+  const addUrls = (role, list) => {
+    const slot = entry?.slots.find((s) => s.role === role);
+    if (!slot) return;
+    setAttached((prev) => {
+      const have = prev[role] || [];
+      const add = list.filter((x) => !have.some((h) => h.url === x.url)).map((x) => ({ url: x.url, name: x.name || "" }));
+      return { ...prev, [role]: [...have, ...add].slice(0, slot.max) };
+    });
+  };
   const removeFile = (role, i) => setAttached((prev) => ({ ...prev, [role]: (prev[role] || []).filter((_, j) => j !== i) }));
 
   const insertAtCursor = (text) => {
@@ -595,7 +609,8 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           {entry && entry.slots.length > 0 && (
             <div className="flex gap-4 overflow-x-auto custom-scrollbar pb-1">
               {entry.slots.map((s) => (
-                <MediaSlot key={s.role} role={s.role} max={s.max} files={attached[s.role] || []} uploading={uploadingRole === s.role} onAdd={(files) => addFiles(s.role, files)} onRemove={(i) => removeFile(s.role, i)} />
+                <MediaSlot key={s.role} role={s.role} max={s.max} files={attached[s.role] || []} uploading={uploadingRole === s.role} apiKey={apiKey} onError={onGenerationError}
+                  onPick={(list) => addUrls(s.role, list)} onRemove={(i) => removeFile(s.role, i)} />
               ))}
             </div>
           )}

@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { buildApp } from '../src/app.js';
 import { fal } from '../src/providers/fal.js';
 import { atlas } from '../src/providers/atlas.js';
-import { videoUpscaleBody, videoUpscalePrice, videoInfo, restoreAudio, providerPayload } from '../src/video-upscale.js';
+import { videoUpscaleBody, videoUpscalePrice, videoInfo, restoreAudio, extractAudio, providerPayload } from '../src/video-upscale.js';
 
 let app;
 let dataDir;
@@ -73,9 +73,13 @@ test('each model gets the target in its own terms', () => {
   assert.equal(videoUpscaleBody('atlas', 'tencent/video/upscaler', { video_url: 'v', target: '2k', style: 'restore' }, info).template, 'restore-2k');
   assert.equal(videoUpscaleBody('atlas', 'tencent/video/upscaler', { video_url: 'v', target: '4k', style: 'live-action-smallface' }, info).template, 'live-action-smallface-4k');
   assert.equal(videoUpscaleBody('atlas', 'tencent/video/upscaler', { video_url: 'v', target: '4k' }, info).template, 'seedance2-enhance-4k');
-  const gm = videoUpscaleBody('atlas', 'google/gemini-omni-1.2-flash/video-upscale', { video_url: 'v', target: '2k' }, info);
-  assert.equal(gm.resolution, '4k', '2K is not offered: falls back to its biggest');
+  assert.throws(() => videoUpscaleBody('atlas', 'google/gemini-omni-1.2-flash/video-upscale', { video_url: 'v', target: '2k' }, info), /can't make 2K/);
+  const gm = videoUpscaleBody('atlas', 'google/gemini-omni-1.2-flash/video-upscale', { video_url: 'v', target: '4k' }, info);
   assert.equal(gm.video, 'v');
+  assert.throws(() => videoUpscaleBody('fal', 'fal-ai/topaz/upscale/video', { tool_model: 'seedvr2', video_url: 'v' }, info), /Unknown/);
+  assert.throws(() => videoUpscaleBody('atlas', 'atlascloud/video-upscaler', { video_url: 'v', target: '2k' }, { ...info, fps: 60 }), /30 fps/);
+  assert.throws(() => videoUpscaleBody('atlas', 'atlascloud/video-upscaler', { video_url: 'v', target: '2k' }, { ...info, duration: 30 }), /23 s/);
+  assert.equal(videoUpscaleBody('atlas', 'atlascloud/video-upscaler', { video_url: 'v', target: '1080p' }, { ...info, duration: 30 }).target_resolution, '1080p');
   assert.throws(() => videoUpscaleBody('atlas', 'google/gemini-omni-1.2-flash/video-upscale', { video_url: 'v', target: '4k' }, { ...info, duration: 20 }), /15 seconds/);
   assert.throws(() => videoUpscaleBody('atlas', 'google/gemini-omni-1.2-flash/video-upscale', { video_url: 'v', target: '4k' }, { ...info, width: 1000, height: 1000 }), /16:9/);
   assert.throws(() => videoUpscaleBody('fal', 'fal-ai/topaz/upscale/video', { video_url: 'v', target: '1080p' }, { ...info, width: 1920, height: 1080 }), /already/);
@@ -86,6 +90,7 @@ test('fal prices from the published rates', () => {
   const topaz = videoUpscalePrice('fal', 'fal-ai/topaz/upscale/video', { tool_model: 'topaz-starlight-precise', target: '4k' }, info);
   assert.equal(topaz.usd, 0.4); // above 1080p: $0.08/s × 5 s
   assert.equal(videoUpscalePrice('fal', 'fal-ai/topaz/upscale/video', { tool_model: 'topaz-starlight-precise', target: '4k', target_fps: 60 }, info).usd, 0.8);
+  assert.equal(videoUpscalePrice('fal', 'fal-ai/topaz/upscale/video', { tool_model: 'topaz-starlight-precise', target: '4k' }, { ...info, fps: 60, frames: 300 }).usd, 0.8, 'a 60 fps source stays 60 fps');
   assert.equal(videoUpscalePrice('fal', 'fal-ai/topaz/upscale/video', { tool_model: 'topaz-gaia-2', target: '1080p' }, info).usd, 0.05);
   // SeedVR2: 3840×2160 × 120 frames × $0.001/MP
   assert.equal(videoUpscalePrice('fal', 'fal-ai/seedvr/upscale/video', { tool_model: 'seedvr2', target: '4k' }, info).usd, 0.995);
@@ -102,10 +107,16 @@ test('video info and putting the sound back', async () => {
   assert.equal(ia.audio, true);
   assert.ok(ia.duration > 1.9 && ia.duration < 2.2);
   assert.equal((await videoInfo(b)).audio, false);
-  assert.equal(await restoreAudio(b, a), true);
+  const shortSound = path.join(tmp, 's.m4a');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', '-c:a', 'aac', shortSound]);
+  assert.equal(await restoreAudio(b, shortSound), true);
   const ib = await videoInfo(b);
   assert.equal(ib.audio, true);
   assert.equal(ib.width, 1920, 'picture untouched');
+  assert.ok(ib.duration > 1.9, 'a short sound does not cut the picture');
+  const ex = path.join(tmp, 'x.m4a');
+  assert.equal(await extractAudio(a, ex), true);
+  assert.equal(await extractAudio(path.join(tmp, 'b-noaudio.mp4'), path.join(tmp, 'y.m4a')), false);
 });
 
 test('quote and submit: fal priced here, Atlas quoted with its own copy of the video', async () => {
@@ -118,6 +129,10 @@ test('quote and submit: fal priced here, Atlas quoted with its own copy of the v
   assert.deepEqual(price.output, { width: 3840, height: 2160 });
   assert.equal(price.input.audio, true);
   res = await app.inject({ method: 'POST', url: '/dz/api/quote', headers: { cookie: admin }, payload: { endpoint: 'p/atlas/byteplus/video/upscaler', body: { tool_model: 'byteplus', video_url: videoUrl, target: '4k' } } });
+  assert.equal(res.json().needsCheck, true, 'a price check does not send the video by itself');
+  assert.equal(res.json().info.input.width, 1280);
+  assert.equal(calls.upload.length, 0);
+  res = await app.inject({ method: 'POST', url: '/dz/api/quote', headers: { cookie: admin }, payload: { endpoint: 'p/atlas/byteplus/video/upscaler', body: { tool_model: 'byteplus', video_url: videoUrl, target: '4k', check: true } } });
   price = res.json().price;
   assert.equal(price.usd, 0.296);
   assert.equal(calls.quote.at(-1).body.video_url, 'https://atlas.example/in.mp4');
@@ -135,6 +150,15 @@ test('quote and submit: fal priced here, Atlas quoted with its own copy of the v
   const row = app.ctx.db.prepare('SELECT studio, kind, meta_json, est_cost_usd FROM generations WHERE id = ?').get(res.json().id);
   assert.equal(row.studio, 'upscale');
   assert.equal(JSON.parse(row.meta_json).upscale.audio, true);
+  const audioName = JSON.parse(row.meta_json).upscale.audio_file;
+  assert.match(audioName, /\.m4a$/);
+  assert.ok(fs.existsSync(path.join(dataDir, 'upscale-audio', audioName)), 'the sound is kept with the job');
+  // After the first check the video is at Atlas: later checks are automatic.
+  res = await app.inject({ method: 'POST', url: '/dz/api/quote', headers: { cookie: admin }, payload: { endpoint: 'p/atlas/byteplus/video/upscaler', body: { tool_model: 'byteplus', video_url: videoUrl, target: '1080p' } } });
+  assert.equal(res.json().price.usd, 0.296);
+  // A client can't plant its own upscale meta on other jobs.
+  res = await app.inject({ method: 'POST', url: '/api/v1/p/fal/fal-ai/topaz/upscale/video', headers: { cookie: admin }, payload: { tool_model: 'topaz-proteus', video_url: videoUrl, target: '4k', _dz: { meta: { upscale: { audio_file: 'x.m4a' } } } } });
+  assert.notEqual(JSON.parse(app.ctx.db.prepare('SELECT meta_json FROM generations WHERE id = ?').get(res.json().id).meta_json).upscale.audio_file, 'x.m4a');
   assert.equal(row.est_cost_usd, 0.296);
   // Unknown endpoints and modes are refused.
   res = await app.inject({ method: 'POST', url: '/api/v1/p/fal/fal-ai/topaz/upscale/video?m=x', headers: { cookie: admin }, payload: { video_url: videoUrl } });

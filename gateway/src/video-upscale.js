@@ -48,9 +48,9 @@ export const VIDEO_MODELS = Object.freeze([
     ],
   },
   {
-    id: 'byteplus', name: 'BytePlus Upscaler', provider: 'atlas', endpoint: 'byteplus/video/upscaler', targets: ['1080p', '2k', '4k'], hint: 'Cheapest. Has a mode for AI-generated video. Professional = top quality, ~5× the price.', price: { kind: 'quote' },
+    id: 'byteplus', name: 'BytePlus Upscaler', provider: 'atlas', endpoint: 'byteplus/video/upscaler', targets: ['1080p', '2k', '4k'], hint: 'Cheapest. Has a mode for AI-generated video. Professional = top quality, ~10× the price.', price: { kind: 'quote' },
     fields: [
-      select('tool_version', 'Engine', ['standard', 'professional'], 'standard', 'Professional runs 30+ algorithms: best quality, about 5× the price.', { standard: 'Standard', professional: 'Professional' }),
+      select('tool_version', 'Engine', ['standard', 'professional'], 'standard', 'Professional runs 30+ algorithms: best quality, about 10× the price.', { standard: 'Standard', professional: 'Professional' }),
       { ...select('scene', 'Scene', ['aigc', 'common', 'short_series', 'ugc', 'old_film'], 'aigc', 'Tuning for the kind of video.', { aigc: 'AI video', common: 'General', short_series: 'Short drama', ugc: 'Phone video', old_film: 'Old film' }), when: { tool_version: 'standard' } },
       FPS,
     ],
@@ -60,7 +60,7 @@ export const VIDEO_MODELS = Object.freeze([
     fields: [select('style', 'Preset', ['seedance2', 'live-action', 'anime', 'restore', 'live-action-smallface'], 'seedance2', 'What the video is.', { seedance2: 'Seedance 2 shot', 'live-action': 'Live action', anime: 'Anime', restore: 'Restore', 'live-action-smallface': 'Small faces' })],
   },
   { id: 'gemini-omni', name: 'Gemini Omni Upscale', provider: 'atlas', endpoint: 'google/gemini-omni-1.2-flash/video-upscale', targets: ['1080p', '4k'], hint: 'Made for Gemini Omni shots. Up to 15 s, 16:9 or 9:16, 720p → 1080p/4K.', price: { kind: 'quote' }, fields: [] },
-  { id: 'atlascloud', name: 'AtlasCloud Upscaler', provider: 'atlas', endpoint: 'atlascloud/video-upscaler', targets: ['1080p', '2k'], hint: 'Simple and cheap, up to 2K.', price: { kind: 'quote' }, fields: [] },
+  { id: 'atlascloud', name: 'AtlasCloud Upscaler', provider: 'atlas', endpoint: 'atlascloud/video-upscaler', targets: ['1080p', '2k'], hint: 'Simple and cheap, up to 2K. Up to 30 fps; 53 s at 1080p, 23 s at 2K.', price: { kind: 'quote' }, fields: [] },
 ]);
 
 export const VIDEO_UPSCALE = Object.freeze({ id: 'videoUpscale', name: 'Upscale video', targets: TARGETS, models: VIDEO_MODELS });
@@ -103,8 +103,10 @@ export function outputSize(info, targetId) {
 // Keeps only allowed values; validates what each model can take.
 export function videoUpscaleBody(providerId, endpoint, body = {}, info = null) {
   const model = videoModelFor(providerId, endpoint, body.tool_model);
-  if (!model) throw new VideoUpscaleError('Unknown upscale model.');
-  const target = model.targets.includes(body.target) ? body.target : model.targets.includes('4k') ? '4k' : model.targets.at(-1);
+  if (!model || (body.tool_model && model.id !== body.tool_model)) throw new VideoUpscaleError('Unknown upscale model.');
+  // A target the model can't do is refused, never swapped for another (price).
+  if (body.target && !model.targets.includes(body.target)) throw new VideoUpscaleError(`${model.name} can't make ${String(body.target).toUpperCase()}.`);
+  const target = body.target || (model.targets.includes('4k') ? '4k' : model.targets.at(-1));
   const pick = (key) => {
     const f = model.fields.find((x) => x.key === key);
     if (!f) return undefined;
@@ -164,6 +166,11 @@ export function videoUpscaleBody(providerId, endpoint, body = {}, info = null) {
       Object.assign(out, { video: src, resolution: target });
       break;
     case 'atlascloud':
+      if (info) {
+        if (info.fps > 30.5) throw new VideoUpscaleError('AtlasCloud Upscaler takes videos up to 30 fps.');
+        const max = target === '2k' ? 23 : 53;
+        if (info.duration > max + 0.05) throw new VideoUpscaleError(`AtlasCloud Upscaler takes up to ${max} s for ${target === '2k' ? '2K' : '1080p'}.`);
+      }
       Object.assign(out, { video: src, target_resolution: target });
       break;
     default:
@@ -187,7 +194,8 @@ export function videoUpscalePrice(providerId, endpoint, body, info) {
   if (model.price.kind === 'topaz') {
     const short = Math.min(out.width, out.height);
     let perSec = short <= 720 ? 0.01 : short <= 1080 ? 0.02 : 0.08;
-    if (Number(body.target_fps) >= 50) perSec *= 2;
+    // 60 fps output costs double — also when the source already is 60 fps.
+    if ((Number(body.target_fps) || info.fps) >= 50) perSec *= 2;
     if (model.price.half) perSec /= 2;
     return { usd: Math.round(perSec * info.duration * 1000) / 1000, exact: true, output: out };
   }
@@ -231,9 +239,20 @@ export function videoInfo(file) {
 export function restoreAudio(outputPath, sourcePath) {
   return new Promise((resolve) => {
     const tmp = `${outputPath}.audio.mp4`;
-    execFile('ffmpeg', ['-v', 'error', '-y', '-i', outputPath, '-i', sourcePath, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', tmp], { timeout: 120_000 }, (error) => {
+    // apad + shortest: the picture decides the length (a short sound is padded with silence).
+    execFile('ffmpeg', ['-v', 'error', '-y', '-i', outputPath, '-i', sourcePath, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-af', 'apad', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', tmp], { timeout: 120_000 }, (error) => {
       if (error) { try { fs.unlinkSync(tmp); } catch { /* none */ } resolve(false); return; }
       try { fs.renameSync(tmp, outputPath); resolve(true); } catch { try { fs.unlinkSync(tmp); } catch { /* none */ } resolve(false); }
+    });
+  });
+}
+
+// The sound of the source, kept with the job (the source may be deleted meanwhile).
+export function extractAudio(sourcePath, destPath) {
+  return new Promise((resolve) => {
+    execFile('ffmpeg', ['-v', 'error', '-y', '-i', sourcePath, '-vn', '-map', '0:a:0', '-c:a', 'aac', '-b:a', '192k', destPath], { timeout: 60_000 }, (error) => {
+      if (error) { try { fs.unlinkSync(destPath); } catch { /* none */ } resolve(false); return; }
+      resolve(true);
     });
   });
 }

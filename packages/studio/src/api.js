@@ -475,7 +475,7 @@ export async function dzVideoUpscaleQuote({ provider, endpoint, ...params }) {
         });
         if (!response.ok) return { price: null, problem: response.status === 429 ? 'Too many price checks, wait a moment.' : null };
         const data = await response.json();
-        return { price: data.price || null, problem: data.problem || null };
+        return { price: data.price || null, problem: data.problem || null, needsCheck: Boolean(data.needsCheck), info: data.info || null };
     } catch {
         return { price: null, problem: null };
     }

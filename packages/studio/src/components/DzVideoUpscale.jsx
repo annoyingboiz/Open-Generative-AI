@@ -65,7 +65,8 @@ export function DzVideoUpscalePanel({ apiKey, videoUrl, onStart, onDone, onError
   const target = model && (model.targets.includes(targetBy[model.id]) ? targetBy[model.id] : model.targets.includes("4k") ? "4k" : model.targets.at(-1));
   const [values, setValues] = useState(saved.values || {}); // per model id
   const [busy, setBusy] = useState(0);
-  const [quote, setQuote] = useState({ price: null, problem: null, loading: false });
+  const [quote, setQuote] = useState({ price: null, problem: null, needsCheck: false, info: null, loading: false });
+  const [checkSeq, setCheckSeq] = useState(0); // "Check price" asked for this request
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { store(STORE_KEY, { modelId, targetBy, values }); }, [modelId, targetBy, values]);
@@ -93,18 +94,22 @@ export function DzVideoUpscalePanel({ apiKey, videoUrl, onStart, onDone, onError
   const canRun = Boolean(body && dzIsOwnImage(videoUrl));
 
   // Price, debounced. Atlas models: the first check sends the video to Atlas (reused when you upscale).
+  // Atlas prices need the video at Atlas: the first check is asked for ("Check price").
   const bodyKey = canRun ? JSON.stringify([model.provider, model.endpoint, body]) : "";
+  const checkFor = useRef({ key: "", seq: 0 });
   useEffect(() => {
-    if (!bodyKey) { setQuote({ price: null, problem: null, loading: false }); return undefined; }
+    if (!bodyKey) { setQuote({ price: null, problem: null, needsCheck: false, info: null, loading: false }); return undefined; }
     let cancelled = false;
     setQuote((q) => ({ ...q, loading: true }));
+    const check = checkSeq > 0 && checkFor.current.seq === checkSeq && checkFor.current.key === bodyKey;
     const timer = setTimeout(async () => {
       const [provider, endpoint, b] = JSON.parse(bodyKey);
-      const r = await dzVideoUpscaleQuote({ provider, endpoint, ...b });
+      const r = await dzVideoUpscaleQuote({ provider, endpoint, ...b, ...(check ? { check: true } : {}) });
       if (!cancelled) setQuote({ ...r, loading: false });
-    }, 500);
+    }, check ? 0 : 500);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [bodyKey]);
+  }, [bodyKey, checkSeq]);
+  const askPrice = () => { const seq = checkSeq + 1; checkFor.current = { key: bodyKey, seq }; setCheckSeq(seq); };
 
   const run = useCallback(async () => {
     if (!canRun || quote.problem) return;
@@ -134,8 +139,8 @@ export function DzVideoUpscalePanel({ apiKey, videoUrl, onStart, onDone, onError
   }
 
   const price = quote.price;
-  const input = price?.input;
-  const output = price?.output;
+  const input = price?.input || quote.info?.input;
+  const output = price?.output || quote.info?.output;
   const visible = model.fields.filter((f) => fieldApplies(f, valueOf));
   const targetLabel = (id) => spec.targets.find((t) => t.id === id)?.label || id;
   return (
@@ -184,10 +189,18 @@ export function DzVideoUpscalePanel({ apiKey, videoUrl, onStart, onDone, onError
             {price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd)}` : ""}
           </span>
         </div>
-        <Button size="lg" className="w-full" onClick={run} disabled={!canRun || Boolean(quote.problem)}>
-          {busy > 0 ? <><Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> Upscaling{busy > 1 ? ` · ${busy}` : ""}…</> : "Upscale video"}
-        </Button>
-        <p className="text-center text-base text-muted-foreground">{busy > 0 ? "Takes a few minutes. You can start another one or leave this tab." : "Takes a few minutes; the result lands in your work."}</p>
+        {quote.needsCheck && !price ? (
+          <Button size="lg" variant="secondary" className="w-full" onClick={askPrice} disabled={!canRun || quote.loading}>
+            {quote.loading ? <><Spinner className="h-4 w-4" /> Checking…</> : "Check price"}
+          </Button>
+        ) : (
+          <Button size="lg" className="w-full" onClick={run} disabled={!canRun || Boolean(quote.problem) || (!price && quote.loading)}>
+            {busy > 0 ? <><Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> Upscaling{busy > 1 ? ` · ${busy}` : ""}…</> : `Upscale video${price ? ` · ${fmtUsd(price.usd)}` : ""}`}
+          </Button>
+        )}
+        <p className="text-center text-base text-muted-foreground">
+          {quote.needsCheck && !price ? "Atlas prices by the video itself: the check sends it to Atlas (free)." : busy > 0 ? "Takes a few minutes. You can start another one or leave this tab." : "Takes a few minutes; the result lands in your work."}
+        </p>
       </div>
     </div>
   );

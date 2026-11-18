@@ -9,6 +9,7 @@ import httpProxy from '@fastify/http-proxy';
 import multipart from '@fastify/multipart';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import net from 'node:net';
 import { createRequire } from 'node:module';
 
@@ -31,7 +32,7 @@ import { createThumbs } from './thumbs.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
-import { VIDEO_UPSCALE, isVideoUpscaleEndpoint, videoUpscaleBody, providerPayload, videoUpscalePrice, videoInfo, outputSize, restoreAudio, VideoUpscaleError } from './video-upscale.js';
+import { VIDEO_UPSCALE, isVideoUpscaleEndpoint, videoUpscaleBody, providerPayload, videoUpscalePrice, videoInfo, outputSize, restoreAudio, extractAudio, VideoUpscaleError } from './video-upscale.js';
 import { imageSize } from './imagesize.js';
 
 const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico', '/dz/fonts/inter-latin.woff2', '/dz/fonts/inter-cyrillic.woff2']);
@@ -81,26 +82,42 @@ export async function buildApp(config, { logger = true } = {}) {
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations, log: app.log });
   generations.setOnCompleted((row) => elements.attachGenerated(row));
-  // Most video upscalers drop the sound: put the original's back in.
-  const userRow = db.prepare('SELECT id, role FROM users WHERE id = ?');
-  generations.setAfterDownload(async (row, saved) => {
-    if (row.studio !== 'upscale' || row.kind !== 'video') return;
-    const up = JSON.parse(row.meta_json || '{}').upscale;
-    if (!up?.audio || !up.source) return;
-    const owner = userRow.get(row.user_id);
-    const src = owner && generations.mediaFileForUrl(owner, up.source);
-    if (!src) return;
-    for (const out of saved) {
-      if (!/^video\//.test(out.mime || '')) continue;
-      const info = await videoInfo(out.path);
-      if (!info || info.audio) continue;
-      if (await restoreAudio(out.path, src.path)) out.bytes = fs.statSync(out.path).size;
-    }
+  // Most video upscalers drop the sound: put the original's back in. The sound
+  // was copied aside when the job started (job-owned, survives deleting the source).
+  const audioDir = path.join(config.dataDir, 'upscale-audio');
+  fs.mkdirSync(audioDir, { recursive: true });
+  const audioFileOf = (row) => {
+    let up = null;
+    try { up = JSON.parse(row.meta_json || '{}').upscale; } catch { up = null; }
+    const name = up?.audio_file;
+    return name && /^[a-z0-9_-]+\.m4a$/i.test(name) ? path.join(audioDir, name) : null;
+  };
+  generations.setAfterDownload({
+    wants: (row) => row.studio === 'upscale' && row.kind === 'video' && Boolean(audioFileOf(row)),
+    run: async (row, saved) => {
+      const audio = audioFileOf(row);
+      if (!fs.existsSync(audio)) return;
+      for (const out of saved) {
+        if (!/^video\//.test(out.mime || '')) continue;
+        const info = await videoInfo(out.path);
+        if (!info || info.audio) continue;
+        const ok = (await restoreAudio(out.path, audio)) || (await restoreAudio(out.path, audio));
+        if (ok) out.bytes = fs.statSync(out.path).size;
+        else app.log.warn(`upscale ${row.id}: could not put the sound back`);
+      }
+      fs.rmSync(audio, { force: true });
+    },
   });
+  const pruneAudio = () => {
+    for (const f of fs.readdirSync(audioDir)) {
+      const p = path.join(audioDir, f);
+      try { if (Date.now() - fs.statSync(p).mtimeMs > 3 * 86_400_000) fs.rmSync(p, { force: true }); } catch { /* gone */ }
+    }
+  };
   const chatgpt = createChatGpt({ db, masterKey, config, log: app.log });
   const llm = createLlm({ db, providers, generations, config, log: app.log, chatgpt });
   const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
-  if (config.startWorkers !== false) setInterval(() => { try { thumbs.prune(); } catch { /* ignore */ } }, 24 * 3600_000).unref?.();
+  if (config.startWorkers !== false) setInterval(() => { try { thumbs.prune(); pruneAudio(); } catch { /* ignore */ } }, 24 * 3600_000).unref?.();
   if (config.startWorkers !== false) {
     setTimeout(() => elements.attachPending().catch(() => {}), 30_000).unref?.();
     setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
@@ -558,7 +575,9 @@ export async function buildApp(config, { logger = true } = {}) {
       return p ? { usd: p.usd, exact: p.exact, source: 'quote', ...base } : null;
     }
     const field = 'video' in payload ? 'video' : 'video_url';
-    const url = await generations.providerUrl(user, 'atlas', payload[field]);
+    // A price check never sends the video on its own: only when asked (check) or already there.
+    const url = generations.cachedProviderUrl(user, 'atlas', payload[field]) || (req.check ? await generations.providerUrl(user, 'atlas', payload[field]) : null);
+    if (!url) return { needsCheck: true, ...base };
     const body = { ...payload, [field]: url };
     const key = JSON.stringify([modelId, body]);
     const hit = videoQuotes.get(key);
@@ -599,7 +618,10 @@ export async function buildApp(config, { logger = true } = {}) {
     const { _dz: _ignored, ...body } = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
     if (resolved.video) {
       try {
-        return { price: await videoPrice(req.user, providerId, modelId, await videoRequest(req.user, providerId, modelId, body)) };
+        const vr = await videoRequest(req.user, providerId, modelId, body);
+        const p = await videoPrice(req.user, providerId, modelId, { ...vr, check: body.check === true });
+        if (p?.needsCheck) { const { needsCheck: _n, ...info } = p; return { price: null, needsCheck: true, info }; }
+        return { price: p };
       } catch (error) {
         if (error instanceof VideoUpscaleError || error instanceof GenerationError) return { price: null, problem: error.message };
         throw error;
@@ -622,11 +644,18 @@ export async function buildApp(config, { logger = true } = {}) {
       const { _dz: dz, ...requestBody } = req.body || {};
       const studio = ['create', 'cinema', 'image', 'video', 'upscale'].includes(dz?.studio) ? dz.studio : null;
       const metaText = dz?.meta && typeof dz.meta === 'object' ? JSON.stringify(dz.meta) : null;
-      const meta = metaText && metaText.length <= 65_536 ? dz.meta : null;
+      const meta = metaText && metaText.length <= 65_536 ? { ...dz.meta } : null;
+      if (meta) delete meta.upscale; // ours, set by the server for video upscales only
       const { projectId, folderId } = contextOf(req.user, dz?.project, dz?.folder);
       if (resolved.video) {
         const vr = await videoRequest(req.user, providerId, modelId, requestBody);
-        const price = await videoPrice(req.user, providerId, modelId, vr);
+        const price = await videoPrice(req.user, providerId, modelId, { ...vr, check: true });
+        // Keep the sound aside for this job (the source may be deleted before it ends).
+        let audioFile = null;
+        if (vr.info.audio) {
+          const name = `${crypto.randomUUID()}.m4a`;
+          if (await extractAudio(vr.file.path, path.join(audioDir, name))) audioFile = name;
+        }
         if (req.user.monthly_limit_usd != null && !(price && price.exact && Number.isFinite(price.usd))) {
           return reply.code(402).send({ detail: 'No exact price for this upscale, so it is not available with a spending limit.' });
         }
@@ -634,7 +663,7 @@ export async function buildApp(config, { logger = true } = {}) {
           providerId, modelId, body: vr.payload, endpoint: key, kind: 'video',
           estCostUsd: price?.usd ?? null, estSource: price ? (price.exact ? 'quote' : 'quote~') : null,
           studio: 'upscale',
-          meta: { ...(meta || {}), upscale: { model: vr.full.tool_model, target: vr.full.target, source: requestBody.video_url, input: price?.input || null, output: price?.output || null, audio: vr.info.audio } },
+          meta: { ...(meta || {}), upscale: { model: vr.full.tool_model, target: vr.full.target, source: requestBody.video_url, input: price?.input || null, output: price?.output || null, audio: vr.info.audio, audio_file: audioFile } },
           projectId, folderId,
         });
         return { request_id: id, id, status: 'processing' };

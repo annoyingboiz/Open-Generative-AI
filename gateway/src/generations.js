@@ -73,7 +73,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
   };
   let onCompleted = null; // (row) => … after a job's files are saved (e.g. element videos)
-  let afterDownload = null; // async (row, saved) => … may change the saved files in place
+  let afterDownload = null; // { wants(row), run: async (row, saved) => … } may change the saved files in place
   const outputRefCache = new Map(); // `${provider}:${genId}/${n}` -> { url, expiresAt }
 
   // ── Uploads ─────────────────────────────────────────────────────────────
@@ -134,6 +134,22 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     return p;
   }
 
+  // The provider's link for one of our files, only if we already have it (no upload).
+  function cachedProviderUrl(user, providerId, url) {
+    const m = typeof url === 'string' && LOCAL_MEDIA_RE.exec(url);
+    if (!m) return null;
+    if (m[1].toLowerCase() === 'u') {
+      const up = q.upload.get(m[2]);
+      if (!canSee(user, up)) return null;
+      const cached = JSON.parse(up.provider_refs || '{}')[providerId];
+      return cached && cached.expiresAt > Date.now() + 3_600_000 && !/\s/.test(cached.url) ? cached.url : null;
+    }
+    const gen = q.byId.get(m[2]);
+    if (!gen || !canSee(user, gen)) return null;
+    const cached = outputRefCache.get(`${providerId}:${gen.id}/${Number(m[3] || 0)}`);
+    return cached && cached.expiresAt > Date.now() + 3_600_000 ? cached.url : null;
+  }
+
   // ── Submit ──────────────────────────────────────────────────────────────
   function monthStart() {
     const d = new Date();
@@ -183,10 +199,22 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       const file = await storage.downloadResult({ userId: row.user_id, generationId: row.id, index: i, url: providerOutputs[i], proxy: cfg.proxy });
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
-    // Fix-ups on the files before they show up (e.g. the sound back into an upscaled video).
-    if (afterDownload) {
-      try { await afterDownload(row, saved); } catch (error) { log?.warn(`after download ${row.id}: ${error.message}`); }
+    // Fix-ups on the files before they show up (e.g. the sound back into an
+    // upscaled video). They run beside the worker, not in it: the job stays
+    // "downloading" with its next check pushed back (a restart just redoes it).
+    if (afterDownload?.wants(row)) {
+      q.setPolled.run('downloading', now() + 10 * 60_000, now(), row.id);
+      Promise.resolve()
+        .then(() => afterDownload.run(row, saved))
+        .catch((error) => log?.warn(`after download ${row.id}: ${error.message}`))
+        .finally(() => finishDownload(row, saved));
+      return;
     }
+    finishDownload(row, saved);
+  }
+  function finishDownload(row, saved) {
+    const cur = q.byId.get(row.id);
+    if (!cur || cur.status !== 'downloading') return; // failed or removed meanwhile
     q.setCompleted.run(JSON.stringify(saved), now() + settleDelaysMs[0], now(), now(), row.id);
     // After-work (e.g. an element video) runs on its own: it never holds up other jobs.
     if (onCompleted) Promise.resolve().then(() => onCompleted(q.byId.get(row.id))).catch((error) => log?.warn(`after ${row.id}: ${error.message}`));
@@ -576,6 +604,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     setOnCompleted(fn) { onCompleted = fn; },
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,
+    cachedProviderUrl,
     saveUpload, uploads, deleteUploads, submit, result, history, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in

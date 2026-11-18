@@ -85,14 +85,21 @@ function usePaged(tab, type, where, accept, ctx, refreshKey) {
 }
 
 // The picker's body — in a dialog (DzMediaPicker) or inline (Upscale).
-export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, apiKey = "session", confirmLabel = "Add", onCancel, inline = false }) {
+export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, apiKey = "session", confirmLabel = "Add", onCancel, inline = false, onUploading }) {
   const ctx = useDzContext();
   const [tab, setTab] = useState("generations");
   const [type, setType] = useState("all");
   const [where, setWhere] = useState(ctx.project ? "project" : "library");
-  useEffect(() => { setWhere(ctx.project ? "project" : "library"); }, [ctx.project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [chosen, setChosen] = useState([]); // [{ url, name, kind }]
+  // Another project: start over (nothing from the old one stays chosen).
+  useEffect(() => { setWhere(ctx.project ? "project" : "library"); setChosen([]); }, [ctx.project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [uploading, setUploading] = useState(0);
+  // A closed picker, or one now showing another project, ignores late uploads.
+  const alive = useRef(true);
+  const uploadSeq = useRef(0);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { uploadSeq.current += 1; }, [ctx.project?.id]);
+  useEffect(() => { if (!uploading) return undefined; onUploading?.(true); return () => onUploading?.(false); }, [uploading > 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const [refreshKey, setRefreshKey] = useState(0);
   const fileInput = useRef(null);
   const els = useDzElements();
@@ -101,6 +108,7 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
   const full = chosen.length >= max;
 
   const pick = (item) => {
+    if (uploading || ctx.pending) return;
     if (single) { onConfirm([{ url: item.url, name: item.name, kind: item.kind }]); return; }
     setChosen((list) => {
       if (list.some((x) => x.url === item.url)) return list.filter((x) => x.url !== item.url);
@@ -113,6 +121,7 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
     const okKinds = accept === "any" ? ["image", "video"] : [accept];
     const list = files.filter((f) => okKinds.includes(f.type.split("/")[0])).slice(0, single ? 1 : Math.max(0, max - chosen.length));
     if (!list.length) { onError?.(`Choose ${accept === "any" ? "image or video" : accept} files.`); return; }
+    const seq = ++uploadSeq.current;
     setUploading((n) => n + 1);
     const done = [];
     try {
@@ -121,11 +130,11 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
         done.push({ url, name: f.name, kind: f.type.split("/")[0] });
       }
     } catch (e) {
-      onError?.(String(e?.message || e));
+      if (alive.current) onError?.(String(e?.message || e));
     } finally {
-      setUploading((n) => n - 1);
+      if (alive.current) setUploading((n) => n - 1);
     }
-    if (!done.length) return;
+    if (!done.length || !alive.current || seq !== uploadSeq.current) return;
     if (single) { onConfirm(done.slice(0, 1)); return; }
     setChosen((prev) => [...prev, ...done.filter((d) => !prev.some((p) => p.url === d.url))].slice(0, max));
     if (tab === "uploads") setRefreshKey((k) => k + 1);
@@ -146,7 +155,7 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
   const tile = (item) => {
     const on = chosen.some((x) => x.url === item.url);
     const badges = badgesOf(item);
-    const blocked = !single && !on && full;
+    const blocked = (!single && !on && full) || uploading > 0;
     return (
       <button key={item.key} type="button" onClick={() => pick(item)} disabled={blocked}
         title={item.name || undefined}
@@ -201,7 +210,9 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
         )}
       </div>
       <div className={cn("min-h-0 overflow-y-auto custom-scrollbar pr-1", inline ? "flex-1" : "max-h-[58vh]")}>
-        {tab === "elements" ? (
+        {ctx.pending ? (
+          <div className="flex justify-center py-10"><Spinner /></div>
+        ) : tab === "elements" ? (
           !els.loaded ? <div className="flex justify-center py-10"><Spinner /></div>
             : elementGroups.length === 0 ? <p className="py-10 text-center text-muted-foreground">{emptyText}</p>
               : (
@@ -244,17 +255,25 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
 }
 
 // The picker in a dialog. `max` = how many more the slot takes.
-export function DzMediaPicker({ open, onOpenChange, title, description, accept = "image", max = 1, onPick, onError, apiKey }) {
+export function DzMediaPicker({ open, onOpenChange, title, description, accept = "image", max = 1, onPick, onError, apiKey, onUploading }) {
+  const ctx = useDzContext();
+  const [busy, setBusy] = useState(false);
+  // Switching project closes the picker: its files belong to the old place.
+  const projectId = ctx.project?.id || null;
+  const openedIn = useRef(projectId);
+  useEffect(() => { if (open) openedIn.current = projectId; }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open && openedIn.current !== projectId) onOpenChange(false); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
   const noun = accept === "video" ? "a video" : accept === "audio" ? "a sound" : accept === "any" ? "files" : max > 1 ? "images" : "an image";
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o && busy) return; onOpenChange(o); }}>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{title || `Add ${noun}`}</DialogTitle>
           <DialogDescription>{description || (max > 1 ? `Choose up to ${max} — from uploads, earlier work, liked or elements — or upload new ones.` : "Pick one from uploads, earlier work, liked or elements — or upload a new one.")}</DialogDescription>
         </DialogHeader>
         {open && (
-          <DzMediaBrowser accept={accept} max={max} apiKey={apiKey} onError={onError} onCancel={() => onOpenChange(false)}
+          <DzMediaBrowser accept={accept} max={max} apiKey={apiKey} onError={onError} onCancel={() => { if (!busy) onOpenChange(false); }}
+            onUploading={(on) => { setBusy(on); onUploading?.(on); }}
             onConfirm={(list) => { onPick(list); onOpenChange(false); }} />
         )}
         <DialogFooter className="hidden" />

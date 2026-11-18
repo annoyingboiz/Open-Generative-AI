@@ -370,7 +370,9 @@ export function parseJsonPrompt(text) {
 // ("camera", "camera_movement"), so it stays valid JSON. A JSON object
 // without additions is sent exactly as written.
 export function composePrompt(prompt, { kind, camera, move }) {
-  const text = String(prompt || "").trim();
+  const raw = String(prompt || "");
+  const text = raw.trim();
+  const parsed = parseJsonPrompt(text);
   const extra = {};
   if (camera?.on) {
     const persp = FOCAL[camera.focal] || "";
@@ -386,12 +388,13 @@ export function composePrompt(prompt, { kind, camera, move }) {
     const m = CAMERA_MOVES.find((x) => x.id === move);
     if (m) extra.camera_movement = m.text;
   }
-  if (!Object.keys(extra).length) return text;
-  const parsed = parseJsonPrompt(text);
-  if (parsed.ok && !Array.isArray(parsed.value)) {
+  // Valid JSON is never broken: sent exactly as written unless keys are added.
+  if (!Object.keys(extra).length) return parsed.ok ? raw : text;
+  if (parsed.ok) {
+    if (Array.isArray(parsed.value)) return raw; // a list has no place for extra keys
     const keep = {};
     for (const [k, v] of Object.entries(extra)) if (!(k in parsed.value)) keep[k] = v; // the user's own key wins
-    return Object.keys(keep).length ? JSON.stringify({ ...parsed.value, ...keep }, null, 2) : text;
+    return Object.keys(keep).length ? JSON.stringify({ ...parsed.value, ...keep }, null, 2) : raw;
   }
   return [text, ...Object.values(extra)].filter((p) => p && p.trim()).join(", ");
 }

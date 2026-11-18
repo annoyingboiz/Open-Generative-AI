@@ -223,7 +223,7 @@ function ModelPicker({ entries, entry, onPick }) {
 
 // A slot: its files and "+", which opens the shared picker (uploads,
 // generations, liked, elements, or a new upload).
-function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKey, onError }) {
+function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKey, onError, onUploading }) {
   const [picker, setPicker] = useState(false);
   const info = ROLE_INFO[role];
   const full = files.length >= max;
@@ -253,7 +253,7 @@ function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKey, onEr
           </button>
         )}
       </div>
-      <DzMediaPicker open={picker} onOpenChange={setPicker} accept={info.kind} max={Math.max(1, max - files.length)} apiKey={apiKey} onError={onError}
+      <DzMediaPicker open={picker} onOpenChange={setPicker} accept={info.kind} max={Math.max(1, max - files.length)} apiKey={apiKey} onError={onError} onUploading={onUploading}
         title={`${info.label}${max > 1 ? ` · ${max - files.length} more` : ""}`} onPick={onPick} />
     </div>
   );
@@ -609,7 +609,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           {entry && entry.slots.length > 0 && (
             <div className="flex gap-4 overflow-x-auto custom-scrollbar pb-1">
               {entry.slots.map((s) => (
-                <MediaSlot key={s.role} role={s.role} max={s.max} files={attached[s.role] || []} uploading={uploadingRole === s.role} apiKey={apiKey} onError={onGenerationError}
+                <MediaSlot key={s.role} role={s.role} max={s.max} files={attached[s.role] || []} uploading={uploadingRole === s.role} apiKey={apiKey} onError={onGenerationError} onUploading={(on) => setUploads((n) => Math.max(0, n + (on ? 1 : -1)))}
                   onPick={(list) => addUrls(s.role, list)} onRemove={(i) => removeFile(s.role, i)} />
               ))}
             </div>
@@ -652,7 +652,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {jsonPrompt.ok ? (
                 <>
-                  <span className="text-emerald-300">JSON prompt — sent as written{camera.on || (kind === "video" && move) ? "; Camera is added as its own keys" : ""}.</span>
+                  <span className="text-emerald-300">JSON prompt — sent as written{camera.on || (kind === "video" && move) ? (Array.isArray(jsonPrompt.value) ? "; Camera is not added to a JSON list" : "; Camera is added as its own keys") : ""}.</span>
                   <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setPrompt(JSON.stringify(jsonPrompt.value, null, 2))}>Format</button>
                 </>
               ) : (

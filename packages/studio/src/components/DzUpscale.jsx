@@ -427,7 +427,7 @@ export default function DzUpscaleStudio({ apiKey, initial, isAdmin = false, onGe
                 {source && <Button variant="secondary" onClick={() => setPicker(false)}>Cancel</Button>}
               </div>
               <div className="min-h-0 flex-1">
-                <DzMediaBrowser inline accept="image" max={1} apiKey={apiKey} onError={onGenerationError}
+                <DzMediaBrowser inline accept="image" max={1} apiKey={apiKey} onError={onGenerationError} onUploading={setUploading}
                   onConfirm={(list) => { if (list[0]?.url) { setSource(list[0].url); setResult(null); setPicker(false); loadHistory(); } }} />
               </div>
             </div>

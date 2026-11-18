@@ -66,6 +66,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError })
   const ctx = useDzContext();
   const [form, setForm] = useState({ name: "", kind: "character", description: "", images: [], video: null });
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false); // the picker is uploading
   const [picker, setPicker] = useState(null); // 'image' | 'video'
   useEffect(() => {
     if (!open) return;
@@ -81,7 +82,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError })
       onSaved?.(r.element);
     } catch (e) { onError?.(e.message); } finally { setBusy(false); }
   };
-  const canSave = form.name.trim() && (form.images.length || form.video) && !busy;
+  const canSave = form.name.trim() && (form.images.length || form.video) && !busy && !picking;
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -140,7 +141,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError })
         </DialogContent>
       </Dialog>
       <DzMediaPicker open={Boolean(picker)} onOpenChange={(o) => !o && setPicker(null)} accept={picker === "video" ? "video" : "image"}
-        max={picker === "video" ? 1 : Math.max(1, 8 - form.images.length)} onError={onError}
+        max={picker === "video" ? 1 : Math.max(1, 8 - form.images.length)} onError={onError} onUploading={setPicking}
         title={picker === "video" ? "Video element" : "Pictures of the element"}
         onPick={(list) => (picker === "video" ? set({ video: list[0]?.url || null }) : setForm((x) => ({ ...x, images: [...x.images, ...list.map((i) => i.url).filter((u) => !x.images.includes(u))].slice(0, 8) })))} />
     </>

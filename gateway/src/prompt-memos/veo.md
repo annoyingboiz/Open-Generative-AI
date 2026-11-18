@@ -7,6 +7,7 @@ sources:
   - https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-veo-3-1
   - https://ai.google.dev/gemini-api/docs/video (Veo prompt guide)
 blocks: [Cinematography, Subject, Action, Context, Style, Audio]
+look: start
 ---
 # Veo 3.1 — prompt notes
 

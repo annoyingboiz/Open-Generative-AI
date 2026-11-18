@@ -10,7 +10,8 @@
 //             pick / remove / add.
 import { newId } from './storage.js';
 import { now } from './db.js';
-import { cleanShot, DEFAULT_LOOK, PRESETS } from './director.js';
+import { cleanShot, DEFAULT_LOOK } from './director.js';
+import { cleanLook as cleanCameraLook } from './look.js';
 
 export class StoryboardError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -44,13 +45,19 @@ function cleanSettings(raw) {
   return out;
 }
 
+// The board's look: camera defaults for every shot, plus filter, era and light (ids;
+// names used before 18.11 are mapped).
 function cleanLook(raw) {
   const l = isObj(raw) ? raw : {};
+  const c = cleanCameraLook({ ...l, on: true }) || {};
   return {
-    camera: PRESETS.camera.includes(l.camera) ? l.camera : DEFAULT_LOOK.camera,
-    lens: PRESETS.lens.includes(l.lens) ? l.lens : DEFAULT_LOOK.lens,
-    focal: PRESETS.focal.includes(Number(l.focal)) ? Number(l.focal) : DEFAULT_LOOK.focal,
-    aperture: PRESETS.aperture.includes(l.aperture) ? l.aperture : DEFAULT_LOOK.aperture,
+    camera: c.camera || DEFAULT_LOOK.camera,
+    lens: c.lens || DEFAULT_LOOK.lens,
+    focal: c.focal || DEFAULT_LOOK.focal,
+    aperture: c.aperture || DEFAULT_LOOK.aperture,
+    filter: c.filter || null,
+    era: c.era || null,
+    light: c.light || null,
     note: String(l.note ?? '').replace(/\s+/g, ' ').trim().slice(0, 300),
   };
 }

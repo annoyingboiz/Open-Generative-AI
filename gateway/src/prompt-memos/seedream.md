@@ -7,6 +7,7 @@ sources:
   - https://runware.ai/docs/models/bytedance-seedream-5-0-pro/guides/prompting
   - ByteDance Seed — Seedream 5.0 Pro launch notes
 blocks: [Format, Subject, Composition, Lighting, Text, Style]
+look: end
 ---
 # Seedream — prompt notes
 

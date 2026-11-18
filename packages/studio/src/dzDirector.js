@@ -3,7 +3,7 @@
 // built with the same engine as Create (dzCreate.js).
 import {
   chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
-  promptTags, translateTags, mergeElements, elementsInputOf, klingElementPairs, elementTags, DEFAULT_CAMERA,
+  promptTags, translateTags, mergeElements, elementsInputOf, klingElementPairs, elementTags, DEFAULT_CAMERA, normalizeCamera, lookOf,
 } from "./dzCreate.js";
 
 async function call(method, url, body, { keepalive = false } = {}) {
@@ -51,18 +51,21 @@ export function fitDuration(d, dur) {
   return undefined;
 }
 
-// The camera of a shot: its own presets over the storyboard's look.
-export const shotCamera = (shot, look = {}) => ({
-  ...DEFAULT_CAMERA,
+// The camera of a shot: its own presets over the storyboard's look (which
+// also gives the filter, era and light of the whole scene).
+export const shotCamera = (shot, look = {}) => normalizeCamera({
   on: true,
   camera: shot.camera || look.camera || DEFAULT_CAMERA.camera,
   lens: shot.lens || look.lens || DEFAULT_CAMERA.lens,
   focal: shot.focal || look.focal || DEFAULT_CAMERA.focal,
   aperture: shot.aperture || look.aperture || DEFAULT_CAMERA.aperture,
+  filter: look.filter || null,
+  era: look.era || null,
+  light: look.light || null,
 });
 
 // One request: the variant, the body, or why it can't run yet.
-function request(entry, kind, { prompt, values, attached, elements, camera, move }) {
+function request(entry, kind, { prompt, values, attached, elements, look }) {
   if (!entry) return { problem: "Choose a model." };
   const merged = mergeElements(entry, attached, elements);
   const variant = chooseVariant(entry, merged.attached, { native: merged.native });
@@ -71,24 +74,27 @@ function request(entry, kind, { prompt, values, attached, elements, camera, move
   const pairs = spec ? klingElementPairs(elements, spec) : [];
   const syntax = refSyntaxFor(variant.model);
   const tags = promptTags({ attached: merged.attached, syntax, elements, elementPairs: pairs, variant });
-  const finalPrompt = composePrompt(translateTags(prompt, tags), { kind, camera, move });
+  // The camera look is written into the prompt by the server (`look` goes with the request).
+  const finalPrompt = composePrompt(translateTags(prompt, tags));
   const vals = keepValues(values || {}, variant);
   const problem = missingFor(variant, merged.attached);
   if (problem) return { problem, variant };
   if (variant.model.promptRequired && !String(prompt || "").trim()) return { problem: "Write the prompt first.", variant };
   const body = buildBody(variant, { prompt: finalPrompt, values: vals, attached: merged.attached, elements: spec ? elements : [] });
-  return { variant, body, trimmed: merged.trimmed, prompt: finalPrompt };
+  return { variant, body, trimmed: merged.trimmed, prompt: finalPrompt, look };
 }
 
 export function frameRequest({ entry, shot, look, values, elements }) {
-  return request(entry, "image", { prompt: shot.frame_prompt || shot.action, values, attached: {}, elements, camera: shotCamera(shot, look), move: "" });
+  return request(entry, "image", { prompt: shot.frame_prompt || shot.action, values, attached: {}, elements, look: lookOf(shotCamera(shot, look), "") });
 }
 
-export function videoRequest({ entry, shot, values, frame, dur }) {
+export function videoRequest({ entry, shot, look = {}, values, frame, dur }) {
   if (!frame) return { problem: "Pick a start frame first." };
   const d = fitDuration(shot.duration, dur);
   const vals = { ...(values || {}), ...(d != null && dur.param ? { duration: d } : {}) };
-  return request(entry, "video", { prompt: shot.motion_prompt || shot.action, values: vals, attached: { first: [{ url: frame, name: "frame" }] }, elements: [], camera: null, move: shot.move || "" });
+  // The frame already has the camera look; the video gets the move, era and light.
+  const sceneLook = lookOf({ on: false, era: look.era || null, light: look.light || null }, shot.move || "");
+  return request(entry, "video", { prompt: shot.motion_prompt || shot.action, values: vals, attached: { first: [{ url: frame, name: "frame" }] }, elements: [], look: sceneLook });
 }
 
 // Elements for the Director: their tags, as the frame prompts use them.

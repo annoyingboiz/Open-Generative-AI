@@ -7,6 +7,9 @@ sources:
   - https://kling.ai/blog/kling-4-ai-video-model
   - https://www.krea.ai/models/kling-4/prompt-guide (summary of Kling's 14 Oct 2026 guide)
 blocks: [References, Scene, Beats, Camera, Sound]
+look: blocks
+look_camera: Camera
+look_style: Camera
 ---
 # Kling — prompt notes
 

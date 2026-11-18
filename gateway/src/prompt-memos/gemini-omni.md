@@ -7,6 +7,9 @@ sources:
   - https://runware.ai/docs/models/google-gemini-omni-flash-1-2/guides/prompting
   - Google AI "Mastering Gemini Omni" video prompting tips (May 2026)
 blocks: [Subject, Action, Setting, Camera, Lighting, Audio, Exclusions]
+look: blocks
+look_camera: Camera
+look_style: Lighting
 ---
 # Gemini Omni Flash — prompt notes
 

@@ -7,6 +7,7 @@ sources:
   - https://lumaai-help.freshdesk.com/support/solutions/articles/151000223059-how-do-i-use-ray3-prompting-effectively-
   - https://lumalabs.ai/learning-center/articles/luma-video-models-field-guide
 blocks: [Camera, Action, Environment, Physics, Light, Mood]
+look: start
 ---
 # Luma Ray 3 — prompt notes
 

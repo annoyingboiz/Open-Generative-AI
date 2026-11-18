@@ -18,11 +18,12 @@ import DrawModal from "./DrawModal.jsx";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
 import { DzMediaPicker } from "./DzMedia.jsx";
+import DzSentPanel, { useDzPromptPreview, DzHints } from "./DzSentPanel.jsx";
 import { Viewer } from "./DzLibrary.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, promptTags, translateTags, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
-  ROLE_INFO, CAMERA, LENS, FOCAL, APERTURE, CAMERA_ASSETS, CAMERA_MOVES, DEFAULT_CAMERA,
+  ROLE_INFO, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel,
 } from "../dzCreate.js";
 import {
   Button, Segmented, ScrollTabs, Switch, Slider, Textarea, Input, Logo, Spinner, InfoTip, Tip, cn,
@@ -267,36 +268,74 @@ export function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKe
   );
 }
 
-export function CameraPanel({ camera, setCamera }) {
-  const set = (k, v) => setCamera((c) => ({ ...c, [k]: v }));
-  const Pick = ({ label, k, options, assets }) => (
+// Camera look: camera, lens, focal, aperture, filter (switch "Camera look"),
+// plus era and light (on their own). The server writes them into the prompt
+// in the chosen model's words; "Sent to the model" shows the result.
+export function CameraPanel({ camera, setCamera, hints = [] }) {
+  const d = lookData();
+  const c = normalizeCamera(camera);
+  const set = (k, v) => setCamera((prev) => ({ ...normalizeCamera(prev), [k]: v }));
+  const Cards = ({ label, k, options }) => (
     <div className="space-y-2">
       <span className="text-muted-foreground">{label}</span>
       <div className="grid grid-cols-3 gap-1.5">
         {options.map((o) => (
-          <button key={o} type="button" onClick={() => set(k, o)} className={cn("flex flex-col items-center gap-1 rounded-xl border p-1.5 text-center leading-tight transition-colors", camera[k] === o ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
-            {assets?.[o] && <img src={assets[o]} alt="" className="h-12 w-full rounded-lg object-cover" />}
-            <span className="line-clamp-2">{k === "focal" ? `${o}mm` : o}</span>
+          <button key={o.id} type="button" onClick={() => set(k, o.id)} title={o.note || undefined}
+            className={cn("flex flex-col items-start gap-0.5 rounded-xl border p-2 text-left leading-tight transition-colors", c[k] === o.id ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+            <span className="font-medium">{o.label}</span>
+            {o.note && <span className="line-clamp-2 text-muted-foreground">{o.note}</span>}
           </button>
         ))}
       </div>
     </div>
   );
+  const Chips = ({ label, k, options }) => (
+    <div className="space-y-2">
+      <span className="text-muted-foreground">{label}</span>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <button key={o.value} type="button" onClick={() => set(k, o.value)}
+            className={cn("rounded-lg border px-2.5 py-1 tabular-nums transition-colors", c[k] === o.value ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>{o.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+  const lens = d.lenses.find((l) => l.id === c.lens);
+  const pick = (k, list, none) => (
+    <Select value={c[k] || "none"} onValueChange={(v) => set(k, v === "none" ? null : v)}>
+      <SelectTrigger className="h-10 w-full rounded-xl"><SelectValue /></SelectTrigger>
+      <SelectContent className="max-h-[320px]">
+        <SelectItem value="none">{none}</SelectItem>
+        {list.map((o) => <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
   return (
-    <div className="space-y-4">
+    <div className="max-h-[60vh] space-y-4 overflow-y-auto custom-scrollbar pr-1">
+      <div className="grid grid-cols-2 gap-3">
+        <label className="space-y-1.5"><span className="text-muted-foreground">Era</span>{pick("era", d.eras, "Any")}</label>
+        <label className="space-y-1.5"><span className="text-muted-foreground">Light</span>{pick("light", d.lights, "Any")}</label>
+      </div>
       <label className="flex items-center justify-between gap-3">
         <span className="font-semibold">Camera look</span>
-        <Switch checked={camera.on} onCheckedChange={(v) => set("on", v)} />
+        <Switch checked={c.on} onCheckedChange={(v) => set("on", v)} />
       </label>
-      <p className="text-muted-foreground">Adds the camera, lens, focal length and aperture to the prompt.</p>
-      {camera.on && (
-        <div className="max-h-[50vh] space-y-4 overflow-y-auto custom-scrollbar pr-1">
-          <Pick label="Camera" k="camera" options={Object.keys(CAMERA)} assets={CAMERA_ASSETS} />
-          <Pick label="Lens" k="lens" options={Object.keys(LENS)} assets={CAMERA_ASSETS} />
-          <Pick label="Focal length" k="focal" options={Object.keys(FOCAL).map(Number)} />
-          <Pick label="Aperture" k="aperture" options={Object.keys(APERTURE)} />
+      <p className="text-muted-foreground">Camera, lens, focal length and aperture, written into the prompt the way the chosen model understands them.</p>
+      {c.on && (
+        <div className="space-y-4">
+          <Cards label="Camera" k="camera" options={d.cameras} />
+          <Cards label="Lens" k="lens" options={d.lenses} />
+          <Chips label={`Focal length${lens?.focal ? ` · this lens is usually ${lens.focal[0]}–${lens.focal[1]} mm` : ""}`} k="focal" options={d.focals.map((f) => ({ value: f, label: `${f}mm` }))} />
+          <Chips label="Aperture" k="aperture" options={d.apertures.map((f) => ({ value: f, label: f }))} />
         </div>
       )}
+      {d.filters.map((f) => (
+        <label key={f.id} className="flex items-center justify-between gap-3">
+          <span><span className="font-medium">{f.label}</span> <span className="text-muted-foreground">· {f.note}</span></span>
+          <Switch checked={c.filter === f.id} onCheckedChange={(v) => set("filter", v ? f.id : null)} />
+        </label>
+      ))}
+      <DzHints hints={hints} />
     </div>
   );
 }
@@ -365,7 +404,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const [modelByKind, setModelByKind] = useState(saved.modelByKind || {});
   const [valuesByKind, setValuesByKind] = useState(saved.valuesByKind || { image: {}, video: {} });
   const [prompt, setPrompt] = useState(saved.prompt || "");
-  const [camera, setCamera] = useState({ ...DEFAULT_CAMERA, ...(saved.camera || {}) });
+  const [camera, setCamera] = useState(() => normalizeCamera(saved.camera));
   const [move, setMove] = useState(saved.move || "");
   const [count, setCount] = useState(saved.count || 1); // ×1–4: same request, several results
   const [attached, setAttached] = useState(saved.attached || {});
@@ -447,7 +486,9 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   // Native elements beyond what the chosen endpoint takes are left out — say so.
   const nativeDropped = elementSpec ? activeElements.filter((e) => !elementPairs.some((p) => p.element.id === e.id)).map((e) => e.name) : [];
   const trimmed = merged.trimmed || (nativeDropped.length ? { dropped: nativeDropped, cut: 0 } : null);
-  const finalPrompt = composePrompt(translateTags(prompt, tags), { kind, camera, move });
+  const finalPrompt = composePrompt(translateTags(prompt, tags));
+  // The look goes to the server, which writes it into the prompt for this model.
+  const look = useMemo(() => lookOf(camera, kind === "video" ? move : ""), [camera, kind, move]);
   const usedTags = useMemo(() => {
     const names = new Set([...String(prompt).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()));
     return tags.filter((t) => names.has(t.tag.toLowerCase()));
@@ -462,7 +503,8 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       ? (has("first") ? `image-to-video (start frame${has("last") ? " and end frame" : ""} attached)` : has("source") ? "video editing" : has("reference") || has("video") || elementsUsed ? "reference-to-video" : "text-to-video")
       : (has("reference") || elementsUsed ? "image with reference images / editing" : "text-to-image");
     const audio = [values.generate_audio, values.audio, values.sound, values.enable_audio].find((v) => typeof v === "boolean");
-    const cameraText = composePrompt("", { kind, camera, move }).trim();
+    const moveLabel = kind === "video" && move ? lookData().moves.find((m) => m.id === move)?.label : "";
+    const cameraText = [lookLabel(camera), moveLabel ? `move: ${moveLabel}` : ""].filter(Boolean).join(", ");
     return {
       mode, duration: values.duration, aspect: values.aspect_ratio || values.ratio, audio,
       camera: cameraText || undefined,
@@ -475,6 +517,9 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   // The price shows as soon as the model and files are set — not only after the prompt is typed.
   const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: finalPrompt || "price check", values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null);
   const { price, loading: priceLoading } = useDzQuote(apiKey, () => (quoteBody ? [dzGenerate, { endpoint: variant.model.endpoint, ...quoteBody }] : null));
+  // The server's view (hints on unusual camera combos; the drawer shows the final prompt).
+  const [sentOpen, setSentOpen] = useState(false);
+  const sentPreview = useDzPromptPreview({ endpoint: variant?.model.endpoint, body: quoteBody ? { ...quoteBody, prompt: "" } : null, look, enabled: Boolean(variant && look && !sentOpen) });
 
   // The side chat sees which model is open here and the prompt; it can put text into the prompt.
   useEffect(() => {
@@ -587,7 +632,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       setBusy((n) => n + 1);
       onGenerationStart?.();
       try {
-        const res = await dzWithMeta({ studio: mode, meta }, () => dzGenerate(apiKey, request));
+        const res = await dzWithMeta({ studio: mode, meta, look }, () => dzGenerate(apiKey, request));
         onGenerationEnd?.();
         if (res?.url) onGenerationComplete?.({ url: res.url, type: kind });
       } catch (e) {
@@ -598,7 +643,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       }
     };
     await Promise.all(Array.from({ length: count }, one));
-  }, [canRun, variant, kind, entry, prompt, values, camera, move, used, body, count, apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError]);
+  }, [canRun, variant, kind, entry, prompt, values, camera, move, look, used, body, count, apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError]);
 
   const applyResult = (item, how) => {
     if (how === "animate" && fixedKind === "image") {
@@ -636,7 +681,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     if (m.entryKey) setModelByKind((prev) => ({ ...prev, [m.kind || kind]: m.entryKey }));
     if (m.values) setValuesByKind((prev) => ({ ...prev, [m.kind || kind]: cleanValues(m.values) }));
     if (typeof m.prompt === "string") setPrompt(m.prompt);
-    if (m.camera) setCamera({ ...DEFAULT_CAMERA, ...m.camera });
+    if (m.camera) setCamera(normalizeCamera(m.camera));
     setMove(m.move || "");
     if (isObj(m.attached)) setAttached(normalizeSaved({ attached: m.attached }).attached || {});
   };
@@ -809,11 +854,11 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
               This model gets: {usedTags.map((t) => `@${t.tag} → ${t.to}`).join(" · ")}
             </p>
           )}
-          {adaptModel && prompt.trim() && (
-            <div className="flex justify-end">
-              <DzAdaptButton prompt={prompt} model={adaptModel} context={adaptContext} onUse={(p) => setPrompt(p)} />
-            </div>
-          )}
+          <DzHints hints={sentPreview.data?.hints || []} />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {variant && <Button variant="ghost" size="sm" onClick={() => setSentOpen(true)}>Sent to the model</Button>}
+            {adaptModel && prompt.trim() && <DzAdaptButton prompt={prompt} model={adaptModel} context={adaptContext} onUse={(p) => setPrompt(p)} />}
+          </div>
           {jsonPrompt.json && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {jsonPrompt.ok ? (
@@ -839,16 +884,16 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
                 </SelectTrigger>
                 <SelectContent className="max-h-[360px]">
                   <SelectItem value="none">None</SelectItem>
-                  {CAMERA_MOVES.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
+                  {lookData().moves.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
 
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant={camera.on ? "default" : "secondary"} className="h-10 rounded-xl px-3 font-medium">Camera{camera.on ? " · on" : ""}</Button>
+                <Button variant={look && (camera.on || camera.era || camera.light || camera.filter) ? "default" : "secondary"} className="h-10 max-w-[280px] rounded-xl px-3 font-medium"><span className="truncate">Camera{lookLabel(camera) ? ` · ${lookLabel(camera)}` : ""}</span></Button>
               </PopoverTrigger>
-              <PopoverContent side="top" align="start" className="w-[min(440px,calc(100vw-24px))] rounded-2xl"><CameraPanel camera={camera} setCamera={setCamera} /></PopoverContent>
+              <PopoverContent side="top" align="start" className="w-[min(440px,calc(100vw-24px))] rounded-2xl"><CameraPanel camera={camera} setCamera={setCamera} hints={sentPreview.data?.hints || []} /></PopoverContent>
             </Popover>
 
             {canUseElements ? (
@@ -900,6 +945,8 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
       </div>
       <DrawModal isOpen={drawOpen} onClose={() => setDrawOpen(false)} apiKey={apiKey} batchSize={1} studio={mode} onError={onGenerationError} onDone={() => window.dispatchEvent(new CustomEvent("dz:history", { detail: { studio: mode } }))} />
       <Viewer item={viewing} onClose={() => setViewing(null)} />
+      <DzSentPanel open={sentOpen} onOpenChange={setSentOpen}
+        requests={variant ? [{ endpoint: variant.model.endpoint, body: quoteBody || buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }), look, problem: missing || null }] : []} />
     </div>
   );
 }

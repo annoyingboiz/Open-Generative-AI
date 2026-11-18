@@ -39,7 +39,9 @@ function parseMemo(text, file) {
   let match = null;
   try { match = meta.match ? new RegExp(meta.match, 'i') : null; } catch { match = null; }
   const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
-  return { id: meta.id, name: meta.name || meta.id, kind: meta.kind, match, generic: file.startsWith('_'), sources: list(meta.sources), blocks: list(meta.blocks), body: m[2].trim() };
+  // Where the camera look goes in this model's prompt (see src/look.js).
+  const look = { place: ['start', 'blocks'].includes(meta.look) ? meta.look : 'end', camera: typeof meta.look_camera === 'string' ? meta.look_camera : null, style: typeof meta.look_style === 'string' ? meta.look_style : null };
+  return { id: meta.id, name: meta.name || meta.id, kind: meta.kind, match, generic: file.startsWith('_'), sources: list(meta.sources), blocks: list(meta.blocks), look, body: m[2].trim() };
 }
 
 export function loadMemos(dir = DIR) {

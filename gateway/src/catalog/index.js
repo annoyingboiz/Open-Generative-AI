@@ -3,6 +3,7 @@
 //   DATA_DIR/catalog/<provider>-models.json   raw model lists
 //   DATA_DIR/catalog/atlas-schemas/*.json     Atlas per-model field schemas
 //   DATA_DIR/catalog/apimart-prices.json      APIMart prices per model
+import { lookForClient } from '../look.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -300,7 +301,7 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     thumbnail,
     clientScript(user = null) {
       const lists = user?.role === 'admin' ? built.listsJson : built.publicListsJson;
-      const json = `{"builtAt":${built.builtAt},"lists":${lists},"tools":${JSON.stringify(currentTools())}}`;
+      const json = `{"builtAt":${built.builtAt},"lists":${lists},"tools":${JSON.stringify(currentTools())},"look":${JSON.stringify(lookForClient())}}`;
       return `window.__DZ_CATALOG__=${json.replace(/</g, '\\u003c')};\n`;
     },
     stats() {

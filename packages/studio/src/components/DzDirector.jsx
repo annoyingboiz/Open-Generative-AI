@@ -17,7 +17,8 @@ import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import { DzMediaPicker } from "./DzMedia.jsx";
 import { Viewer } from "./DzLibrary.jsx";
 import { ModelPicker, ParamControl, CameraPanel } from "./DzCreateStudio.jsx";
-import { createEntries, chooseVariant, paramsOf, CAMERA, LENS, FOCAL, APERTURE, CAMERA_MOVES, DEFAULT_CAMERA } from "../dzCreate.js";
+import { createEntries, chooseVariant, paramsOf, DEFAULT_CAMERA, lookData, normalizeCamera, lookLabel } from "../dzCreate.js";
+import DzSentPanel, { useDzPromptPreview, DzHints } from "./DzSentPanel.jsx";
 import {
   dzStoryboards, SHOT_SIZES, SHOT_ANGLES, emptyShot, newShotId, durationsOf, fitDuration, frameRequest, videoRequest, elementRefs,
 } from "../dzDirector.js";
@@ -85,9 +86,12 @@ function ShotCard({
   const m = media || { frames: [], videos: [], frame: null, video: null };
   const set = (k, v) => onChange({ ...shot, [k]: v });
   const fr = useMemo(() => frameRequest({ entry: frameEntry, shot, look, values: frameValues, elements }), [frameEntry, shot, look, frameValues, elements]);
-  const vr = useMemo(() => videoRequest({ entry: videoEntry, shot, values: videoValues, frame: m.frame, dur }), [videoEntry, shot, videoValues, m.frame, dur]);
+  const vr = useMemo(() => videoRequest({ entry: videoEntry, shot, look, values: videoValues, frame: m.frame, dur }), [videoEntry, shot, look, videoValues, m.frame, dur]);
   // A price shows even before a frame is picked (any picture gives the same price).
-  const vrQuote = useMemo(() => (vr.body ? vr : videoRequest({ entry: videoEntry, shot, values: videoValues, frame: "/media/u/price-check.png", dur })), [vr, videoEntry, shot, videoValues, dur]);
+  const vrQuote = useMemo(() => (vr.body ? vr : videoRequest({ entry: videoEntry, shot, look, values: videoValues, frame: "/media/u/price-check.png", dur })), [vr, videoEntry, shot, look, videoValues, dur]);
+  // "Unusual combo" hints for this shot's camera (from the server), and the "sent" drawer.
+  const [sentOpen, setSentOpen] = useState(false);
+  const hints = useDzPromptPreview({ endpoint: fr.variant?.model.endpoint, body: fr.body ? { ...fr.body, prompt: "" } : null, look: fr.look || null, size: shot.size, enabled: Boolean(fr.variant && fr.look && !sentOpen) });
   const framePrice = useDzQuote(apiKey, () => (fr.body ? [dzGenerate, { endpoint: fr.variant.model.endpoint, ...fr.body }] : null), frames);
   const videoPrice = useDzQuote(apiKey, () => (vrQuote.body ? [dzGenerate, { endpoint: vrQuote.variant.model.endpoint, ...vrQuote.body }] : null));
   const running = (step) => Math.max(jobs.filter((j) => j.step === step && j.status === "running").length, local[step] || 0);
@@ -104,7 +108,7 @@ function ShotCard({
         <Input value={shot.title} onChange={(e) => set("title", e.target.value)} placeholder="Shot title" disabled={readOnly} className="h-9 max-w-[260px] font-semibold" />
         <Pick label="Size" value={shot.size} options={SHOT_SIZES} onChange={(v) => set("size", v)} none="—" />
         <Pick label="Angle" value={shot.angle} options={SHOT_ANGLES} onChange={(v) => set("angle", v)} none="—" />
-        <Pick label="Move" value={shot.move} options={CAMERA_MOVES.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => set("move", v)} none="None" />
+        <Pick label="Move" value={shot.move} options={lookData().moves.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => set("move", v)} none="None" />
         {durOptions.length > 0 && (
           <Pick label="Length" value={d ?? ""} options={durOptions.map((n) => ({ value: n, label: `${n}s` }))} onChange={(v) => set("duration", v == null ? null : Number(v))} none="Model default" />
         )}
@@ -122,11 +126,18 @@ function ShotCard({
           <Textarea value={shot.action} onChange={(e) => set("action", e.target.value)} disabled={readOnly} rows={3} placeholder="What happens in this shot" className="min-h-[72px] resize-y" />
           <Input value={shot.light} onChange={(e) => set("light", e.target.value)} disabled={readOnly} placeholder="Light (e.g. low warm key from the left, teal rim)" className="h-9" />
           <div className="flex flex-wrap gap-1.5">
-            <Pick label="Camera" value={shot.camera} options={Object.keys(CAMERA)} onChange={(v) => set("camera", v)} />
-            <Pick label="Lens" value={shot.lens} options={Object.keys(LENS)} onChange={(v) => set("lens", v)} />
-            <Pick label="Focal" value={shot.focal} options={Object.keys(FOCAL).map((f) => ({ value: Number(f), label: `${f}mm` }))} onChange={(v) => set("focal", v == null ? null : Number(v))} />
-            <Pick label="Aperture" value={shot.aperture} options={Object.keys(APERTURE)} onChange={(v) => set("aperture", v)} />
+            <Pick label="Camera" value={shot.camera} options={lookData().cameras.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => set("camera", v)} />
+            <Pick label="Lens" value={shot.lens} options={lookData().lenses.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => set("lens", v)} />
+            <Pick label="Focal" value={shot.focal} options={lookData().focals.map((f) => ({ value: f, label: `${f}mm` }))} onChange={(v) => set("focal", v == null ? null : Number(v))} />
+            <Pick label="Aperture" value={shot.aperture} options={lookData().apertures} onChange={(v) => set("aperture", v)} />
           </div>
+          <DzHints hints={hints.data?.hints || []} />
+          <Button size="sm" variant="ghost" onClick={() => setSentOpen(true)}>Sent to the model</Button>
+          <DzSentPanel open={sentOpen} onOpenChange={setSentOpen} title={`Shot ${index + 1} · sent to the models`}
+            requests={[
+              ...(fr.variant ? [{ label: "1 · Start frame", endpoint: fr.variant.model.endpoint, body: fr.body || { prompt: fr.prompt || "" }, look: fr.look || null, size: shot.size, problem: fr.body ? null : fr.problem }] : []),
+              ...(vrQuote.variant ? [{ label: "2 · Video", endpoint: vrQuote.variant.model.endpoint, body: vrQuote.body || { prompt: vrQuote.prompt || "" }, look: vrQuote.look || null, problem: vrQuote.body ? null : vrQuote.problem }] : []),
+            ]} />
         </div>
 
         {/* Step 1: the start frame */}
@@ -490,7 +501,7 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
       setLocal((l) => ({ ...l, [key]: (l[key] || 0) + 1 }));
       onGenerationStart?.();
       try {
-        const res = await dzWithMeta({ studio: "director", meta }, () => dzGenerate(apiKey, { endpoint: req.variant.model.endpoint, ...req.body }));
+        const res = await dzWithMeta({ studio: "director", meta, look: req.look || null }, () => dzGenerate(apiKey, { endpoint: req.variant.model.endpoint, ...req.body }));
         onGenerationEnd?.();
         if (res?.url) onGenerationComplete?.({ url: res.url, type: meta.kind });
       } catch (e) {
@@ -614,11 +625,11 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
                   note="Characters, places and props of this scene: the Director uses their @tags, and their pictures go to the image model as references." />
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="secondary" className="h-10 rounded-xl px-3 font-medium">Board look · {look.camera || DEFAULT_CAMERA.camera}</Button>
+                    <Button variant="secondary" className="h-10 max-w-[320px] rounded-xl px-3 font-medium"><span className="truncate">Board look · {lookLabel({ ...look, on: true })}</span></Button>
                   </PopoverTrigger>
                   <PopoverContent align="start" className="w-[min(440px,calc(100vw-24px))] rounded-2xl">
-                    <p className="mb-3 text-muted-foreground">Default camera, lens, focal length and aperture for every shot. A shot can set its own.</p>
-                    <CameraPanel camera={{ ...DEFAULT_CAMERA, ...look, on: true }} setCamera={(fn) => edit((d) => { const next = typeof fn === "function" ? fn({ ...DEFAULT_CAMERA, ...d.look, on: true }) : fn; const { on, ...rest } = next; return { ...d, look: { ...d.look, ...rest } }; })} />
+                    <p className="mb-3 text-muted-foreground">Era, light and filter of the whole scene, and the default camera, lens, focal length and aperture for every shot (a shot can set its own).</p>
+                    <CameraPanel camera={normalizeCamera({ ...look, on: true })} setCamera={(fn) => edit((d) => { const cur = normalizeCamera({ ...d.look, on: true }); const next = typeof fn === "function" ? fn(cur) : fn; const { on: _on, ...rest } = next; return { ...d, look: { ...d.look, ...rest } }; })} />
                   </PopoverContent>
                 </Popover>
                 <Select value={String(settings.count || "auto")} onValueChange={(v) => setSettings({ count: v === "auto" ? "auto" : Number(v) })}>

@@ -7,6 +7,9 @@ sources:
   - https://docs.x.ai/docs/guides/video-generation
   - xAI Grok Imagine video page (describe subject, action, camera movement, lighting, mood, sound)
 blocks: [Subject, Action, Camera, Light, Sound]
+look: blocks
+look_camera: Camera
+look_style: Light
 ---
 # Grok Imagine Video — prompt notes
 

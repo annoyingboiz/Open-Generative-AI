@@ -31,6 +31,7 @@ import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
 import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
+import { cleanLook, renderLook, lookHints } from './look.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
 import { createDirector, DirectorError } from './director.js';
 import { createAssistants, AssistantError } from './assistants.js';
@@ -632,6 +633,17 @@ export async function buildApp(config, { logger = true } = {}) {
     return { key, variant };
   }
 
+  // The prompt the model gets: what was typed, plus the camera look (camera,
+  // lens, focal, aperture, filter, era, light, move) in this model's words and
+  // place (src/look.js, memo frontmatter "look").
+  function finalPrompt(resolved, prompt, rawLook) {
+    const variant = resolved?.variant;
+    const look = cleanLook(rawLook);
+    if (!variant || !look || variant.model?.hasPrompt === false) return { prompt, look: null, memo: null };
+    const memo = adapter.memoFor(variant.family, variant.kind === 'image' ? 'image' : 'video');
+    return { prompt: renderLook(prompt, look, { kind: variant.kind, memo }), look, memo };
+  }
+
   function providerBodyFor(resolved, providerId, modelId, body) {
     if (resolved.tool) return falBody(modelId, body);
     return resolved.variant ? toProviderBody(resolved.variant, body) : body;
@@ -685,6 +697,38 @@ export async function buildApp(config, { logger = true } = {}) {
     if (providerId === 'local') return { usd: 0, exact: true, source: 'quote' };
     return quoter.quote({ providerId, modelId, providerBody, variant: resolved.variant });
   }
+
+  // What the model will get: the final prompt (camera look built here, in the
+  // model's words and place) and the whole request body — shown in the
+  // studio's "Sent to the model" drawer so people can see and experiment.
+  const previewThrottle = new Map(); // userId -> [timestamps]
+  app.post('/dz/api/prompt/preview', async (req, reply) => {
+    const t = Date.now();
+    const recent = (previewThrottle.get(req.user.id) || []).filter((x) => t - x < 60_000);
+    if (recent.length >= 120) return reply.code(429).send({ error: 'Too many previews, slow down.' });
+    recent.push(t);
+    previewThrottle.set(req.user.id, recent);
+    const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([a-z0-9]+))?$/i.exec(String(req.body?.endpoint || ''));
+    if (!m) return reply.code(400).send({ error: 'Bad endpoint' });
+    const [, providerId, modelId, mode] = m;
+    const resolved = resolveEndpoint(req.user, providerId, modelId, mode);
+    if (!resolved?.variant) return reply.code(404).send({ error: 'Unknown model' });
+    const { _dz: _ignored, ...body } = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
+    const typed = typeof body.prompt === 'string' ? body.prompt.slice(0, 32000) : '';
+    const built = finalPrompt(resolved, typed, req.body?.look);
+    if (built.look && built.prompt.trim()) body.prompt = built.prompt;
+    const variant = resolved.variant;
+    const sent = providerBodyFor(resolved, providerId, modelId, body);
+    const promptField = Object.entries(variant.server?.rename || {}).find(([from]) => from === 'prompt')?.[1] || 'prompt';
+    return {
+      prompt: typeof sent[promptField] === 'string' ? sent[promptField] : null,
+      promptField,
+      body: sent,
+      model: { provider: providerId, id: variant.providerModel, family: variant.family },
+      rules: built.memo ? { memo: built.memo.id, name: built.memo.name, generic: built.memo.generic, place: built.memo.look?.place || 'end', camera: built.memo.look?.camera || null, style: built.memo.look?.style || null } : null,
+      hints: built.look ? lookHints(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],
+    };
+  });
 
   // Price before generating: { usd, exact, source } — shown next to Generate.
   const quoteThrottle = new Map(); // userId -> [timestamps]
@@ -752,6 +796,14 @@ export async function buildApp(config, { logger = true } = {}) {
         });
         return { request_id: id, id, status: 'processing' };
       }
+      const typedPrompt = typeof requestBody.prompt === 'string' ? requestBody.prompt : null;
+      if (dz?.look && !resolved.tool) {
+        const built = finalPrompt(resolved, typedPrompt || '', dz.look);
+        if (built.look) {
+          if (built.prompt.trim()) requestBody.prompt = built.prompt;
+          if (meta) meta.look = built.look;
+        }
+      }
       const body = providerBodyFor(resolved, providerId, modelId, requestBody);
       if (resolved.tool && !generations.mediaFileForUrl(req.user, body.image_url)) {
         return reply.code(400).send({ detail: 'Choose an image to upscale.' });
@@ -775,7 +827,7 @@ export async function buildApp(config, { logger = true } = {}) {
         estSource: !price ? null : price.source === 'quote' ? (price.exact ? 'quote' : 'quote~') : 'estimate',
         studio: studio || (resolved.tool ? 'upscale' : null),
         // The text as typed (speech models get it as "text", not "prompt").
-        displayPrompt: typeof requestBody.prompt === 'string' ? requestBody.prompt : null,
+        displayPrompt: typedPrompt,
         meta,
         projectId,
         folderId,

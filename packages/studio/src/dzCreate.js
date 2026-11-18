@@ -420,72 +420,47 @@ export function keepValues(values, variant) {
   return out;
 }
 
-// ── Camera (from Cinema) and camera moves ──────────────────────────────────
-
-export const CAMERA = {
-  "Modular 8K Digital": "modular 8K digital cinema camera",
-  "Full-Frame Cine Digital": "full-frame digital cinema camera",
-  "Grand Format 70mm Film": "grand format 70mm film camera",
-  "Studio Digital S35": "Super 35 studio digital camera",
-  "Classic 16mm Film": "classic 16mm film camera",
-  "Premium Large Format Digital": "premium large-format digital cinema camera",
-};
-export const LENS = {
-  "Premium Modern Prime": "premium modern prime lens",
-  "Classic Anamorphic": "classic anamorphic lens",
-  "Compact Anamorphic": "compact anamorphic lens",
-  "70s Cinema Prime": "1970s cinema prime lens",
-  "Warm Cinema Prime": "warm-toned cinema prime lens",
-  "Vintage Prime": "vintage prime lens",
-  "Swirl Bokeh Portrait": "swirl bokeh portrait lens",
-  "Clinical Sharp Prime": "ultra-sharp clinical prime lens",
-  "Halation Diffusion": "halation diffusion filter",
-  "Creative Tilt Lens": "creative tilt lens effect",
-  "Extreme Macro": "extreme macro lens",
-};
-export const FOCAL = { 8: "ultra-wide perspective", 14: "wide-angle perspective", 24: "wide-angle dynamic perspective", 35: "natural cinematic perspective", 50: "standard portrait perspective", 85: "classic portrait perspective" };
-export const APERTURE = { "f/1.4": "shallow depth of field, creamy bokeh", "f/4": "balanced depth of field", "f/11": "deep focus clarity, sharp foreground to background" };
-export const CAMERA_ASSETS = {
-  "Modular 8K Digital": "/assets/cinema/modular_8k_digital.webp",
-  "Full-Frame Cine Digital": "/assets/cinema/full_frame_cine_digital.webp",
-  "Grand Format 70mm Film": "/assets/cinema/grand_format_70mm_film.webp",
-  "Studio Digital S35": "/assets/cinema/studio_digital_s35.webp",
-  "Classic 16mm Film": "/assets/cinema/classic_16mm_film.webp",
-  "Premium Large Format Digital": "/assets/cinema/premium_large_format_digital.webp",
-  "Creative Tilt Lens": "/assets/cinema/creative_tilt_lens.webp",
-  "Compact Anamorphic": "/assets/cinema/compact_anamorphic.webp",
-  "Extreme Macro": "/assets/cinema/extreme_macro.webp",
-  "70s Cinema Prime": "/assets/cinema/70s_cinema_prime.webp",
-  "Classic Anamorphic": "/assets/cinema/classic_anamorphic.webp",
-  "Premium Modern Prime": "/assets/cinema/premium_modern_prime.webp",
-  "Warm Cinema Prime": "/assets/cinema/warm_cinema_prime.webp",
-  "Swirl Bokeh Portrait": "/assets/cinema/swirl_bokeh_portrait.webp",
-  "Vintage Prime": "/assets/cinema/vintage_prime.webp",
-  "Halation Diffusion": "/assets/cinema/halation_diffusion.webp",
-  "Clinical Sharp Prime": "/assets/cinema/clinical_sharp_prime.webp",
-};
-
-// Camera moves for video, written the way video models understand them.
-export const CAMERA_MOVES = [
-  { id: "static", label: "Static", text: "static locked-off camera, no camera movement" },
-  { id: "dolly-in", label: "Dolly in", text: "slow dolly-in toward the subject" },
-  { id: "dolly-out", label: "Dolly out", text: "slow dolly-out away from the subject, revealing the surroundings" },
-  { id: "push-in", label: "Push in (fast)", text: "fast push-in on the subject" },
-  { id: "pan-left", label: "Pan left", text: "smooth pan to the left" },
-  { id: "pan-right", label: "Pan right", text: "smooth pan to the right" },
-  { id: "tilt-up", label: "Tilt up", text: "slow tilt up" },
-  { id: "tilt-down", label: "Tilt down", text: "slow tilt down" },
-  { id: "truck-left", label: "Truck left", text: "camera trucks left alongside the subject" },
-  { id: "truck-right", label: "Truck right", text: "camera trucks right alongside the subject" },
-  { id: "orbit", label: "Orbit", text: "camera orbits around the subject in a smooth arc" },
-  { id: "crane-up", label: "Crane up", text: "crane shot rising up and over the scene" },
-  { id: "crane-down", label: "Crane down", text: "crane shot descending toward the subject" },
-  { id: "tracking", label: "Tracking", text: "tracking shot following the subject" },
-  { id: "handheld", label: "Handheld", text: "handheld camera with subtle natural shake" },
-  { id: "drone", label: "Drone / FPV", text: "aerial drone shot flying over the scene" },
-  { id: "zoom-in", label: "Zoom in", text: "slow optical zoom in" },
-  { id: "dolly-zoom", label: "Dolly zoom", text: "dolly zoom (vertigo effect) on the subject" },
-];
+// ── Camera look ────────────────────────────────────────────────────────────
+// Camera, lens, focal length, aperture, filter, era, light and the camera move.
+// The choices (ids) go to the server with the request (`_dz.look`); the server
+// writes them into the prompt in the chosen model's words and place
+// (gateway/src/look.js). Here: only the lists to draw the controls.
+const LOOK_FALLBACK = { cameras: [], lenses: [], filters: [], focals: [], apertures: [], eras: [], lights: [], moves: [], defaults: { camera: "digital", lens: "clean", focal: 35, aperture: "f/4" } };
+export function lookData() {
+  return (typeof window !== "undefined" && window.__DZ_CATALOG__?.look) || LOOK_FALLBACK;
+}
+export const DEFAULT_CAMERA = { on: false, camera: "digital", lens: "clean", focal: 35, aperture: "f/4", filter: null, era: null, light: null };
+// Settings saved before 18.11 used display names; the server maps those too.
+const LEGACY_CAMERA = { "Modular 8K Digital": "digital", "Full-Frame Cine Digital": "digital", "Studio Digital S35": "digital", "Grand Format 70mm Film": "imax-70", "Classic 16mm Film": "film-16", "Premium Large Format Digital": "large-format" };
+const LEGACY_LENS = { "Premium Modern Prime": "clean", "Clinical Sharp Prime": "clean", "Classic Anamorphic": "anamorphic", "Compact Anamorphic": "anamorphic", "70s Cinema Prime": "vintage-prime", "Warm Cinema Prime": "vintage-prime", "Vintage Prime": "vintage-prime", "Swirl Bokeh Portrait": "petzval", "Halation Diffusion": "clean", "Creative Tilt Lens": "tilt-shift", "Extreme Macro": "macro" };
+export function normalizeCamera(c) {
+  const v = c && typeof c === "object" ? c : {};
+  const focal = { 8: 12, 14: 16 }[Number(v.focal)] || Number(v.focal) || DEFAULT_CAMERA.focal;
+  return {
+    ...DEFAULT_CAMERA,
+    on: Boolean(v.on),
+    camera: LEGACY_CAMERA[v.camera] || v.camera || DEFAULT_CAMERA.camera,
+    lens: LEGACY_LENS[v.lens] || v.lens || DEFAULT_CAMERA.lens,
+    focal,
+    aperture: typeof v.aperture === "string" ? v.aperture : DEFAULT_CAMERA.aperture,
+    filter: v.filter || (v.lens === "Halation Diffusion" ? "diffusion" : null),
+    era: typeof v.era === "string" ? v.era : null,
+    light: typeof v.light === "string" ? v.light : null,
+  };
+}
+// What goes to the server: null when nothing is chosen.
+export function lookOf(camera, move = "") {
+  const c = normalizeCamera(camera);
+  const look = { ...(c.on ? { on: true, camera: c.camera, lens: c.lens, focal: c.focal, aperture: c.aperture } : { on: false }), filter: c.filter, era: c.era, light: c.light, move: move || null };
+  return look.on || look.filter || look.era || look.light || look.move ? look : null;
+}
+// Short label for buttons ("35mm Film · 50mm · f/2").
+export function lookLabel(camera) {
+  const c = normalizeCamera(camera);
+  const d = lookData();
+  const name = (list, id) => list.find((x) => x.id === id)?.label || "";
+  return [c.on ? name(d.cameras, c.camera) : "", c.on ? `${c.focal}mm` : "", c.on ? c.aperture : "", name(d.eras, c.era), name(d.lights, c.light)].filter(Boolean).join(" · ");
+}
 
 // The final prompt: what the user wrote, plus camera look and movement.
 // A prompt written as JSON (structured prompts for image models): an object
@@ -506,34 +481,9 @@ export function parseJsonPrompt(text) {
 // Plain text gets them appended; a JSON object gets them as its own keys
 // ("camera", "camera_movement"), so it stays valid JSON. A JSON object
 // without additions is sent exactly as written.
-export function composePrompt(prompt, { kind, camera, move }) {
+export function composePrompt(prompt) {
+  // The camera look is added on the server; here only: valid JSON is sent exactly as written.
   const raw = String(prompt || "");
-  const text = raw.trim();
-  const parsed = parseJsonPrompt(text);
-  const extra = {};
-  if (camera?.on) {
-    const persp = FOCAL[camera.focal] || "";
-    extra.camera = [
-      `shot on a ${CAMERA[camera.camera] || camera.camera}`,
-      `using a ${LENS[camera.lens] || camera.lens} at ${camera.focal}mm${persp ? ` (${persp})` : ""}`,
-      `aperture ${camera.aperture}`,
-      APERTURE[camera.aperture] || "",
-      "cinematic lighting, natural color science, high dynamic range",
-    ].filter((p) => p && p.trim()).join(", ");
-  }
-  if (kind === "video" && move) {
-    const m = CAMERA_MOVES.find((x) => x.id === move);
-    if (m) extra.camera_movement = m.text;
-  }
-  // Valid JSON is never broken: sent exactly as written unless keys are added.
-  if (!Object.keys(extra).length) return parsed.ok ? raw : text;
-  if (parsed.ok) {
-    if (Array.isArray(parsed.value)) return raw; // a list has no place for extra keys
-    const keep = {};
-    for (const [k, v] of Object.entries(extra)) if (!(k in parsed.value)) keep[k] = v; // the user's own key wins
-    return Object.keys(keep).length ? JSON.stringify({ ...parsed.value, ...keep }, null, 2) : raw;
-  }
-  return [text, ...Object.values(extra)].filter((p) => p && p.trim()).join(", ");
+  return parseJsonPrompt(raw.trim()).ok ? raw : raw.trim();
 }
 
-export const DEFAULT_CAMERA = { on: false, camera: "Full-Frame Cine Digital", lens: "Premium Modern Prime", focal: 35, aperture: "f/4" };

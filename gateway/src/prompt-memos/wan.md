@@ -6,6 +6,7 @@ match: "^(wan|van)-"
 sources:
   - https://www.alibabacloud.com/help/en/model-studio/text-to-video-prompt (Model Studio text/image-to-video prompt guide)
 blocks: [Entity, Scene, Motion, Aesthetics, Style, Sound]
+look: end
 ---
 # Wan — prompt notes
 

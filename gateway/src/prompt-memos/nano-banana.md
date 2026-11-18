@@ -7,6 +7,7 @@ sources:
   - https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-nano-banana
   - https://blog.google/products/gemini/prompting-tips-nano-banana-pro/
 blocks: [Subject, Action, Context, Composition, Style]
+look: end
 ---
 # Nano Banana — prompt notes
 

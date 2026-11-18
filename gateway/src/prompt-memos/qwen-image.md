@@ -7,6 +7,7 @@ sources:
   - https://help.aliyun.com/en/model-studio/qwen-image-api
   - https://fal.ai/learn/tools/how-to-use-qwen-image-2
 blocks: [Layout, Subject, Background, Text, Style]
+look: end
 ---
 # Qwen Image — prompt notes
 

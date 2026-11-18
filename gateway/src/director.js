@@ -5,18 +5,19 @@
 // each written by that model's prompting notes (src/prompt-memos).
 // The text model is the user's default (or the one asked for).
 
-// The studio's presets (packages/studio/src/dzCreate.js) — names only; the
-// studio turns them into prompt words. Keep in step with dzCreate.js.
+// The camera look presets (ids; src/look.js turns them into each model's words).
+import { CAMERAS, LENSES, FOCALS, APERTURES, MOVES, DEFAULT_LOOK, cleanLook } from './look.js';
+
 export const PRESETS = {
-  camera: ['Modular 8K Digital', 'Full-Frame Cine Digital', 'Grand Format 70mm Film', 'Studio Digital S35', 'Classic 16mm Film', 'Premium Large Format Digital'],
-  lens: ['Premium Modern Prime', 'Classic Anamorphic', 'Compact Anamorphic', '70s Cinema Prime', 'Warm Cinema Prime', 'Vintage Prime', 'Swirl Bokeh Portrait', 'Clinical Sharp Prime', 'Halation Diffusion', 'Creative Tilt Lens', 'Extreme Macro'],
-  focal: [8, 14, 24, 35, 50, 85],
-  aperture: ['f/1.4', 'f/4', 'f/11'],
-  move: ['static', 'dolly-in', 'dolly-out', 'push-in', 'pan-left', 'pan-right', 'tilt-up', 'tilt-down', 'truck-left', 'truck-right', 'orbit', 'crane-up', 'crane-down', 'tracking', 'handheld', 'drone', 'zoom-in', 'dolly-zoom'],
+  camera: CAMERAS.map((c) => c.id),
+  lens: LENSES.map((l) => l.id),
+  focal: FOCALS.map((f) => f.mm),
+  aperture: APERTURES.map((a) => a.f),
+  move: MOVES.map((m) => m.id),
   size: ['extreme wide', 'wide', 'full', 'medium wide', 'medium', 'medium close-up', 'close-up', 'extreme close-up', 'insert'],
   angle: ['eye level', 'low angle', 'high angle', 'overhead', 'dutch angle', 'POV', 'over the shoulder'],
 };
-export const DEFAULT_LOOK = { camera: 'Full-Frame Cine Digital', lens: 'Premium Modern Prime', focal: 35, aperture: 'f/4' };
+export { DEFAULT_LOOK };
 
 const MAX_SCENE = 6000;
 const MAX_SHOTS = 12;
@@ -36,7 +37,8 @@ const oneOf = (list, v, fallback = null) => {
 // text model's answer and for edits from the studio alike.
 export function cleanShot(raw = {}, { id, durations } = {}) {
   const s = raw && typeof raw === 'object' ? raw : {};
-  const focal = PRESETS.focal.find((f) => f === Number(String(s.focal ?? '').replace(/mm$/i, ''))) ?? null;
+  // Ids, or the names used before 18.11 (mapped by cleanLook).
+  const lk = cleanLook({ camera: s.camera, lens: s.lens, focal: s.focal, aperture: s.aperture }) || {};
   let duration = Number(s.duration);
   if (!Number.isFinite(duration) || duration <= 0) duration = null;
   if (duration != null && durations?.length) duration = durations.reduce((best, d) => (Math.abs(d - duration) < Math.abs(best - duration) ? d : best), durations[0]);
@@ -46,10 +48,10 @@ export function cleanShot(raw = {}, { id, durations } = {}) {
     title: line(s.title, 80),
     size: oneOf(PRESETS.size, s.size),
     angle: oneOf(PRESETS.angle, s.angle),
-    camera: oneOf(PRESETS.camera, s.camera),
-    lens: oneOf(PRESETS.lens, s.lens),
-    focal,
-    aperture: oneOf(PRESETS.aperture, s.aperture),
+    camera: lk.camera || null,
+    lens: lk.lens || null,
+    focal: lk.focal || null,
+    aperture: lk.aperture || null,
     move: oneOf(PRESETS.move, s.move),
     light: line(s.light, 200),
     action: text(s.action, 600),
@@ -82,12 +84,12 @@ export function createDirector({ llm, adapter, familyName = () => null }) {
       '4. For every shot pick from these lists only (exact spelling):',
       `   size: ${PRESETS.size.join(' | ')}`,
       `   angle: ${PRESETS.angle.join(' | ')}`,
-      `   camera: ${PRESETS.camera.join(' | ')}`,
-      `   lens: ${PRESETS.lens.join(' | ')}`,
+      `   camera: ${CAMERAS.map((c) => `${c.id} (${c.note})`).join(' | ')}`,
+      `   lens: ${LENSES.map((l) => `${l.id} (${l.note}${l.focal ? `, usually ${l.focal[0]}–${l.focal[1]} mm` : ''})`).join(' | ')}`,
       `   focal (mm): ${PRESETS.focal.join(' | ')}`,
       `   aperture: ${PRESETS.aperture.join(' | ')}`,
       `   move: ${PRESETS.move.join(' | ')}`,
-      '   Keep one camera body for the whole scene unless the user asks otherwise (it is the look of the film); change lens, focal length and aperture per shot when the shot calls for it.',
+      '   Keep one camera body for the whole scene unless the user asks otherwise (it is the look of the film); change lens, focal length and aperture per shot when the shot calls for it. Prefer combinations used in real shooting (a lens within its usual focal range); an unusual one only when the shot asks for it.',
       '5. duration: seconds, one of durations_allowed in the context (or within duration_range).',
       `6. frame_prompt — the still start frame, for ${imageName}: write it exactly in the Output format of the image model notes below. Describe the first moment of the shot: subject, shot size and angle, composition, pose, place, light, colour, style. Use the @tags from the references list for those subjects (only those tags, exactly as written); never invent @tags. Do not name the camera body, lens, focal length or aperture — the app adds them.`,
       `7. motion_prompt — what happens from that frame on, for ${videoName}: write it exactly in the Output format of the video model notes below. The start frame is already given, so describe motion and change: action, performance, the camera move in words that match "move", pacing, sound if the context says the model makes sound. Do not use @tags in motion prompts (say "the man", "she"). Do not re-describe the whole frame.`,

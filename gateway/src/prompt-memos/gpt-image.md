@@ -7,6 +7,7 @@ sources:
   - https://developers.openai.com/api/docs/guides/image-prompting
   - https://developers.openai.com/cookbook/examples/multimodal/image-gen-models-prompting-guide
 blocks: [Scene, Subject, Details, Text, Constraints]
+look: end
 ---
 # GPT Image — prompt notes
 

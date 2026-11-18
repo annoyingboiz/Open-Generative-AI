@@ -6,6 +6,9 @@ match: "^(minimax|hailuo|h-3)(?!.*image)"
 sources:
   - MiniMax H3 official prompt guide (via https://morphic.com/resources/how-to/minimax-h3-guide, https://lumalabs.ai/learning-center/articles/minimax-h3-prompting-guide)
 blocks: [Roles, Beats, Look, Sound, Limits]
+look: blocks
+look_camera: Look
+look_style: Look
 ---
 # MiniMax H3 (Hailuo 3) — prompt notes
 

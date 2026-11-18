@@ -5,6 +5,7 @@ kind: image
 match: ""
 sources: [Google Nano Banana, OpenAI GPT Image, BFL FLUX.2, ByteDance Seedream official prompt guides (common ground)]
 blocks: [Format, Subject, Composition, Light, Style, Text, Constraints]
+look: end
 ---
 # Image — general prompt notes
 

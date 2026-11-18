@@ -6,6 +6,7 @@ match: "^flux"
 sources:
   - https://docs.bfl.ai/guides/prompting_guide_flux2
 blocks: [Subject, Action, Style, Context]
+look: end
 ---
 # FLUX — prompt notes
 

@@ -5,6 +5,7 @@ kind: video
 match: ""
 sources: [Google Veo, Kling, Seedance, Wan, MiniMax official prompt guides (common ground)]
 blocks: [Subject, Action, Setting, Camera, Look, Sound]
+look: end
 ---
 # Video — general prompt notes
 

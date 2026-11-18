@@ -146,3 +146,26 @@ test('APIMart hand-checked spec replaces the parsed modes (Kling motion control)
   assert.deepEqual(m.inputs.character_orientation.enum, ['image', 'video']);
   assert.ok(m.required.includes('image_url') && m.required.includes('video_url'));
 });
+
+test('APIMart audio from hand-checked specs: Suno, sound effects, speech', async () => {
+  const { createRequire } = await import('node:module');
+  const { apimartPrice } = await import('../src/catalog/build.js');
+  const manual = createRequire(import.meta.url)('../src/catalog/apimart-manual.json');
+  const sunoPrice = { action_paid_prices: { 'suno@music-v6': 0.05, 'suno@sounds-v6': 0.0096 } };
+  const [music] = buildApimartVariants({ id: 'suno', category: 'audio', capability_tags: ['Text to Audio', 'Audio to Audio'] }, manual.suno, apimartPrice(sunoPrice, manual.suno));
+  assert.equal(music.mode, 't2a');
+  assert.equal(music.kind, 'audio');
+  assert.equal(music.server.price.usd, 0.05);
+  assert.equal(estimateCost(music, { prompt: 'a song' }), 0.05);
+  const [sfx] = buildApimartVariants({ id: 'suno-sounds', category: 'audio', capability_tags: [] }, manual['suno-sounds'], apimartPrice(sunoPrice, manual['suno-sounds']));
+  assert.equal(sfx.key, 'p/apimart/suno-sounds?m=t2a');
+  assert.equal(sfx.server.price.usd, 0.0096);
+  assert.deepEqual(sfx.model.inputs.type.enum, ['one-shot', 'loop']);
+  const [tts] = buildApimartVariants({ id: 'gpt-4o-mini-tts', category: 'audio', capability_tags: ['Audio'] }, manual['gpt-4o-mini-tts'], apimartPrice(null, manual['gpt-4o-mini-tts']));
+  const body = toProviderBody(tts, { prompt: 'Hello', voice: 'nova' });
+  assert.equal(body.input, 'Hello');
+  assert.equal(body.prompt, undefined);
+  assert.ok(Math.abs(estimateCost(tts, { input: 'x'.repeat(2000) }) - 0.024) < 1e-9);
+  const [flow] = buildApimartVariants({ id: 'flowmusic', category: 'audio', capability_tags: [] }, manual.flowmusic, apimartPrice({ action_paid_prices: { 'flowmusic@generate': 0.06 } }, manual.flowmusic));
+  assert.equal(toProviderBody(flow, { prompt: 'lofi piano' }).sound_prompt, 'lofi piano');
+});

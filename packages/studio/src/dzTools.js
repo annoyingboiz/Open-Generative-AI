@@ -46,12 +46,12 @@ export const TOOLS = [
   {
     id: "audio",
     title: "Audio",
-    text: "Voice-over in many voices and languages, or a whole song from a description.",
+    text: "Voice-over in many voices and languages, sound effects, or a whole song from a description.",
     kind: "audio",
     match: null,
     labels: {},
-    main: ["voice", "voice_id", "language", "language_boost", "emotion", "instrumental", "is_instrumental", "vocal_gender"],
-    promptLabel: "Text to speak, or a description of the music",
+    main: ["voice", "voice_id", "type", "version", "language", "language_boost", "emotion", "instrumental", "is_instrumental", "vocal_gender"],
+    promptLabel: "Text to speak, or a description of the sound or music",
   },
 ];
 

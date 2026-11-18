@@ -1,10 +1,34 @@
 // APIMart (https://apimart.ai) — docs: https://docs.apimart.ai
+import fs from 'node:fs';
+import nodePath from 'node:path';
+import crypto from 'node:crypto';
 import { providerJson, providerFetch, ProviderHttpError, fileForm } from './http.js';
 
 const API = 'https://api.apimart.ai';
 const auth = (apiKey) => ({ Authorization: `Bearer ${apiKey}` });
 
 const SUBMIT_PATH = { image: '/v1/images/generations', video: '/v1/videos/generations' };
+
+// Audio. Music and sound effects are async tasks under /v1/music (their own
+// task query); speech answers at once with the audio itself. Our model ids are
+// the catalog's; `model` is what APIMart gets. Docs: docs.apimart.ai → Audio.
+export const APIMART_AUDIO = {
+  suno: { path: '/v1/music/generations', model: 'suno' },
+  'suno-sounds': { path: '/v1/music/generations/sounds', model: 'suno' },
+  flowmusic: { path: '/v1/music/generations', model: 'flowmusic' },
+  'flowmusic-lyria-3.5': { path: '/v1/music/generations', model: 'flowmusic', fixed: { version: 'lyria-3.5' } },
+  'gpt-4o-mini-tts': { path: '/v1/audio/speech', model: 'gpt-4o-mini-tts', speech: true },
+};
+const SPEECH_EXT = { wav: ['wav', 'audio/wav'], aac: ['aac', 'audio/aac'], flac: ['flac', 'audio/flac'], opus: ['ogg', 'audio/ogg'] };
+// Speech files wait here between "submit" and the download step.
+let speechDir = null;
+export function configureApimartFiles(dir) { speechDir = dir || null; }
+const FILE_RE = /^apimart-file:([a-f0-9-]{36}\.(wav|aac|flac|ogg))$/;
+// task ids we store: "music:<id>" (music API), "file:<name>" (speech, done at once), "<id>" (everything else)
+const splitTask = (taskId) => {
+  const m = /^(music|file):(.+)$/.exec(String(taskId));
+  return m ? { type: m[1], id: m[2] } : { type: 'task', id: String(taskId) };
+};
 const UPLOAD_KIND = { image: 'images', video: 'videos', audio: 'audios' };
 
 // Collects every URL from APIMart's task result, whatever the nesting.
@@ -20,6 +44,8 @@ function resultUrls(result) {
   take(result?.videos);
   take(result?.audios);
   take(result?.url);
+  // Music tasks: result.music[] with audio_url (plus a cover image we skip).
+  if (Array.isArray(result?.music)) for (const m of result.music) take(m?.audio_url || m?.wav_url);
   return [...new Set(urls)];
 }
 
@@ -49,6 +75,8 @@ export const apimart = {
   // Price our account pays for this request (membership/custom pricing
   // applied). https://docs.apimart.ai/en/api-reference/account/request-logs
   async quote({ apiKey, proxy }, { model, body }) {
+    // Audio is priced per request / per token: the catalog price stands (no spec API).
+    if (APIMART_AUDIO[model]) return null;
     const spec = {};
     if (body.resolution) spec.resolution = body.resolution;
     if (body.size) spec.size = body.size;
@@ -79,8 +107,10 @@ export const apimart = {
 
   // What a finished task actually cost (logs appear a few seconds later).
   async actualCost({ apiKey, proxy }, taskId) {
+    const task = splitTask(taskId);
+    if (task.type === 'file') return null; // speech: no task log to look up
     try {
-      const data = await providerJson(`${API}/v1/logs/requests/${encodeURIComponent(taskId)}`, { proxy, headers: auth(apiKey), timeoutMs: 15_000 });
+      const data = await providerJson(`${API}/v1/logs/requests/${encodeURIComponent(task.id)}`, { proxy, headers: auth(apiKey), timeoutMs: 15_000 });
       const records = (data?.data || []).filter((r) => r.type === 'consume');
       if (!records.length) return null;
       return records.reduce((sum, r) => sum + (Number(r.cost_usd) || 0), 0);
@@ -91,6 +121,44 @@ export const apimart = {
   },
 
   async submit({ apiKey, proxy }, { kind, model, body }) {
+    const audio = APIMART_AUDIO[model];
+    if (audio?.speech) {
+      if (!speechDir) throw new Error('APIMart speech: no folder for results');
+      const format = SPEECH_EXT[body.response_format] ? body.response_format : 'wav';
+      const response = await providerFetch(`${API}${audio.path}`, {
+        proxy,
+        method: 'POST',
+        headers: { ...auth(apiKey), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, response_format: format, model: audio.model }),
+        timeoutMs: 180_000,
+      });
+      const type = String(response.headers.get('content-type') || '');
+      if (!response.ok || /json|text\//i.test(type)) {
+        const text = await response.text();
+        let detail = text.slice(0, 200);
+        try { const j = JSON.parse(text); detail = j.error?.message || j.message || detail; } catch { /* plain text */ }
+        throw new ProviderHttpError(`HTTP ${response.status}: ${detail}`, { status: response.ok ? 502 : response.status });
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (!buffer.length || buffer.length > 200 * 1024 * 1024) throw new Error('APIMart speech: empty or oversized audio');
+      fs.mkdirSync(speechDir, { recursive: true });
+      const name = `${crypto.randomUUID()}.${SPEECH_EXT[format][0]}`;
+      await fs.promises.writeFile(nodePath.join(speechDir, name), buffer);
+      return { taskId: `file:${name}` };
+    }
+    if (audio) {
+      const data = await providerJson(`${API}${audio.path}`, {
+        proxy,
+        method: 'POST',
+        headers: { ...auth(apiKey), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, ...(audio.fixed || {}), model: audio.model }),
+        timeoutMs: 120_000,
+      });
+      const first = Array.isArray(data?.data) ? data.data[0] : data?.data;
+      const taskId = first?.task_id || data?.task_id || first?.id;
+      if (!taskId) throw new Error(`APIMart: no task id in response ${JSON.stringify(data).slice(0, 200)}`);
+      return { taskId: `music:${taskId}` };
+    }
     const pathFor = SUBMIT_PATH[kind];
     if (!pathFor) throw new Error(`APIMart: ${kind} generation is not supported yet`);
     const data = await providerJson(`${API}${pathFor}`, {
@@ -107,9 +175,12 @@ export const apimart = {
   },
 
   async poll({ apiKey, proxy }, taskId) {
+    const task = splitTask(taskId);
+    if (task.type === 'file') return { state: 'completed', outputs: [`apimart-file:${task.id}`], costUsd: null, progress: 100 };
+    const queryPath = task.type === 'music' ? '/v1/music/tasks/' : '/v1/tasks/';
     let data;
     try {
-      data = await providerJson(`${API}/v1/tasks/${encodeURIComponent(taskId)}?language=en`, { proxy, headers: auth(apiKey), timeoutMs: 30_000 });
+      data = await providerJson(`${API}${queryPath}${encodeURIComponent(task.id)}?language=en`, { proxy, headers: auth(apiKey), timeoutMs: 30_000 });
     } catch (error) {
       if (error instanceof ProviderHttpError && error.status >= 500) return { state: 'processing', transient: error.message };
       throw error;
@@ -123,6 +194,18 @@ export const apimart = {
       return { state: 'failed', error: t.error?.message || status };
     }
     return { state: 'processing', progress: t.progress ?? null };
+  },
+
+  // A speech file saved at submit: { path, ext, mime }; null for normal (URL) results.
+  resultFile(ref) {
+    const m = FILE_RE.exec(String(ref || ''));
+    if (!m || !speechDir) return null;
+    const [ext, mime] = SPEECH_EXT[Object.keys(SPEECH_EXT).find((k) => SPEECH_EXT[k][0] === m[2])];
+    return { path: nodePath.join(speechDir, m[1]), ext, mime };
+  },
+  releaseResult(ref) {
+    const file = this.resultFile(ref);
+    if (file) fs.promises.unlink(file.path).catch(() => {});
   },
 
   // Uploads a local file; APIMart only accepts public URLs for references.

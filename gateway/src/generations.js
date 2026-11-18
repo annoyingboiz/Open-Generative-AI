@@ -203,17 +203,22 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const saved = [];
     const provider = providerById(row.provider);
     for (let i = 0; i < providerOutputs.length; i += 1) {
-      // This server's results are files in the bridge folder: copied, not downloaded.
-      if (provider?.resultFile) {
-        const from = provider.resultFile(providerOutputs[i]);
-        if (!from) throw new Error('Bad result reference');
-        const file = await storage.copyResult({ userId: row.user_id, generationId: row.id, index: i, from, ext: 'mp4' });
-        saved.push({ path: file.path, mime: 'video/mp4', bytes: file.bytes, ext: 'mp4' });
+      // Results that are files here (this server's bridge folder, APIMart speech):
+      // copied, not downloaded. This server's results are always files.
+      const local = provider?.resultFile ? provider.resultFile(providerOutputs[i]) : null;
+      if (local || row.provider === 'local') {
+        if (!local) throw new Error('Bad result reference');
+        const from = typeof local === 'string' ? local : local.path;
+        const ext = typeof local === 'string' ? 'mp4' : local.ext;
+        const file = await storage.copyResult({ userId: row.user_id, generationId: row.id, index: i, from, ext });
+        saved.push({ path: file.path, mime: typeof local === 'string' ? 'video/mp4' : local.mime, bytes: file.bytes, ext });
         continue;
       }
       const file = await storage.downloadResult({ userId: row.user_id, generationId: row.id, index: i, url: providerOutputs[i], proxy: cfg.proxy });
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
+    // All copied: the provider's temporary files can go (a retry before this point still finds them).
+    if (provider?.releaseResult) for (const ref of providerOutputs) provider.releaseResult(ref);
     // Fix-ups on the files before they show up (e.g. the sound back into an
     // upscaled video). They run beside the worker, not in it: the job stays
     // "downloading" with its next check pushed back (a restart just redoes it).

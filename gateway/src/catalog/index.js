@@ -94,9 +94,15 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
       const prices = readJson(fileOf('apimart-prices.json'), {});
       // Specs from the bundled docs file, updated by the daily docs check.
       const overrides = { ...APIMART_OVERRIDES, ...(changes?.liveOverrides() || {}), ...APIMART_MANUAL };
-      for (const model of raw.apimart.list) {
-        if (!['image', 'video'].includes(model.category)) continue;
-        variants.push(...buildApimartVariants(model, overrides[model.id], apimartPrice(prices[model.id])));
+      // Audio only with a hand-checked spec; some are our own names for one
+      // APIMart model's other endpoints (Suno sound effects, Lyria in Flow Music).
+      const ids = new Set(raw.apimart.list.map((m) => m.id));
+      const virtual = Object.entries(APIMART_MANUAL).filter(([id, o]) => o.baseModel && ids.has(o.baseModel) && !ids.has(id)).map(([id, o]) => ({ id, category: 'audio', capability_tags: [], base: o.baseModel }));
+      for (const model of [...raw.apimart.list, ...virtual]) {
+        const audio = model.category === 'audio';
+        if (!['image', 'video'].includes(model.category) && !(audio && APIMART_MANUAL[model.id])) continue;
+        const override = audio ? APIMART_MANUAL[model.id] : overrides[model.id];
+        variants.push(...buildApimartVariants(model, override, apimartPrice(prices[model.base || model.id], override)));
       }
     }
     // This server's models (admins only: the lists for everyone else leave them out).
@@ -144,7 +150,7 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
       // models still without one. A failed request keeps the previous price.
       const pricesFile = fileOf('apimart-prices.json');
       const saved = readJson(pricesFile, {}) || {};
-      const media = list.filter((m) => ['image', 'video'].includes(m.category));
+      const media = list.filter((m) => ['image', 'video'].includes(m.category) || (m.category === 'audio' && APIMART_MANUAL[m.id]));
       const todo = fresh ? media.filter((m) => !saved[m.id]) : media;
       if (!todo.length) return;
       const fetched = {};
@@ -271,6 +277,8 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     model(providerId, modelId) {
       if (providerId === 'local') return LOCAL_MODELS[modelId] && localEnabled() ? { id: modelId, kind: 'video' } : null;
       const entry = raw[providerId]?.list?.find((m) => (providerId === 'atlas' ? m.model : m.id) === modelId);
+      // Our own names for other endpoints of an APIMart model (Suno sound effects…).
+      if (!entry && providerId === 'apimart' && APIMART_MANUAL[modelId]?.baseModel) return { id: modelId, kind: 'audio' };
       if (!entry) return null;
       const kind = providerId === 'atlas' ? KIND_ATLAS[entry.type] : providerId === 'fal' ? entry.kind : KIND_APIMART[entry.category];
       return kind ? { id: modelId, kind } : null;

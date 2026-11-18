@@ -147,7 +147,14 @@ export function buildAtlasVariant(entry, schemaDoc) {
 
 const APIMART_TAG_MODE = { 'Text to Image': 't2i', 'Image to Image': 'i2i', 'Text to Video': 't2v', 'Image to Video': 'i2v', 'Video to Video': 'v2v' };
 
-export function apimartPrice(p) {
+export function apimartPrice(p, override = null) {
+  // Hand-set price (speech is billed per token: an estimate per characters).
+  if (override?.price) return { ...override.price };
+  // Audio: one price per action ("suno@music-v6", "flowmusic@generate").
+  if (override?.priceAction) {
+    const usd = Number(p?.action_paid_prices?.[override.priceAction]);
+    return Number.isFinite(usd) ? { usd, unit: 'request' } : null;
+  }
   if (!p) return null;
   const perSecond = p.billing_type === 'per_second';
   const byResolution = p.resolution_paid_prices
@@ -389,7 +396,7 @@ export function estimateCost(variant, body) {
   const res = String(body?.resolution || '').toLowerCase();
   const unitPrice = (p.byResolution && (p.byResolution[res] ?? p.byResolution[res.replace(/p$/, 'p')])) ?? p.usd;
   if (p.unit === 'second') return unitPrice * (Number(body?.duration) || 5);
-  if (p.unit === 'chars') return unitPrice * Math.max(1, String(body?.text ?? body?.prompt ?? '').length / p.perChars);
+  if (p.unit === 'chars') return unitPrice * Math.max(1, String(body?.text ?? body?.input ?? body?.prompt ?? '').length / p.perChars);
   const n = Number(body?.n || body?.num_images || 1) || 1;
   return unitPrice * n;
 }

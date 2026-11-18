@@ -129,5 +129,367 @@
     },
     "onlyModes": true,
     "priceFrom": true
+  },
+  "suno": {
+    "source": "https://docs.apimart.ai/en/api-reference/audios/suno/generation.md (checked 18.11.2026)",
+    "family": "suno-v6",
+    "name": "Suno v6",
+    "vendor": "suno",
+    "onlyModes": true,
+    "priceAction": "suno@music-v6",
+    "description": "Suno v6 through APIMart. Inspiration mode: describe the song. Custom mode: the text is the lyrics, plus title and style. Two takes per request.",
+    "modes": {
+      "t2a": {
+        "hasPrompt": true,
+        "promptRequired": false,
+        "required": [],
+        "inputs": {
+          "version": {
+            "name": "version",
+            "title": "Version",
+            "type": "string",
+            "enum": [
+              "v6",
+              "v6-wild",
+              "v6-mini"
+            ],
+            "default": "v6",
+            "enumLabels": {
+              "v6": "v6",
+              "v6-wild": "v6 Wild (more experimental)",
+              "v6-mini": "v6 Mini"
+            }
+          },
+          "custom": {
+            "name": "custom",
+            "title": "Custom mode (text = lyrics)",
+            "type": "boolean",
+            "default": false
+          },
+          "instrumental": {
+            "name": "instrumental",
+            "title": "Instrumental (no vocals)",
+            "type": "boolean",
+            "default": false
+          },
+          "vocal_gender": {
+            "name": "vocal_gender",
+            "title": "Vocal",
+            "type": "string",
+            "enum": [
+              "Female",
+              "Male"
+            ],
+            "default": "Female"
+          },
+          "title": {
+            "name": "title",
+            "title": "Title (custom mode)",
+            "type": "string"
+          },
+          "style": {
+            "name": "style",
+            "title": "Style tags (custom mode)",
+            "type": "string",
+            "description": "e.g. synthwave, female vocal, cinematic"
+          },
+          "negative_tags": {
+            "name": "negative_tags",
+            "title": "Styles to avoid (custom mode)",
+            "type": "string"
+          },
+          "duration": {
+            "name": "duration",
+            "title": "Length, s (custom mode)",
+            "type": "int",
+            "minValue": 10,
+            "maxValue": 360,
+            "step": 5
+          },
+          "audio_format": {
+            "name": "audio_format",
+            "title": "Format",
+            "type": "string",
+            "enum": [
+              "mp3",
+              "m4a",
+              "wav"
+            ],
+            "default": "mp3"
+          }
+        }
+      }
+    }
+  },
+  "suno-sounds": {
+    "source": "https://docs.apimart.ai/en/api-reference/audios/suno/sounds.md (checked 18.11.2026)",
+    "baseModel": "suno",
+    "family": "suno-sfx",
+    "name": "Suno Sound Effects",
+    "vendor": "suno",
+    "onlyModes": true,
+    "priceAction": "suno@sounds-v6",
+    "description": "Sound effects from a description (English works best): a single hit or a loop.",
+    "modes": {
+      "t2a": {
+        "hasPrompt": true,
+        "promptRequired": true,
+        "required": [],
+        "inputs": {
+          "type": {
+            "name": "type",
+            "title": "Type",
+            "type": "string",
+            "enum": [
+              "one-shot",
+              "loop"
+            ],
+            "default": "one-shot",
+            "enumLabels": {
+              "one-shot": "One-shot",
+              "loop": "Loop"
+            }
+          },
+          "version": {
+            "name": "version",
+            "title": "Version",
+            "type": "string",
+            "enum": [
+              "v6",
+              "v6-wild",
+              "v6-mini"
+            ],
+            "default": "v6",
+            "enumLabels": {
+              "v6": "v6",
+              "v6-wild": "v6 Wild (more experimental)",
+              "v6-mini": "v6 Mini"
+            }
+          },
+          "bpm": {
+            "name": "bpm",
+            "title": "Tempo, BPM (loops)",
+            "type": "int",
+            "minValue": 1,
+            "maxValue": 300,
+            "step": 1
+          },
+          "key": {
+            "name": "key",
+            "title": "Key",
+            "type": "string",
+            "enum": [
+              "C",
+              "C#",
+              "D",
+              "D#",
+              "E",
+              "F",
+              "F#",
+              "G",
+              "G#",
+              "A",
+              "A#",
+              "B",
+              "Cm",
+              "C#m",
+              "Dm",
+              "D#m",
+              "Em",
+              "Fm",
+              "F#m",
+              "Gm",
+              "G#m",
+              "Am",
+              "A#m",
+              "Bm"
+            ]
+          },
+          "audio_format": {
+            "name": "audio_format",
+            "title": "Format",
+            "type": "string",
+            "enum": [
+              "mp3",
+              "m4a",
+              "wav"
+            ],
+            "default": "mp3"
+          }
+        }
+      }
+    }
+  },
+  "flowmusic": {
+    "source": "https://docs.apimart.ai/en/api-reference/audios/flow-music/music.md (checked 18.11.2026)",
+    "family": "flowmusic",
+    "name": "Flow Music",
+    "vendor": "flowmusic",
+    "onlyModes": true,
+    "priceAction": "flowmusic@generate",
+    "description": "Flow Music: a song from a style description and/or lyrics, one track per request.",
+    "modes": {
+      "t2a": {
+        "hasPrompt": true,
+        "promptRequired": false,
+        "required": [],
+        "rename": {
+          "prompt": "sound_prompt"
+        },
+        "inputs": {
+          "lyrics": {
+            "name": "lyrics",
+            "title": "Lyrics",
+            "type": "string",
+            "description": "Style text, lyrics or both — at least one."
+          },
+          "title": {
+            "name": "title",
+            "title": "Title",
+            "type": "string"
+          },
+          "length": {
+            "name": "length",
+            "title": "Length, s",
+            "type": "int",
+            "minValue": 1,
+            "maxValue": 240,
+            "step": 1,
+            "default": 60
+          },
+          "bpm": {
+            "name": "bpm",
+            "title": "Tempo, BPM",
+            "type": "string"
+          },
+          "seed": {
+            "name": "seed",
+            "title": "Seed",
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "flowmusic-lyria-3.5": {
+    "source": "https://docs.apimart.ai/en/api-reference/audios/flow-music/music-lyria-3-5.md (checked 18.11.2026)",
+    "baseModel": "flowmusic",
+    "family": "lyria-3.5",
+    "name": "Lyria 3.5 (Flow Music)",
+    "vendor": "google",
+    "onlyModes": true,
+    "priceAction": "flowmusic@generate-lyria-3.5",
+    "description": "Google Lyria 3.5 through Flow Music: a song from a style description and/or lyrics.",
+    "modes": {
+      "t2a": {
+        "hasPrompt": true,
+        "promptRequired": false,
+        "required": [],
+        "rename": {
+          "prompt": "sound_prompt"
+        },
+        "inputs": {
+          "lyrics": {
+            "name": "lyrics",
+            "title": "Lyrics",
+            "type": "string",
+            "description": "Style text, lyrics or both — at least one."
+          },
+          "title": {
+            "name": "title",
+            "title": "Title",
+            "type": "string"
+          },
+          "length": {
+            "name": "length",
+            "title": "Length, s",
+            "type": "int",
+            "minValue": 1,
+            "maxValue": 240,
+            "step": 1,
+            "default": 60
+          },
+          "bpm": {
+            "name": "bpm",
+            "title": "Tempo, BPM",
+            "type": "string"
+          },
+          "seed": {
+            "name": "seed",
+            "title": "Seed",
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "gpt-4o-mini-tts": {
+    "source": "https://docs.apimart.ai/en/api-reference/audios/tts.md (checked 18.11.2026)",
+    "family": "gpt-4o-mini-tts",
+    "name": "GPT-4o mini TTS",
+    "vendor": "openai",
+    "onlyModes": true,
+    "price": {
+      "usd": 0.012,
+      "unit": "chars",
+      "perChars": 1000
+    },
+    "_price_note": "Billed per token ($0.6/M input, $12/M audio output, ×0.8 membership): no price API — about $0.015 per minute of speech, ~1000 characters.",
+    "description": "OpenAI text-to-speech through APIMart. Up to 4096 characters. Price is an estimate (billed by tokens).",
+    "modes": {
+      "t2a": {
+        "hasPrompt": true,
+        "promptRequired": true,
+        "required": [],
+        "rename": {
+          "prompt": "input"
+        },
+        "inputs": {
+          "voice": {
+            "name": "voice",
+            "title": "Voice",
+            "type": "string",
+            "enum": [
+              "alloy",
+              "echo",
+              "fable",
+              "onyx",
+              "nova",
+              "shimmer"
+            ],
+            "default": "alloy",
+            "enumLabels": {
+              "alloy": "Alloy · neutral",
+              "echo": "Echo · male, calm",
+              "fable": "Fable · British, narrative",
+              "onyx": "Onyx · male, deep",
+              "nova": "Nova · female, energetic",
+              "shimmer": "Shimmer · female, gentle"
+            }
+          },
+          "speed": {
+            "name": "speed",
+            "title": "Speed",
+            "type": "number",
+            "minValue": 0.25,
+            "maxValue": 4,
+            "step": 0.05,
+            "default": 1
+          },
+          "response_format": {
+            "name": "response_format",
+            "title": "Format",
+            "type": "string",
+            "enum": [
+              "wav",
+              "aac",
+              "flac",
+              "opus"
+            ],
+            "default": "wav"
+          }
+        }
+      }
+    }
   }
 }

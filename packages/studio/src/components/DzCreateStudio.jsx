@@ -357,18 +357,27 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     if (!elementLists.loaded) return;
     const fresh = new Map([...elementLists.library, ...elementLists.project].map((e) => [e.id, e]));
     setElements((prev) => {
-      const next = prev.map((e) => fresh.get(e.id)).filter(Boolean);
+      const next = prev.map((e) => fresh.get(e.id)).filter((e) => e && e.status !== "draft");
       return next.length === prev.length && next.every((e, i) => e === prev[i]) ? prev : next;
     });
   }, [elementLists]);
   const [uploads, setUploads] = useState(0); // files still uploading — Generate waits for them
-  // "Use in Create" on the Elements page adds the element here (Create tab only).
+  // "Use in Create" on the Elements page adds the element here (Create tab only),
+  // within the current model's limit — or says why not.
+  const elementMaxRef = useRef(7);
   useEffect(() => {
     if (mode !== "create") return undefined;
     const on = (e) => {
       const el = e.detail;
-      if (!el?.id) return;
-      setElements((list) => (list.some((x) => x.id === el.id) || list.length >= 7 ? list : [...list, el]));
+      if (!el?.id || el.status === "draft") return;
+      setElements((list) => {
+        if (list.some((x) => x.id === el.id)) return list;
+        if (list.length >= elementMaxRef.current) {
+          setTimeout(() => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Elements", message: `This model takes up to ${elementMaxRef.current} elements — remove one to add ${el.name}.` } })), 0);
+          return list;
+        }
+        return [...list, el];
+      });
     };
     window.addEventListener("dz:use-element", on);
     return () => window.removeEventListener("dz:use-element", on);
@@ -406,6 +415,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const elementFilesUsed = !elementSpec && Object.values(merged.attached).some((files) => (files || []).some((f) => f.element));
   const elementsUsed = elementPairs.length > 0 || elementFilesUsed;
   const elementMax = elementSpec?.maxItems || (nativeElements ? (entry.variants.map((v) => elementsInputOf(v.model)?.maxItems || 0).reduce((a, b) => Math.max(a, b), 0) || 7) : 7);
+  elementMaxRef.current = elementMax;
   const params = variant ? paramsOf(variant.model) : { main: [], advanced: [] };
   // Only values this endpoint accepts (attaching files can switch the endpoint).
   const values = variant ? keepValues(storedValues, variant) : storedValues;

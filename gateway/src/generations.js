@@ -167,9 +167,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
     q.setCompleted.run(JSON.stringify(saved), now() + settleDelaysMs[0], now(), now(), row.id);
-    if (onCompleted) {
-      try { await onCompleted(q.byId.get(row.id)); } catch (error) { log?.warn(`after ${row.id}: ${error.message}`); }
-    }
+    // After-work (e.g. an element video) runs on its own: it never holds up other jobs.
+    if (onCompleted) Promise.resolve().then(() => onCompleted(q.byId.get(row.id))).catch((error) => log?.warn(`after ${row.id}: ${error.message}`));
   }
 
   // The real charge of a finished job, settled by the worker (survives

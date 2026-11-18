@@ -168,8 +168,15 @@ const MIGRATIONS = [
   ALTER TABLE elements ADD COLUMN views_json TEXT NOT NULL DEFAULT '[]';
   ALTER TABLE elements ADD COLUMN videos_json TEXT NOT NULL DEFAULT '[]';
   UPDATE elements SET
-    views_json = COALESCE((SELECT json_group_array(json_object('url', value, 'label', '')) FROM json_each(elements.images_json)), '[]'),
-    videos_json = CASE WHEN video_url IS NOT NULL THEN json_array(json_object('url', video_url, 'label', '')) ELSE '[]' END;
+    views_json = CASE WHEN json_valid(images_json) AND json_type(images_json) = 'array'
+      THEN COALESCE((SELECT json_group_array(json_object('url', value, 'label', '')) FROM json_each(elements.images_json) WHERE json_each.type = 'text'), '[]')
+      ELSE '[]' END,
+    videos_json = CASE WHEN NULLIF(TRIM(video_url), '') IS NOT NULL THEN json_array(json_object('url', video_url, 'label', '')) ELSE '[]' END;
+  `,
+  // 10: a tag is unique where the element lives (deleted ones don't count).
+  `
+  CREATE UNIQUE INDEX elements_tag_personal ON elements(owner_id, tag) WHERE project_id IS NULL AND tag IS NOT NULL AND deleted_at IS NULL;
+  CREATE UNIQUE INDEX elements_tag_project ON elements(project_id, tag) WHERE project_id IS NOT NULL AND tag IS NOT NULL AND deleted_at IS NULL;
   `,
 ];
 

@@ -8,7 +8,7 @@ import { useDzContext } from "../dzContext.js";
 import { DzMediaPicker } from "./DzMedia.jsx";
 import { dzGenerate, dzWithMeta } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
-import { createEntries, chooseVariant, paramsOf, buildBody } from "../dzCreate.js";
+import { createEntries, chooseVariant, missingFor, paramsOf, buildBody } from "../dzCreate.js";
 import { Button, Input, Textarea, Badge, Spinner, Segmented, cn, DialogParts, DropdownMenuParts, SelectParts, Popover, PopoverTrigger, PopoverContent } from "../ui/index.js";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } = DialogParts;
@@ -239,7 +239,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError, o
           ))}
           <div className="flex flex-wrap gap-2">
             {form.videos.length < 8 && <Button size="sm" variant="secondary" onClick={() => setPicker("video")}>Add video</Button>}
-            {element && onGenerateVideo && form.views.length > 0 && <Button size="sm" variant="secondary" onClick={() => onGenerateVideo(element)}>Generate video element…</Button>}
+            {element && onGenerateVideo && form.views.length > 0 && form.videos.length < 8 && <Button size="sm" variant="secondary" onClick={() => onGenerateVideo(element)}>Generate video element…</Button>}
             {!element && <span className="text-muted-foreground">Save first to generate a video from the views.</span>}
           </div>
         </div>
@@ -323,7 +323,7 @@ function ElementViewer({ element, onClose, onEdit, onGenerateVideo, onUse }) {
             <div className="text-muted-foreground">{(element.views || []).length} view{(element.views || []).length === 1 ? "" : "s"} · {(element.videos || []).length} video{(element.videos || []).length === 1 ? "" : "s"}</div>
             <div className="mt-auto grid gap-2">
               {element.status !== "draft" && <Button onClick={() => onUse(element)}>Use in Create</Button>}
-              <Button variant="secondary" onClick={() => onGenerateVideo(element)} disabled={!(element.views || []).length}>Generate video element…</Button>
+              <Button variant="secondary" onClick={() => onGenerateVideo(element)} disabled={!(element.views || []).length || (element.videos || []).length >= 8}>Generate video element…</Button>
               <Button variant="secondary" onClick={() => onEdit(element)}>Edit</Button>
             </div>
           </div>
@@ -338,15 +338,19 @@ function ElementViewer({ element, onClose, onEdit, onGenerateVideo, onUse }) {
 // element's videos when it is ready (the server attaches it, even if this page closes).
 
 export function VideoElementDialog({ element, onClose, onError, apiKey = "session" }) {
-  const entries = useMemo(() => (element ? createEntries("video").filter((e) => e.slots.some((s) => s.role === "reference" || s.role === "first")) : []), [element]);
+  // Models that take reference pictures first (they see every chosen view), then start-frame ones.
+  const entries = useMemo(() => (element ? createEntries("video").filter((e) => e.slots.some((s) => s.role === "reference" || s.role === "first"))
+    .sort((a, b) => Number(!a.slots.some((s) => s.role === "reference")) - Number(!b.slots.some((s) => s.role === "reference"))) : []), [element]);
   const [entryKey, setEntryKey] = useState("");
   const [chosen, setChosen] = useState([]);
   const [prompt, setPrompt] = useState("");
   const [label, setLabel] = useState("");
   const [duration, setDuration] = useState(undefined);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   useEffect(() => {
     if (!element) return;
+    setError("");
     setEntryKey(entries[0]?.key || "");
     setChosen((element.views || []).map((v) => v.url));
     setPrompt(VIDEO_TEMPLATES[element.kind] || VIDEO_TEMPLATES.other);
@@ -358,25 +362,39 @@ export function VideoElementDialog({ element, onClose, onError, apiKey = "sessio
   // Views go in as references (up to the model's limit), or the main one as the start frame.
   const files = chosen.slice(0, refSlot ? refSlot.max : 1).map((url) => ({ url }));
   const attached = refSlot ? { reference: files } : { first: files.slice(0, 1) };
-  const variant = entry && files.length ? chooseVariant(entry, attached) : null;
+  const picked = entry && files.length ? chooseVariant(entry, attached) : null;
+  // An endpoint that needs something else too (another file) can't be used here.
+  const variant = picked && !missingFor(picked, attached) ? picked : null;
   const durationParam = variant ? paramsOf(variant.model).main.find((p) => p.key === "duration") : null;
-  const values = durationParam && duration !== undefined ? { duration } : {};
+  // A duration from another model is dropped when it isn't one of this model's.
+  const durationOk = durationParam && duration !== undefined && (!Array.isArray(durationParam.enum) || durationParam.enum.some((x) => String(x) === String(duration)));
+  const values = durationOk ? { duration } : {};
+  useEffect(() => { setDuration(undefined); }, [entryKey]);
   const body = variant ? buildBody(variant, { prompt, values, attached }) : null;
   const { price, loading } = useDzQuote(apiKey, () => (body ? [dzGenerate, { endpoint: variant.model.endpoint, ...body }] : null));
   const tooMany = refSlot && chosen.length > refSlot.max;
+  const full = (element?.videos || []).length >= 8;
   const run = async () => {
-    if (!variant || !body) return;
+    if (!variant || !body || full) return;
     setBusy(true);
+    setError("");
+    const name = element.name;
     const meta = { kind: "video", entryKey: entry.key, modelName: `${entry.familyName} · ${entry.providerName}`, prompt, forElement: { id: element.id, label } };
-    const request = { endpoint: variant.model.endpoint, ...body };
-    onClose();
-    window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Video element", message: `Making “${label}” for ${element.name}. It joins the element when ready.` } }));
+    let accepted = false;
+    // The dialog closes once the server has taken the job; a refusal stays here.
+    const request = { endpoint: variant.model.endpoint, ...body, onRequestId: () => {
+      accepted = true;
+      onClose();
+      window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Video element", message: `Making “${label}” for ${name}. It joins the element when ready.` } }));
+    } };
     try {
       await dzWithMeta({ studio: "create", meta }, () => dzGenerate(apiKey, request));
       window.dispatchEvent(new CustomEvent("dz:elements"));
-      window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Video element", message: `“${label}” is ready in ${element.name}.` } }));
+      setTimeout(() => window.dispatchEvent(new CustomEvent("dz:elements")), 3000);
+      window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Video element", message: `“${label}” is ready in ${name}.` } }));
     } catch (e) {
-      onError?.(String(e?.message || e));
+      const msg = String(e?.message || e);
+      if (accepted) onError?.(msg); else setError(msg);
     } finally { setBusy(false); }
   };
   if (!element) return null;
@@ -425,10 +443,13 @@ export function VideoElementDialog({ element, onClose, onError, apiKey = "sessio
             <Input value={label} onChange={(e) => setLabel(e.target.value.slice(0, 40))} />
           </label>
         </div>
+        {full && <p className="text-amber-300">This element already has 8 videos. Remove one to add another.</p>}
+        {picked && !variant && <p className="text-amber-300">{missingFor(picked, attached)} Pick another model.</p>}
+        {error && <p className="text-destructive">{error}</p>}
         <DialogFooter className="items-center gap-3">
           <span className="mr-auto text-muted-foreground tabular-nums">{price ? `${price.exact ? "" : "≈ "}$${price.usd.toFixed(2)}` : loading ? "…" : entry?.priceLabel || ""}</span>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={run} disabled={!variant || !prompt.trim() || busy || !entries.length}>Generate</Button>
+          <Button onClick={run} disabled={!variant || !prompt.trim() || busy || !entries.length || full}>{busy ? <Spinner /> : "Generate"}</Button>
         </DialogFooter>
         {!entries.length && <p className="text-amber-300">No video model that takes pictures is available.</p>}
       </DialogContent>
@@ -447,20 +468,23 @@ export function ToElementDialog({ items, onClose, onError }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => { setTarget("new"); setName(""); setKind("character"); }, [items]);
   if (!items) return null;
-  const pics = items.filter((i) => i.kind !== "video" && i.url).map((i) => ({ url: i.url, label: "" }));
+  // Pictures become views, videos become videos; anything else (sound) is skipped.
+  const pics = items.filter((i) => i.kind === "image" && i.url).map((i) => ({ url: i.url, label: "" }));
   const vids = items.filter((i) => i.kind === "video" && i.url).map((i) => ({ url: i.url, label: "" }));
   const run = async () => {
     setBusy(true);
     try {
-      if (target === "new") {
-        await dzElementsApi.create({ name, kind, views: pics, videos: vids.slice(0, 8), project: ctx.project?.id || null });
-      } else {
-        const el = list.find((e) => e.id === target);
-        const views = [...(el.views || []), ...pics.filter((p) => !(el.views || []).some((v) => v.url === p.url))].slice(0, 24);
-        const videos = [...(el.videos || []), ...vids.filter((p) => !(el.videos || []).some((v) => v.url === p.url))].slice(0, 8);
-        await dzElementsApi.update(el.id, { views, videos });
-      }
-      window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Elements", message: `Added ${pics.length + vids.length} file${pics.length + vids.length === 1 ? "" : "s"} to ${target === "new" ? name : list.find((e) => e.id === target)?.name}.` } }));
+      const el = target === "new" ? { views: [], videos: [], name } : list.find((e) => e.id === target);
+      const newPics = pics.filter((p) => !(el.views || []).some((v) => v.url === p.url));
+      const newVids = vids.filter((p) => !(el.videos || []).some((v) => v.url === p.url));
+      const addPics = newPics.slice(0, Math.max(0, 24 - (el.views || []).length));
+      const addVids = newVids.slice(0, Math.max(0, 8 - (el.videos || []).length));
+      if (!addPics.length && !addVids.length) throw new Error(`${el.name} is full (24 views, 8 videos) or already has these.`);
+      if (target === "new") await dzElementsApi.create({ name, kind, views: addPics, videos: addVids, project: ctx.project?.id || null });
+      else await dzElementsApi.update(el.id, { views: [...(el.views || []), ...addPics], videos: [...(el.videos || []), ...addVids] });
+      const added = addPics.length + addVids.length;
+      const skipped = items.length - added;
+      window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Elements", message: `Added ${added} file${added === 1 ? "" : "s"} to ${el.name}.${skipped ? ` ${skipped} skipped (already there, no room, or not a picture/video).` : ""}` } }));
       window.dispatchEvent(new CustomEvent("dz:moved"));
       onClose();
     } catch (e) { onError?.(e.message); } finally { setBusy(false); }
@@ -546,7 +570,7 @@ export function DzElementsPage({ projects = [], onError, apiKey = "session" }) {
           <DropdownMenuContent align="end" className="w-64">
             <DropdownMenuItem className="text-base" onSelect={() => setViewing(el)}>View</DropdownMenuItem>
             {!archived && <DropdownMenuItem className="text-base" onSelect={() => setEditing(el)}>Edit</DropdownMenuItem>}
-            {!archived && (el.views || []).length > 0 && <DropdownMenuItem className="text-base" onSelect={() => setVideoFor(el)}>Generate video element…</DropdownMenuItem>}
+            {!archived && (el.views || []).length > 0 && (el.videos || []).length < 8 && <DropdownMenuItem className="text-base" onSelect={() => setVideoFor(el)}>Generate video element…</DropdownMenuItem>}
             {el.status !== "draft" && <DropdownMenuItem className="text-base" onSelect={() => use(el)}>Use in Create</DropdownMenuItem>}
             {!archived && <DropdownMenuItem className="text-base" onSelect={() => dzElementsApi.duplicate(el.id).catch(report)}>Duplicate</DropdownMenuItem>}
             {el.source_id && !archived && (
@@ -612,7 +636,7 @@ export function DzElementsPage({ projects = [], onError, apiKey = "session" }) {
             onSaved={() => setViewing(null)} onGenerateVideo={(el) => setVideoFor(el)} />
         </div>
       )}
-      <ElementViewer element={viewing} onClose={() => setViewing(null)} onEdit={(el) => { setViewing(null); setEditing(el); }} onGenerateVideo={(el) => setVideoFor(el)} onUse={use} />
+      <ElementViewer element={viewing} onClose={() => setViewing(null)} onEdit={(el) => { setViewing(null); setEditing(el); }} onGenerateVideo={(el) => { setViewing(null); setVideoFor(el); }} onUse={use} />
       <VideoElementDialog element={videoFor} onClose={() => setVideoFor(null)} onError={onError} apiKey={apiKey} />
     </div>
   );

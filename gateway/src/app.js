@@ -77,7 +77,11 @@ export async function buildApp(config, { logger = true } = {}) {
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations, log: app.log });
   generations.setOnCompleted((row) => elements.attachGenerated(row));
-  app.decorate('ctx', { db, auth, providers, config, catalog, generations });
+  if (config.startWorkers !== false) {
+    setTimeout(() => elements.attachPending().catch(() => {}), 30_000).unref?.();
+    setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
+  }
+  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements });
   await app.register(cookie);
   await app.register(formbody);
   await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1, fields: 5 } });

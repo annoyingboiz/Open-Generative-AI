@@ -410,17 +410,34 @@ test('elements v2: tags, labelled views and videos, draft, duplicate, update fro
   res = await as('admin', 'POST', `/dz/api/elements/${mike.id}/sync`);
   assert.equal(res.statusCode, 409);
 
-  // A generation made for the element: its result becomes a labelled video of it.
-  apimart.poll = async () => ({ state: 'completed', outputs: [`http://127.0.0.1:${files.address().port}/clip.png`], costUsd: 0.1 });
+  // A generation made for the element: its video becomes a labelled video of it — once.
+  apimart.poll = async () => ({ state: 'completed', outputs: [`http://127.0.0.1:${files.address().port}/clip.mp4`], costUsd: 0.1 });
   res = await as('admin', 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'turn', _dz: { studio: 'create', meta: { forElement: { id: copy.id, label: 'Turnaround' } } } });
   assert.equal(res.statusCode, 200, res.body);
-  app.ctx.db.prepare('UPDATE generations SET next_poll_at = 0 WHERE id = ?').run(res.json().id);
+  const genId = res.json().id;
+  app.ctx.db.prepare('UPDATE generations SET next_poll_at = 0 WHERE id = ?').run(genId);
   await app.ctx.generations.tick();
   apimart.poll = async () => ({ state: 'processing' });
+  await new Promise((r) => setTimeout(r, 50));
+  // The test model makes pictures: a picture is never added as a video.
+  res = await as('admin', 'GET', `/dz/api/elements?project=${proj.id}`);
+  assert.equal(res.json().elements.find((e) => e.id === copy.id).videos.length, 0);
+  // As a real video job (kind and file type), it is added, and only once.
+  const row = app.ctx.db.prepare('SELECT outputs_json FROM generations WHERE id = ?').get(genId);
+  const outs = JSON.parse(row.outputs_json).map((o) => ({ ...o, mime: 'video/mp4', ext: o.ext }));
+  app.ctx.db.prepare("UPDATE generations SET kind = 'video', outputs_json = ? WHERE id = ?").run(JSON.stringify(outs), genId);
+  await app.ctx.elements.attachPending();
+  await app.ctx.elements.attachPending();
   res = await as('admin', 'GET', `/dz/api/elements?project=${proj.id}`);
   const got = res.json().elements.find((e) => e.id === copy.id);
   assert.equal(got.videos.length, 1);
   assert.equal(got.videos[0].label, 'Turnaround');
+  assert.equal(got.videos[0].from, genId);
   assert.match(got.videos[0].url, /^\/media\/u\//);
   assert.equal(got.video, got.videos[0].url);
+  // Someone who can't edit the element can't push a video into it.
+  const wifeGen = app.ctx.db.prepare('SELECT * FROM generations WHERE id = ?').get(genId);
+  await app.ctx.elements.attachGenerated({ ...wifeGen, id: 'gen_other', user_id: app.ctx.db.prepare("SELECT id FROM users WHERE username = 'kid'").get().id });
+  res = await as('admin', 'GET', `/dz/api/elements?project=${proj.id}`);
+  assert.equal(res.json().elements.find((e) => e.id === copy.id).videos.length, 1);
 });

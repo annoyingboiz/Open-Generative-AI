@@ -186,6 +186,9 @@ export function elementMedia(entry, elements = [], attached = {}) {
     if (videos.length) out.video = videos.slice(0, room);
     if (!out.video?.length) delete out.video;
   }
+  // Every element that got nothing in (no room, or nothing this model takes).
+  const got = new Set(Object.values(out).flat().map((f) => f.element));
+  for (const e of elements) if (!got.has(e.id)) dropped.push(e.name);
   return { files: out, dropped: [...new Set(dropped)], cut };
 }
 
@@ -226,19 +229,38 @@ export function elementTags(elements = []) {
   return out;
 }
 
+// Can this element go into this model at all (pictures as references, or its video)?
+export function elementFits(entry, e) {
+  if (!entry || !e) return false;
+  if (entryTakesElements(entry)) return Boolean((e.images || []).length || e.video);
+  const has = (r) => entry.slots.some((s) => s.role === r);
+  return Boolean((has("reference") && (e.images || []).length) || (has("video") && e.video));
+}
+
 // Every tag the prompt can use now, with what it turns into for this model.
-//   [{ tag, to, label, kind: 'file'|'element', role?, url?, element? }]
-export function promptTags({ attached = {}, syntax = null, elements = [], elementPairs = [] }) {
+//   [{ tag, to, label, kind: 'file'|'element', role?, url?, element?, unused? }]
+// References are numbered on their own (@img1 = the first reference image the
+// model gets), frames have their own tags (@first, @middle, @last). A model
+// with no reference input numbers its frames as images instead.
+const FRAME_WORDS = { first: "the start frame", middle: "the middle frame", last: "the end frame" };
+export function promptTags({ attached = {}, syntax = null, elements = [], elementPairs = [], variant = null }) {
   const out = [];
   const tagOf = elementTags(elements);
-  let n = 0;
-  const firstImage = new Map(); // element id → its first image number
-  for (const role of ["first", "middle", "last", "reference"]) {
+  const hasRefInput = variant ? Boolean(variant.media?.reference) : Boolean((attached.reference || []).length);
+  let frameN = 0;
+  for (const role of ["first", "middle", "last"]) {
     for (const f of attached[role] || []) {
-      n += 1;
-      if (f.element) { if (!firstImage.has(f.element)) firstImage.set(f.element, n); continue; }
-      out.push({ tag: `img${n}`, to: syntax ? syntax.image(n) : `image ${n}`, label: ROLE_INFO[role]?.label || "Image", kind: "file", role, url: f.url });
+      frameN += 1;
+      const to = !hasRefInput && syntax ? syntax.image(frameN) : FRAME_WORDS[role];
+      out.push({ tag: role, to, label: ROLE_INFO[role]?.label || role, kind: "file", role, url: f.url });
     }
+  }
+  let n = 0;
+  const firstImage = new Map(); // element id → its first reference number
+  for (const f of attached.reference || []) {
+    n += 1;
+    if (f.element) { if (!firstImage.has(f.element)) firstImage.set(f.element, n); continue; }
+    out.push({ tag: `img${n}`, to: syntax ? syntax.image(n) : `image ${n}`, label: ROLE_INFO.reference?.label || "Reference", kind: "file", role: "reference", url: f.url });
   }
   let v = 0;
   const firstVideo = new Map();
@@ -265,12 +287,18 @@ export function promptTags({ attached = {}, syntax = null, elements = [], elemen
 
 // The prompt with our tags turned into the model's own words. Anything else
 // that starts with @ (a model tag typed by hand, an e-mail) stays as it is.
+// Inside a JSON prompt the replacement is escaped for a JSON string, so a name
+// with quotes can't break it. A tag is a whole word: "abc@img1" is left alone.
+export const TAG_RE = /(^|[^\p{L}\p{N}_@])@([a-z][a-z0-9_]*)(?![\p{L}\p{N}_])/giu;
 export function translateTags(prompt, tags = []) {
   if (!tags.length) return prompt;
   const map = new Map(tags.map((t) => [t.tag.toLowerCase(), t.to]));
-  return String(prompt || "").replace(/(^|[^\w@])@([a-z][a-z0-9_]*)/gi, (all, pre, name) => {
+  const text = String(prompt || "");
+  const json = parseJsonPrompt(text).ok;
+  return text.replace(TAG_RE, (all, pre, name) => {
     const to = map.get(name.toLowerCase());
-    return to == null ? all : `${pre}${to}`;
+    if (to == null) return all;
+    return `${pre}${json ? JSON.stringify(String(to)).slice(1, -1) : to}`;
   });
 }
 

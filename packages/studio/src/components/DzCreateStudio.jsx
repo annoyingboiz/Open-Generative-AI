@@ -18,7 +18,7 @@ import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelect
 import { DzMediaPicker } from "./DzMedia.jsx";
 import {
   createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
-  parseJsonPrompt, promptTags, translateTags, elementTags, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
+  parseJsonPrompt, promptTags, translateTags, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
   ROLE_INFO, CAMERA, LENS, FOCAL, APERTURE, CAMERA_ASSETS, CAMERA_MOVES, DEFAULT_CAMERA,
 } from "../dzCreate.js";
 import {
@@ -394,16 +394,22 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   const elementPairs = elementSpec ? klingElementPairs(activeElements, elementSpec) : [];
   const elementFilesUsed = !elementSpec && Object.values(merged.attached).some((files) => (files || []).some((f) => f.element));
   const elementsUsed = elementPairs.length > 0 || elementFilesUsed;
-  const elementMax = nativeElements ? (entry.variants.map((v) => elementsInputOf(v.model)?.maxItems || 0).reduce((a, b) => Math.max(a, b), 0) || 7) : 7;
+  const elementMax = elementSpec?.maxItems || (nativeElements ? (entry.variants.map((v) => elementsInputOf(v.model)?.maxItems || 0).reduce((a, b) => Math.max(a, b), 0) || 7) : 7);
   const params = variant ? paramsOf(variant.model) : { main: [], advanced: [] };
   // Only values this endpoint accepts (attaching files can switch the endpoint).
   const values = variant ? keepValues(storedValues, variant) : storedValues;
   const syntax = variant ? refSyntaxFor(variant.model) : null;
   const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, merged.attached);
   // Our tags (@img1, @char_mike) → this model's own words, then Camera.
-  const tags = promptTags({ attached: merged.attached, syntax, elements: activeElements, elementPairs });
+  const tags = promptTags({ attached: merged.attached, syntax, elements: activeElements, elementPairs, variant });
+  // Native elements beyond what the chosen endpoint takes are left out — say so.
+  const nativeDropped = elementSpec ? activeElements.filter((e) => !elementPairs.some((p) => p.element.id === e.id)).map((e) => e.name) : [];
+  const trimmed = merged.trimmed || (nativeDropped.length ? { dropped: nativeDropped, cut: 0 } : null);
   const finalPrompt = composePrompt(translateTags(prompt, tags), { kind, camera, move });
-  const usedTags = tags.filter((t) => new RegExp(`(^|[^\\w@])@${t.tag}(?![\\w])`, "i").test(prompt));
+  const usedTags = useMemo(() => {
+    const names = new Set([...String(prompt).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()));
+    return tags.filter((t) => names.has(t.tag.toLowerCase()));
+  }, [prompt, tags]);
   const jsonPrompt = useMemo(() => parseJsonPrompt(prompt), [prompt]);
   const needsPrompt = variant?.model.promptRequired;
   const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
@@ -569,18 +575,19 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
     const q = mention.query.toLowerCase();
     const chosenIds = new Set(elements.map((e) => e.id));
     const others = canUseElements && elements.length < elementMax
-      ? [...elementLists.project, ...elementLists.library].filter((e, i, all) => !chosenIds.has(e.id) && all.findIndex((x) => x.id === e.id) === i)
+      ? [...elementLists.project, ...elementLists.library].filter((e, i, all) => !chosenIds.has(e.id) && all.findIndex((x) => x.id === e.id) === i && elementFits(entry, e))
       : [];
-    const otherTags = elementTags([...activeElements, ...others]);
+    // Each candidate's tag as it will be once added (next to the chosen ones only).
+    const tagIfAdded = (e) => elementTags([...activeElements, e]).get(e.id);
     const list = [
       ...tags.map((t) => ({ ...t, add: false })),
-      ...others.map((e) => ({ tag: otherTags.get(e.id), label: e.name, kind: "element", element: e, url: e.images?.[0] || null, add: true })),
+      ...others.map((e) => ({ tag: tagIfAdded(e), label: e.name, kind: "element", element: e, url: e.images?.[0] || null, add: true })),
     ];
     return list.filter((o) => !q || o.tag.toLowerCase().includes(q) || String(o.label || "").toLowerCase().includes(q)).slice(0, 8);
   }, [mention, tags, elements, elementLists, canUseElements, elementMax, activeElements]);
   const readMention = (el) => {
     const pos = el.selectionStart ?? 0;
-    const m = /(^|[^\w@])@([\w]*)$/.exec(el.value.slice(0, pos));
+    const m = /(^|[^\p{L}\p{N}_@])@([\p{L}\p{N}_]*)$/u.exec(el.value.slice(0, pos));
     setMention(m ? { start: pos - m[2].length - 1, query: m[2], index: 0 } : null);
   };
   const pickMention = (o) => {
@@ -676,9 +683,9 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
               ))}
             </div>
           )}
-          {merged.trimmed && (
+          {trimmed && (
             <p className="text-amber-300">
-              This model has room for fewer references{merged.trimmed.dropped.length ? `: left out ${merged.trimmed.dropped.join(", ")}` : ""}{merged.trimmed.cut ? `${merged.trimmed.dropped.length ? ";" : ":"} ${merged.trimmed.cut} element picture${merged.trimmed.cut === 1 ? "" : "s"} not sent` : ""}. Remove some files or pick a model with more slots.
+              Not everything fits this model{trimmed.dropped.length ? `: left out ${trimmed.dropped.join(", ")}` : ""}{trimmed.cut ? `${trimmed.dropped.length ? ";" : ":"} ${trimmed.cut} element picture${trimmed.cut === 1 ? "" : "s"} not sent` : ""}. Remove some files or elements, or pick a model with more slots.
             </p>
           )}
 
@@ -788,7 +795,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
                   options={[1, 2, 3, 4].map((n) => ({ value: n, label: `×${n}` }))} /></span>
               </Tip>
               <span className={cn("tabular-nums", priceLoading ? "text-muted-foreground/60" : "text-muted-foreground")} title={price ? (price.exact ? "Exact price for your account" : "Estimate") : undefined}>
-                {price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}${count > 1 ? ` (${count} × ${fmtUsd(price.usd)})` : ""}` : entry?.priceLabel || ""}
+                {price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}${count > 1 ? ` (${count} × ${fmtUsd(price.usd)})` : ""}` : entry?.priceLabel ? `${count > 1 ? `${count} × ` : ""}${entry.priceLabel}` : ""}
               </span>
               <Button size="lg" className="h-11 rounded-xl px-6" onClick={generate} disabled={!canRun}>
                 {busy > 0 ? <><Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> Generating{busy > 1 ? ` · ${busy}` : ""}</> : "Generate"}

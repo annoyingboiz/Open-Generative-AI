@@ -19,7 +19,8 @@ running() {
   tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "h3_bridge.py"
 }
 stop() { if running; then kill "$(cat "$PIDFILE")"; for _ in $(seq 20); do running || break; sleep 0.5; done; fi; rm -f "$PIDFILE"; }
-start() { running && return 0; nohup setsid "$HERE/run.sh" > /dev/null 2>&1 < /dev/null & echo $! > "$PIDFILE"; }
+# 9>&-: the bridge must not keep ensure.lock open (status/stop/restart would never get it)
+start() { running && return 0; nohup setsid "$HERE/run.sh" > /dev/null 2>&1 < /dev/null 9>&- & echo $! > "$PIDFILE"; }
 exec 9> "$BRIDGE_DIR/ensure.lock"
 flock -n 9 || exit 0
 case "${1:-ensure}" in

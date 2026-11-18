@@ -33,7 +33,7 @@ const NOT_TEXT = /image|video|veo|kling|seedance|seedream|sora|(^|\/)wan|hailuo|
 const RECOMMENDED = [
   'apimart:claude-sonnet-5-5', 'apimart:gpt-5.5', 'apimart:gemini-3.5-flash', 'apimart:deepseek-v4-flash',
   'atlas:deepseek-ai/deepseek-v4-flash', 'atlas:moonshotai/kimi-k3', 'atlas:qwen/qwen3.7-plus', 'atlas:zai-org/glm-5.3',
-  'local:qwen3.6:27b', 'local:gemma4:31b', 'local:gpt-oss:20b', 'local:qwen3.5:9b',
+  'local:qwen3.6:27b', 'local:gemma4:31b', 'local:gpt-oss:20b',
 ];
 const VISION_GUESS = /gpt-4o|gpt-4\.1|gpt-5|gpt-6|claude|gemini|grok-4|qwen.*vl|glm-5v|kimi-k[23]|doubao-seed/i;
 

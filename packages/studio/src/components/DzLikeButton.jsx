@@ -35,7 +35,19 @@ export default function DzLikeButton({ id, liked: initial, onChange, className =
 }
 
 // Placeholder card body for a job that is still running or has failed.
-export function DzPendingTile({ status, error, className = "" }) {
+// A job in progress: slow-drifting soft colour (cheap: two blurred blobs moved
+// by CSS transforms, paused for people who ask for less motion) and a short
+// label — "Generating" or "Upscaling". A failed job shows why.
+const PENDING_CSS = `
+@keyframes dz-drift-a { 0%,100% { transform: translate(-20%,-10%) scale(1); } 50% { transform: translate(25%,20%) scale(1.25); } }
+@keyframes dz-drift-b { 0%,100% { transform: translate(20%,15%) scale(1.1); } 50% { transform: translate(-25%,-20%) scale(0.9); } }
+@keyframes dz-breathe { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+.dz-pend-a { animation: dz-drift-a 7s ease-in-out infinite; }
+.dz-pend-b { animation: dz-drift-b 9s ease-in-out infinite; }
+.dz-pend-t { animation: dz-breathe 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .dz-pend-a, .dz-pend-b, .dz-pend-t { animation: none; } }
+`;
+export function DzPendingTile({ status, error, className = "", label }) {
   if (status === "failed") {
     return (
       <div className={`flex flex-col items-center justify-center gap-2 bg-red-500/[0.06] p-4 text-center ${className}`}>
@@ -45,9 +57,11 @@ export function DzPendingTile({ status, error, className = "" }) {
     );
   }
   return (
-    <div className={`flex flex-col items-center justify-center gap-3 bg-white/[0.02] ${className}`}>
-      <span className="h-6 w-6 animate-spin rounded-full border-2 border-[#22d3ee]/25 border-t-[#22d3ee]" />
-      <span className="text-base text-muted-foreground">Generating… it keeps going if you close the page</span>
+    <div className={`relative isolate flex items-center justify-center overflow-hidden bg-[#0b0d12] ${className}`} title="It keeps going if you close the page">
+      <style>{PENDING_CSS}</style>
+      <span aria-hidden className="dz-pend-a absolute left-1/4 top-1/4 h-2/3 w-2/3 rounded-full bg-[#22d3ee]/35 blur-3xl" />
+      <span aria-hidden className="dz-pend-b absolute bottom-1/4 right-1/4 h-2/3 w-2/3 rounded-full bg-violet-500/30 blur-3xl" />
+      <span className="dz-pend-t relative z-10 rounded-full bg-black/35 px-3 py-1 text-base font-semibold text-white/90 backdrop-blur-sm">{label || "Generating"}</span>
     </div>
   );
 }

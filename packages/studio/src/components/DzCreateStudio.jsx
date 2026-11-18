@@ -6,7 +6,7 @@
 // camera look and camera moves, price before you press Generate. History
 // comes from the server Library.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dzGenerate, dzWithMeta, uploadFile } from "../api.js";
+import { dzGenerate, dzWithMeta, uploadFile, dzThumb } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { useDzHistory } from "../dzLibrary.js";
 import { useDzContext } from "../dzContext.js";
@@ -235,7 +235,7 @@ function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKey, onEr
       <div className="flex gap-1.5">
         {files.map((f, i) => (
           <div key={`${f.url}-${i}`} className="group relative h-16 w-16 overflow-hidden rounded-xl border border-border bg-muted">
-            {info.kind === "image" ? <img src={f.url} alt="" className="h-full w-full object-cover" />
+            {info.kind === "image" ? <img src={dzThumb(f.url, 256)} alt="" className="h-full w-full object-cover" />
               : info.kind === "video" ? <video src={f.url} className="h-full w-full object-cover" muted />
                 : <span className="flex h-full items-center justify-center text-muted-foreground">♪</span>}
             <button type="button" onClick={() => onRemove(i)} aria-label="Remove" className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100">
@@ -308,11 +308,12 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel }) {
     <div className={cn("group relative overflow-hidden rounded-2xl border border-border bg-card", selectedRing(on))} {...(sel ? sel.dragProps(item) : {})}
       onClickCapture={(e) => { if (sel?.click(item, e)) e.stopPropagation(); }}>
       {sel && <SelectBox sel={sel} item={item} />}
-      {!item.url ? <DzPendingTile status={item.status} error={item.error} className="aspect-square w-full" />
+      {item.url && item.studio === "upscale" && !sel?.selecting && <span className="pointer-events-none absolute left-2 top-2 z-[1] rounded-md bg-black/75 px-2 py-0.5 font-semibold text-white">Upscaled</span>}
+      {!item.url ? <DzPendingTile status={item.status} error={item.error} label={item.studio === "upscale" ? "Upscaling" : "Generating"} className="aspect-square w-full" />
         : (
           <button type="button" className="block w-full cursor-zoom-in" onClick={() => onOpen?.(item)} aria-label="Open">
-            {isVideo ? <video src={item.url} className="aspect-square w-full bg-black object-cover" muted loop playsInline preload="metadata" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
-              : <img src={item.url} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />}
+            {isVideo ? <video src={item.url} poster={dzThumb(item.url)} className="aspect-square w-full bg-black object-cover" muted loop playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
+              : <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" decoding="async" className="aspect-square w-full bg-black/40 object-cover" />}
           </button>
         )}
       {!item.url && item.status === "failed" && !sel?.selecting && (

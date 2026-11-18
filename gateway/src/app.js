@@ -26,6 +26,7 @@ import { createGenerations, GenerationError } from './generations.js';
 import { createProjects, ProjectError } from './projects.js';
 import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
+import { createThumbs } from './thumbs.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
@@ -79,6 +80,7 @@ export async function buildApp(config, { logger = true } = {}) {
   const elements = createElements({ db, projects, generations, log: app.log });
   generations.setOnCompleted((row) => elements.attachGenerated(row));
   const llm = createLlm({ db, providers, generations, config, log: app.log });
+  const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
   if (config.startWorkers !== false) {
     setTimeout(() => elements.attachPending().catch(() => {}), 30_000).unref?.();
     setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
@@ -665,16 +667,27 @@ export async function buildApp(config, { logger = true } = {}) {
     detail: 'This model is not available from your providers. Pick a model from APIMart or Atlas.',
   }));
 
-  // ── Files: only the owner (or an admin) can open them ───────────────────
+  // ── Files: only people who may see them can open them ───────────────────
+  // A file never changes once saved, so the browser may keep it a day
+  // (private: never a shared cache). ?w=480 → a small webp preview (a
+  // video's first frame), kept a week.
+  const sendMedia = async (req, reply, f) => {
+    if (req.query.w && req.query.download !== '1') {
+      const t = await thumbs.thumbFor(f.path, f.mime, req.query.w);
+      if (t) return sendFile(req, reply, t, 'image/webp', { cacheControl: 'private, max-age=604800, immutable' });
+      if (String(f.mime).startsWith('video/')) return reply.code(404).send({ error: 'No preview' });
+    }
+    return sendFile(req, reply, f.path, f.mime, { download: req.query.download === '1', cacheControl: 'private, max-age=86400' });
+  };
   app.get('/media/u/:file', async (req, reply) => {
     const f = generations.mediaFile(req.user, 'u', req.params.file.split('.')[0]);
     if (!f) return reply.code(404).send({ error: 'Not found' });
-    return sendFile(req, reply, f.path, f.mime, { download: req.query.download === '1' });
+    return sendMedia(req, reply, f);
   });
   app.get('/media/g/:id/:file', async (req, reply) => {
     const f = generations.mediaFile(req.user, 'g', req.params.id, req.params.file.split('.')[0]);
     if (!f) return reply.code(404).send({ error: 'Not found' });
-    return sendFile(req, reply, f.path, f.mime, { download: req.query.download === '1' });
+    return sendMedia(req, reply, f);
   });
 
   // ── Catalog refresh: on start, daily, and on demand (admin) ─────────────

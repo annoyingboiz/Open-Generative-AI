@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useDzContext } from "../dzContext.js";
 import { DzMediaPicker } from "./DzMedia.jsx";
-import { dzGenerate, dzWithMeta } from "../api.js";
+import { dzGenerate, dzWithMeta, dzThumb } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { createEntries, chooseVariant, missingFor, paramsOf, buildBody } from "../dzCreate.js";
 import { Button, Input, Textarea, Badge, Spinner, Segmented, cn, DialogParts, DropdownMenuParts, SelectParts, Popover, PopoverTrigger, PopoverContent } from "../ui/index.js";
@@ -68,7 +68,7 @@ export function useDzElements() {
 }
 
 const Thumb = ({ el, className }) => (el.images?.[0]
-  ? <img src={el.images[0]} alt="" className={cn("object-cover", className)} loading="lazy" />
+  ? <img src={dzThumb(el.images[0])} alt="" className={cn("object-cover", className)} loading="lazy" decoding="async" />
   : el.video ? <video src={el.video} className={cn("object-cover", className)} muted playsInline preload="metadata" /> : <div className={cn("bg-muted", className)} />);
 
 // ── Editor ───────────────────────────────────────────────────────────────
@@ -116,8 +116,8 @@ function download(url) {
 }
 
 const MediaTile = ({ url, video, className }) => (video
-  ? <video src={url} className={cn("object-cover", className)} muted playsInline preload="metadata" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
-  : <img src={url} alt="" className={cn("object-cover", className)} loading="lazy" />);
+  ? <video src={url} poster={dzThumb(url, 256)} className={cn("object-cover", className)} muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
+  : <img src={dzThumb(url, 256)} alt="" className={cn("object-cover", className)} loading="lazy" decoding="async" />);
 
 // ── Editor (right-hand panel) ────────────────────────────────────────────
 
@@ -205,7 +205,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError, o
             {form.views.map((v, i) => (
               <div key={v.url} className={cn("overflow-hidden rounded-xl border", i === 0 ? "border-primary" : "border-border")}>
                 <div className="group relative">
-                  <img src={v.url} alt={v.label || ""} className="aspect-square w-full object-cover" />
+                  <img src={dzThumb(v.url)} alt={v.label || ""} className="aspect-square w-full object-cover" />
                   {i === 0 && <span className="absolute left-1.5 top-1.5 rounded-md bg-primary px-1.5 font-semibold text-primary-foreground">Main</span>}
                   <div className="absolute inset-x-1.5 bottom-1.5 flex justify-between gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
                     <span className="flex gap-1">
@@ -419,7 +419,7 @@ export function VideoElementDialog({ element, onClose, onError, apiKey = "sessio
                 return (
                   <button key={v.url} type="button" onClick={() => setChosen((c) => (on ? c.filter((u) => u !== v.url) : [...c, v.url]))} title={v.label || undefined}
                     className={cn("relative h-20 w-20 overflow-hidden rounded-lg border-2", on ? "border-primary" : "border-border opacity-50")}>
-                    <img src={v.url} alt={v.label || ""} className="h-full w-full object-cover" />
+                    <img src={dzThumb(v.url, 256)} alt={v.label || ""} className="h-full w-full object-cover" />
                     {on && <span className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground">{chosen.indexOf(v.url) + 1}</span>}
                   </button>
                 );

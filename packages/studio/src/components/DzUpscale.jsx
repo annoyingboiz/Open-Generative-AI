@@ -272,16 +272,18 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
           <section className="rounded-xl border border-border bg-background/40 px-4">
             <div className="flex items-center justify-between gap-3 py-3">
               <span className="text-base font-semibold text-foreground">Advanced settings</span>
-              <span className="flex items-center gap-2">
-                {advanced && changed && <Button size="sm" variant="ghost" onClick={reset}>Reset</Button>}
-                <Switch checked={advanced} onCheckedChange={setAdvanced} aria-label="Advanced settings" />
-              </span>
+              <Switch checked={advanced} onCheckedChange={setAdvanced} aria-label="Show advanced settings" />
             </div>
             {advanced && (
               <div className="divide-y divide-border/60 border-t border-border pb-1">
                 {visibleAdvanced.map((f) => (
                   <Field key={f.key} field={f} value={modelValues[f.key]} onChange={(v) => setValue(f.key, v)} />
                 ))}
+                {changed && (
+                  <div className="flex justify-end py-2">
+                    <Button size="sm" variant="ghost" onClick={reset}>Reset to defaults</Button>
+                  </div>
+                )}
               </div>
             )}
           </section>

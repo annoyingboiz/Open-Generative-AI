@@ -635,10 +635,12 @@ export default function DzShell() {
         )}
       </div>
 
-      {/* Notifications: dark cards, bottom-right */}
-      {(runningTabs.length > 0 || notifications.length > 0) && (
-        <div aria-live="polite" className={`fixed top-16 right-3 md:top-auto z-[200] flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none ${rightPanelOpen ? 'md:bottom-5 md:right-[440px]' : 'md:bottom-5 md:right-5'}`}>
-          {runningTabs.map((tabId) => (
+      {/* Notifications: dark cards, top-right under the header (never over the
+          prompt panel and its buttons). "Generating…" only for other tabs —
+          on the open one the card in the grid already shows it. */}
+      {(runningTabs.some((t) => t !== activeTab) || notifications.length > 0) && (
+        <div aria-live="polite" className={`fixed top-16 right-3 z-[200] flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-2 pointer-events-none ${rightPanelOpen ? 'md:right-[440px]' : 'md:right-5'}`}>
+          {runningTabs.filter((t) => t !== activeTab).map((tabId) => (
             <div key={tabId} role="status" className="pointer-events-auto flex items-center gap-3 rounded-xl border border-white/[0.08] bg-[#121215]/95 backdrop-blur-md px-3.5 py-3 text-base shadow-[0_12px_32px_rgba(0,0,0,0.55)]">
               <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#22d3ee]/25 border-t-[#22d3ee]" />
               <span className="font-semibold text-white/90">{labelOf(tabId)}</span>

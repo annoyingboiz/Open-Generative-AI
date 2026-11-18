@@ -8,7 +8,7 @@
 //   Badges: Video, Upscaled, Edit, Copy · the first tile uploads from the device
 //   One-file slots pick on click; several-file slots choose up to the model's limit.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { uploadFile } from "../api.js";
+import { uploadFile, dzThumb } from "../api.js";
 import { useDzContext } from "../dzContext.js";
 import { useDzElements } from "./DzElements.jsx";
 import { Button, Spinner, Segmented, cn, DialogParts } from "../ui/index.js";
@@ -160,9 +160,9 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
       <button key={item.key} type="button" onClick={() => pick(item)} disabled={blocked}
         title={item.name || undefined}
         className={cn("group relative aspect-square overflow-hidden rounded-xl border bg-muted transition-colors", on ? "border-primary ring-2 ring-primary" : "border-border hover:border-primary", blocked && "opacity-40")}>
-        {item.kind === "video" ? <video src={item.url} className="h-full w-full object-cover" muted playsInline preload="metadata" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
+        {item.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 256)} className="h-full w-full object-cover" muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
           : item.kind === "audio" ? <span className="flex h-full items-center justify-center px-2 text-center text-muted-foreground">♪ {item.name}</span>
-            : <img src={item.url} alt={item.name || ""} loading="lazy" className="h-full w-full object-cover" />}
+            : <img src={dzThumb(item.url, 256)} alt={item.name || ""} loading="lazy" decoding="async" className="h-full w-full object-cover" />}
         {badges.length > 0 && (
           <span className="absolute bottom-1.5 left-1.5 flex flex-wrap gap-1">
             {badges.map((b) => <span key={b} className="rounded-md bg-black/75 px-1.5 text-base font-semibold text-white">{b}</span>)}

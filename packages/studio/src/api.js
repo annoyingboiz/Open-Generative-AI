@@ -84,6 +84,13 @@ async function quoteRequest(endpoint, payload) {
 let DZ_CURRENT_META = null;
 // DZ: an error a person can read. JSON → its message; an HTML page (a proxy or
 // Cloudflare error while the server restarts) → a short note instead of markup.
+// DZ: a small preview of one of our files (server-made webp; a video's first
+// frame). Other links are returned as they are.
+export function dzThumb(url, width = 480) {
+    if (typeof url !== 'string' || !url.startsWith('/media/')) return url;
+    return `${url}${url.includes('?') ? '&' : '?'}w=${width}`;
+}
+
 export function dzReadableError(status, text) {
     const t = String(text || '').trim();
     try {

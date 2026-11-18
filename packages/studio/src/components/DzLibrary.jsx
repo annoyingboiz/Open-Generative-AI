@@ -7,6 +7,7 @@
 // Download / Trash on many at once. Trash keeps items 7 days.
 import { useEffect, useState } from "react";
 import { useDzContext } from "../dzContext.js";
+import { dzThumb } from "../api.js";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec } from "../dzCatalog.js";
@@ -99,20 +100,21 @@ function Card({ item, view, onOpen, actions, sel }) {
       {sel && <SelectBox sel={sel} item={item} />}
       <button type="button" className="relative block w-full" onClick={(e) => { if (sel?.click(item, e)) return; if (item.url) onOpen(item); }} disabled={!item.url}>
         {!item.url ? (
-          <DzPendingTile status={item.status} error={item.error} className="aspect-square w-full" />
+          <DzPendingTile status={item.status} error={item.error} label={item.studio === "upscale" ? "Upscaling" : "Generating"} className="aspect-square w-full" />
         ) : isVideo ? (
           <video
             src={item.url}
+            poster={dzThumb(item.url)}
             className="aspect-square w-full bg-black/40 object-cover"
             muted
             loop
             playsInline
-            preload="metadata"
+            preload="none"
             onMouseOver={(e) => e.currentTarget.play().catch(() => {})}
             onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
           />
         ) : (
-          <img src={item.url} alt={item.prompt?.slice(0, 60) || item.name || "Image"} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
+          <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || item.name || "Image"} loading="lazy" decoding="async" className="aspect-square w-full bg-black/40 object-cover" />
         )}
         {isVideo && item.url && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-base font-semibold text-foreground">Video</span>}
       </button>

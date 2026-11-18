@@ -1,6 +1,6 @@
 // DZ: text models (LLM) from the studio — the list and one call.
 // The gateway does the work (keys, prices, limits, "local machine busy").
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 async function call(method, url, body) {
   const res = await fetch(url, { method, credentials: "same-origin", headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -24,4 +24,19 @@ export function useDzLlmModels() {
     return () => { alive = false; };
   }, []);
   return state;
+}
+
+// Text models to pick from: your default first, then the recommended ones
+// (OptionSelect options: value, label, description, meta).
+export function useDzTextModelOptions() {
+  const llm = useDzLlmModels();
+  return useMemo(() => {
+    const list = llm.models || [];
+    const pick = list.filter((m) => m.recommended || m.id === llm.default);
+    const seen = new Set();
+    const options = [...pick.filter((m) => m.id === llm.default), ...pick]
+      .filter((m) => (seen.has(m.id) ? false : seen.add(m.id)))
+      .map((m) => ({ value: m.id, label: m.name, vision: Boolean(m.vision), description: m.id === llm.default ? "Your default" : m.source === "chatgpt" ? "Your ChatGPT plan" : m.source === "local" ? "This server, free" : m.source === "atlas" ? "Atlas" : "APIMart", meta: m.free ? "free" : m.price ? `$${(+m.price.out).toFixed(2)}/1M` : "" }));
+    return { options, def: llm.default, loaded: llm.loaded, all: list };
+  }, [llm]);
 }

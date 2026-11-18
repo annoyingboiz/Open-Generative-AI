@@ -11,7 +11,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dzGenerate, dzWithMeta, dzThumb } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { useDzContext } from "../dzContext.js";
-import { useDzLlmModels } from "../dzLlm.js";
+import { useDzTextModelOptions } from "../dzLlm.js";
+import { dzSetStudioState, DZ_INSERT_EVENT } from "../dzStudioState.js";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import { DzMediaPicker } from "./DzMedia.jsx";
 import { Viewer } from "./DzLibrary.jsx";
@@ -47,20 +48,6 @@ function Pick({ label, value, options, onChange, none = "Board look", width = "w
       </SelectContent>
     </Select>
   );
-}
-
-// Text models for planning: your default first, then the recommended ones.
-function useTextModels() {
-  const llm = useDzLlmModels();
-  return useMemo(() => {
-    const list = llm.models || [];
-    const pick = list.filter((m) => m.recommended || m.id === llm.default);
-    const seen = new Set();
-    const options = [...pick.filter((m) => m.id === llm.default), ...pick]
-      .filter((m) => (seen.has(m.id) ? false : seen.add(m.id)))
-      .map((m) => ({ value: m.id, label: m.name, description: m.id === llm.default ? "Your default" : m.source === "chatgpt" ? "Your ChatGPT plan" : m.source === "local" ? "This server, free" : m.source === "atlas" ? "Atlas" : "APIMart", meta: m.free ? "free" : m.price ? `$${(+m.price.out).toFixed(2)}/1M` : "" }));
-    return { options, def: llm.default, loaded: llm.loaded };
-  }, [llm]);
 }
 
 // A strip of results for one step: thumbnails, the picked one ringed, jobs still running.
@@ -233,7 +220,7 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   // or a change sent before switching) are ignored.
   const currentRef = useRef(null);
 
-  const textModels = useTextModels();
+  const textModels = useDzTextModelOptions();
   const [llmId, setLlmId] = useState(() => { try { return localStorage.getItem(LLM_KEY) || ""; } catch { return ""; } });
   const llmChosen = textModels.options.some((o) => o.value === llmId) ? llmId : textModels.def || textModels.options[0]?.value || "";
   useEffect(() => { try { if (llmId) localStorage.setItem(LLM_KEY, llmId); } catch { /* optional */ } }, [llmId]);
@@ -386,6 +373,23 @@ export default function DzDirector({ apiKey, onGenerationStart, onGenerationEnd,
   const elementLists = useDzElements();
   const allElements = useMemo(() => [...elementLists.project, ...elementLists.library, ...(elementLists.others || [])], [elementLists]);
   const elements = useMemo(() => (settings.elements || []).map((id) => allElements.find((e) => e.id === id)).filter((e) => e && e.status !== "draft"), [settings.elements, allElements]);
+
+  // Side chat: it sees the scene and the video model; "Insert" puts text into the scene.
+  useEffect(() => {
+    dzSetStudioState("director", { model: videoEntry ? { family: videoEntry.family, name: videoEntry.familyName, kind: "video" } : null, prompt: draft?.scene || "" });
+  }, [videoEntry, draft?.scene]);
+  const editRef = useRef(edit);
+  editRef.current = edit;
+  useEffect(() => {
+    const on = (e) => {
+      const { tab, text, how } = e.detail || {};
+      if (tab !== "director" || typeof text !== "string" || !text.trim()) return;
+      if (!draftRef.current) { notify("Open or create a storyboard first."); return; }
+      editRef.current((d) => ({ ...d, scene: (how === "replace" || !d.scene?.trim() ? text.trim() : `${d.scene.replace(/\s+$/, "")}\n\n${text.trim()}`).slice(0, 6000) }));
+    };
+    window.addEventListener(DZ_INSERT_EVENT, on);
+    return () => window.removeEventListener(DZ_INSERT_EVENT, on);
+  }, []);
 
   // ── Board actions ──────────────────────────────────────────────────────
   const switchTo = async (id) => { if (id === currentId) return; await flush(); open(id); }; // a failed save was reported; switching still works

@@ -12,6 +12,7 @@ import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
 import { DzAdaptButton } from "./DzAdapt.jsx";
+import { dzSetStudioState, DZ_INSERT_EVENT } from "../dzStudioState.js";
 import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
@@ -469,6 +470,21 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
   // The price shows as soon as the model and files are set — not only after the prompt is typed.
   const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: finalPrompt || "price check", values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null);
   const { price, loading: priceLoading } = useDzQuote(apiKey, () => (quoteBody ? [dzGenerate, { endpoint: variant.model.endpoint, ...quoteBody }] : null));
+
+  // The side chat sees which model is open here and the prompt; it can put text into the prompt.
+  useEffect(() => {
+    dzSetStudioState(mode, { model: entry ? { family: entry.family, name: entry.familyName, kind } : null, prompt });
+  }, [mode, entry, kind, prompt]);
+  useEffect(() => {
+    const on = (e) => {
+      const { tab, text, how } = e.detail || {};
+      if (tab !== mode || typeof text !== "string" || !text.trim()) return;
+      setPrompt((p) => (how === "replace" || !p.trim() ? text.trim() : `${p.replace(/\s+$/, "")}\n\n${text.trim()}`));
+      requestAnimationFrame(() => promptRef.current?.focus());
+    };
+    window.addEventListener(DZ_INSERT_EVENT, on);
+    return () => window.removeEventListener(DZ_INSERT_EVENT, on);
+  }, [mode]);
 
   const setValue = (key, v) => setValuesByKind((prev) => ({ ...prev, [kind]: { ...(prev[kind] || {}), [key]: v } }));
   const pickModel = (key) => {

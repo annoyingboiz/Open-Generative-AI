@@ -32,6 +32,7 @@ import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
 import { createDirector, DirectorError } from './director.js';
+import { createAssistants, AssistantError } from './assistants.js';
 import { createThumbs } from './thumbs.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
@@ -130,6 +131,7 @@ export async function buildApp(config, { logger = true } = {}) {
   // Adapting costs a text-model call: at most 2 at once and 20 a minute per person.
   const adaptLoad = new Map(); // userId -> { running, times[] }
   const director = createDirector({ llm, adapter, familyName: (key) => familyNames().get(key) || null });
+  const assistants = createAssistants({ db, projects, generations, llm, adapter, log: app.log });
   // Planning a scene: one text-model call at a time and 6 a minute per person.
   const planLoad = new Map(); // userId -> { running, times[] }
   const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
@@ -140,7 +142,7 @@ export async function buildApp(config, { logger = true } = {}) {
     setTimeout(() => { try { storyboards.attachPending(); } catch { /* logged inside */ } }, 30_000).unref?.();
     setInterval(() => { try { storyboards.attachPending(); } catch { /* logged inside */ } }, 10 * 60_000).unref?.();
   }
-  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, storyboards, director, llm, chatgpt, adapter });
+  app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, storyboards, director, assistants, llm, chatgpt, adapter });
   await app.register(cookie);
   await app.register(formbody);
   await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1, fields: 5 } });
@@ -576,7 +578,7 @@ export async function buildApp(config, { logger = true } = {}) {
 
   const sendGenError = (reply, error) => {
     if (error instanceof StoryboardError && error.storyboard) return reply.code(error.status).send({ detail: error.message, error: error.message, storyboard: error.storyboard });
-    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError || error instanceof VideoUpscaleError || error instanceof StoryboardError || error instanceof DirectorError) return reply.code(error.status).send({ detail: error.message, error: error.message });
+    if (error instanceof GenerationError || error instanceof ProjectError || error instanceof ElementError || error instanceof VideoUpscaleError || error instanceof StoryboardError || error instanceof DirectorError || error instanceof AssistantError) return reply.code(error.status).send({ detail: error.message, error: error.message });
     throw error;
   };
   // Where new work goes: ?project=&folder= (or _dz.project/_dz.folder) → checked ids.
@@ -856,6 +858,19 @@ export async function buildApp(config, { logger = true } = {}) {
   app.patch('/dz/api/folders/:id', projectRoute((req) => projects.updateFolder(req.user, req.params.id, req.body || {})));
   app.delete('/dz/api/folders/:id', projectRoute((req) => projects.deleteFolder(req.user, req.params.id)));
   // ── Elements (Library or project; copies between them) ────────────────
+  // Assistants (side chat) and chats with them.
+  app.get('/dz/api/assistants', projectRoute((req) => assistants.list(req.user, req.query)));
+  app.post('/dz/api/assistants', projectRoute((req) => assistants.create(req.user, req.body || {})));
+  app.patch('/dz/api/assistants/:id', projectRoute((req) => assistants.update(req.user, req.params.id, req.body || {})));
+  app.delete('/dz/api/assistants/:id', projectRoute((req) => assistants.remove(req.user, req.params.id)));
+  app.post('/dz/api/assistants/:id/files', projectRoute((req) => assistants.addFile(req.user, req.params.id, req.body || {})));
+  app.get('/dz/api/assistants/:id/files/:fileId', projectRoute((req) => assistants.fileText(req.user, req.params.id, req.params.fileId)));
+  app.delete('/dz/api/assistants/:id/files/:fileId', projectRoute((req) => assistants.removeFile(req.user, req.params.id, req.params.fileId)));
+  app.get('/dz/api/assistants/:id/chats', projectRoute((req) => assistants.chats(req.user, req.params.id)));
+  app.post('/dz/api/assistants/:id/chats', projectRoute((req) => assistants.newChat(req.user, req.params.id)));
+  app.get('/dz/api/chats/:id', projectRoute((req) => assistants.getChat(req.user, req.params.id)));
+  app.delete('/dz/api/chats/:id', projectRoute((req) => assistants.removeChat(req.user, req.params.id)));
+  app.post('/dz/api/chats/:id/messages', projectRoute((req) => assistants.send(req.user, req.params.id, req.body || {})));
   // Storyboards (AI Director).
   app.get('/dz/api/storyboards', projectRoute((req) => storyboards.list(req.user, req.query)));
   app.post('/dz/api/storyboards', projectRoute((req) => storyboards.create(req.user, req.body || {})));

@@ -223,6 +223,39 @@ const MIGRATIONS = [
   `
   ALTER TABLE generations ADD COLUMN note TEXT;
   `,
+  // 14: assistants (rules, default text model, knowledge files; Library or project)
+  // and chats with them (always personal).
+  `
+  CREATE TABLE assistants (
+    id TEXT PRIMARY KEY,
+    workspace_id INTEGER NOT NULL DEFAULT 1,
+    owner_id INTEGER NOT NULL REFERENCES users(id),
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    rules TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    model_notes INTEGER NOT NULL DEFAULT 0,
+    files_json TEXT NOT NULL DEFAULT '[]',
+    template TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE INDEX assistants_owner ON assistants(owner_id, updated_at DESC) WHERE project_id IS NULL;
+  CREATE INDEX assistants_project ON assistants(project_id, updated_at DESC) WHERE project_id IS NOT NULL;
+  CREATE TABLE chats (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assistant_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT 'New chat',
+    messages_json TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE INDEX chats_user ON chats(user_id, assistant_id, updated_at DESC);
+  `,
 ];
 
 export function openDatabase(dataDir) {

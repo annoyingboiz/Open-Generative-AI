@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DzCinemaStudio, DzCreateStudio, DzDirector, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
+  DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT,
   DzProjectsPage, DzElementsPage, ToElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import ThemeToggle from '../ThemeToggle';
@@ -83,6 +84,8 @@ export const DZ_TABS = [
   { id: 'projects', label: 'Projects', projectLabel: 'Settings' },
 ];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
+// Tabs whose prompt the side chat can write into.
+const INSERT_TABS = new Set(['create', 'image', 'video', 'director']);
 const DEFAULT_TAB = 'create';
 const labelOf = (tabId) => DZ_TABS.find((t) => t.id === tabId)?.label || tabId;
 const WORK_TABS = { library: 'all', liked: 'liked', trash: 'trash' };
@@ -122,6 +125,7 @@ export default function DzShell() {
   // Upscale from anywhere: a side drawer next to the work, plus a right-click menu.
   const [upscaleDrawer, setUpscaleDrawer] = useState(null); // { url, result }
   const [upscaleTabPick, setUpscaleTabPick] = useState(null); // { url } — a new object each time
+  const [chatOpen, setChatOpen] = useState(false); // side chat with assistants
   const [imageMenu, setImageMenu] = useState(null); // { x, y, url }
   // Projects: the list, the open one (with its folders) and the folder for new work.
   const [projects, setProjects] = useState([]);
@@ -267,7 +271,7 @@ export default function DzShell() {
   };
 
   useEffect(() => {
-    const onUpscale = (e) => { if (e.detail?.url) { setImageMenu(null); setUpscaleDrawer({ url: e.detail.url, result: null }); } };
+    const onUpscale = (e) => { if (e.detail?.url) { setImageMenu(null); setChatOpen(false); setUpscaleDrawer({ url: e.detail.url, result: null }); } };
     // Videos open straight in the Upscale tab (big preview, before/after).
     const onUpscaleVideo = (e) => { if (e.detail?.url) { setImageMenu(null); setUpscaleDrawer(null); setUpscaleTabPick({ url: e.detail.url, kind: 'video' }); openTabRef.current?.('upscale'); } };
     window.addEventListener('dz:upscale-video', onUpscaleVideo);
@@ -474,6 +478,11 @@ export default function DzShell() {
           </div>
         </div>
         <div className="flex min-w-0 items-center gap-3">
+          <button type="button" onClick={() => { setUpscaleDrawer(null); setChatOpen((v) => !v); }} aria-pressed={chatOpen} title="Chat with assistants"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-base font-semibold ${chatOpen ? 'border-primary/60 bg-primary/10 text-primary' : 'border-border text-foreground/90 hover:bg-accent'}`}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+            <span className="hidden sm:inline">Chat</span>
+          </button>
           <ThemeToggle />
           {balance ? (
             <div className="hidden min-w-0 items-center gap-1.5 xl:flex" aria-label="Provider balances">
@@ -601,6 +610,12 @@ export default function DzShell() {
             <DzUpscaleStudio key={project?.id || 'library'} {...studioProps} {...callbacks('upscale')} isAdmin={user.role === 'admin'} initial={upscaleTabPick} droppedFiles={activeTab === 'upscale' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
         </main>
+
+        {/* Side chat with assistants: answers go into the prompt of the open studio. */}
+        <DzChatPanel open={chatOpen} onOpenChange={setChatOpen} activeTab={activeTab} apiKey={DZ_SESSION_PLACEHOLDER}
+          canInsert={INSERT_TABS.has(activeTab)}
+          getStudio={() => dzGetStudioState(activeTab)}
+          onInsert={(text, how) => window.dispatchEvent(new CustomEvent(DZ_INSERT_EVENT, { detail: { tab: activeTab, text, how } }))} />
 
         {/* Upscale drawer: opens next to the work, from an image's button or menu.
             Non-modal: the page behind stays usable. */}

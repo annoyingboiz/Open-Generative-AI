@@ -388,6 +388,9 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
 
   const recent = (limit = 20) => q.recent.all(limit);
 
+  // Lists warmed up after a start, so the first Settings page has them.
+  if (config.startWorkers !== false) setTimeout(() => { for (const s of ['local', 'apimart', 'atlas']) sourceList(s).catch(() => {}); }, 3000).unref?.();
+
   // Calls cut off by a restart: their booking is released.
   db.prepare("UPDATE llm_calls SET status = 'failed', cost_usd = 0, error = 'Interrupted (server restart).' WHERE status = 'running'").run();
 

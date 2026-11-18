@@ -64,7 +64,8 @@ function setOffset(root, start, end = start) {
       }
       // A chip or a line break is one piece: the caret goes before or after it.
       if (left === 0) return [root, i];
-      if (left < len) return [root, i + 1];
+      // Inside a chip (its tag was just completed): after it, and after the space that follows.
+      if (left < len) { const nx = kids[i + 1]; return nx?.nodeType === 3 && nx.nodeValue.startsWith(" ") ? [nx, 1] : [root, i + 1]; }
       left -= len;
     }
     return [root, kids.length - (root.lastChild?.dataset?.end ? 1 : 0)];
@@ -156,6 +157,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
     el.dataset.chips = chipKey;
     emitted.current = value;
     if ((focused || want) && off) setOffset(el, Math.min(off.start, value.length), Math.min(off.end, value.length));
+    wanted.current = null;
   }, [value, chipKey, tagMap]);
 
   const emit = (next) => { emitted.current = next; onChange(next); };

@@ -75,3 +75,17 @@ export function DzPendingTile({ status, error, className = "", label, note, onCa
     </div>
   );
 }
+
+// A sound in a grid: a square tile with its title and a player. Clicks on the
+// player don't open the card.
+export function DzAudioTile({ url, title, className = "", controls = true }) {
+  return (
+    <div className={`relative flex flex-col justify-between gap-3 bg-gradient-to-br from-primary/25 via-muted to-background p-3 ${className}`}>
+      <div className="flex min-h-0 flex-1 items-center justify-center">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="text-primary/80" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+      </div>
+      {title && <p className="line-clamp-2 text-center leading-snug text-foreground/85">{title}</p>}
+      {controls && <audio src={url} controls preload="none" className="h-9 w-full" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} />}
+    </div>
+  );
+}

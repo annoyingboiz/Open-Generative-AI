@@ -722,7 +722,7 @@ export async function buildApp(config, { logger = true } = {}) {
       // `_dz`: our own data about the request (which studio, its settings) —
       // stored with the history item, never sent to the provider.
       const { _dz: dz, ...requestBody } = req.body || {};
-      const studio = ['create', 'cinema', 'image', 'video', 'upscale', 'director'].includes(dz?.studio) ? dz.studio : null;
+      const studio = ['create', 'cinema', 'image', 'video', 'upscale', 'director', 'tools'].includes(dz?.studio) ? dz.studio : null;
       const metaText = dz?.meta && typeof dz.meta === 'object' ? JSON.stringify(dz.meta) : null;
       const meta = metaText && metaText.length <= 65_536 ? { ...dz.meta } : null;
       if (meta) delete meta.upscale; // ours, set by the server for video upscales only

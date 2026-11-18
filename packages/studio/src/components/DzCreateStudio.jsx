@@ -13,7 +13,7 @@ import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
 import { DzAdaptButton } from "./DzAdapt.jsx";
 import { dzSetStudioState, DZ_INSERT_EVENT } from "../dzStudioState.js";
-import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
+import DzLikeButton, { DzPendingTile, DzAudioTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
 import { ElementPicker, useDzElements } from "./DzElements.jsx";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
@@ -78,10 +78,10 @@ function animateInto(videoEntries, currentKey, attached, url) {
 
 // Image tab → Video tab hand-off (Animate).
 export const DZ_SEND_EVENT = "dz:send-to";
-const fmtUsd = (usd) => `$${usd === 0 ? "0" : usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
+export const fmtUsd = (usd) => `$${usd === 0 ? "0" : usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
 const ACCEPT = { image: "image/png,image/jpeg,image/webp", video: "video/mp4,video/quicktime,video/webm", audio: "audio/mpeg,audio/wav,audio/mp4,audio/x-m4a" };
 
-async function download(url) {
+export async function download(url) {
   try {
     const blob = await (await fetch(url)).blob();
     const href = URL.createObjectURL(blob);
@@ -157,8 +157,8 @@ export function ParamControl({ p, value, onChange, compact }) {
   return (
     <div className="space-y-2 py-1">
       <span className="flex items-center gap-2">{p.title}<InfoTip text={p.description} /></span>
-      {p.key.includes("prompt") ? (
-        <Textarea value={value ?? ""} onChange={(e) => onChange(e.target.value)} rows={2} placeholder={p.default || ""} />
+      {p.key.includes("prompt") || p.key === "lyrics" ? (
+        <Textarea value={value ?? ""} onChange={(e) => onChange(e.target.value)} rows={p.key === "lyrics" ? 6 : 2} placeholder={p.default || ""} />
       ) : (
         <Input value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder={p.default != null ? String(p.default) : ""} />
       )}
@@ -227,9 +227,9 @@ export function ModelPicker({ entries, entry, onPick }) {
 
 // A slot: its files and "+", which opens the shared picker (uploads,
 // generations, liked, elements, or a new upload).
-function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKey, onError, onUploading }) {
+export function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKey, onError, onUploading, label }) {
   const [picker, setPicker] = useState(false);
-  const info = ROLE_INFO[role];
+  const info = label ? { ...ROLE_INFO[role], label } : ROLE_INFO[role];
   const full = files.length >= max;
   return (
     <div className="flex shrink-0 flex-col gap-1.5">
@@ -297,9 +297,10 @@ export function CameraPanel({ camera, setCamera }) {
   );
 }
 
-function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel }) {
+export function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel }) {
   const isVideo = item.kind === "video";
-  const canUpscale = !isVideo && dzUpscaleSpec() && dzIsOwnImage(item.url);
+  const isAudio = item.kind === "audio";
+  const canUpscale = !isVideo && !isAudio && dzUpscaleSpec() && dzIsOwnImage(item.url);
   const canUpscaleVideo = isVideo && dzVideoUpscaleSpec() && dzIsOwnImage(item.url);
   const Icon = ({ title, onClick, children, danger }) => (
     <Tip text={title}>
@@ -315,7 +316,7 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel }) {
       {!item.url ? <DzPendingTile status={item.status} error={item.error} label={item.studio === "upscale" ? "Upscaling" : "Generating"} className="aspect-square w-full"
         note={item.note} onCancel={item.cancellable ? () => dzLibrary.cancel(item.id).catch((e) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Cancel", message: String(e?.message || e) } }))) : undefined} />
         : (
-          <button type="button" className="block w-full cursor-zoom-in" onClick={() => onOpen?.(item)} aria-label="Open">
+          isAudio ? <DzAudioTile url={item.url} title={item.meta?.toolTitle || "Audio"} className="aspect-square w-full" /> : <button type="button" className="block w-full cursor-zoom-in" onClick={() => onOpen?.(item)} aria-label="Open">
             {isVideo ? <video src={item.url} poster={dzThumb(item.url)} className="aspect-square w-full bg-black object-cover" muted loop playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
               : <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" decoding="async" className="aspect-square w-full bg-black/40 object-cover" />}
           </button>
@@ -328,9 +329,9 @@ function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel }) {
       {item.url && !sel?.selecting && (
         <div className="absolute right-2 top-2 flex flex-col gap-1.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
           <DzLikeButton id={item.id} liked={item.liked} onChange={onLike} className="h-9 w-9" />
-          {!isVideo && <Icon title="Animate — use as start frame of a video" onClick={() => onUse(item, "animate")}><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></Icon>}
-          {!isVideo && <Icon title="Use as reference" onClick={() => onUse(item, "reference")}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 12h8M12 8v8" /></svg></Icon>}
-          {item.meta?.entryKey && <Icon title="Reuse settings" onClick={() => onReuse(item)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" /></svg></Icon>}
+          {!isVideo && !isAudio && onUse && <Icon title="Animate — use as start frame of a video" onClick={() => onUse(item, "animate")}><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></Icon>}
+          {!isVideo && !isAudio && onUse && <Icon title="Use as reference" onClick={() => onUse(item, "reference")}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 12h8M12 8v8" /></svg></Icon>}
+          {item.meta?.entryKey && onReuse && <Icon title="Reuse settings" onClick={() => onReuse(item)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" /></svg></Icon>}
           {canUpscaleVideo && <Icon title="Upscale video (1080p / 2K / 4K)" onClick={() => dzOpenVideoUpscale(item.url)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg></Icon>}
           {canUpscale && <Icon title="Upscale" onClick={() => dzOpenUpscale(item.url)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg></Icon>}
           <Icon title="Download" onClick={() => download(item.url)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg></Icon>

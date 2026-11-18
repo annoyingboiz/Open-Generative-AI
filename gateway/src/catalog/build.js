@@ -5,9 +5,10 @@
 import { familyFor, atlasParts, prettyFamilyName, stripModeWords } from './families.js';
 import { studioFieldsFromSchema, HIDDEN_FIELDS } from './schema.js';
 
-export const STUDIO_MODES = ['t2i', 'i2i', 't2v', 'i2v', 'v2v'];
-const KIND_OF_MODE = { t2i: 'image', i2i: 'image', t2v: 'video', i2v: 'video', v2v: 'video' };
-const MODE_SUFFIX = { t2i: 'text-to-image', i2i: 'image-to-image', t2v: 'text-to-video', i2v: 'image-to-video', v2v: 'video-to-video' };
+// t2a: text → audio (speech, music) — Tools → Audio.
+export const STUDIO_MODES = ['t2i', 'i2i', 't2v', 'i2v', 'v2v', 't2a'];
+const KIND_OF_MODE = { t2i: 'image', i2i: 'image', t2v: 'video', i2v: 'video', v2v: 'video', t2a: 'audio' };
+const MODE_SUFFIX = { t2i: 'text-to-image', i2i: 'image-to-image', t2v: 'text-to-video', i2v: 'image-to-video', v2v: 'video-to-video', t2a: 'text-to-audio' };
 const PROVIDER_NAME = { apimart: 'APIMart', atlas: 'Atlas', local: 'This server' };
 
 // Vendor → logo key used by the studio (providerLogos.js) and a display name.
@@ -44,7 +45,7 @@ export function priceLabel(price) {
   const lo = values.length ? Math.min(...values) : price.usd;
   const hi = values.length ? Math.max(...values) : price.usd;
   const amount = lo === hi ? `$${fmt(lo)}` : `$${fmt(lo)}–${fmt(hi)}`;
-  const label = price.unit === 'second' ? `${amount}/s` : amount;
+  const label = price.unit === 'second' ? `${amount}/s` : price.unit === 'chars' ? `${amount}/${price.perChars >= 1000 ? `${price.perChars / 1000}k` : price.perChars} chars` : amount;
   return price.from ? `from ${label}` : label;
 }
 
@@ -71,7 +72,9 @@ function studioModel({ provider, mode, slug, endpoint, family, familyName, vendo
 
 // ── Atlas ─────────────────────────────────────────────────────────────────
 
-const ATLAS_MODE = { 'TEXT-TO-IMAGE': 't2i', 'IMAGE-TO-IMAGE': 'i2i', 'TEXT-TO-VIDEO': 't2v', 'IMAGE-TO-VIDEO': 'i2v', 'VIDEO-TO-VIDEO': 'v2v' };
+const ATLAS_MODE = { 'TEXT-TO-IMAGE': 't2i', 'IMAGE-TO-IMAGE': 'i2i', 'TEXT-TO-VIDEO': 't2v', 'IMAGE-TO-VIDEO': 'i2v', 'VIDEO-TO-VIDEO': 'v2v', 'TEXT-TO-SPEECH': 't2a', 'TEXT-TO-AUDIO': 't2a' };
+// Audio models that don't make sound from text (transcription, lyrics as text, voice cloning ids).
+const NOT_STUDIO_AUDIO = /(^|\/)(seed-asr|stt-|lyrics-generation)|custom-voice/i;
 
 export function atlasPrice(entry) {
   const actual = entry?.price?.actual;
@@ -81,6 +84,12 @@ export function atlasPrice(entry) {
   // lowest resolution (Seedance 2.5: $0.134 listed, a 5 s 720p clip with
   // audio cost $1.51), so we show them as "from $x/s" and estimate per second.
   if (!actual.unit && entry.type === 'Video') return { usd, unit: 'second', from: true };
+  // Audio: per characters, per generation… — the exact price comes from Atlas before you run it.
+  if (entry.type === 'Audio') {
+    const per = /^(\d*)k?\s*characters?$/i.exec(String(actual.unit || '').trim());
+    if (per) return { usd, unit: 'chars', perChars: /k/i.test(actual.unit) ? 1000 * (Number(per[1]) || 1) : Number(per[1]) || 1 };
+    return { usd, unit: actual.unit || 'request', from: !actual.unit };
+  }
   const unit = actual.unit === 'second' ? 'second' : entry.type === 'Image' ? 'image' : (actual.unit || 'request');
   return { usd, unit };
 }
@@ -88,11 +97,14 @@ export function atlasPrice(entry) {
 export function buildAtlasVariant(entry, schemaDoc) {
   const mode = (entry.categories || []).map((c) => ATLAS_MODE[c]).find(Boolean);
   if (!mode) return null;
+  if (mode === 't2a' && NOT_STUDIO_AUDIO.test(entry.model)) return null;
   const input = schemaDoc?.components?.schemas?.Input;
   if (!input?.properties) return null;
   const props = input.properties;
   const renames = {};
   if (props.ratio && !props.aspect_ratio) renames.ratio = 'aspect_ratio';
+  // Speech models call their text "text": in the studio it is the prompt box.
+  if (mode === 't2a' && props.text && !props.prompt) renames.text = 'prompt';
   const fields = studioFieldsFromSchema(props, input.required || [], { renames });
   if (!fields) return null;
   if ((mode === 'i2i' || mode === 'i2v') && !fields.imageField) return null;
@@ -169,7 +181,8 @@ export function buildApimartVariants(model, override, price) {
   const tagModes = (model.capability_tags || []).map((t) => APIMART_TAG_MODE[t]).filter(Boolean);
   // Modes from APIMart's tags plus modes its docs describe (tags are sometimes
   // incomplete, e.g. Nano Banana Pro edits images but is tagged text-to-image).
-  const modes = [...tagModes, ...Object.keys(override?.modes || {})];
+  // A hand-checked spec (apimart-manual.json) lists exactly the modes that work.
+  const modes = override?.onlyModes ? Object.keys(override.modes || {}) : [...tagModes, ...Object.keys(override?.modes || {})];
   const family = override?.family || familyFor('apimart', model.id);
   const familyName = override?.name || prettyFamilyName(family);
   const out = [];
@@ -374,6 +387,7 @@ export function estimateCost(variant, body) {
   const res = String(body?.resolution || '').toLowerCase();
   const unitPrice = (p.byResolution && (p.byResolution[res] ?? p.byResolution[res.replace(/p$/, 'p')])) ?? p.usd;
   if (p.unit === 'second') return unitPrice * (Number(body?.duration) || 5);
+  if (p.unit === 'chars') return unitPrice * Math.max(1, String(body?.text ?? body?.prompt ?? '').length / p.perChars);
   const n = Number(body?.n || body?.num_images || 1) || 1;
   return unitPrice * n;
 }

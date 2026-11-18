@@ -11,12 +11,13 @@ import { DZ_QUOTE } from "../api.js";
 // up to 3–4 decimals without trailing zeros ($0.035, $0.008).
 const fmt = (usd) => (usd >= 0.1 ? usd.toFixed(2) : (usd >= 0.01 ? usd.toFixed(3) : usd.toFixed(4)).replace(/0+$/, "").replace(/\.$/, ""));
 
-export function useDzQuote(apiKey, build, count = 1) {
+export function useDzQuote(apiKey, build, count = 1, { textMatters = false } = {}) {
   const [state, setState] = useState({ price: null, loading: false });
   let request = null;
   try { request = build(); } catch { request = null; }
   // Prompt text and reference files don't change the price; the rest does.
-  const key = request ? JSON.stringify(request[1], (k, v) => (k === "prompt" ? Boolean(String(v || "").trim()) : k === "negative_prompt" ? undefined : v)) : "";
+  // (Speech is priced by characters: there the text length counts, in steps of 100.)
+  const key = request ? JSON.stringify(request[1], (k, v) => (k === "prompt" ? (textMatters ? Math.ceil(String(v || "").trim().length / 100) : Boolean(String(v || "").trim())) : k === "negative_prompt" ? undefined : v)) : "";
   const fnRef = useRef(null);
   fnRef.current = request;
 

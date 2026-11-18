@@ -125,12 +125,15 @@ export function studioFieldsFromSchema(properties = {}, required = [], { renames
     }
   }
 
-  const hasPrompt = Object.hasOwn(properties, 'prompt');
+  // The prompt box: the model's "prompt", or a field renamed to it (speech models' "text").
+  const promptRaw = Object.hasOwn(properties, 'prompt') ? 'prompt' : Object.keys(renames).find((k) => renames[k] === 'prompt' && Object.hasOwn(properties, k));
+  const hasPrompt = Boolean(promptRaw);
+  if (promptRaw && promptRaw !== 'prompt') delete inputs.prompt; // shown as the prompt box, not as a setting
   return {
     inputs,
     ...fields,
     hasPrompt,
-    promptRequired: hasPrompt && required.includes('prompt'),
+    promptRequired: hasPrompt && required.includes(promptRaw),
     required: required.filter((n) => !HIDDEN_FIELDS.has(n)).map((n) => renames[n] || n),
   };
 }

@@ -106,3 +106,43 @@ test('Atlas video price without a unit is "from $x/s" and not used for spending 
   assert.match(v.model.name, /· from \$0\.13\/s$/);
   assert.equal(estimateCost(v, { duration: 5 }), null);
 });
+
+test('Atlas speech model: text is the prompt box, price per characters', () => {
+  const entry = { model: 'minimax/speech-2.8-hd', type: 'Audio', categories: ['TEXT-TO-SPEECH'], displayName: 'MiniMax Speech 2.8 HD', price: { actual: { base_price: '0.07', unit: '1k characters' } } };
+  const schema = { components: { schemas: { Input: { required: ['model', 'text'], properties: {
+    model: { type: 'string', enum: ['minimax/speech-2.8-hd'] },
+    text: { type: 'string', default: 'Welcome to Atlas Cloud' },
+    voice: { type: 'string', enum: ['English_expressive_narrator', 'English_radiant_girl'], default: 'English_expressive_narrator' },
+    speed: { type: 'number', minimum: 0.5, maximum: 2, default: 1 },
+    enable_sync_mode: { type: 'boolean' },
+  } } } } };
+  const v = buildAtlasVariant(entry, schema);
+  assert.equal(v.mode, 't2a');
+  assert.equal(v.kind, 'audio');
+  assert.equal(v.model.hasPrompt, true);
+  assert.equal(v.model.promptRequired, true);
+  assert.equal(v.model.inputs.prompt, undefined, 'text is the prompt box, not a setting');
+  assert.deepEqual(v.model.inputs.voice.enum, ['English_expressive_narrator', 'English_radiant_girl']);
+  assert.match(v.model.dzPrice.label, /\/1k chars$/);
+  const body = toProviderBody(v, { prompt: 'Hello there', voice: 'English_radiant_girl' });
+  assert.equal(body.text, 'Hello there');
+  assert.equal(body.prompt, undefined);
+  assert.equal(estimateCost(v, body), 0.07, 'short text: one block of characters');
+  assert.ok(Math.abs(estimateCost(v, { text: 'x'.repeat(3000) }) - 0.21) < 1e-9);
+  // Transcription, lyrics-as-text and voice cloning are not studio audio.
+  assert.equal(buildAtlasVariant({ ...entry, model: 'kwaivgi/kling-v4.0/custom-voice' }, schema), null);
+  assert.equal(buildAtlasVariant({ ...entry, model: 'minimax/lyrics-generation', categories: ['TEXT-TO-AUDIO'] }, schema), null);
+  assert.equal(buildAtlasVariant({ ...entry, model: 'bytedance/seed-asr-2.0', categories: ['SPEECH-TO-TEXT'] }, schema), null);
+});
+
+test('APIMart hand-checked spec replaces the parsed modes (Kling motion control)', async () => {
+  const { createRequire } = await import('node:module');
+  const manual = createRequire(import.meta.url)('../src/catalog/apimart-manual.json');
+  const vs = buildApimartVariants({ id: 'kling-v2-6-motion-control', category: 'video', capability_tags: ['Text to Video', 'Video to Video'] }, manual['kling-v2-6-motion-control'], { usd: 0.07, unit: 'second' });
+  assert.deepEqual(vs.map((v) => v.mode), ['i2v']);
+  const m = vs[0].model;
+  assert.equal(m.inputs.image_url.field, 'image');
+  assert.equal(m.inputs.video_url.field, 'video');
+  assert.deepEqual(m.inputs.character_orientation.enum, ['image', 'video']);
+  assert.ok(m.required.includes('image_url') && m.required.includes('video_url'));
+});

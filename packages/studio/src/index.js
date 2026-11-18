@@ -10,6 +10,7 @@ export { default as DzUpscaleStudio, DzUpscalePanel } from './components/DzUpsca
 export { default as DzLibrary } from './components/DzLibrary'; // DZ
 export { default as DzCreateStudio, DZ_SEND_EVENT } from './components/DzCreateStudio'; // DZ
 export { default as DzDirector } from './components/DzDirector'; // DZ
+export { default as DzTools } from './components/DzTools'; // DZ
 export { dzUpscaleSpec, dzOpenUpscale, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from './dzCatalog'; // DZ
 export { default as AudioStudio } from './components/AudioStudio';
 export { default as MarketingStudio } from './components/MarketingStudio';

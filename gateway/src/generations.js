@@ -377,7 +377,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
   //   studio=cinema|image|video|upscale (comma list; "other" = no studio)
   //   kind=image|video|audio   liked=1   trash=1 (only deleted)   status=processing|completed|failed
   // Each user sees only their own items — there is no shared history.
-  const STUDIOS = new Set(['create', 'cinema', 'image', 'video', 'upscale']);
+  const STUDIOS = new Set(['create', 'cinema', 'image', 'video', 'upscale', 'director', 'tools']);
   const KINDS = new Set(['image', 'video', 'audio']);
   //   project=<id> (that project; folder=<id>|root narrows it) · project=none (personal only)
   //   no project → the user's Library: their own items plus their projects' items.

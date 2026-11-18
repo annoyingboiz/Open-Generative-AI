@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DzCinemaStudio, DzCreateStudio, DzDirector, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
+import { DzCinemaStudio, DzCreateStudio, DzDirector, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
   DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT,
   DzProjectsPage, DzElementsPage, ToElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext } from 'studio';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
@@ -50,6 +50,11 @@ const ICONS = {
       <path d="M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" /><path d="M4 11l-.6-3.2a1 1 0 0 1 .8-1.2l13.8-2.5a1 1 0 0 1 1.2.8L19.6 8 4 11z" /><path d="M8.5 6.2l2.4 3.6M13.5 5.3l2.4 3.6" />
     </svg>
   ),
+  tools: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="3.5" /><rect x="3" y="14" width="7" height="7" rx="3.5" /><path d="M17.5 14v7M14 17.5h7" />
+    </svg>
+  ),
   upscale: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
@@ -75,6 +80,8 @@ export const DZ_TABS = [
   { id: 'upscale', label: 'Upscale', tool: true },
   // AI Director: scene → shots → start frames → videos (storyboards).
   { id: 'director', label: 'Director', tool: true },
+  // Lip Sync, Motion Control, Talking Photo, Character Swap, Audio.
+  { id: 'tools', label: 'Tools', tool: true },
   // The old Cinema stays for now, in the Library only.
   { id: 'cinema', label: 'Cinema (old)', tool: true, libraryOnly: true },
   { id: 'library', label: 'All work' },
@@ -85,7 +92,7 @@ export const DZ_TABS = [
 ];
 const TAB_IDS = new Set(DZ_TABS.map((t) => t.id));
 // Tabs whose prompt the side chat can write into.
-const INSERT_TABS = new Set(['create', 'image', 'video', 'director']);
+const INSERT_TABS = new Set(['create', 'image', 'video', 'director', 'tools']);
 const DEFAULT_TAB = 'create';
 const labelOf = (tabId) => DZ_TABS.find((t) => t.id === tabId)?.label || tabId;
 const WORK_TABS = { library: 'all', liked: 'liked', trash: 'trash' };
@@ -591,6 +598,9 @@ export default function DzShell() {
           </div>
           <div className={activeTab === 'director' ? 'h-full w-full' : 'hidden'}>
             <DzDirector key={project?.id || 'library'} {...studioProps} {...callbacks('director')} />
+          </div>
+          <div className={activeTab === 'tools' ? 'h-full w-full' : 'hidden'}>
+            <DzTools key={project?.id || 'library'} {...studioProps} {...callbacks('tools')} />
           </div>
           <div className={activeTab === 'cinema' ? 'h-full w-full' : 'hidden'}>
             <DzCinemaStudio {...studioProps} {...callbacks('cinema')} />

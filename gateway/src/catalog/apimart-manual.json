@@ -1,0 +1,131 @@
+{
+  "_note": "Hand-checked specs that win over the bundled and the daily auto-parsed ones (apimart-overrides.json, live docs). Only for models the docs parser gets wrong. Source of each: APIMart docs page in 'source'.",
+  "kling-v2-6-motion-control": {
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/kling-v2-6-motion-control-generation.md (checked 18.11.2026)",
+    "family": "kling-2.6-motion-control",
+    "name": "Kling 2.6 Motion Control",
+    "common": {
+      "inputs": {
+        "mode": {
+          "name": "mode",
+          "title": "Mode",
+          "type": "string",
+          "enum": [
+            "std",
+            "pro"
+          ],
+          "default": "std"
+        },
+        "character_orientation": {
+          "name": "character_orientation",
+          "title": "Character orientation",
+          "type": "string",
+          "enum": [
+            "image",
+            "video"
+          ],
+          "default": "image",
+          "description": "image: the character faces as in the picture (motion video 3–10 s). video: as in the motion video (3–30 s)."
+        },
+        "keep_original_sound": {
+          "name": "keep_original_sound",
+          "title": "Keep the video's sound",
+          "type": "string",
+          "enum": [
+            "yes",
+            "no"
+          ],
+          "default": "yes"
+        }
+      }
+    },
+    "modes": {
+      "i2v": {
+        "inputs": {},
+        "hasPrompt": true,
+        "promptRequired": false,
+        "required": [
+          "image_url",
+          "video_url"
+        ],
+        "media": {
+          "image": {
+            "field": "image_url",
+            "title": "Character",
+            "max": 1
+          },
+          "video": {
+            "field": "video_url",
+            "title": "Motion video",
+            "max": 1
+          }
+        }
+      }
+    },
+    "onlyModes": true
+  },
+  "kling-v3-motion-control": {
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/kling-v2-6-motion-control-generation.md (checked 18.11.2026)",
+    "family": "kling-3-motion-control",
+    "name": "Kling 3 Motion Control",
+    "common": {
+      "inputs": {
+        "mode": {
+          "name": "mode",
+          "title": "Mode",
+          "type": "string",
+          "enum": [
+            "std",
+            "pro"
+          ],
+          "default": "std"
+        },
+        "character_orientation": {
+          "name": "character_orientation",
+          "title": "Character orientation",
+          "type": "string",
+          "enum": [
+            "image",
+            "video"
+          ],
+          "default": "image",
+          "description": "image: the character faces as in the picture (motion video 3–10 s). video: as in the motion video (3–30 s)."
+        },
+        "keep_original_sound": {
+          "name": "keep_original_sound",
+          "title": "Keep the video's sound",
+          "type": "string",
+          "enum": [
+            "yes",
+            "no"
+          ],
+          "default": "yes"
+        }
+      }
+    },
+    "modes": {
+      "i2v": {
+        "inputs": {},
+        "hasPrompt": true,
+        "promptRequired": false,
+        "required": [
+          "image_url",
+          "video_url"
+        ],
+        "media": {
+          "image": {
+            "field": "image_url",
+            "title": "Character",
+            "max": 1
+          },
+          "video": {
+            "field": "video_url",
+            "title": "Motion video",
+            "max": 1
+          }
+        }
+      }
+    },
+    "onlyModes": true
+  }
+}

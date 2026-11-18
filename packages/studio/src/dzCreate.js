@@ -11,8 +11,8 @@
 //     Seedance), when the provider documents it;
 //   • which of a model's endpoints to call for the media actually attached.
 
-const LISTS = { image: ["t2i", "i2i"], video: ["t2v", "i2v", "v2v"] };
-const MODE_ORDER = { t2i: 0, i2i: 1, t2v: 0, i2v: 1, v2v: 2 };
+const LISTS = { image: ["t2i", "i2i"], video: ["t2v", "i2v", "v2v"], audio: ["t2a"] };
+const MODE_ORDER = { t2i: 0, i2i: 1, t2v: 0, i2v: 1, v2v: 2, t2a: 0 };
 
 // ── Media roles ─────────────────────────────────────────────────────────────
 
@@ -104,13 +104,15 @@ export function refSyntaxFor(model) {
 
 // ── Model entries: one per family + provider ───────────────────────────────
 
-// Every variant (endpoint) of one model at one provider, for Image or Video.
-export function createEntries(kind) {
+// Every variant (endpoint) of one model at one provider, for Image, Video or
+// Audio. `match`: only endpoints it accepts (Tools: lip sync, motion control…).
+export function createEntries(kind, { match = null } = {}) {
   const lists = (typeof window !== "undefined" && window.__DZ_CATALOG__?.lists) || {};
   const byKey = new Map();
   for (const mode of LISTS[kind]) {
     for (const model of lists[mode] || []) {
       if (!model?.endpoint || !model.dzFamily) continue;
+      if (match && !match.test(model.endpoint)) continue;
       const key = `${model.dzFamily}|${model.dzProvider}`;
       if (!byKey.has(key)) {
         byKey.set(key, {
@@ -362,13 +364,13 @@ export function chooseVariant(entry, attached, { native = false } = {}) {
 }
 
 // What is missing for the chosen endpoint (required media) — null when ready.
-export function missingFor(variant, attached) {
+export function missingFor(variant, attached, labels = {}) {
   if (!variant) return null;
   for (const field of variant.model.required || []) {
     const input = variant.model.inputs?.[field];
     if (!input?.field) continue;
     const role = Object.entries(variant.media).find(([, m]) => m.field === field)?.[0];
-    if (role && !(attached[role] || []).length) return `${ROLE_INFO[role].label} is required for this model.`;
+    if (role && !(attached[role] || []).length) return `${labels[role] || ROLE_INFO[role].label} is required for this model.`;
   }
   return null;
 }

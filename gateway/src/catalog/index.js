@@ -21,6 +21,8 @@ import { fetchApimartDocs, buildApimartOverrides } from './apimart-docs.js';
 
 const require = createRequire(import.meta.url);
 const APIMART_OVERRIDES = require('./apimart-overrides.json');
+// Hand-checked specs win over the bundled and the auto-parsed (live) ones.
+const APIMART_MANUAL = Object.fromEntries(Object.entries(require('./apimart-manual.json')).filter(([k]) => !k.startsWith('_')));
 const DAY = 86_400_000;
 const KIND_APIMART = { image: 'image', video: 'video', audio: 'audio' };
 const KIND_ATLAS = { Image: 'image', Video: 'video', Audio: 'audio' };
@@ -81,7 +83,7 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     const enabled = (id) => providers.resolve(id).enabled && Boolean(providers.resolve(id).apiKey);
     if (raw.atlas && enabled('atlas')) {
       for (const entry of raw.atlas.list) {
-        if (!['Image', 'Video'].includes(entry.type)) continue;
+        if (!['Image', 'Video', 'Audio'].includes(entry.type)) continue;
         const schema = readJson(schemaFile(entry.model), null);
         if (!schema) continue;
         const v = buildAtlasVariant(entry, schema);
@@ -91,7 +93,7 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     if (raw.apimart && enabled('apimart')) {
       const prices = readJson(fileOf('apimart-prices.json'), {});
       // Specs from the bundled docs file, updated by the daily docs check.
-      const overrides = { ...APIMART_OVERRIDES, ...(changes?.liveOverrides() || {}) };
+      const overrides = { ...APIMART_OVERRIDES, ...(changes?.liveOverrides() || {}), ...APIMART_MANUAL };
       for (const model of raw.apimart.list) {
         if (!['image', 'video'].includes(model.category)) continue;
         variants.push(...buildApimartVariants(model, overrides[model.id], apimartPrice(prices[model.id])));
@@ -127,7 +129,7 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     }
 
     if (providerId === 'atlas') {
-      const media = list.filter((e) => ['Image', 'Video'].includes(e.type) && e.schema);
+      const media = list.filter((e) => ['Image', 'Video', 'Audio'].includes(e.type) && e.schema);
       const todo = fresh ? media.filter((e) => !fs.existsSync(schemaFile(e.model))) : media;
       if (!todo.length) return;
       const results = await mapLimit(todo, 8, async (e) => {

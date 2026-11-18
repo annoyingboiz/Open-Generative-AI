@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { useDzContext } from "../dzContext.js";
 import { dzThumb } from "../api.js";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
-import DzLikeButton, { DzPendingTile } from "./DzLikeButton.jsx";
+import DzLikeButton, { DzPendingTile, DzAudioTile } from "./DzLikeButton.jsx";
 import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
 import { Segmented, Button, Input, cn, SelectParts } from "../ui/index.js";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
@@ -19,6 +19,7 @@ const TYPES = [
   { value: "all", label: "All" },
   { value: "image", label: "Images" },
   { value: "video", label: "Videos" },
+  { value: "audio", label: "Audio" },
   { value: "uploads", label: "Uploads" },
 ];
 const TOOLS = [
@@ -27,10 +28,12 @@ const TOOLS = [
   { value: "image", label: "Image" },
   { value: "video", label: "Video" },
   { value: "upscale", label: "Upscale" },
+  { value: "director", label: "Director" },
+  { value: "tools", label: "Tools" },
   { value: "cinema", label: "Cinema (old)" },
 ];
 const SECTION_TITLE = { all: "All work", liked: "Liked", trash: "Trash" };
-const STUDIO_LABEL = { create: "Create", cinema: "Cinema", image: "Image", video: "Video", upscale: "Upscale", director: "Director" };
+const STUDIO_LABEL = { create: "Create", cinema: "Cinema", image: "Image", video: "Video", upscale: "Upscale", director: "Director", tools: "Tools" };
 
 async function download(url, name) {
   try {
@@ -84,7 +87,9 @@ export function Viewer({ item, onClose }) {
       </div>
       {/* A click on the empty dark area closes; on the picture or video it doesn't. */}
       <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-        {isVideo ? (
+        {item.kind === "audio" ? (
+          <audio src={item.url} controls autoPlay className="w-full max-w-xl" onClick={(e) => e.stopPropagation()} />
+        ) : isVideo ? (
           <video src={item.url} controls autoPlay className="max-h-full max-w-full rounded-lg" onClick={(e) => e.stopPropagation()} />
         ) : (
           <img src={item.url} alt={item.prompt || "Image"} className="max-h-full max-w-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
@@ -105,6 +110,8 @@ function Card({ item, view, onOpen, actions, sel }) {
         {!item.url ? (
           <DzPendingTile status={item.status} error={item.error} label={item.studio === "upscale" ? "Upscaling" : "Generating"} className="aspect-square w-full"
             note={item.note} onCancel={item.cancellable ? () => dzLibrary.cancel(item.id).catch((e) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Cancel", message: String(e?.message || e) } }))) : undefined} />
+        ) : item.kind === "audio" ? (
+          <DzAudioTile url={item.url} title={item.prompt?.slice(0, 80) || "Audio"} controls={false} className="aspect-square w-full" />
         ) : isVideo ? (
           <video
             src={item.url}
@@ -237,7 +244,7 @@ export default function DzLibrary({ section = "all", onGenerationError }) {
   const scope = ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : {};
   const filter = {
     ...scope,
-    ...(type === "image" || type === "video" ? { kind: type } : {}),
+    ...(type === "image" || type === "video" || type === "audio" ? { kind: type } : {}),
     ...(tool !== "any" ? { studio: tool } : {}),
     ...(section === "liked" || (likedOnly && section === "all") ? { liked: true } : {}),
     ...(inTrash ? { trash: true } : {}),

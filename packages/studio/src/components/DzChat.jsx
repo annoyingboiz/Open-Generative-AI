@@ -13,6 +13,11 @@ import { Button, Textarea, Input, Spinner, Switch, OptionSelect, Tip, cn, Select
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } = SelectParts;
 const LAST_KEY = "dz_chat_assistant";
+const when = (t) => {
+  const d = new Date(t);
+  const today = new Date();
+  return d.toDateString() === today.toDateString() ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString([], { day: "numeric", month: "short" });
+};
 const money = (v) => (v == null ? "" : v === 0 ? "free" : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(3)}`);
 
 async function call(method, url, body) {
@@ -218,6 +223,8 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
   const [sending, setSending] = useState(false);
   const [model, setModel] = useState("");
   const [viewing, setViewing] = useState(null);
+  const wide = () => typeof window === "undefined" || window.innerWidth >= 768;
+  const [showList, setShowList] = useState(true); // phones: the chat list over the conversation
   const scroller = useRef(null);
   const notify = (message) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Chat", message } }));
 
@@ -305,7 +312,11 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
   };
 
   const modelOptions = textModels.options;
-  const effectiveModel = model || assistant?.model || textModels.def || "";
+  const [myDefault, setMyDefault] = useState(null); // set from here: the new default
+  const makeDefault = async () => {
+    try { await call("POST", "/dz/api/llm/my-default", { model: effectiveModel }); setMyDefault(effectiveModel); setModel(""); window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "success", title: "Chat", message: "Saved as your default text model." } })); } catch (e) { notify(String(e.message || e)); }
+  };
+  const effectiveModel = model || assistant?.model || myDefault || textModels.def || "";
   const chosenOption = modelOptions.find((o) => o.value === effectiveModel);
   const visionWarn = images.length > 0 && chosenOption && !chosenOption.vision;
 
@@ -318,7 +329,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
   );
 
   return (
-    <SidePanel open={open} onOpenChange={onOpenChange} title="Chat" actions={header} className="max-w-[520px] sm:max-w-[520px]">
+    <SidePanel open={open} onOpenChange={onOpenChange} title="Chat" actions={header} className="max-w-[min(960px,100vw)] sm:max-w-[min(960px,100vw)]">
       {view === "edit" && assistant ? (
         <AssistantEditor key={assistant.id} assistant={assistant} modelOptions={modelOptions} apiKey={apiKey} onError={notify} onBack={() => setView("chat")}
           onSaved={(a, opts) => { setLists((l) => ({ ...l, personal: l.personal.map((x) => (x.id === a.id ? a : x)), project: l.project.map((x) => (x.id === a.id ? a : x)) })); if (!opts?.stay) setView("chat"); }}
@@ -341,12 +352,12 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
           )}
         </div>
       ) : (
-        <div className="flex h-full flex-col">
-          {/* Assistant and chat */}
-          <div className="space-y-2 border-b border-border p-3">
-            <div className="flex items-center gap-2">
+        <div className="flex h-full">
+          {/* Left: assistant and its chats (on phones: behind the "Chats" button) */}
+          <aside className={cn("flex w-[260px] shrink-0 flex-col border-r border-border bg-black/20", showList ? "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-20 max-md:w-[82%] max-md:bg-card" : "max-md:hidden")}>
+            <div className="space-y-2 border-b border-border p-3">
               <Select value={assistant?.id || ""} onValueChange={(v) => (v === "__new" ? setView("new") : setAssistantId(v))}>
-                <SelectTrigger aria-label="Assistant" className="h-10 min-w-0 flex-1 rounded-xl"><SelectValue placeholder="Choose an assistant" /></SelectTrigger>
+                <SelectTrigger aria-label="Assistant" className="h-10 w-full rounded-xl"><SelectValue placeholder="Choose an assistant" /></SelectTrigger>
                 <SelectContent className="max-h-[420px]">
                   {lists.project.length > 0 && (
                     <SelectGroup>
@@ -363,28 +374,36 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
                   <SelectItem value="__new">+ New assistant…</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="secondary" className="h-10 rounded-xl" disabled={!assistant} onClick={() => { chatSeq.current += 1; setChat(null); setText(""); }}>New chat</Button>
+              <Button className="h-9 w-full rounded-lg" disabled={!assistant} onClick={() => { chatSeq.current += 1; setChat(null); setText(""); setShowList(wide()); }}>+ New chat</Button>
             </div>
-            {chats.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Select value={chat?.id || "__none"} onValueChange={(v) => openChat(v === "__none" ? null : v)}>
-                  <SelectTrigger aria-label="Chat" className="h-9 min-w-0 flex-1 rounded-lg border-transparent bg-muted"><SelectValue /></SelectTrigger>
-                  <SelectContent className="max-h-[360px]">
-                    <SelectItem value="__none">New chat</SelectItem>
-                    {chats.map((c) => <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                {chat && (
-                  <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={async () => {
-                    if (!window.confirm("Delete this chat?")) return;
-                    try { await dzAssistants.removeChat(chat.id); setChats((l) => l.filter((x) => x.id !== chat.id)); setChat(null); } catch (e) { notify(String(e.message || e)); }
-                  }}>Delete</Button>
-                )}
-              </div>
-            )}
-            {assistant?.description && <p className="text-muted-foreground">{assistant.description}{assistant.author ? ` · by ${assistant.author}` : ""}</p>}
-          </div>
+            <nav aria-label="Chats" className="min-h-0 flex-1 space-y-0.5 overflow-y-auto custom-scrollbar p-2">
+              {chats.length === 0 && <p className="px-2 py-3 text-muted-foreground">No chats with {assistant?.name || "this assistant"} yet.</p>}
+              {chats.map((c) => (
+                <div key={c.id} className={cn("group flex items-center gap-1 rounded-lg pr-1", chat?.id === c.id ? "bg-primary/10" : "hover:bg-accent")}>
+                  <button type="button" onClick={() => { openChat(c.id); setShowList(wide()); }} className="min-w-0 flex-1 px-2.5 py-2 text-left">
+                    <span className={cn("block truncate", chat?.id === c.id && "font-semibold text-primary")}>{c.title}</span>
+                    <span className="block text-[14px] text-muted-foreground">{when(c.updated_at)}</span>
+                  </button>
+                  <button type="button" aria-label={`Delete chat ${c.title}`} title="Delete chat"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-white/10 hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+                    onClick={async () => {
+                      if (!window.confirm(`Delete “${c.title}”?`)) return;
+                      try { await dzAssistants.removeChat(c.id); setChats((l) => l.filter((x) => x.id !== c.id)); if (chat?.id === c.id) setChat(null); } catch (e) { notify(String(e.message || e)); }
+                    }}>✕</button>
+                </div>
+              ))}
+            </nav>
+          </aside>
 
+          {/* Right: the conversation */}
+          <section className="relative flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+            <Button size="sm" variant="secondary" className="md:hidden" onClick={() => setShowList((v) => !v)}>Chats</Button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-semibold">{chat?.title && chat.title !== "New chat" ? chat.title : assistant ? `New chat · ${assistant.name}` : "Chat"}</p>
+              {assistant?.description && <p className="truncate text-muted-foreground">{assistant.description}{assistant.author ? ` · by ${assistant.author}` : ""}</p>}
+            </div>
+          </div>
           {/* Messages */}
           <div ref={scroller} className="min-h-0 flex-1 space-y-4 overflow-y-auto custom-scrollbar p-4">
             {!lists.loaded && <div className="flex justify-center py-8"><Spinner /></div>}
@@ -420,11 +439,17 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
               <div className="min-w-0 flex-1">
                 <OptionSelect value={effectiveModel} onValueChange={setModel} options={modelOptions} placeholder={textModels.loaded ? "Text model" : "Loading…"} aria-label="Text model" className="min-h-9 py-1" />
               </div>
+              {effectiveModel && effectiveModel !== (myDefault ?? textModels.def) && (
+                <Tip text="Use this text model everywhere by default (Chat, Adapt, Director) — you can change it in Settings">
+                  <span><Button size="sm" variant="ghost" className="h-9 rounded-lg" onClick={makeDefault}>Make default</Button></span>
+                </Tip>
+              )}
               <Button className="h-9 rounded-lg px-4" disabled={!assistant || sending || loadingChat || (!text.trim() && !images.length)} onClick={send}>{sending ? <Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> : "Send"}</Button>
             </div>
           </div>
           <DzMediaPicker open={picker} onOpenChange={setPicker} accept="image" max={Math.max(1, 4 - images.length)} apiKey={apiKey} onError={notify} title="Pictures for the chat"
             onPick={(list) => setImages((l) => [...l, ...list.filter((x) => !l.some((y) => y.url === x.url))].slice(0, 4))} />
+          </section>
         </div>
       )}
       {viewing && (

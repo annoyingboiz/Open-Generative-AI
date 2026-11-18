@@ -230,7 +230,12 @@ const perM = (p) => (p.free ? 'free' : p.price ? `$${(+p.price.in).toFixed(2)} i
 function llmOptions(models, selected) {
   const group = (label, list) => (list.length ? `<optgroup label="${esc(label)}">${list.map((m) => `<option value="${esc(m.id)}" ${m.id === selected ? 'selected' : ''}>${esc(m.name)} · ${esc(SOURCE_NAME[m.source] || m.source)} — ${esc(perM(m))}${m.vision ? ' · sees pictures' : ''}</option>`).join('')}</optgroup>` : '');
   const rec = models.filter((m) => m.recommended);
-  return group('Recommended', rec) + ['local', 'apimart', 'atlas'].map((src) => group(SOURCE_NAME[src], models.filter((m) => m.source === src && !m.recommended))).join('');
+  // Your ChatGPT plan first (its models are never "recommended", so they had no group and
+  // could not be picked); a saved choice that is not in the list now (a source is down) is kept.
+  const known = models.some((m) => m.id === selected);
+  const keep = selected && !known ? `<option value="${esc(selected)}" selected>${esc(selected.replace(/^[a-z]+:/, ''))} — not available right now</option>` : '';
+  return keep + group('Your ChatGPT plan', models.filter((m) => m.source === 'chatgpt')) + group('Recommended', rec.filter((m) => m.source !== 'chatgpt'))
+    + ['local', 'apimart', 'atlas'].map((src) => group(SOURCE_NAME[src], models.filter((m) => m.source === src && !m.recommended))).join('');
 }
 function llmSection(llm) {
   const pill = (st) => {

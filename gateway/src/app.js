@@ -299,9 +299,9 @@ export async function buildApp(config, { logger = true } = {}) {
     const balancesP = isAdmin ? fetchBalances(providers) : Promise.resolve([]);
     // Everyone gets their ChatGPT box and own default; admins also the sources and tests.
     // The page never waits long for providers: after 4 s it shows what is known.
-    const lists = isAdmin
-      ? await Promise.race([llm.list(req.user).catch(() => null), new Promise((r) => setTimeout(() => r(null), 4000))])
-      : await llm.quickList(req.user).catch(() => null);
+    // Provider lists from memory (refreshed in the background) plus this person's
+    // ChatGPT models — so their plan is always in the lists, even when a provider is slow.
+    const lists = await llm.quickList(req.user).catch(() => null);
     const llmInfo = {
       ...(lists || llm.cachedList(req.user)), try: llmTry, chatgpt: chatgpt.status(req.user), username: req.user.username, isAdmin,
       ...(isAdmin ? { recent: llm.recent(10), accounts: chatgpt.accounts() } : {}),

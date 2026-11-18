@@ -187,3 +187,17 @@ test('ChatGPT plans: one per person, stored encrypted; an admin may share theirs
   assert.equal(cg.canUse({ id: id('kid') }), false);
   assert.equal(db.prepare('SELECT value FROM meta WHERE key = ?').get(`llm_default:${id('admin')}`).value, 'chatgpt:gpt-6.1-sol');
 });
+
+test('Settings: your ChatGPT models can be picked as your default; a saved choice that is offline is kept', async () => {
+  const { settingsPage } = await import('../src/pages.js');
+  const models = [
+    { id: 'chatgpt:gpt-6.2-sol', source: 'chatgpt', name: 'GPT-6.2 Sol', price: { in: 0, out: 0 }, free: true },
+    { id: 'apimart:deepseek-v4-flash', source: 'apimart', name: 'DeepSeek V4 Flash', recommended: true, price: { in: 0.1, out: 0.5 } },
+  ];
+  const user = { id: 1, role: 'user', username: 'denis', display_name: 'Denis' };
+  let html = settingsPage({ user, llm: { models, myDefault: 'chatgpt:gpt-6.2-sol', globalDefault: 'apimart:deepseek-v4-flash', chatgpt: { connected: true } } });
+  const mine = html.slice(html.indexOf('My default text model'));
+  assert.match(mine, /<optgroup label="Your ChatGPT plan"><option value="chatgpt:gpt-6.2-sol" selected>/);
+  html = settingsPage({ user, llm: { models: models.slice(1), myDefault: 'chatgpt:gpt-6.2-sol', globalDefault: '', chatgpt: { connected: true } } });
+  assert.match(html.slice(html.indexOf('My default text model')), /<option value="chatgpt:gpt-6.2-sol" selected>gpt-6.2-sol — not available right now/);
+});

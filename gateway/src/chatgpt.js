@@ -13,9 +13,8 @@ import { providerFetch } from './providers/http.js';
 import { encrypt, decrypt } from './crypto.js';
 import { now } from './db.js';
 
-const AUTH = 'https://auth.openai.com';
-const TOKEN_URL = `${AUTH}/api/accounts/oauth/token`;
-const API = 'https://api.openai.com/v1';
+const AUTH_DEFAULT = 'https://auth.openai.com';
+const API_DEFAULT = 'https://api.openai.com/v1';
 const RESOURCE = 'https://api.openai.com/v1';
 const PLAN_SCOPE = 'chatgpt.tokens.use.direct';
 
@@ -31,6 +30,10 @@ export function createChatGpt({ db, masterKey, config, log }) {
     user: db.prepare('SELECT id, username, display_name, role FROM users WHERE username = ?'),
   };
   const proxy = config.openaiProxy || '';
+  // Overridable only for tests (a fake OpenAI on localhost).
+  const AUTH = config.chatgptAuthBase || AUTH_DEFAULT;
+  const API = config.chatgptApiBase || API_DEFAULT;
+  const TOKEN_URL = `${AUTH}/api/accounts/oauth/token`;
 
   // This server's own, permanent host id (never the Mac's).
   function hostId() {
@@ -44,7 +47,20 @@ export function createChatGpt({ db, masterKey, config, log }) {
     if (!boxed) return null;
     try { return JSON.parse(decrypt(masterKey, boxed)); } catch (error) { log?.warn?.(`chatgpt credentials unreadable: ${error.message}`); return null; }
   }
-  const save = (c) => q.set.run('chatgpt_creds', encrypt(masterKey, JSON.stringify(c)));
+  const newVersion = () => crypto.randomUUID();
+  // Compare-and-save: only replaces the credentials it started from, so a refresh
+  // never undoes a newer import (another process) or a disconnect.
+  function casSave(expectVersion, next) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const cur = load();
+      if (expectVersion !== null && (!cur || cur.version !== expectVersion)) { db.exec('ROLLBACK'); return null; }
+      const saved = { ...next, version: newVersion() };
+      q.set.run('chatgpt_creds', encrypt(masterKey, JSON.stringify(saved)));
+      db.exec('COMMIT');
+      return saved;
+    } catch (error) { try { db.exec('ROLLBACK'); } catch { /* closed */ } throw error; }
+  }
 
   // From the Mac helper (stdin of the import script). Checks the plan permission,
   // keeps this server's host id, binds the connection to one person here.
@@ -57,40 +73,73 @@ export function createChatGpt({ db, masterKey, config, log }) {
     if (!scopes.includes(PLAN_SCOPE)) throw new ChatGptError('The ChatGPT plan permission was not granted. Sign in again and keep “Use your ChatGPT plan” on.');
     for (const k of ['client_id', 'access_token', 'refresh_token']) if (!c?.[k]) throw new ChatGptError(`Missing ${k}.`);
     if (c.client_id === 'dynamic_agent_client') throw new ChatGptError('Registration was not completed (no issued client id).');
-    const creds = {
+    const creds = casSave(null, {
       client_id: c.client_id, access_token: c.access_token, refresh_token: c.refresh_token, id_token: c.id_token || null,
       scopes, email: c.email || '', sub: c.sub || '', issuer: c.issuer || AUTH,
       expires_at: Number(c.expires_at) || (now() + (Number(c.expires_in) || 3600) * 1000),
-      saved_at: now(), owner_id: owner.id, owner_username: owner.username, host_id: hostId(), refreshed_at: null,
-    };
-    save(creds);
-    modelsCache = null;
+      saved_at: now(), owner_id: owner.id, owner_username: owner.username, host_id: hostId(), refreshed_at: null, lost: false,
+    });
     return { ok: true, email: creds.email, owner: owner.username };
   }
 
-  // One refresh at a time; the rotating refresh token is replaced together with the rest.
+  // A lease in the database, so only one process refreshes at a time (the
+  // refresh token rotates: using an old one twice kills the connection).
+  const leaseId = crypto.randomUUID();
+  function takeLease() {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const cur = q.get.get('chatgpt_refresh_lease')?.value;
+      const until = Number(String(cur || '').split('|')[1] || 0);
+      if (cur && until > Date.now() && !cur.startsWith(`${leaseId}|`)) { db.exec('ROLLBACK'); return false; }
+      q.set.run('chatgpt_refresh_lease', `${leaseId}|${Date.now() + 45_000}`);
+      db.exec('COMMIT');
+      return true;
+    } catch (error) { try { db.exec('ROLLBACK'); } catch { /* closed */ } throw error; }
+  }
+  const dropLease = () => { if (String(q.get.get('chatgpt_refresh_lease')?.value || '').startsWith(`${leaseId}|`)) q.del.run('chatgpt_refresh_lease'); };
+
+  const TERMINAL = /^(invalid_grant|invalid_refresh_token|token_expired|refresh_token_expired|refresh_token_invalidated|refresh_token_reused)$/;
+  const errCode = (data) => (typeof data?.error === 'string' ? data.error : data?.error?.code) || data?.code || '';
+
   let refreshing = null;
-  async function freshToken() {
+  async function freshToken({ force = false } = {}) {
     const c = load();
     if (!c) throw new ChatGptError('The ChatGPT account is not connected.', 409);
-    if (c.expires_at - now() > 5 * 60_000) return c;
-    if (!refreshing) {
-      refreshing = (async () => {
-        const body = new URLSearchParams({ grant_type: 'refresh_token', client_id: c.client_id, refresh_token: c.refresh_token, resource: RESOURCE });
-        const r = await providerFetch(TOKEN_URL, { proxy, method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: body.toString(), timeoutMs: 20_000 });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok || !data.access_token) {
-          const lost = r.status === 400 || r.status === 401 || /invalid_grant|revoked|expired/i.test(String(data.error || ''));
-          if (lost) { save({ ...load(), lost: true }); throw new ChatGptError('The ChatGPT connection has expired or was revoked. Reconnect it in Settings.', 409); }
-          throw new ChatGptError(`Could not refresh the ChatGPT connection (HTTP ${r.status}).`, 424);
-        }
-        const scopes = data.scope ? String(data.scope).split(/\s+/).filter(Boolean) : c.scopes;
-        const next = { ...load(), access_token: data.access_token, refresh_token: data.refresh_token || c.refresh_token, expires_at: now() + (Number(data.expires_in) || 3600) * 1000, scopes, refreshed_at: now(), lost: false };
-        save(next);
-        return next;
-      })().finally(() => { refreshing = null; });
-    }
+    if (c.lost) throw new ChatGptError('The ChatGPT connection has expired or was revoked. Reconnect it in Settings.', 409);
+    if (!force && c.expires_at - now() > 5 * 60_000) return c;
+    if (!refreshing) refreshing = doRefresh(c.version).finally(() => { refreshing = null; });
     return refreshing;
+  }
+  async function doRefresh(startVersion) {
+    const deadline = Date.now() + 30_000;
+    while (!takeLease()) {
+      if (Date.now() > deadline) throw new ChatGptError('Another refresh of the ChatGPT connection is still running. Try again.', 503);
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    try {
+      const c = load();
+      if (!c) throw new ChatGptError('The ChatGPT account is not connected.', 409);
+      if (c.version !== startVersion && !c.lost && c.expires_at - now() > 60_000) return c; // someone else refreshed or re-imported
+      const body = new URLSearchParams({ grant_type: 'refresh_token', client_id: c.client_id, refresh_token: c.refresh_token, resource: RESOURCE });
+      const r = await providerFetch(TOKEN_URL, { proxy, method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: body.toString(), timeoutMs: 20_000 });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data.access_token) {
+        const code = errCode(data);
+        if (TERMINAL.test(code)) {
+          casSave(c.version, { ...c, lost: true });
+          throw new ChatGptError('The ChatGPT connection has expired or was revoked. Reconnect it in Settings.', 409);
+        }
+        if (code === 'invalid_client') throw new ChatGptError('OpenAI does not accept this app’s client id (invalid_client). Reconnect from the Mac to register again.', 424);
+        throw new ChatGptError(`Could not refresh the ChatGPT connection (HTTP ${r.status}${code ? `, ${code}` : ''}). It stays connected; try again later.`, 503);
+      }
+      const scopes = data.scope ? String(data.scope).split(/\s+/).filter(Boolean) : c.scopes;
+      const next = { ...c, access_token: data.access_token, refresh_token: data.refresh_token || c.refresh_token, id_token: data.id_token || c.id_token, expires_at: now() + (Number(data.expires_in) || 3600) * 1000, scopes, refreshed_at: now(), lost: false };
+      const saved = casSave(c.version, next);
+      if (saved) return saved;
+      const cur = load(); // replaced meanwhile (new import or disconnect)
+      if (!cur) throw new ChatGptError('The ChatGPT account was disconnected.', 409);
+      return cur;
+    } finally { dropLease(); }
   }
 
   function status(user) {
@@ -102,32 +151,46 @@ export function createChatGpt({ db, masterKey, config, log }) {
     };
   }
 
-  // Models this account can use (visibility "list"), in OpenAI's order; kept an hour.
+  // Models this account can use (visibility "list"), in OpenAI's order; kept an
+  // hour per credentials version (a new import starts a fresh list).
   let modelsCache = null;
   async function models(user) {
     const c = load();
     if (!c || c.lost || user?.id !== c.owner_id) return [];
-    if (modelsCache && Date.now() - modelsCache.at < 3600_000) return modelsCache.list;
+    if (modelsCache && modelsCache.sub === c.sub && modelsCache.client === c.client_id && Date.now() - modelsCache.at < 3600_000) return modelsCache.list;
     try {
       const t = await freshToken();
       const r = await providerFetch(`${API}/models`, { proxy, headers: { authorization: `Bearer ${t.access_token}` }, timeoutMs: 20_000 });
-      const data = await r.json().catch(() => ({}));
-      const raw = Array.isArray(data.models) ? data.models : Array.isArray(data.data) ? data.data : [];
-      const list = raw.filter((m) => (m.visibility ? m.visibility === 'list' : true)).map((m) => ({ slug: m.slug || m.id, name: m.display_name || m.slug || m.id })).filter((m) => m.slug);
-      modelsCache = { at: Date.now(), list };
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      const raw = Array.isArray(data.models) ? data.models : [];
+      const list = raw.filter((m) => m.visibility === 'list' && m.slug).map((m) => ({ slug: m.slug, name: m.display_name || m.slug }));
+      modelsCache = { at: Date.now(), sub: c.sub, client: c.client_id, list };
       return list;
     } catch (error) {
       log?.warn?.(`chatgpt models: ${error.message}`);
-      return modelsCache?.list || [];
+      return modelsCache && modelsCache.sub === c.sub ? modelsCache.list : [];
     }
   }
 
-  // One answer through the Responses API (streamed; read to response.completed).
+  // Plain-language errors, keeping OpenAI's code; statuses as documented.
+  function inferenceError(status, code, detail) {
+    const tail = code ? ` (${code})` : '';
+    if (code === 'subscription_sharing_usage_limit_exceeded') return new ChatGptError('Your ChatGPT plan limit for apps is used up for now. Pick another model or try later.', 429);
+    if (/^subscription_sharing_(usage|user)_unavailable$/.test(code)) return new ChatGptError('ChatGPT plan usage is unavailable right now. Try again in a few minutes.', 503);
+    if (code === 'subscription_sharing_unsupported_capability') return new ChatGptError(`ChatGPT can’t take this kind of input${tail}. Remove the images or try another model.`, 400);
+    if (status === 401) return new ChatGptError(`ChatGPT did not accept this connection${tail}. If it keeps happening, reconnect in Settings.`, 409);
+    if (status === 403) return new ChatGptError(`ChatGPT refused this request${tail}${detail ? `: ${detail}` : ''}.`, 403);
+    if (status === 429) return new ChatGptError(`ChatGPT says: too many requests${tail}. Try later.`, 429);
+    if (status >= 500) return new ChatGptError(`ChatGPT is unavailable right now${tail}. Try again in a few minutes.`, 503);
+    return new ChatGptError(`ChatGPT: ${String(detail || code || `HTTP ${status}`).slice(0, 200)}`, 424);
+  }
+
+  // One answer through the Responses API (streamed; only response.completed is success).
   async function chat(user, { model, msgs, images = [] }) {
     const c = load();
     if (!c) throw new ChatGptError('The ChatGPT account is not connected.', 409);
     if (user.id !== c.owner_id) throw new ChatGptError('This ChatGPT account belongs to someone else.', 403);
-    const t = await freshToken();
     const instructions = msgs.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n') || undefined;
     const input = msgs.filter((m) => m.role !== 'system').map((m, i, all) => {
       const last = i === all.length - 1 && m.role === 'user';
@@ -135,17 +198,27 @@ export function createChatGpt({ db, masterKey, config, log }) {
       if (last) for (const img of images) parts.push({ type: 'input_image', image_url: `data:${img.mime};base64,${img.b64}` });
       return { role: m.role, content: parts };
     });
-    const r = await providerFetch(`${API}/responses`, {
-      proxy, method: 'POST', timeoutMs: 110_000,
-      headers: { authorization: `Bearer ${t.access_token}`, 'content-type': 'application/json', accept: 'text/event-stream' },
-      body: JSON.stringify({ model, input, ...(instructions ? { instructions } : {}), store: false, stream: true }),
-    });
+    const payload = JSON.stringify({ model, input, ...(instructions ? { instructions } : {}), store: false, stream: true });
+    let r;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const t = await freshToken({ force: attempt > 0 });
+      r = await providerFetch(`${API}/responses`, {
+        proxy, method: 'POST', timeoutMs: 110_000,
+        headers: { authorization: `Bearer ${t.access_token}`, 'content-type': 'application/json', accept: 'text/event-stream' },
+        body: payload,
+      });
+      if (r.status !== 401 || attempt > 0) break;
+      await r.body?.cancel?.().catch?.(() => {}); // stale access token: refresh once and retry
+    }
+    const reqId = r.headers.get('x-request-id') || r.headers.get('openai-request-id') || '';
     if (!r.ok) {
       const text = await r.text().catch(() => '');
-      let msg = text;
-      try { msg = JSON.parse(text).error?.message || text; } catch { /* plain */ }
-      if (r.status === 401) { modelsCache = null; throw new ChatGptError('ChatGPT refused the connection. Reconnect it in Settings.', 409); }
-      throw new ChatGptError(`ChatGPT: ${String(msg).slice(0, 200) || `HTTP ${r.status}`}`, 424);
+      let data = {};
+      try { data = JSON.parse(text); } catch { /* plain */ }
+      const code = data?.error?.code || '';
+      const detail = data?.error?.message || data?.detail || text.slice(0, 200);
+      if (reqId) log?.warn?.(`chatgpt responses HTTP ${r.status} ${code} request ${reqId}`);
+      throw inferenceError(r.status, code, detail);
     }
     let textOut = '';
     let usage = { in: 0, out: 0 };
@@ -159,29 +232,39 @@ export function createChatGpt({ db, masterKey, config, log }) {
         const u = ev.response?.usage || {};
         usage = { in: Number(u.input_tokens || 0), out: Number(u.output_tokens || 0) };
       } else if (ev.type === 'response.failed' || ev.type === 'error') {
-        const code = ev.response?.error?.code || ev.error?.code || ev.code || '';
-        if (/subscription_sharing_usage_limit_exceeded/.test(code)) throw new ChatGptError('Your ChatGPT plan limit for apps is used up for now. Try later or pick another model.', 429);
-        if (/subscription_sharing_usage_unavailable/.test(code)) throw new ChatGptError('ChatGPT plan usage is not available for this account right now.', 409);
-        throw new ChatGptError(`ChatGPT failed: ${ev.response?.error?.message || code || 'unknown error'}`, 424);
+        const err = ev.response?.error || ev.error || ev;
+        throw inferenceError(424, err.code || '', err.message || '');
       } else if (ev.type === 'response.incomplete') {
-        done = true;
-        if (!textOut) throw new ChatGptError(`ChatGPT stopped early (${ev.response?.incomplete_details?.reason || 'incomplete'}).`, 424);
+        throw new ChatGptError(`ChatGPT stopped before finishing (${ev.response?.incomplete_details?.reason || 'incomplete'}). Try again.`, 424);
       }
     };
-    for await (const chunk of r.body) {
-      buffer += decoder.decode(chunk, { stream: true });
+    // Server-sent events: blank line ends an event; data lines join with "\n".
+    const flush = (block) => {
+      const data = block.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).replace(/^ /, '')).join('\n');
+      if (!data || data === '[DONE]') return;
+      let ev;
+      try { ev = JSON.parse(data); } catch { return; }
+      handle(ev);
+    };
+    const drain = (final) => {
+      buffer = buffer.replace(/\r\n/g, '\n').replace(/\r(?!$)/g, '\n');
+      if (final) buffer = buffer.replace(/\r$/, '\n');
       let i;
-      while ((i = buffer.indexOf('\n\n')) >= 0) {
-        const block = buffer.slice(0, i);
-        buffer = buffer.slice(i + 2);
-        const data = block.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
-        if (!data || data === '[DONE]') continue;
-        let ev;
-        try { ev = JSON.parse(data); } catch { continue; }
-        handle(ev);
+      while ((i = buffer.indexOf('\n\n')) >= 0) { const block = buffer.slice(0, i); buffer = buffer.slice(i + 2); flush(block); }
+      if (final && buffer.trim()) { const block = buffer; buffer = ''; flush(block); }
+    };
+    try {
+      for await (const chunk of r.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        drain(false);
+        if (done) break;
       }
+      if (!done) { buffer += decoder.decode(); drain(true); }
+    } finally {
+      if (!r.body.locked) await r.body.cancel?.().catch?.(() => {});
     }
     if (!done) throw new ChatGptError('The ChatGPT answer was cut off. Try again.', 424);
+    if (reqId && !textOut) log?.warn?.(`chatgpt empty answer, request ${reqId}`);
     return { text: textOut.trim(), usage, finish: 'stop' };
   }
 

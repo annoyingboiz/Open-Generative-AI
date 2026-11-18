@@ -177,7 +177,8 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   }
   function setDefault(id) {
     const v = String(id || '');
-    if (v && !/^(local|apimart|atlas|chatgpt):.+/.test(v)) throw new LlmError('Unknown model.');
+    if (v.startsWith('chatgpt:')) throw new LlmError('The ChatGPT plan belongs to one person, so it can’t be everyone’s default. Pick it by name where you need it.');
+    if (v && !/^(local|apimart|atlas):.+/.test(v)) throw new LlmError('Unknown model.');
     q.setMeta.run('llm_default', v);
     return { ok: true };
   }

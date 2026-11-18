@@ -34,7 +34,8 @@ const DIR = path.join(os.homedir(), '.config', 'director-chatgpt');
 const REG = path.join(DIR, 'registration.json');
 
 const say = (m) => process.stderr.write(`${m}\n`);
-if (process.stdout.isTTY) {
+const out = fs.fstatSync(1);
+if (!out.isFIFO() && !out.isSocket()) {
   say('Pipe this into the server, so the tokens never show on screen:');
   say("  node connect-chatgpt.mjs | ssh stand 'cd ~/projects/ai-video-platform && docker compose exec -T gateway node src/import-chatgpt.mjs denis'");
   process.exit(2);
@@ -121,6 +122,7 @@ const result = await new Promise((resolve, reject) => {
     const code = u.searchParams.get('code');
     const issued = u.searchParams.get('client_id') || reg.client_id;
     if (!code || !issued || issued === 'dynamic_agent_client') { page('Not connected', 'Registration did not finish. Run the helper again.'); reject(new Error('No code or issued client id in the answer.')); return; }
+    if (reg.client_id && issued !== reg.client_id) { page('Not connected', 'The answer came for a different app id. Run the helper again.'); reject(new Error('The callback client id does not match the saved registration.')); return; }
     page('Signed in', 'You can close this tab and go back to the terminal.');
     resolve({ code, clientId: issued });
   });
@@ -150,6 +152,11 @@ if (!scopes.includes('chatgpt.tokens.use.direct')) {
   process.exit(1);
 }
 const { claims, issuer } = await verifyIdToken(tok.id_token, { clientId: result.clientId, nonce });
+if (reg.sub && claims.sub !== reg.sub) {
+  say(`You signed in with a different ChatGPT account (${claims.email || claims.sub}) than before (${reg.email || reg.sub}).`);
+  say(`To switch accounts on purpose, delete ${REG} and run again.`);
+  process.exit(1);
+}
 // Remember the registration (no tokens) for the next sign-in.
 saveReg({ ...reg, client_id: result.clientId, email: claims.email || reg.email || '', sub: claims.sub, saved_at: Date.now() });
 

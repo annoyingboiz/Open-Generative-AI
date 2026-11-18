@@ -207,6 +207,19 @@ export const apimart = {
     const file = this.resultFile(ref);
     if (file) fs.promises.unlink(file.path).catch(() => {});
   },
+  // Speech files nobody collected (a failed save, a job that failed while
+  // downloading, a crash): jobs take them within minutes, so a day is plenty.
+  sweepFiles(maxAgeMs = 24 * 3600_000) {
+    if (!speechDir) return;
+    let names = [];
+    try { names = fs.readdirSync(speechDir); } catch { return; }
+    const cutoff = Date.now() - maxAgeMs;
+    for (const name of names) {
+      if (!FILE_RE.test(`apimart-file:${name}`)) continue;
+      const file = nodePath.join(speechDir, name);
+      try { if (fs.statSync(file).mtimeMs < cutoff) fs.unlinkSync(file); } catch { /* gone already */ }
+    }
+  },
 
   // Uploads a local file; APIMart only accepts public URLs for references.
   async upload({ apiKey, proxy }, { path, mime, name, kind }) {

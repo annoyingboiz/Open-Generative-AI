@@ -230,7 +230,9 @@ export function buildApimartVariants(model, override, price) {
       }),
       server: {
         rename,
-        allowed: null,
+        // Audio specs are complete: nothing else goes to APIMart (e.g. Suno's
+        // max_mode, which doubles the price the limit reserved).
+        allowed: kind === 'audio' && spec ? [...new Set([...Object.keys(fields.inputs), ...(fields.hasPrompt ? [rename.prompt || 'prompt'] : [])].map((k) => rename[k] || k))] : null,
         // Generic fields the studio adds that this model gets under another name.
         drop: ['image_url', 'images_list', 'video_url', 'videos_list', 'video_files', 'audio_url', 'audios_list']
           .filter((f) => ![fields.imageField, fields.lastImageField, fields.videoField, fields.audioField].includes(f)),

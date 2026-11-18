@@ -169,3 +169,15 @@ test('APIMart audio from hand-checked specs: Suno, sound effects, speech', async
   const [flow] = buildApimartVariants({ id: 'flowmusic', category: 'audio', capability_tags: [] }, manual.flowmusic, apimartPrice({ action_paid_prices: { 'flowmusic@generate': 0.06 } }, manual.flowmusic));
   assert.equal(toProviderBody(flow, { prompt: 'lofi piano' }).sound_prompt, 'lofi piano');
 });
+
+test('APIMart audio sends only the fields of its spec (no Suno max_mode)', async () => {
+  const { createRequire } = await import('node:module');
+  const manual = createRequire(import.meta.url)('../src/catalog/apimart-manual.json');
+  const [music] = buildApimartVariants({ id: 'suno', category: 'audio', capability_tags: [] }, manual.suno, { usd: 0.05, unit: 'request' });
+  const body = toProviderBody(music, { prompt: 'song', custom: true, max_mode: true, custom_model_id: 'x' });
+  assert.equal(body.max_mode, undefined);
+  assert.equal(body.custom_model_id, undefined);
+  assert.equal(body.prompt, 'song');
+  const [tts] = buildApimartVariants({ id: 'gpt-4o-mini-tts', category: 'audio', capability_tags: [] }, manual['gpt-4o-mini-tts'], null);
+  assert.deepEqual(toProviderBody(tts, { prompt: 'Hi', voice: 'nova', extra: 1 }), { input: 'Hi', voice: 'nova' });
+});

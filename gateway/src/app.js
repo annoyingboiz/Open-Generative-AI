@@ -19,7 +19,7 @@ import { loadMasterKey, newToken } from './crypto.js';
 import { createAuth, createLoginThrottle, publicUser, SESSION_COOKIE, UserError } from './auth.js';
 import { PROVIDERS, providerById, createProviderSettings, fetchBalances } from './providers/index.js';
 import { local, configureLocal, localConfigured } from './providers/local.js';
-import { configureApimartFiles } from './providers/apimart.js';
+import { apimart, configureApimartFiles } from './providers/apimart.js';
 import { validateProxyUrl } from './providers/http.js';
 import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
@@ -84,6 +84,8 @@ export async function buildApp(config, { logger = true } = {}) {
   }
   configureLocal(config.localBridgeDir);
   configureApimartFiles(path.join(config.dataDir, 'apimart-speech'));
+  apimart.sweepFiles();
+  setInterval(() => apimart.sweepFiles(), 3600_000).unref();
   const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended, changes, localEnabled: localConfigured });
   const quoter = createQuoter({ providers, log: app.log });
   const projects = createProjects({ db });

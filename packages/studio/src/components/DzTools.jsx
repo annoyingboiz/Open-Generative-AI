@@ -84,8 +84,8 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
   const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, used, labels);
   const hasPrompt = variant ? variant.model.hasPrompt !== false : false;
   const needsPrompt = Boolean(variant?.model.promptRequired);
-  // Something to make it from: text, files, or lyrics (songs from lyrics alone).
-  const hasContent = Boolean(prompt.trim() || Object.keys(used).length || String(values.lyrics || "").trim());
+  // Something to make it from: text, files, or lyrics / style tags (songs from those alone).
+  const hasContent = Boolean(prompt.trim() || Object.keys(used).length || String(values.lyrics || "").trim() || String(values.style || "").trim());
   const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && hasContent);
   const body = variant && canRun ? buildBody(variant, { prompt: hasPrompt ? prompt.trim() : "", values, attached: used }) : null;
   const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: prompt.trim() || (hasContent && !needsPrompt ? "" : "price check"), values, attached: used }) : null);

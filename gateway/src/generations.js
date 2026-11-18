@@ -217,27 +217,29 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       const file = await storage.downloadResult({ userId: row.user_id, generationId: row.id, index: i, url: providerOutputs[i], proxy: cfg.proxy });
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
-    // All copied: the provider's temporary files can go (a retry before this point still finds them).
-    if (provider?.releaseResult) for (const ref of providerOutputs) provider.releaseResult(ref);
     // Fix-ups on the files before they show up (e.g. the sound back into an
     // upscaled video). They run beside the worker, not in it: the job stays
     // "downloading" with its next check pushed back (a restart just redoes it).
+    // The provider's temporary files (APIMart speech) go once the job is
+    // completed: a retry before that still finds them; leftovers are swept.
+    const release = () => { if (provider?.releaseResult) for (const ref of providerOutputs) provider.releaseResult(ref); };
     if (afterDownload?.wants(row)) {
       q.setPolled.run('downloading', now() + 10 * 60_000, now(), row.id);
       Promise.resolve()
         .then(() => afterDownload.run(row, saved))
         .catch((error) => log?.warn(`after download ${row.id}: ${error.message}`))
-        .finally(() => finishDownload(row, saved));
+        .finally(() => { if (finishDownload(row, saved)) release(); });
       return;
     }
-    finishDownload(row, saved);
+    if (finishDownload(row, saved)) release();
   }
   function finishDownload(row, saved) {
     const cur = q.byId.get(row.id);
-    if (!cur || cur.status !== 'downloading') return; // failed or removed meanwhile
+    if (!cur || cur.status !== 'downloading') return false; // failed or removed meanwhile
     q.setCompleted.run(JSON.stringify(saved), now() + settleDelaysMs[0], now(), now(), row.id);
     // After-work (e.g. an element video) runs on its own: it never holds up other jobs.
     if (onCompleted) Promise.resolve().then(() => onCompleted(q.byId.get(row.id))).catch((error) => log?.warn(`after ${row.id}: ${error.message}`));
+    return true;
   }
 
   // The real charge of a finished job, settled by the worker (survives

@@ -108,6 +108,11 @@ export function sendFile(req, reply, file, mime, { download = false, name, cache
   reply.header('accept-ranges', 'bytes');
   // Private files: the browser must ask us (and we check the owner) every time.
   reply.header('cache-control', cacheControl);
+  // An unchanged file is answered with a tiny 304 — the access check above
+  // has already run for this request.
+  const etag = `W/"${stat.size.toString(36)}-${Math.trunc(stat.mtimeMs).toString(36)}"`;
+  reply.header('etag', etag);
+  if (!download && !req.headers.range && req.headers['if-none-match'] === etag) return reply.code(304).send();
   if (download) reply.header('content-disposition', `attachment; filename="${(name || path.basename(file)).replace(/"/g, '')}"`);
   const range = req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
   if (range) {

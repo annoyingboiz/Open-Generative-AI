@@ -81,6 +81,7 @@ export async function buildApp(config, { logger = true } = {}) {
   generations.setOnCompleted((row) => elements.attachGenerated(row));
   const llm = createLlm({ db, providers, generations, config, log: app.log });
   const thumbs = createThumbs({ dataDir: config.dataDir, log: app.log });
+  if (config.startWorkers !== false) setInterval(() => { try { thumbs.prune(); } catch { /* ignore */ } }, 24 * 3600_000).unref?.();
   if (config.startWorkers !== false) {
     setTimeout(() => elements.attachPending().catch(() => {}), 30_000).unref?.();
     setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
@@ -668,16 +669,17 @@ export async function buildApp(config, { logger = true } = {}) {
   }));
 
   // ── Files: only people who may see them can open them ───────────────────
-  // A file never changes once saved, so the browser may keep it a day
-  // (private: never a shared cache). ?w=480 → a small webp preview (a
-  // video's first frame), kept a week.
+  // The browser keeps files but asks every time (a 304 when unchanged), so
+  // access is always checked; never in a shared cache. ?w=480 → a small webp
+  // preview (a video's first frame).
   const sendMedia = async (req, reply, f) => {
     if (req.query.w && req.query.download !== '1') {
       const t = await thumbs.thumbFor(f.path, f.mime, req.query.w);
-      if (t) return sendFile(req, reply, t, 'image/webp', { cacheControl: 'private, max-age=604800, immutable' });
+      if (t === 'busy') return reply.code(503).header('retry-after', '5').send({ error: 'Previews are busy, try again.' });
+      if (t) { thumbs.touch(t); return sendFile(req, reply, t, 'image/webp', { cacheControl: 'private, no-cache' }); }
       if (String(f.mime).startsWith('video/')) return reply.code(404).send({ error: 'No preview' });
     }
-    return sendFile(req, reply, f.path, f.mime, { download: req.query.download === '1', cacheControl: 'private, max-age=86400' });
+    return sendFile(req, reply, f.path, f.mime, { download: req.query.download === '1', cacheControl: 'private, no-cache' });
   };
   app.get('/media/u/:file', async (req, reply) => {
     const f = generations.mediaFile(req.user, 'u', req.params.file.split('.')[0]);

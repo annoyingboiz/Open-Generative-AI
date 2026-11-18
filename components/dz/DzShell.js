@@ -360,7 +360,8 @@ export default function DzShell() {
   // Right-click on any of our images: Upscale, open in the Upscale tab, download.
   const onContextMenu = (e) => {
     const img = e.target?.closest?.('img');
-    const url = img?.getAttribute('src');
+    // A grid shows a small preview (?w=…); actions work on the original file.
+    const url = (img?.getAttribute('src') || '').replace(/([?&])w=\d+(&|$)/, (m, a, b) => (b ? a : '')).replace(/[?&]$/, '');
     if (!img || !dzIsOwnImage(url)) return;
     e.preventDefault();
     setImageMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: Math.min(e.clientY, window.innerHeight - 140), url });

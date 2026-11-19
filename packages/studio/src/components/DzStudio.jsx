@@ -365,12 +365,14 @@ const OrDivider = () => (
 // When both groups hold files, only the slots that hold files count.
 function groupsConflict(entry, a, b, attached) {
   const vs = entry?.variants || [];
-  const taken = (r) => vs.some((v) => v.media[r === "edit" ? "reference" : r]);
+  // "Image to edit" travels as the first reference image (withEditFirst).
+  const media = (v, r) => v.media[r === "edit" ? "reference" : r];
+  const taken = (r) => vs.some((v) => media(v, r));
   const rolesOf = (g) => { const all = g.roles.filter(taken); const held = all.filter((r) => (attached[r] || []).length); return held.length ? held : all; };
   const ra = rolesOf(a);
   const rb = rolesOf(b);
   const both = ra.some((r) => (attached[r] || []).length) && rb.some((r) => (attached[r] || []).length);
-  return (both ? ra : a.roles.filter(taken)).some((x) => (both ? rb : b.roles.filter(taken)).some((y) => !vs.some((v) => v.media[x] && v.media[y])));
+  return (both ? ra : a.roles.filter(taken)).some((x) => (both ? rb : b.roles.filter(taken)).some((y) => !vs.some((v) => media(v, x) && media(v, y))));
 }
 
 // The strip never overflows (redesign 02, §2.3): when the groups don't fit, the

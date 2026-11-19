@@ -422,7 +422,7 @@ function PromptField({ engine, onFocusChange, mentionGroups, onPasteFiles }) {
   const [focused, setFocused] = useState(false);
   return (
     <div className="relative">
-      <PromptEditor value={prompt} onChange={(v) => { setPrompt(v); requestAnimationFrame(() => promptRef.current && readMention(promptRef.current)); }} tags={tags} inputRef={promptRef} json={jsonPrompt.json}
+      <PromptEditor value={prompt} onChange={(v) => { setPrompt(v); requestAnimationFrame(() => promptRef.current && readMention(promptRef.current)); }} tags={tags} modelName={engine.entry?.familyName} inputRef={promptRef} json={jsonPrompt.json}
         placeholder="Describe the shot. Type @ to use an element or anything you attached."
         onKeyDown={onPromptKey}
         onKeyUp={(e) => {
@@ -762,8 +762,9 @@ export default function DzStudio(props) {
             </div>
 
             {/* 2–4 fold away while the library is open */}
-            <div className={cn("grid transition-[grid-template-rows,opacity] duration-[240ms] ease-soft", libraryOpen ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
-              <div className={cn(libraryOpen ? "overflow-hidden" : "overflow-visible")}>
+            <div className={cn("grid grid-cols-[minmax(0,1fr)] transition-[grid-template-rows,opacity] duration-[240ms] ease-soft", libraryOpen ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
+              {/* min-w-0: the column must not grow with the bottom row, or the row could never measure its own overflow. */}
+              <div className={cn("min-w-0", libraryOpen ? "overflow-hidden" : "overflow-visible")}>
                 <div className={cn("mt-3 grid gap-2", kind === "video" ? "grid-cols-4" : "grid-cols-3")}>
                   <Block icon={Camera} label="Camera" value={camParts.length ? camParts.join(" · ") : "Auto"} auto={!camParts.length} onClick={() => setPanel("camera")} active={panel === "camera"} />
                   {kind === "video" && <Block icon={ArrowsOutCardinal} label="Move" value={moveLabel || "Auto"} auto={!moveLabel} onClick={() => setPanel("move")} active={panel === "move"} />}
@@ -817,7 +818,7 @@ export default function DzStudio(props) {
                     render={(v, row) => (row ? <><RatioIcon v={v} /><span className="w-12 tabular-nums">{String(v)}</span><span className="text-muted-foreground">{shapeWord(v)}</span></> : String(v))} />
                   <ParamMenu p={resP} value={values[resP?.key]} onChange={(v) => setValue(resP.key, v)} title="Resolution" icon={Monitor} modelName={entry?.familyName}
                     render={(v, row, first) => (row ? <><span className="flex-1">{resName(v)}</span>{first && <span className="text-xs text-muted-foreground">Sharper detail</span>}</> : resShort(v))}
-                    note={(v) => isEnhanced(v)}
+                    note={(v) => resParts(v).kind === "esr"}
                     caption={resP?.enum?.some(isEnhanced) ? "Enhanced is upscaled by the provider and takes longer. The price updates next to Generate." : null} />
                   <ParamMenu p={durP} value={values[durP?.key]} onChange={(v) => setValue(durP.key, v)} title="Length" icon={Clock} modelName={entry?.familyName}
                     render={(v) => (Number(v) === -1 ? "Auto" : `${v}s`)} caption="The price updates next to Generate." />

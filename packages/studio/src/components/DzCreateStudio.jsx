@@ -497,7 +497,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // tag stays the same when a model can't take some files.
   const allFiles = useMemo(() => {
     const out = {};
-    for (const role of ROLE_ORDER) {
+    for (const role of [...ROLE_ORDER, "edit"]) {
       const own = (sendable[role] || []).filter((f) => !f.element);
       const els = (merged.attached?.[role] || []).filter((f) => f.element);
       if (own.length || els.length) out[role] = [...own, ...els];

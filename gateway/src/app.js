@@ -880,6 +880,8 @@ export async function buildApp(config, { logger = true } = {}) {
       const file = generations.mediaFile(req.user, 'g', row.id, 0);
       if (!file?.path) return reply.code(404).send({ detail: 'The video file is gone.' });
       const label = at === 'first' ? 'first frame' : at === 'last' ? 'last frame' : `frame at ${Number(at).toFixed(1)} s`;
+      // The same place as the video, if it can still take new work (not archived, still a member).
+      const { projectId, folderId } = contextOf(req.user, row.project_id, row.folder_id);
       if (req.body?.save) {
         let meta = null;
         try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
@@ -888,15 +890,15 @@ export async function buildApp(config, { logger = true } = {}) {
           prompt: row.prompt || '',
           studio: row.studio,
           meta: { frameOf: row.id, at, modelName: `${label[0].toUpperCase()}${label.slice(1)} · ${meta?.modelName || 'video'}` },
-          projectId: row.project_id || null,
-          folderId: row.folder_id || null,
+          projectId,
+          folderId,
           make: () => frameOf(file.path, at),
         });
         return { id };
       }
       const frame = await frameOf(file.path, at);
       try {
-        const saved = await generations.saveUpload(req.user, { stream: fs.createReadStream(frame.path), mime: 'image/png', filename: `${String(row.prompt || 'video').slice(0, 40)} – ${label}.png`, projectId: row.project_id || null });
+        const saved = await generations.saveUpload(req.user, { stream: fs.createReadStream(frame.path), mime: 'image/png', filename: `${String(row.prompt || 'video').slice(0, 40)} – ${label}.png`, projectId, folderId });
         return { url: saved.url };
       } finally { frame.cleanup(); }
     } catch (error) {
@@ -914,7 +916,11 @@ export async function buildApp(config, { logger = true } = {}) {
       if (!m) return reply.code(409).send({ detail: 'This generation cannot be tried again here.' });
       const resolved = resolveEndpoint(req.user, row.provider, row.provider_model, m[3]);
       if (!resolved || resolved.video) return reply.code(409).send({ detail: 'This model is not available any more.' });
+      const { projectId, folderId } = contextOf(req.user, row.project_id, row.folder_id);
       const price = await priceFor(req.user, resolved, row.provider, row.provider_model, body);
+      if (req.user.monthly_limit_usd != null && resolved.tool && price && !price.exact) {
+        return reply.code(402).send({ detail: 'This model has no published price, so it is not available with a spending limit.' });
+      }
       if (req.user.monthly_limit_usd != null && !Number.isFinite(price?.usd)) {
         return reply.code(402).send({ detail: 'This model has no known price, so it is not available with a spending limit.' });
       }
@@ -929,8 +935,8 @@ export async function buildApp(config, { logger = true } = {}) {
         studio: row.studio,
         displayPrompt: row.prompt,
         meta: meta ? { ...meta, retryOf: row.id } : { retryOf: row.id },
-        projectId: row.project_id,
-        folderId: row.folder_id,
+        projectId,
+        folderId,
       });
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }

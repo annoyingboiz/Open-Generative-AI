@@ -797,6 +797,12 @@ export default function DrawModal({
   useEffect(() => {
     if (!isOpen || !initialImage) return;
     setActiveTab("draw-to-edit");
+    // A new picture starts clean: no strokes, selection or undo steps from the last one.
+    const canvas = canvasRef.current;
+    if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    setCanvasObjects([]);
+    setSelectedObjectId(null);
+    saveStateToHistory([]);
     setBgImageUrl(initialImage);
     setAspectRatio("Auto");
     setViewState("canvas");

@@ -813,7 +813,8 @@ export default function DzStudio(props) {
   // ── What the tiles and the viewer can do (package 03, §5–§7) ──
   const { isNew, markSeen } = useSeen();
   const [tileMenu, setTileMenu] = useState(false);
-  const focusPrompt = () => { setMini(false); requestAnimationFrame(() => engine.promptRef.current?.focus()); };
+  const forcedMini = useRef(false);
+  const focusPrompt = () => { forcedMini.current = false; setMini(false); requestAnimationFrame(() => engine.promptRef.current?.focus()); };
   const fail = (title) => (e) => notify({ type: "error", title, message: String(e?.message || e) });
   const addRef = (it) => {
     const gid = it.kind === "video" ? "video" : "reference";
@@ -828,7 +829,7 @@ export default function DzStudio(props) {
       const r = await dzFrame(it.id, { at });
       const file = { url: r.url, name: at === "first" ? "first frame" : "last frame" };
       if (mode === "image") { window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: r.url } })); return; }
-      if (mode === "create" && kind !== "video") setKind("video");
+      if (mode === "create") setKind("video");
       setAttached((prev) => ({ ...prev, first: [file] }));
       focusPrompt();
     } catch (e) { fail("Frame")(e); }
@@ -837,6 +838,7 @@ export default function DzStudio(props) {
     open: (it) => { markSeen(it); setViewing(it); },
     like: (it) => history.like(it.id, !it.liked),
     trash: (it) => history.trash(it.id).catch(fail("Trash")),
+    trashStrict: (it) => history.trash(it.id),
     cancel: (it) => dzLibrary.cancel(it.id).catch(fail("Cancel")),
     useRef: addRef,
     makeVideo: (it) => (mode === "create" ? (applyResult(it, "animate"), focusPrompt()) : window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: it.url } }))),
@@ -887,9 +889,12 @@ export default function DzStudio(props) {
   // Mini composer (§5.3): folds when the grid scrolls past 24 px; never while something is open or the prompt has focus.
   const busyUi = Boolean(panel || pop || libGroup || focus || mention);
   // While a tile menu is open the composer is in its mini form (§5).
+  // Restored on close only if nothing else (Make video, Continue…) opened the composer meanwhile.
   const miniBefore = useRef(false);
   useEffect(() => {
-    if (tileMenu) { miniBefore.current = mini; setMini(true); } else setMini(miniBefore.current);
+    if (tileMenu) { miniBefore.current = mini; forcedMini.current = true; setMini(true); return; }
+    if (forcedMini.current) setMini(miniBefore.current);
+    forcedMini.current = false;
   }, [tileMenu]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (busyUi) setMini(false); }, [busyUi]);
   const [stuck, setStuck] = useState(false);

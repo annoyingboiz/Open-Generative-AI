@@ -297,6 +297,8 @@ export function promptTags({ attached = {}, all = null, syntax = null, elements 
     for (const role of ["video", "source"]) for (const f of att[role] || []) { v += 1; go(f, role, { v }); }
     let a = 0;
     for (const f of att.audio || []) { a += 1; go(f, "audio", { a }); }
+    // A picture to edit the model can't take stays its own role: its tag is marked unused.
+    for (const f of att.edit || []) go(f, "edit", { edit: true });
   };
   const sentTo = new Map();
   const firstImage = new Map(); // element id → its first reference number at the model
@@ -307,6 +309,7 @@ export function promptTags({ attached = {}, all = null, syntax = null, elements 
       if ((role === "video" || role === "source") && !firstVideo.has(f.element)) firstVideo.set(f.element, k.v);
       return;
     }
+    if (k.edit) return;
     let to;
     if (k.frameN) to = !hasRefInput && syntax ? syntax.image(k.frameN) : role === "middle" && k.mids > 1 ? `${FRAME_WORDS.middle} ${k.i + 1}` : FRAME_WORDS[role];
     else if (role === "reference") to = syntax ? syntax.image(k.n) : `image ${k.n}`;
@@ -321,7 +324,7 @@ export function promptTags({ attached = {}, all = null, syntax = null, elements 
     if (k.frameN) {
       tag = role === "first" ? "start" : role === "last" ? "end" : `mid${k.i + 1}`;
       label = role === "first" ? "Start frame" : role === "last" ? "End frame" : `Mid ${k.i + 1}`;
-    } else if (role === "reference" && f.edit) { tag = "edit"; label = "Image to edit"; }
+    } else if (k.edit || (role === "reference" && f.edit)) { tag = "edit"; label = "Image to edit"; }
     else if (role === "reference") { tag = `img${k.r}`; label = `Reference ${k.r}`; }
     else if (k.v) { tag = `vid${k.v}`; label = role === "source" ? "Video to edit" : `Reference video ${k.v}`; }
     else { tag = `aud${k.a}`; label = `Audio ${k.a}`; }

@@ -132,7 +132,9 @@ export default function StudioViewer({ item, items = [], onClose, onMove, act })
   useEffect(() => {
     if (!item) return undefined;
     const on = (e) => {
-      if (/^(INPUT|TEXTAREA)$/.test(e.target?.tagName) || e.target?.isContentEditable) return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName) || e.target?.isContentEditable) return;
+      // Arrows inside an open menu move in the menu, not to another item.
+      if (e.target?.closest?.('[role="menu"],[role="menuitem"]') || document.querySelector("[data-radix-popper-content-wrapper]")) return;
       if (e.key === "ArrowLeft") { e.preventDefault(); go(-1); }
       if (e.key === "ArrowRight") { e.preventDefault(); go(1); }
     };
@@ -195,7 +197,11 @@ export default function StudioViewer({ item, items = [], onClose, onMove, act })
                 {!isVideo && <DropdownMenuItem className="h-8 gap-2.5" onSelect={() => window.dispatchEvent(new CustomEvent("dz:to-element", { detail: { items: [item] } }))}><Shapes size={16} />Make element</DropdownMenuItem>}
                 {prompt && <DropdownMenuItem className="h-8 gap-2.5" onSelect={() => navigator.clipboard?.writeText(prompt).then(() => notify({ type: "notice", title: "Copied", message: "The prompt is on the clipboard." }), () => {})}><Copy size={16} />Copy prompt</DropdownMenuItem>}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="h-8 gap-2.5 text-destructive focus:text-destructive" onSelect={() => { act.trash(item); const next = list[index + 1] || list[index - 1]; if (next) onMove(next); else onClose(); }}><Trash size={16} />Move to Trash</DropdownMenuItem>
+                <DropdownMenuItem className="h-8 gap-2.5 text-destructive focus:text-destructive" onSelect={async () => {
+                  const next = list[index + 1] || list[index - 1];
+                  try { await act.trashStrict(item); } catch (e) { notify({ type: "error", title: "Trash", message: String(e?.message || e) }); return; }
+                  if (next) onMove(next); else onClose();
+                }}><Trash size={16} />Move to Trash</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

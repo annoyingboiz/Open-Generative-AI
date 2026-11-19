@@ -52,6 +52,7 @@ function normalizeSaved(raw) {
     images: Array.isArray(e.images) ? e.images.filter((u) => typeof u === "string").slice(0, 8) : [], video: typeof e.video === "string" ? e.video : null,
   }));
   if (isObj(s.attached)) out.attached = Object.fromEntries(Object.entries(s.attached).filter(([role]) => ROLE_INFO[role]).map(([role, list]) => [role, cleanFiles(list)]));
+  if (Array.isArray(s.touched)) out.touched = s.touched.filter((r) => typeof r === "string" && ROLE_INFO[r]).slice(0, 12);
   if (typeof out.prompt === "string") out.prompt = migrateTags(out.prompt, keepTags(out.elements));
   return out;
 }
@@ -618,8 +619,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     try {
       for (const f of list) {
         const url = await uploadFile(apiKey, f);
-        // A one-file slot holding a dimmed file gets the new one instead.
-        setAttached((prev) => ({ ...prev, [role]: slot.max === 1 ? [{ url, name: f.name }] : [...(prev[role] || []), { url, name: f.name }] }));
+        // A one-file slot: the new file goes first (sent); a dimmed one stays, after it.
+        setAttached((prev) => ({ ...prev, [role]: slot.max === 1 ? [{ url, name: f.name }, ...(prev[role] || []).filter((x) => x.url !== url)] : [...(prev[role] || []), { url, name: f.name }] }));
       }
     } catch (e) {
       onGenerationError?.(String(e?.message || e));
@@ -925,7 +926,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           {tags.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-muted-foreground">In the prompt (or type @):</span>
-              {tags.map((t) => (
+              {tags.filter((t) => !(t.kind === "file" && t.unused)).map((t) => (
                 <button key={t.tag} type="button" onClick={() => insertAtCursor(`@${t.tag}`)} title={`Sent to this model as ${t.to}`}
                   className={cn("flex items-center gap-1.5 rounded-lg bg-signal/15 py-1 pl-1 pr-2.5 font-semibold text-signal transition-colors hover:bg-signal/20", !t.url && "pl-2.5", t.unused && "opacity-60")}>
                   {t.url && <img src={t.url} alt="" className="h-6 w-6 rounded object-cover" />}

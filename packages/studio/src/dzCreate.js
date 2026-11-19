@@ -543,7 +543,9 @@ export function offReason(entry, x, { onRoles = [], turnsOff = [], variant = nul
   if (x.why === "kind") {
     const takes = (r) => entry?.variants.some((v) => v.media[r]);
     const text = {
-      middle: takes("first") || takes("last") ? `${name} takes Start and End frames only, no middle frames.` : `${name} takes no frames.`,
+      middle: takes("first") && takes("last") ? `${name} takes Start and End frames only, no middle frames.`
+        : takes("first") ? `${name} takes a start frame only, no middle frames.`
+          : takes("last") ? `${name} takes an end frame only, no middle frames.` : `${name} takes no frames.`,
       first: `${name} takes no start frame.`,
       last: `${name} takes no end frame.`,
       reference: `${name} takes no reference images.`,

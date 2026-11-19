@@ -47,8 +47,8 @@ const strip = ({ url, name }) => ({ url, name: name || "" });
 // Add files to a group within its limit. Only files that are on take room
 // (package 04: `isOn(item)`; a dimmed file never fills a slot). Frames: into `at`
 // (first / middle / last) when given and free, else an empty slot of Start → End → Mid,
-// else one held only by a dimmed file — a one-file slot then gets the new file
-// instead of the dimmed one. Returns the new `attached`.
+// else one held only by a dimmed file — in a one-file slot the new file then goes
+// first (sent) and the dimmed one stays after it (kept, never lost). Returns the new `attached`.
 export function addToGroup(attached, group, files, at = null, isOn = null) {
   const next = { ...attached };
   const known = new Set(groupItems(attached, group).map((x) => x.url));
@@ -61,7 +61,7 @@ export function addToGroup(attached, group, files, at = null, isOn = null) {
       || order.find((r) => room(r) && (next[r] || []).length < group.roleMax[r])
       || order.find((r) => room(r));
     if (!role) break;
-    next[role] = group.roleMax[role] === 1 ? [strip(f)] : [...(next[role] || []), strip(f)];
+    next[role] = group.roleMax[role] === 1 ? [strip(f), ...(next[role] || [])] : [...(next[role] || []), strip(f)];
     known.add(f.url);
   }
   return next;

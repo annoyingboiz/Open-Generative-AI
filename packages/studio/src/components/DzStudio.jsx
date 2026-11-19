@@ -318,7 +318,7 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off
   const click = off ? (onActivate ? (e) => { e?.stopPropagation(); onActivate(); } : undefined) : menu ? () => setOpen((v) => !v) : undefined;
   return (
     <div ref={anchor} className="dz-pop group/t relative h-12 w-12 flex-shrink-0" draggable onDragStart={onDragStart} tabIndex={0}
-      onClick={click} onKeyDown={(e) => { if (click && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); click(e); } }}
+      onClick={click} onKeyDown={(e) => { if (click && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); click(e); } }}
       role={click ? "button" : undefined} aria-haspopup={!off && menu ? "menu" : undefined} {...(off ? tip : {})}>
       {/* "Image to edit" has a small menu: Draw to edit (package 03, §8), Replace, Remove. */}
       {menu && !off && (
@@ -326,16 +326,16 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off
           {menu.map(([Icon, text, run]) => <MenuRow key={text} className="h-8 text-sm" onClick={(e) => { e.stopPropagation(); setOpen(false); run(); }}><Icon size={16} />{text}</MenuRow>)}
         </ChipMenu>
       )}
-      <div className={cn("h-12 w-12 overflow-hidden rounded-slot bg-muted ring-signal transition-[box-shadow,opacity,filter] duration-state", !off && "group-hover/t:ring-2 group-focus/t:ring-2", off && "dz-off", off && onActivate && "cursor-pointer group-hover/t:ring-2 group-hover/t:ring-input group-focus/t:ring-2 group-focus/t:ring-input", fault && "ring-2 ring-destructive")}>
+      <div className={cn("h-12 w-12 overflow-hidden rounded-slot bg-muted ring-signal transition-[box-shadow,opacity,filter] duration-state", !off && "group-hover/t:ring-2 group-focus-visible/t:ring-2", off && "dz-off", off && onActivate && "cursor-pointer group-hover/t:ring-2 group-hover/t:ring-input group-focus-visible/t:ring-2 group-focus-visible/t:ring-input", fault && "ring-2 ring-destructive")}>
         {kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} muted preload="metadata" className="h-full w-full object-cover" onLoadedMetadata={(e) => setDur(e.currentTarget.duration)} />
           : kind === "audio" ? <span className="flex h-full items-center justify-center text-muted-foreground">♪</span>
             : <img src={dzThumb(item.url, 128)} alt="" className="h-full w-full object-cover" />}
         {(label || dur) && <span className="absolute inset-x-0 bottom-0 rounded-b-slot bg-overlay/70 text-center text-[11px] font-semibold leading-4 text-overlay-foreground">{label || fmtDur(dur)}</span>}
       </div>
       {/* An off file is never offered as an @tag: its tooltip says why it is off instead. */}
-      {!off && <span className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-popover transition-opacity delay-0 duration-state group-hover/t:opacity-100 group-hover/t:delay-300 group-focus/t:opacity-100">{tag}</span>}
+      {!off && <span className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-popover transition-opacity delay-0 duration-state group-hover/t:opacity-100 group-hover/t:delay-300 group-focus-visible/t:opacity-100">{tag}</span>}
       <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label={`Remove ${tag}`}
-        className="absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border border-border bg-popover text-foreground opacity-0 transition-opacity delay-0 duration-state hover:bg-accent focus:opacity-100 group-hover/t:opacity-100 group-hover/t:delay-300 group-focus/t:opacity-100"><X size={10} weight="bold" /></button>
+        className="absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border border-border bg-popover text-foreground opacity-0 transition-opacity delay-0 duration-state hover:bg-accent focus:opacity-100 group-hover/t:opacity-100 group-hover/t:delay-300 group-focus-visible/t:opacity-100"><X size={10} weight="bold" /></button>
     </div>
   );
 }
@@ -362,10 +362,15 @@ const OrDivider = () => (
 
 // Two groups conflict when some slot of one and some slot of the other are each taken
 // by an endpoint of this model, but never by the same endpoint (from the catalog).
-function groupsConflict(entry, a, b) {
+// When both groups hold files, only the slots that hold files count.
+function groupsConflict(entry, a, b, attached) {
   const vs = entry?.variants || [];
-  const taken = (r) => vs.some((v) => v.media[r]);
-  return a.roles.some((ra) => taken(ra) && b.roles.some((rb) => taken(rb) && !vs.some((v) => v.media[ra] && v.media[rb])));
+  const taken = (r) => vs.some((v) => v.media[r === "edit" ? "reference" : r]);
+  const rolesOf = (g) => { const all = g.roles.filter(taken); const held = all.filter((r) => (attached[r] || []).length); return held.length ? held : all; };
+  const ra = rolesOf(a);
+  const rb = rolesOf(b);
+  const both = ra.some((r) => (attached[r] || []).length) && rb.some((r) => (attached[r] || []).length);
+  return (both ? ra : a.roles.filter(taken)).some((x) => (both ? rb : b.roles.filter(taken)).some((y) => !vs.some((v) => v.media[x] && v.media[y])));
 }
 
 // The strip never overflows (redesign 02, §2.3): when the groups don't fit, the
@@ -413,6 +418,8 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
       const el = e.currentTarget;
       clearTimeout(tipTimer.current);
       tipTimer.current = setTimeout(() => {
+        // Only while the pointer or the keyboard is still on it (the strip may have changed meanwhile).
+        if (!el.isConnected || !(el.matches(":hover") || el.matches(":focus-visible"))) return;
         const host = box.current?.getBoundingClientRect();
         const r = el.getBoundingClientRect();
         if (host) setTip({ x: Math.max(0, r.left - host.left), ...reason });
@@ -453,7 +460,7 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
     return <More key={`off-${g.id}-${list[0].role}`} n={list.length} off onClick={limit ? () => openList(g.id) : undefined} tip={tipFor(list[0].off.reason)} />;
   };
   return (
-    <div ref={box} className="relative flex min-w-0 items-start">
+    <div ref={box} className="relative flex min-w-0 items-start" onPointerDown={() => { clearTimeout(tipTimer.current); setTip(null); }} onMouseLeave={() => { clearTimeout(tipTimer.current); setTip(null); }}>
       {tip && (
         <div id="dz-off-tip" role="tooltip" style={{ left: Math.min(tip.x, Math.max(0, (box.current?.clientWidth || 0) - 360)) }}
           className="glass pointer-events-none absolute bottom-[calc(100%+24px)] z-30 max-w-[360px] rounded-[10px] border border-border px-3 py-2.5 text-[13px] leading-[19px] text-foreground shadow-float">
@@ -468,8 +475,10 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
         const groupCanOn = groupOff && off.some((x) => x.off.why === "together");
         let body;
         if (g.id === "frames") {
-          const start = all.find((x) => x.role === "first");
-          const end = all.find((x) => x.role === "last");
+          const starts = all.filter((x) => x.role === "first");
+          const ends = all.filter((x) => x.role === "last");
+          const [start] = starts;
+          const [end] = ends;
           const midsOn = on.filter((x) => x.role === "middle");
           const midsOff = off.filter((x) => x.role === "middle");
           const midShown = cap >= 3 ? midsOn.slice(0, 1) : [];
@@ -478,12 +487,14 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
           body = (
             <>
               {start ? thumb(g, start, "Start") : (g.roleMax.first && !groupOff && <EmptySlot label="Start" onClick={() => openLibrary(g.id)} fault={fault === g.id} />)}
+              {offMore(g, starts.slice(1).filter((x) => x.off))}
               {midShown.map((m) => thumb(g, m, "Mid"))}
               {midsOn.length > midShown.length && <More n={midsOn.length - midShown.length} onClick={() => openList(g.id)} />}
               {midOffShown.map((m) => thumb(g, m, "Mid"))}
               {offMore(g, midsOff.slice(midOffShown.length))}
               {midRoom && cap >= 3 && <EmptySlot label="Mid" onClick={() => openLibrary(g.id)} />}
               {end ? thumb(g, end, "End") : (g.roleMax.last && !groupOff && <EmptySlot label="End" onClick={() => openLibrary(g.id)} />)}
+              {offMore(g, ends.slice(1).filter((x) => x.off))}
             </>
           );
         } else {
@@ -502,14 +513,14 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
           );
         }
         const prev = gi > 0 ? view[gi - 1].g : null;
-        const or = prev && groupsConflict(entry, prev, g);
+        const or = prev && groupsConflict(entry, prev, g, attached);
         const counter = groupOff ? `${all.length} · off` : `${on.length} / ${max}${off.length ? ` · ${off.length} off` : ""}`;
         return (
           <div key={g.id} className="flex flex-shrink-0 self-stretch">
             {prev && (or ? <OrDivider /> : <span className="mx-3.5 w-px flex-shrink-0 self-stretch bg-border" />)}
             <div className={cn("flex flex-shrink-0", groupOff && "dz-goff", groupCanOn && "-mx-2 -my-1.5 cursor-pointer rounded-[10px] px-2 py-1.5 transition-colors duration-state hover:bg-accent")}
               onDragOver={(e) => { if (dragging.current && dragging.current.group !== g.id) e.preventDefault(); }} onDrop={drop(g)}
-              {...(groupCanOn ? { role: "button", tabIndex: 0, onClick: () => st.turnOn(g.roles), onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); st.turnOn(g.roles); } } } : {})}
+              {...(groupCanOn ? { role: "button", tabIndex: 0, onClick: () => st.turnOn(g.roles), onKeyDown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); st.turnOn(g.roles); } } } : {})}
               {...(groupOff ? tipFor(groupTip) : {})}>
               <div>
                 <button type="button" onClick={(e) => { if (groupCanOn) return; e.stopPropagation(); if (takes) openLibrary(g.id); }} tabIndex={groupCanOn ? -1 : 0} className="relative mb-2 flex h-4 items-center gap-1.5 whitespace-nowrap">
@@ -850,10 +861,12 @@ export default function DzStudio(props) {
   const moveLabel = move ? name(d.moves, move) : "";
 
   // Generate is never blocked by off files. What it still needs (a required file) is said when pressed.
-  const canGo = canRun || Boolean(variant && missing && !engine.uploads);
+  // Only a required file that is missing (it has a group to add it to); other problems keep Generate off.
+  const missingGroup = missing ? (groups.find((g) => /start frame|first/i.test(missing) && g.id === "frames") || groups.find((g) => new RegExp(g.label, "i").test(missing)))?.id || null : null;
+  const canGo = canRun || Boolean(variant && missing && missingGroup && !engine.uploads);
   const generateNow = () => {
     if (!canRun) {
-      if (canGo) { setMini(false); setErr({ head: "Not generated.", text: `${missing.replace(/\.$/, "")}. Add it, then try again.`, add: faultGroup }); }
+      if (canGo) { setMini(false); setErr({ head: "Not generated.", text: `${missing.replace(/\.$/, "")}. Add it, then try again.`, add: missingGroup }); }
       return;
     }
     setErr(null);
@@ -864,7 +877,7 @@ export default function DzStudio(props) {
   };
 
   // The error line goes away on the next action (package 04, §2.5).
-  useEffect(() => { setErr(null); }, [prompt, attached, entry?.key, kind, count, engine.touched, values]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setErr(null); }, [prompt, attached, entry?.key, kind, count, engine.touched, engine.valuesByKind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── What the tiles and the viewer can do (package 03, §5–§7) ──
   const { isNew, markSeen } = useSeen();
@@ -964,7 +977,6 @@ export default function DzStudio(props) {
   const items = history.items;
   const rows = useMemo(() => justify(items, aspects, gridWidth), [items, aspects, gridWidth]);
   const total = groups.reduce((n, g) => n + groupItems(sent, g).length, 0);
-  const faultGroup = missing ? (groups.find((g) => /start frame|first/i.test(missing) && g.id === "frames") || groups.find((g) => new RegExp(g.label, "i").test(missing)))?.id : null;
   const priceText = price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}` : entry?.priceLabel || "";
   const where = ctx.project ? [ctx.project.name, ...(ctx.folderPath || [])].join(" / ") : "Library";
   const libraryOpen = Boolean(libGroup);

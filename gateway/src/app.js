@@ -20,10 +20,11 @@ import { createAuth, createLoginThrottle, publicUser, SESSION_COOKIE, UserError 
 import { PROVIDERS, providerById, createProviderSettings, fetchBalances } from './providers/index.js';
 import { local, configureLocal, localConfigured } from './providers/local.js';
 import { apimart, configureApimartFiles } from './providers/apimart.js';
+import { elevenlabs, configureElevenlabsFiles, toSrt } from './providers/elevenlabs.js';
 import { validateProxyUrl } from './providers/http.js';
 import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
-import { createCatalog, DEFAULT_RECOMMENDED } from './catalog/index.js';
+import { createCatalog, DEFAULT_RECOMMENDED, ADMIN_ONLY } from './catalog/index.js';
 import { createChanges } from './catalog/changes.js';
 import { createGenerations, GenerationError } from './generations.js';
 import { createProjects, ProjectError } from './projects.js';
@@ -90,6 +91,9 @@ export async function buildApp(config, { logger = true } = {}) {
   configureApimartFiles(path.join(config.dataDir, 'apimart-speech'));
   apimart.sweepFiles();
   setInterval(() => apimart.sweepFiles(), 3600_000).unref();
+  configureElevenlabsFiles(path.join(config.dataDir, 'elevenlabs'));
+  elevenlabs.sweepFiles();
+  setInterval(() => elevenlabs.sweepFiles(), 3600_000).unref();
   const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended, changes, localEnabled: localConfigured });
   const quoter = createQuoter({ providers, log: app.log });
   const projects = createProjects({ db });
@@ -640,8 +644,8 @@ export async function buildApp(config, { logger = true } = {}) {
       const tool = falTool(modelId);
       return tool && !mode && catalog.hasTool(tool.tool.id) ? { key, tool } : null;
     }
-    // This server's GPU: admins only.
-    if (providerId === 'local' && user.role !== 'admin') return null;
+    // This server's GPU and ElevenLabs on the owner's account: admins only.
+    if (ADMIN_ONLY.has(providerId) && user.role !== 'admin') return null;
     const variant = catalog.variant(key);
     if (!variant && user.role !== 'admin') return null;
     if (providerId === 'local' && !variant) return null;
@@ -869,6 +873,25 @@ export async function buildApp(config, { logger = true } = {}) {
     .send(catalog.clientScript(req.user)));
 
   // Stop a job that is still waiting or running (this server's jobs).
+  // Speech to text with ElevenLabs Scribe on the owner's account (admins only):
+  // one of our files (library item or upload) → the transcript, words and SRT subtitles.
+  app.post('/dz/api/transcribe', async (req, reply) => {
+    if (req.user.role !== 'admin') return reply.code(403).send({ detail: 'Admins only.' });
+    const cfg = providers.resolve('elevenlabs');
+    if (!cfg.enabled || !cfg.apiKey) return reply.code(409).send({ detail: 'ElevenLabs is not set up. Add its key in Settings → Providers.' });
+    try {
+      const file = generations.mediaFileForUrl(req.user, String(req.body?.url || ''));
+      if (!file?.path) return reply.code(404).send({ detail: 'Pick a file from the library or upload one.' });
+      if (!/^(audio|video)\//.test(file.mime || '')) return reply.code(400).send({ detail: 'Pick a recording: audio or video.' });
+      const model = ['scribe_v3', 'scribe_v2'].includes(req.body?.model) ? req.body.model : 'scribe_v2';
+      const out = await elevenlabs.transcribe(cfg, { path: file.path, mime: file.mime, model, diarize: req.body?.diarize === true, language: /^[a-z]{2,3}$/.test(req.body?.language || '') ? req.body.language : '' });
+      return { ...out, srt: toSrt(out.words), model };
+    } catch (error) {
+      req.log.warn(`transcribe: ${error.message}`);
+      return sendGenError(reply, error);
+    }
+  });
+
   // A frame of a video (package 03, §5–§7): { at: "first" | "last" | seconds, save }.
   // save: a new picture next to the video (marked New in the grid); otherwise an
   // upload, for the Start frame of the next video.

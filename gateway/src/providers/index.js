@@ -5,10 +5,11 @@ import { apimart } from './apimart.js';
 import { atlas } from './atlas.js';
 import { fal } from './fal.js';
 import { local } from './local.js';
+import { elevenlabs } from './elevenlabs.js';
 import { encrypt, decrypt, maskSecret } from '../crypto.js';
 import { now } from '../db.js';
 
-export const PROVIDERS = [apimart, atlas, fal];
+export const PROVIDERS = [apimart, atlas, fal, elevenlabs];
 
 // Shows a proxy without its password: socks5h://user:••••@host:port
 function maskProxy(value) {
@@ -87,7 +88,9 @@ export async function fetchBalances(settings) {
     if (!c.enabled || !c.apiKey) return { ...base, ok: false };
     try {
       const b = await provider.balance(c);
-      return { ...base, ok: true, amount: b.amount, currency: b.currency, note: b.note || null };
+      // ElevenLabs: credits left on your plan, its name and when it renews.
+      const note = b.note || (b.currency === 'CREDITS' ? [b.tier ? `${b.tier} plan` : '', b.limit ? `of ${b.limit.toLocaleString('en-US')}` : '', b.resetsAt ? `renews ${new Date(b.resetsAt).toISOString().slice(0, 10)}` : ''].filter(Boolean).join(' · ') : null);
+      return { ...base, ok: true, amount: b.amount, currency: b.currency, note: note || null };
     } catch (error) {
       return { ...base, ok: false, error: error.message };
     }

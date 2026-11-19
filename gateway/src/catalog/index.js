@@ -16,7 +16,8 @@ import { byteLimit } from '../storage.js';
 import { PROVIDERS, providerById } from '../providers/index.js';
 import { FAL_UPSCALE } from '../providers/fal-tools.js';
 import { videoUpscaleSpec } from '../video-upscale.js';
-import { buildAtlasVariant, buildApimartVariants, buildLocalVariants, buildStudioLists, apimartPrice, STUDIO_MODES } from './build.js';
+import { buildAtlasVariant, buildApimartVariants, buildLocalVariants, buildElevenlabsVariants, buildStudioLists, apimartPrice, STUDIO_MODES, ELEVEN_STS_MODEL } from './build.js';
+import { ELEVEN_TOOLS } from '../providers/elevenlabs.js';
 import { LOCAL_MODELS } from '../providers/local.js';
 import { fetchApimartDocs, buildApimartOverrides } from './apimart-docs.js';
 
@@ -49,6 +50,10 @@ function writeJsonAtomic(file, data) {
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(data));
   fs.renameSync(`${file}.tmp`, file);
 }
+
+// Providers whose models only admins see and use: this server's GPU, and
+// ElevenLabs on the owner's own account (his plan, his cloned voice).
+export const ADMIN_ONLY = new Set(['local', 'elevenlabs']);
 
 export function createCatalog({ dataDir, providers, log, getRecommended = () => DEFAULT_RECOMMENDED, changes = null, fetchDocs = fetchApimartDocs, localEnabled = () => false }) {
   const dir = path.join(dataDir, 'catalog');
@@ -106,10 +111,14 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
         variants.push(...buildApimartVariants(model, override, apimartPrice(prices[model.base || model.id], override)));
       }
     }
+    // ElevenLabs on Denis's own account: his models and voices (admins only, like this server).
+    if (raw.elevenlabs && enabled('elevenlabs')) {
+      variants.push(...buildElevenlabsVariants(raw.elevenlabs.list, readJson(fileOf('elevenlabs-voices.json'), [])));
+    }
     // This server's models (admins only: the lists for everyone else leave them out).
     if (localEnabled()) variants.push(...buildLocalVariants());
     const lists = buildStudioLists(variants, { recommended: getRecommended() || [] });
-    const publicLists = Object.fromEntries(Object.entries(lists).map(([mode, list]) => [mode, list.filter((m) => m.dzProvider !== 'local')]));
+    const publicLists = Object.fromEntries(Object.entries(lists).map(([mode, list]) => [mode, list.filter((m) => !ADMIN_ONLY.has(m.dzProvider))]));
     built = {
       variants: new Map(variants.map((v) => [v.key, v])),
       lists,
@@ -145,6 +154,14 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
         return true;
       });
       log?.info(`catalog: atlas — ${list.length} models, ${results.filter(Boolean).length}/${todo.length} schemas fetched`);
+    }
+    if (providerId === 'elevenlabs') {
+      // Voices change when you clone or design one: fetched on every refresh, not once a day.
+      if (fresh && !force && fs.existsSync(fileOf('elevenlabs-voices.json'))) return;
+      const voices = await provider.voices(cfg);
+      writeJsonAtomic(fileOf('elevenlabs-voices.json'), voices);
+      log?.info(`catalog: elevenlabs — ${list.length} models, ${voices.length} voices`);
+      return;
     }
     if (providerId === 'apimart') {
       // Fetch prices for the whole list when it is new, otherwise only for the
@@ -277,6 +294,10 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     // Model kind lookup for direct calls (/api/v1/p/<provider>/<model>).
     model(providerId, modelId) {
       if (providerId === 'local') return LOCAL_MODELS[modelId] && localEnabled() ? { id: modelId, kind: 'video' } : null;
+      if (providerId === 'elevenlabs') {
+        const ok = ELEVEN_TOOLS[modelId] ? (modelId !== 'voice-changer' || raw.elevenlabs?.list?.some((m) => m.model_id === ELEVEN_STS_MODEL)) : raw.elevenlabs?.list?.some((m) => m.model_id === modelId && m.can_do_text_to_speech !== false);
+        return ok ? { id: modelId, kind: 'audio' } : null;
+      }
       const entry = raw[providerId]?.list?.find((m) => (providerId === 'atlas' ? m.model : m.id) === modelId);
       // Our own names for other endpoints of an APIMart model (Suno sound effects…).
       if (!entry && providerId === 'apimart' && APIMART_MANUAL[modelId]?.baseModel) return { id: modelId, kind: 'audio' };

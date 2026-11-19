@@ -41,7 +41,68 @@ const ICONS = {
   avatar: <><circle cx="12" cy="8" r="4" /><path d="M5 21a7 7 0 0 1 14 0M17 3c1.5 1 1.5 3 0 4M19.5 1.5c2.5 2 2.5 5 0 7" /></>,
   swap: <><path d="M7 4L3 8l4 4M3 8h12M17 20l4-4-4-4M21 16H9" /></>,
   audio: <><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>,
+  transcribe: <><path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v4" /><path d="M3 21h6M15 21h6" /></>,
 };
+
+// Transcribe (ElevenLabs Scribe): a recording → text and SRT. Nothing is saved to the library.
+function TranscribePanel({ apiKey, onError }) {
+  const [file, setFile] = useState([]);
+  const [model, setModel] = useState("scribe_v2");
+  const [diarize, setDiarize] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [uploads, setUploads] = useState(0);
+  const [result, setResult] = useState(null);
+  const run = async () => {
+    if (!file[0] || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/dz/api/transcribe", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: file[0].url, model, diarize }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.error || `Transcription failed (${res.status})`);
+      setResult({ ...data, name: file[0].name || "transcript" });
+    } catch (e) { onError?.(String(e?.message || e)); } finally { setBusy(false); }
+  };
+  const save = (text, ext) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: ext === "srt" ? "application/x-subrip" : "text/plain" }));
+    a.download = `${String(result?.name || "transcript").replace(/\.[a-z0-9]+$/i, "").slice(0, 60) || "transcript"}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-4">
+        <MediaSlot role="audio" max={1} label="Recording" files={file} apiKey={apiKey} onError={onError}
+          onUploading={(on) => setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} onPick={(list) => setFile(list.slice(0, 1).map((x) => ({ url: x.url, name: x.name || "" })))} onRemove={() => setFile([])} />
+        <label className="flex h-10 items-center gap-2 text-muted-foreground"><span>Model</span>
+          <select value={model} onChange={(e) => setModel(e.target.value)} className="h-10 rounded-xl border border-input bg-background px-3 text-foreground">
+            <option value="scribe_v2">Scribe v2</option><option value="scribe_v3">Scribe v3 (most accurate)</option>
+          </select>
+        </label>
+        <label className="flex h-10 items-center gap-2 text-muted-foreground"><input type="checkbox" checked={diarize} onChange={(e) => setDiarize(e.target.checked)} /> Speakers</label>
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-muted-foreground" title="ElevenLabs API rate; on a plan it comes out of its included hours">$0.20 per hour of audio</span>
+          <Button size="lg" className="h-11 rounded-xl px-6" onClick={run} disabled={!file[0] || busy || uploads > 0}>
+            {busy ? <><Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" /> Transcribing</> : "Transcribe"}
+          </Button>
+        </div>
+      </div>
+      {result && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+            <span>{[result.language ? `Language: ${result.language}` : "", `${result.words?.length || 0} words`, result.model].filter(Boolean).join(" · ")}</span>
+            <span className="ml-auto flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => navigator.clipboard?.writeText(result.text)}>Copy</Button>
+              <Button variant="secondary" size="sm" onClick={() => save(result.text, "txt")}>Download .txt</Button>
+              <Button variant="secondary" size="sm" onClick={() => save(result.srt, "srt")} disabled={!result.srt}>Download .srt</Button>
+            </span>
+          </div>
+          <Textarea readOnly value={result.text} rows={8} className="max-h-[40vh] resize-y rounded-2xl text-base" aria-label="Transcript" />
+        </div>
+      )}
+    </div>
+  );
+}
 const ToolIcon = ({ id, size = 22 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[id]}</svg>
 );
@@ -61,7 +122,14 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
   const [catalogReady, setCatalogReady] = useState(false);
   useEffect(() => { setCatalogReady(true); }, []);
   // Models of every tool (to show counts on the cards).
-  const entriesByTool = useMemo(() => (catalogReady ? Object.fromEntries(TOOLS.map((t) => [t.id, createEntries(t.kind, { match: t.match })])) : {}), [catalogReady]);
+  const entriesByTool = useMemo(() => {
+    if (!catalogReady) return {};
+    const out = Object.fromEntries(TOOLS.filter((t) => !t.custom).map((t) => [t.id, createEntries(t.kind, { match: t.match })]));
+    // Transcribe works when ElevenLabs is set up (its models are in the audio list for admins).
+    const eleven = (out.audio || []).filter((e) => e.variants.some((v) => v.model.dzProvider === "elevenlabs"));
+    out.transcribe = eleven.length ? [eleven[0]] : [];
+    return out;
+  }, [catalogReady]);
   const entries = (tool && entriesByTool[tool.id]) || [];
   const entry = entries.find((e) => e.key === state.model) || entries[0] || null;
 
@@ -172,7 +240,7 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted text-foreground"><ToolIcon id={t.id} /></span>
             <span className="text-lg font-semibold text-foreground">{t.title}</span>
             <span className="leading-snug text-muted-foreground">{t.text}</span>
-            <span className="mt-auto text-muted-foreground/80">{catalogReady ? (n ? `${n} model${n === 1 ? "" : "s"}` : "No models with your keys") : ""}</span>
+            <span className="mt-auto text-muted-foreground/80">{catalogReady ? (t.custom ? (n ? "ElevenLabs Scribe" : "Needs ElevenLabs") : n ? `${n} model${n === 1 ? "" : "s"}` : "No models with your keys") : ""}</span>
           </button>
         );
       })}
@@ -223,7 +291,14 @@ export default function DzTools({ apiKey, onGenerationStart, onGenerationEnd, on
         </div>
       </div>
 
-      {tool && (
+      {tool?.custom && (
+        <div className="flex-shrink-0 border-t border-border bg-card/80 px-3 pb-3 pt-3 backdrop-blur md:px-6">
+          <div className="mx-auto max-w-[1100px]">
+            {entriesByTool.transcribe?.length ? <TranscribePanel apiKey={apiKey} onError={onGenerationError} /> : <p className="text-muted-foreground">Transcribe needs ElevenLabs: add its key in Settings → Providers.</p>}
+          </div>
+        </div>
+      )}
+      {tool && !tool.custom && (
         <div className="flex-shrink-0 border-t border-border bg-card/80 px-3 pb-3 pt-3 backdrop-blur md:px-6">
           <div className="mx-auto max-w-[1100px] space-y-3">
             {!entry && <p className="text-muted-foreground">No {tool.title} models with your provider keys yet.</p>}

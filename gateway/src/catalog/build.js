@@ -9,7 +9,7 @@ import { studioFieldsFromSchema, HIDDEN_FIELDS } from './schema.js';
 export const STUDIO_MODES = ['t2i', 'i2i', 't2v', 'i2v', 'v2v', 't2a'];
 const KIND_OF_MODE = { t2i: 'image', i2i: 'image', t2v: 'video', i2v: 'video', v2v: 'video', t2a: 'audio' };
 const MODE_SUFFIX = { t2i: 'text-to-image', i2i: 'image-to-image', t2v: 'text-to-video', i2v: 'image-to-video', v2v: 'video-to-video', t2a: 'text-to-audio' };
-const PROVIDER_NAME = { apimart: 'APIMart', atlas: 'Atlas', local: 'This server' };
+const PROVIDER_NAME = { apimart: 'APIMart', atlas: 'Atlas', local: 'This server', elevenlabs: 'ElevenLabs' };
 
 // Vendor → logo key used by the studio (providerLogos.js) and a display name.
 const VENDORS = {
@@ -45,7 +45,7 @@ export function priceLabel(price) {
   const lo = values.length ? Math.min(...values) : price.usd;
   const hi = values.length ? Math.max(...values) : price.usd;
   const amount = lo === hi ? `$${fmt(lo)}` : `$${fmt(lo)}–${fmt(hi)}`;
-  const label = price.unit === 'second' ? `${amount}/s` : price.unit === 'chars' ? `${amount}/${price.perChars >= 1000 ? `${price.perChars / 1000}k` : price.perChars} chars` : amount;
+  const label = price.unit === 'second' ? `${amount}/s` : price.unit === 'minute' ? `${amount}/min` : price.unit === 'chars' ? `${amount}/${price.perChars >= 1000 ? `${price.perChars / 1000}k` : price.perChars} chars` : amount;
   return price.from ? `from ${label}` : label;
 }
 
@@ -302,6 +302,105 @@ export function buildLocalVariants() {
   }
   return out;
 }
+
+// ── ElevenLabs on your own account ────────────────────────────────────────
+// Speech models come from GET /v1/models (what your key can use), voices from
+// GET /v2/voices (yours first). Prices are ElevenLabs' published API rates
+// (elevenlabs.io/pricing/api, Nov 2026): on a plan they come out of its credits.
+const ELEVEN_TTS = {
+  eleven_v4: { family: '4-text-to-speech', name: 'ElevenLabs v4 Text-to-Speech', usd: 0.08, max: 10000 },
+  eleven_v4_turbo: { family: '4-turbo-text-to-speech', name: 'ElevenLabs v4 Turbo Text-to-Speech', usd: 0.04 },
+  eleven_v3: { family: '3-text-to-speech', name: 'ElevenLabs v3 Text-to-Speech', usd: 0.08, max: 5000, v3: true },
+  eleven_multilingual_v2: { family: 'elevenlabs-multilingual-v2', name: 'ElevenLabs Multilingual v2', usd: 0.08, max: 10000 },
+  eleven_flash_v2_5: { family: 'elevenlabs-flash-v2-5', name: 'ElevenLabs Flash v2.5', usd: 0.04, max: 40000 },
+  eleven_flash_v2: { family: 'elevenlabs-flash-v2', name: 'ElevenLabs Flash v2 (English)', usd: 0.04, max: 30000 },
+};
+const OWN_VOICE = new Set(['cloned', 'generated', 'professional']);
+
+function voiceInput(voices) {
+  const list = [...voices].sort((a, b) => Number(OWN_VOICE.has(b.category)) - Number(OWN_VOICE.has(a.category)) || a.name.localeCompare(b.name));
+  if (!list.length) return null;
+  const labelOf = (v) => {
+    if (OWN_VOICE.has(v.category)) return `${v.name} · your voice`;
+    const bits = [v.labels?.accent, v.labels?.gender, v.labels?.age].filter((x) => typeof x === 'string' && x);
+    return [v.name, ...bits].join(' · ').slice(0, 80);
+  };
+  return {
+    name: 'voice_id', title: 'Voice', type: 'string',
+    enum: list.map((v) => v.id),
+    enumLabels: Object.fromEntries(list.map((v) => [v.id, labelOf(v)])),
+    default: list[0].id,
+    description: 'Your voices first (cloned, designed, professional), then the ElevenLabs ones.',
+  };
+}
+const slider = (name, title, min, max, step, def, description) => ({ name, title, type: 'number', minValue: min, maxValue: max, step, default: def, description });
+
+export function buildElevenlabsVariants(models = [], voices = []) {
+  const out = [];
+  const voice = voiceInput(voices);
+  if (!voice) return out;
+  const add = ({ id, slug, family, familyName, fields, price, description }) => {
+    const endpoint = `p/elevenlabs/${id}?m=t2a`;
+    const model = studioModel({ provider: 'elevenlabs', mode: 't2a', slug, endpoint, family, familyName, vendorId: 'elevenlabs', fields, price, description });
+    out.push({ key: endpoint, provider: 'elevenlabs', providerModel: id, mode: 't2a', kind: 'audio', family, model, server: { rename: { prompt: 'text' }, allowed: null, drop: [], fixed: {}, price } });
+  };
+  const ids = new Set(models.map((m) => m.model_id));
+  for (const [id, spec] of Object.entries(ELEVEN_TTS)) {
+    const m = models.find((x) => x.model_id === id);
+    if (!m || m.can_do_text_to_speech === false) continue;
+    const inputs = {
+      voice_id: voice,
+      ...(spec.v3
+        ? { stability: { name: 'stability', title: 'Delivery', type: 'number', enum: [0, 0.5, 1], enumLabels: { 0: 'Creative', 0.5: 'Natural', 1: 'Robust' }, default: 0.5, description: 'Eleven v3 takes three stability levels.' } }
+        : {
+          stability: slider('stability', 'Stability', 0, 1, 0.05, 0.5, 'Lower: more emotional range; higher: steadier.'),
+          similarity_boost: slider('similarity_boost', 'Similarity', 0, 1, 0.05, 0.75, 'How close to the original voice.'),
+          style: slider('style', 'Style', 0, 1, 0.05, 0, 'Exaggerates the speaker\'s style; 0 is steadiest.'),
+          speed: slider('speed', 'Speed', 0.7, 1.2, 0.05, 1, '1 is normal.'),
+        }),
+      seed: { name: 'seed', title: 'Seed', type: 'int', minValue: 0, maxValue: 4294967295, description: 'Empty: a new one each time' },
+    };
+    add({
+      id, slug: id.replace(/_/g, '-'), family: spec.family, familyName: spec.name,
+      fields: { inputs, hasPrompt: true, promptRequired: true, required: [], ...(spec.max ? { maxPromptLength: spec.max } : {}) },
+      price: { usd: spec.usd, unit: 'chars', perChars: 1000 },
+      description: m.description || undefined,
+    });
+  }
+  // Any recording in your voice (or another one of yours).
+  if (ids.has(ELEVEN_STS_MODEL)) {
+    add({
+      id: 'voice-changer', slug: 'voice-changer', family: 'elevenlabs-voice-changer', familyName: 'ElevenLabs Voice Changer',
+      fields: {
+        inputs: {
+          audio: { name: 'audio', title: 'Recording', type: 'string', field: 'audio' },
+          voice_id: voice,
+          remove_background_noise: { name: 'remove_background_noise', title: 'Remove background noise', type: 'boolean', default: false },
+          stability: slider('stability', 'Stability', 0, 1, 0.05, 0.5),
+          similarity_boost: slider('similarity_boost', 'Similarity', 0, 1, 0.05, 0.75),
+        },
+        hasPrompt: false, promptRequired: false, required: ['audio'],
+      },
+      price: { usd: 0.12, unit: 'minute', from: true },
+      description: 'Says your recording again in the chosen voice: same words, timing and emotion.',
+    });
+  }
+  add({
+    id: 'sound-effects', slug: 'sound-effects', family: 'elevenlabs-sound-effects', familyName: 'ElevenLabs Sound Effects',
+    fields: {
+      inputs: {
+        duration_seconds: { name: 'duration_seconds', title: 'Length (s)', type: 'number', minValue: 0.5, maxValue: 30, step: 0.5, description: 'Empty: the model decides' },
+        prompt_influence: slider('prompt_influence', 'Follow the text', 0, 1, 0.05, 0.3, 'Higher: closer to the words, less variation.'),
+        loop: { name: 'loop', title: 'Seamless loop', type: 'boolean', default: false },
+      },
+      hasPrompt: true, promptRequired: true, required: [],
+    },
+    price: { usd: 0.12, unit: 'minute', from: true },
+    description: 'A sound from a description: footsteps on gravel, a door slam, rain on a tin roof.',
+  });
+  return out;
+}
+export const ELEVEN_STS_MODEL = 'eleven_multilingual_sts_v2';
 
 // ── Merge into studio lists ───────────────────────────────────────────────
 

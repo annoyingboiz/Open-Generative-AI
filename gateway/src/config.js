@@ -17,6 +17,7 @@ export const config = {
   providerEnv: {
     apimart: { apiKey: env.APIMART_API_KEY || '', proxy: env.APIMART_PROXY || '' },
     atlas: { apiKey: env.ATLAS_API_KEY || '', proxy: env.ATLAS_PROXY || '' },
+    elevenlabs: { apiKey: env.ELEVENLABS_API_KEY || '', proxy: env.ELEVENLABS_PROXY || '' },
     fal: { apiKey: env.FAL_KEY || '', proxy: env.FAL_PROXY || '' },
   },
   logLevel: env.LOG_LEVEL || 'info',

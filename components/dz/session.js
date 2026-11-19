@@ -22,6 +22,8 @@ export async function dzFetchBalances() {
   return (await response.json()).balances || [];
 }
 
+const credits = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}k` : String(Math.max(0, Math.round(n))));
+
 // Every enabled provider with a key gets its own chip (no combined total).
 // A key that can't read its balance (fal without billing access) shows "—".
 export function dzFormatBalances(balances) {
@@ -30,8 +32,9 @@ export function dzFormatBalances(balances) {
   return shown.map((b) => ({
     id: b.id,
     name: b.name,
-    text: b.ok && b.amount != null ? `$${Number(b.amount).toFixed(2)}` : '—',
-    hint: b.ok && b.amount == null ? (b.note || 'This key cannot read the balance.') : (!b.ok ? 'Balance unavailable right now' : 'Balance'),
-    low: b.ok && b.amount != null && b.amount < 5,
+    // ElevenLabs: credits left on the plan ("268k credits"), not dollars.
+    text: b.ok && b.amount != null ? (b.currency === 'CREDITS' ? `${credits(b.amount)} credits` : `$${Number(b.amount).toFixed(2)}`) : '—',
+    hint: b.ok && b.amount == null ? (b.note || 'This key cannot read the balance.') : (!b.ok ? 'Balance unavailable right now' : b.currency === 'CREDITS' ? `Credits left${b.note ? ` · ${b.note}` : ''}` : 'Balance'),
+    low: b.ok && b.amount != null && (b.currency === 'CREDITS' ? b.amount < 5000 : b.amount < 5),
   }));
 }

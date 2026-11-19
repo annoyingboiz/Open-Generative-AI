@@ -49,9 +49,20 @@ export const TOOLS = [
     text: "Voice-over in many voices and languages, sound effects, or a whole song from a description.",
     kind: "audio",
     match: null,
-    labels: {},
-    main: ["voice", "voice_id", "type", "version", "language", "language_boost", "emotion", "instrumental", "is_instrumental", "vocal_gender"],
+    labels: { audio: "Recording" },
+    main: ["voice", "voice_id", "type", "version", "language", "language_boost", "emotion", "instrumental", "is_instrumental", "vocal_gender", "duration_seconds"],
     promptLabel: "Text to speak, or a description of the sound or music",
+  },
+  {
+    // Not a catalog tool: ElevenLabs Scribe on the owner's account gives text, not a file
+    // (gateway POST /dz/api/transcribe). Shown when ElevenLabs is set up (admins).
+    id: "transcribe",
+    title: "Transcribe",
+    text: "Speech to text from any recording: the transcript and SRT subtitles, with your ElevenLabs plan.",
+    kind: "audio",
+    custom: true,
+    match: null,
+    labels: { audio: "Recording" },
   },
 ];
 

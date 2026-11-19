@@ -443,24 +443,40 @@ export function chooseVariant(entry, attached, { native = false } = {}) {
   return [...fits].sort((a, b) => score(a) - score(b))[0];
 }
 
-// ── What is sent, and what is not (redesign 02, §2.1) ───────────────────────
+// ── What is sent, and what is not (package 04) ──────────────────────────────
 // A model at a provider has several endpoints (image-to-video, reference-to-video,
-// video edit…), each taking its own media with its own limits. The plan picks the
-// endpoint that sends the most of what is attached; the first N of each group stay
-// (the group order decides), everything else is kept but not sent, with a reason.
+// video edit…), each taking its own media with its own limits. Two slots conflict
+// when no endpoint takes both: that comes from the catalog (every endpoint's own
+// inputs), never from a list per model. Every attached file is either on (sent) or
+// off (kept, dimmed, never sent). The plan picks the endpoint; when slots conflict,
+// the one the user touched last wins (`touched`: roles, most recent first).
 const NOUN = {
   first: ["start frame", "start frames"], middle: ["middle frame", "middle frames"], last: ["end frame", "end frames"],
   reference: ["reference image", "reference images"], video: ["reference video", "reference videos"],
   source: ["video to edit", "videos to edit"], audio: ["audio file", "audio files"],
   edit: ["picture to edit", "pictures to edit"],
 };
-const GROUP_NOUN = { first: "frames", middle: "frames", last: "frames", reference: "reference images", video: "reference videos", source: "a video to edit", audio: "audio", edit: "a picture to edit" };
+// Group words, as the strip names the groups.
+const GROUP_WORD = { first: "frames", middle: "frames", last: "frames", reference: "references", video: "reference videos", source: "a video to edit", audio: "audio", edit: "a picture to edit" };
+const ONE = { first: "a start frame", middle: "middle frames", last: "an end frame", reference: "references", video: "reference videos", source: "a video to edit", audio: "audio", edit: "a picture to edit" };
+const SHORT = { first: "Start", middle: "Mid", last: "End" };
+const FRAME_ROLES = new Set(["first", "middle", "last"]);
 const nounOf = (role, n) => NOUN[role][n === 1 ? 0 : 1];
 const listWords = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+const orWords = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
+const uniq = (xs) => [...new Set(xs)];
 
-export function planAttachments(entry, attached = {}) {
-  const roles = [...ROLE_ORDER, "edit"].filter((r) => (attached[r] || []).length);
-  if (!entry) return { variant: null, sent: {}, unused: [], summary: null };
+// Lexicographic: the first role in `order` that one endpoint takes and the other does not decides.
+function takesFirst(order, a, b) {
+  for (const r of order) {
+    const x = a.v.media[r] ? 1 : 0;
+    const y = b.v.media[r] ? 1 : 0;
+    if (x !== y) return y - x;
+  }
+  return 0;
+}
+
+function pickEndpoint(entry, attached, roles, touched) {
   const evals = entry.variants.map((v) => {
     const sent = {};
     let count = 0;
@@ -472,70 +488,84 @@ export function planAttachments(entry, attached = {}) {
     }
     return { v, sent, count };
   });
-  // An endpoint that can run with what it gets comes first (if it gets anything);
-  // then the one that sends the most, then the simplest.
+  // 1. Roles the user touched, the last touched first. 2. An endpoint that can run with
+  // what it gets. 3. The other roles in the strip's order. 4. The most files, then the simplest.
+  const first = touched.filter((r) => roles.includes(r));
+  const rest = roles.filter((r) => !first.includes(r));
   const ready = (e) => (e.count > 0 && !missingFor(e.v, e.sent) ? 0 : 1);
-  evals.sort((a, b) => ready(a) - ready(b) || b.count - a.count || Object.keys(a.v.media).length - Object.keys(b.v.media).length);
-  const best = evals[0];
-  if (!best) return { variant: null, sent: {}, unused: [], summary: null };
+  evals.sort((a, b) => takesFirst(first, a, b) || ready(a) - ready(b) || takesFirst(rest, a, b) || b.count - a.count || Object.keys(a.v.media).length - Object.keys(b.v.media).length);
+  return evals[0] || null;
+}
+
+// "Image to edit" travels inside the references (withEditFirst): touching it touches them.
+const touchedRoles = (touched, attached) => uniq((touched || []).map((r) => (r === "edit" && !(attached.edit || []).length ? "reference" : r)));
+
+export function planAttachments(entry, attached = {}, { touched = [], explain = true } = {}) {
+  const roles = [...ROLE_ORDER, "edit"].filter((r) => (attached[r] || []).length);
+  const empty = { variant: null, sent: {}, unused: [], off: [], onRoles: [] };
+  if (!entry) return empty;
+  const order = touchedRoles(touched, attached);
+  const best = pickEndpoint(entry, attached, roles, order);
+  if (!best) return empty;
   const takes = (role) => entry.variants.some((v) => v.media[role]);
-  const sentRoles = Object.keys(best.sent).filter((r) => best.sent[r].length);
-  const unused = [];
+  const onRoles = Object.keys(best.sent).filter((r) => best.sent[r].length);
+  const off = [];
+  const roleOf = (f, role) => (f.edit ? "edit" : role);
   for (const role of roles) {
     const list = attached[role];
     const m = best.v.media[role];
     if (m) {
-      list.slice(m.max).forEach((f, i) => unused.push({ ...f, role: f.edit ? "edit" : role, index: m.max + i, why: "limit",
-        reason: `Over the limit — this model takes ${m.max} ${nounOf(role, m.max)}` }));
+      list.slice(m.max).forEach((f, i) => off.push({ ...f, role: roleOf(f, role), index: m.max + i, why: "limit", max: m.max, canTurnOn: true }));
       continue;
     }
-    let why;
-    let reason;
-    let blockers = "";
-    if (takes(role)) {
-      // Another endpoint takes it, but not together with what is sent now.
-      blockers = listWords([...new Set(sentRoles.filter((r) => entry.variants.filter((v) => v.media[role]).every((v) => !v.media[r])).map((r) => GROUP_NOUN[r]))]) || "the other files";
-      why = "together";
-      reason = `${ROLE_INFO[role].label.replace(/s$/, "")} — can't go together with ${blockers} on this model`;
-    } else {
-      why = "kind";
-      reason = {
-        middle: takes("first") || takes("last") ? "Middle frame — this model takes Start and End only" : "Middle frame — this model takes no frames",
-        first: "Start frame — this model takes no start frame",
-        last: "End frame — this model takes no end frame",
-        reference: "Reference — this model takes no reference images",
-        video: "Reference video — this model takes no reference videos",
-        source: "Video to edit — this model can't edit a video",
-        audio: "Audio — this model takes no audio",
-        edit: "Image to edit — this model can't edit a picture",
-      }[role];
-    }
-    list.forEach((f, index) => unused.push({ ...f, role, index, why, reason, blockers }));
+    const why = takes(role) ? "together" : "kind";
+    list.forEach((f, index) => off.push({ ...f, role: roleOf(f, role), index, why, canTurnOn: why === "together" }));
   }
-  return { variant: best.v, sent: best.sent, unused, summary: unusedSummary(entry, unused, best.v) };
+  // What a click on an off slot turns off: the plan as if it were touched last.
+  if (explain) {
+    const turnsOff = {};
+    for (const role of uniq(off.filter((x) => x.why === "together").map((x) => (x.role === "edit" ? "reference" : x.role)))) {
+      const next = planAttachments(entry, attached, { touched: [role, ...order], explain: false });
+      turnsOff[role] = onRoles.filter((r) => !next.onRoles.includes(r));
+    }
+    for (const x of off) x.reason = offReason(entry, x, { onRoles, turnsOff: turnsOff[x.role === "edit" ? "reference" : x.role] || [], variant: best.v });
+  }
+  return { variant: best.v, sent: best.sent, unused: off, off, onRoles };
 }
 
-// One sentence for the notice row: counts and the reason, never cut.
-export function unusedSummary(entry, unused, variant) {
-  if (!unused.length) return null;
-  const groups = [];
-  const FRAME = new Set(["first", "middle", "last"]);
-  for (const u of unused) {
-    // Frames refused for the same reason read as one group ("2 frames").
-    const key = FRAME.has(u.role) && u.why === "together" ? "frames:together" : `${u.role}:${u.why}`;
-    let g = groups.find((x) => x.key === key);
-    if (!g) groups.push((g = { key, role: u.role, why: u.why, blockers: u.blockers, n: 0 }));
-    g.n += 1;
+// The tooltip of an off file (package 04, §2.4): the reason, and what a click does.
+export function offReason(entry, x, { onRoles = [], turnsOff = [], variant = null } = {}) {
+  const name = entry?.familyName || "This model";
+  const role = x.role;
+  if (x.why === "limit") {
+    return { text: `${name} takes ${x.max} ${nounOf(role, x.max)}.`, action: "Click to choose which ones are sent" };
   }
-  const parts = groups.map((g) => {
-    const what = g.key === "frames:together" ? `${g.n} ${g.n === 1 ? "frame" : "frames"}` : `${g.n} ${nounOf(g.role, g.n)}`;
-    if (g.why === "limit") return `${what} (over its limit of ${variant?.media[g.role]?.max})`;
-    if (g.why === "together") return `${what} (it can't go together with ${g.blockers})`;
-    if (g.role === "middle" && entry.variants.some((v) => v.media.first || v.media.last)) return `${what} (it takes Start and End only)`;
-    return what;
-  });
-  const n = unused.length;
-  return `${n} ${n === 1 ? "file is" : "files are"} not sent to ${entry.familyName}: ${listWords(parts)}. They stay attached and come back when you switch model.`;
+  if (x.why === "kind") {
+    const takes = (r) => entry?.variants.some((v) => v.media[r]);
+    const text = {
+      middle: takes("first") || takes("last") ? `${name} takes Start and End frames only, no middle frames.` : `${name} takes no frames.`,
+      first: `${name} takes no start frame.`,
+      last: `${name} takes no end frame.`,
+      reference: `${name} takes no reference images.`,
+      video: `${name} takes no reference videos.`,
+      source: `${name} can't edit a video.`,
+      audio: `${name} takes no audio.`,
+      edit: `${name} can't edit a picture.`,
+    }[role] || `${name} doesn't take this file.`;
+    return { text, action: "" };
+  }
+  // Together: some of the same group stays on → "With references this model takes a start frame only."
+  const sameGroup = FRAME_ROLES.has(role) ? onRoles.filter((r) => FRAME_ROLES.has(r)) : [];
+  const blockers = uniq(turnsOff.map((r) => GROUP_WORD[r]));
+  const blockWords = listWords(blockers) || "the other files";
+  if (sameGroup.length) {
+    const kept = listWords(sameGroup.map((r) => ONE[r]));
+    return { text: `With ${blockWords} ${name} takes ${kept} only.`, action: `Click ${SHORT[role] || "it"} to use it instead of the ${blockWords}` };
+  }
+  // In the strip's order: "frames or references", whichever side is hovered.
+  const SIDE_ORDER = ["a picture to edit", "frames", "references", "reference videos", "a video to edit", "audio"];
+  const sides = uniq([GROUP_WORD[role], ...blockers]).sort((a, b) => SIDE_ORDER.indexOf(a) - SIDE_ORDER.indexOf(b));
+  return { text: `${name} takes ${orWords(sides)}, not ${sides.length > 2 ? "together" : "both"}.`, action: "Click to use these instead" };
 }
 
 // What is missing for the chosen endpoint (required media) — null when ready.

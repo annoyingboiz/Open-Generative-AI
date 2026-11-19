@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanLook, renderLook, lookHints, lookForClient } from '../src/look.js';
+import { cleanLook, renderLook, lookHints, lookAdvice, lookForClient } from '../src/look.js';
 import { loadMemos } from '../src/prompt-adapter.js';
 
 const look = cleanLook({ on: true, camera: 'film-35', lens: 'anamorphic', focal: 50, aperture: 'f/2.8', era: '1970s', light: 'golden-hour', move: 'dolly-in' });
@@ -51,6 +51,14 @@ test('look: unusual combinations give hints, not errors', () => {
   assert.ok(hints.every((h) => /Experiment!$/.test(h)));
   assert.deepEqual(lookHints(look, { aspect: '16:9' }), []);
   assert.ok(lookHints(look, { aspect: '9:16' }).some((h) => /widescreen/.test(h)));
+});
+
+test('look: advice names its block (package 04)', () => {
+  const odd = cleanLook({ on: true, camera: 'phone', lens: 'fisheye', focal: 85, aperture: 'f/1.4' });
+  const advice = lookAdvice(odd, { aspect: '16:9' });
+  assert.ok(advice.length >= 2 && advice.every((a) => a.block === 'camera'));
+  const zoom = lookAdvice(cleanLook({ on: true, lens: 'clean', move: 'zoom-in' }), { kind: 'video', aspect: '16:9' });
+  assert.ok(zoom.some((a) => a.block === 'move' && /can’t zoom/.test(a.text)));
 });
 
 test('look: the browser gets labels, not prompt words', () => {

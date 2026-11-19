@@ -17,7 +17,7 @@ const SOURCES = [["uploads", "Uploads"], ["generations", "Generations"], ["liked
 const ACCEPT = { image: "image/png,image/jpeg,image/webp", video: "video/mp4,video/quicktime,video/webm", audio: "audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg" };
 
 // The browsing part: search, scope, source tabs and the grid. Shared by the window and the full list.
-function Browser({ group, attached, setAttached, columns = 8, onError, onUploading }) {
+function Browser({ group, attached, setAttached, columns = 8, onError, onUploading, st = null }) {
   const ctx = useDzContext();
   const [source, setSource] = useState("generations");
   const [where, setWhere] = useState(ctx.project ? "project" : "library");
@@ -41,25 +41,32 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
   const all = source === "elements" ? elementItems : paged.items;
   const needle = q.trim().toLowerCase().replace(/^@/, "");
   const items = needle ? all.filter((i) => `${i.name || ""} ${i.prompt || ""} ${i.model || ""}`.toLowerCase().includes(needle)) : all;
-  const chosen = group ? groupItems(attached, group) : [];
-  const full = group ? chosen.length >= group.max : true;
+  // Package 04: only files that are on count as chosen; a dimmed file never fills a slot.
+  const inGroup = group ? groupItems(attached, group).map((x) => ({ ...x, off: st?.stateOf(x) || null })) : [];
+  const chosen = inGroup.filter((x) => !x.off);
+  const max = group ? (st ? st.maxOf(group, chosen.length) : group.max) : 0;
+  const full = group ? chosen.length >= max : true;
+  const isOn = st ? st.isOn : null;
 
   const toggle = (item) => {
     if (!group) return;
     const at = chosen.findIndex((x) => x.url === item.url);
-    if (at >= 0) { setAttached((a) => removeFromGroup(a, group, item.url)); return; }
+    if (at >= 0) { setAttached((a) => removeFromGroup(a, group, item.url, chosen[at].role)); return; }
+    // Attached but off: a click turns it on (what conflicts turns off) or brings it into the sent ones.
+    const dim = inGroup.find((x) => x.url === item.url && x.off);
+    if (dim) { if (dim.off.why === "together") st?.turnOn([dim.role]); else if (dim.off.why === "limit") st?.bringOn(dim); return; }
     if (full) return;
-    setAttached((a) => addToGroup(a, group, [{ url: item.url, name: item.name || "" }]));
+    setAttached((a) => addToGroup(a, group, [{ url: item.url, name: item.name || "" }], null, isOn));
   };
   const upload = async (files) => {
-    const list = files.filter((f) => f.type.startsWith(`${accept}/`)).slice(0, Math.max(0, group.max - chosen.length));
+    const list = files.filter((f) => f.type.startsWith(`${accept}/`)).slice(0, Math.max(0, max - chosen.length));
     if (!list.length) { onError?.(`Choose ${accept} files.`); return; }
     setUploading((n) => n + 1);
     onUploading?.(true);
     try {
       for (const f of list) {
         const url = await uploadFile("session", f);
-        setAttached((a) => addToGroup(a, group, [{ url, name: f.name }]));
+        setAttached((a) => addToGroup(a, group, [{ url, name: f.name }], null, isOn));
       }
       if (source === "uploads") setRefresh((k) => k + 1);
     } catch (e) { onError?.(String(e?.message || e)); }
@@ -106,16 +113,20 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
           {items.map((item) => {
             const n = chosen.findIndex((x) => x.url === item.url);
             const on = n >= 0;
-            const off = full && !on;
+            const dim = !on ? inGroup.find((x) => x.url === item.url && x.off) : null;
+            const blocked = full && !on && !dim;
+            const why = dim?.off.reason ? [dim.off.reason.text, dim.off.reason.action].filter(Boolean).join(" ") : null;
             return (
-              <button key={item.key} type="button" onClick={() => toggle(item)} disabled={off} title={item.name || item.prompt || undefined}
-                className={cn("relative aspect-square overflow-hidden rounded-md bg-muted transition-[opacity,box-shadow] duration-state", on && "ring-2 ring-signal", off && "opacity-20")}>
+              <button key={item.key} type="button" onClick={() => toggle(item)} disabled={blocked} title={why || item.name || item.prompt || undefined}
+                className={cn("relative aspect-square overflow-hidden rounded-md bg-muted transition-[opacity,box-shadow] duration-state", on && "ring-2 ring-signal", dim && "ring-2 ring-input", blocked && "opacity-20")}>
                 {item.kind === "video"
                   ? <video src={item.url} poster={dzThumb(item.url, 256)} className="h-full w-full object-cover" muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
                   : item.kind === "audio" ? <span className="flex h-full items-center justify-center px-2 text-center text-sm text-muted-foreground">♪ {item.name}</span>
                     : <img src={dzThumb(item.url, 256)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
                 {on && !full && <span className="absolute inset-0 bg-overlay/[.38]" />}
                 {on && <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-signal text-xs font-semibold text-primary-foreground">{n + 1}</span>}
+                {dim && <span className="absolute inset-0 bg-card/50" />}
+                {dim && <span className="absolute right-1.5 top-1.5 rounded-full border border-border bg-popover px-1.5 text-[11px] font-semibold uppercase leading-[18px] text-muted-foreground">off</span>}
               </button>
             );
           })}
@@ -132,7 +143,7 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
 const hintFor = (group, full) => (full ? "Full. Remove one to pick another." : group?.kind === "video" ? "Only videos are shown for this group." : group?.kind === "audio" ? "Only sounds are shown for this group." : "Only pictures are shown for this group.");
 
 // Above the strip, same width as the composer (the composer folds to the strip meanwhile).
-export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sent = attached, setAttached, onClose, onError, onUploading }) {
+export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sent = attached, setAttached, onClose, onError, onUploading, st = null }) {
   const { mounted, shown } = usePresence(open, 240);
   useEscLayer(open, onClose);
   const box = useRef(null);
@@ -140,7 +151,8 @@ export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sen
   const group = groups.find((g) => g.id === groupId) || groups[0];
   if (!mounted || !group) return null;
   const chosen = groupItems(sent, group);
-  const full = groupItems(attached, group).length >= group.max;
+  const maxOf = (g, n) => (st ? st.maxOf(g, n) : g.max);
+  const full = chosen.length >= maxOf(group, chosen.length);
   return (
     <div ref={box} tabIndex={-1} className={cn("glass absolute inset-x-0 bottom-[calc(100%+12px)] z-20 flex outline-none h-[min(640px,calc(100vh-260px))] flex-col rounded-2xl border border-border p-4 shadow-float transition-[opacity,transform] duration-[240ms] ease-soft",
       shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-4 scale-[.985] opacity-0")} role="dialog" aria-label="Library">
@@ -151,16 +163,16 @@ export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sen
           return (
             <button key={g.id} type="button" onClick={() => setGroupId(g.id)}
               className={cn("relative h-8 whitespace-nowrap text-base font-medium transition-colors duration-state", on ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
-              {g.label} <span className={cn("tabular-nums", n >= g.max ? "text-signal" : "text-muted-foreground")}>{n}{"\u00a0"}/{"\u00a0"}{g.max}</span>
+              {g.label} <span className={cn("tabular-nums", n >= maxOf(g, n) ? "text-signal" : "text-muted-foreground")}>{n}{"\u00a0"}/{"\u00a0"}{maxOf(g, n)}</span>
               {on && <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-signal" />}
             </button>
           );
         })}
         <button type="button" onClick={onClose} aria-label="Close" className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
       </div>
-      <Browser key={group.id} group={group} attached={attached} setAttached={setAttached} onError={onError} onUploading={onUploading} />
+      <Browser key={group.id} group={group} attached={attached} setAttached={setAttached} onError={onError} onUploading={onUploading} st={st} />
       <div className="mt-3 flex h-9 flex-shrink-0 items-center gap-4">
-        <span className="text-sm tabular-nums text-muted-foreground">{chosen.length} of {group.max} chosen</span>
+        <span className="text-sm tabular-nums text-muted-foreground">{chosen.length} of {maxOf(group, chosen.length)} chosen</span>
         <button type="button" onClick={() => setAttached((a) => clearGroup(a, group))} disabled={!chosen.length} className="flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Broom size={16} /> Clear</button>
         <span className="ml-auto text-sm text-muted-foreground">{hintFor(group, full)}</span>
         <button type="button" onClick={onClose} className="h-8 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground hover:bg-primary-hover active:scale-[.98]">Done</button>
@@ -170,43 +182,50 @@ export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sen
 }
 
 // The full list (screen 12): every attachment by group on the left, the library on the right.
-export function FullList({ open, onClose, groups, groupId, setGroupId, attached, sent = attached, setAttached, tagOf, modelName, onError, onUploading }) {
+export function FullList({ open, onClose, groups, groupId, setGroupId, attached, sent = attached, setAttached, tagOf, modelName, onError, onUploading, st = null }) {
   const group = groups.find((g) => g.id === groupId) || groups[0];
   const drag = useRef(null);
   const [over, setOver] = useState(null);
-  const total = groups.reduce((n, g) => n + groupItems(sent, g).length, 0);
+  const total = groups.reduce((n, g) => n + groupItems(attached, g).length, 0);
+  const offTotal = groups.reduce((n, g) => n + groupItems(attached, g).filter((x) => st?.stateOf(x)).length, 0);
   const [roleMenu, setRoleMenu] = useState(null);
   const moveTo = (item, fromGroup, role) => {
     const target = groups.find((g) => g.roles.includes(role));
     if (!target) return;
     setAttached((a) => {
       const cleared = removeFromGroup(a, fromGroup, item.url, item.role);
-      return addToGroup(cleared, target, [{ url: item.url, name: item.name }], role);
+      return addToGroup(cleared, target, [{ url: item.url, name: item.name }], role, st?.isOn);
     });
   };
   return (
     <StudioPanel open={open} onClose={onClose} title="Attached to this shot" width={900} bodyClassName="flex gap-5 p-0"
       aside={(
         <>
-          <span className="text-sm tabular-nums text-muted-foreground">{total} item{total === 1 ? "" : "s"} · {modelName}</span>
+          <span className="text-sm tabular-nums text-muted-foreground">{total} item{total === 1 ? "" : "s"}{offTotal ? ` · ${offTotal} off` : ""} · {modelName}</span>
           <button type="button" onClick={() => setAttached((a) => groups.reduce((acc, g) => clearGroup(acc, g), a))} className="h-8 rounded-md px-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Clear all</button>
         </>
       )}>
       <div className="custom-scrollbar w-[380px] flex-shrink-0 overflow-y-auto border-r border-border p-5">
         {groups.map((g) => {
-          const list = groupItems(sent, g);
+          // Every file, on and off (package 04): which ones are sent is chosen here.
+          const list = groupItems(attached, g).map((x) => ({ ...x, off: st?.stateOf(x) || null }));
+          const onN = list.filter((x) => !x.off).length;
+          const offN = list.length - onN;
+          const max = st ? st.maxOf(g, onN) : g.max;
           return (
             <section key={g.id} className="mb-5">
               <button type="button" onClick={() => setGroupId(g.id)} className={cn("relative mb-2 whitespace-nowrap text-base font-medium", g.id === group?.id ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
-                {g.label} <span className="tabular-nums text-muted-foreground">{list.length}{"\u00a0"}/{"\u00a0"}{g.max}</span>
+                {g.label} <span className="tabular-nums text-muted-foreground">{list.length && !onN ? `${list.length} · off` : `${onN}\u00a0/\u00a0${max}${offN ? ` · ${offN} off` : ""}`}</span>
                 {g.id === group?.id && <span className="absolute inset-x-0 -bottom-1 h-0.5 rounded-full bg-signal" />}
               </button>
               {list.length === 0 && <p className="text-sm text-muted-foreground">Nothing yet.</p>}
               {list.map((item) => {
-                const t = tagOf(item.url);
+                const t = item.off ? null : tagOf(item.url);
                 const roles = g.id === "frames" ? Object.keys(g.roleMax) : [];
+                const why = item.off?.reason ? [item.off.reason.text, item.off.reason.action].filter(Boolean).join(" ") : undefined;
+                const canOn = item.off && item.off.why !== "kind";
                 return (
-                  <div key={item.url} draggable
+                  <div key={`${item.role}-${item.url}`} draggable title={why}
                     // Safari starts a drag only when it carries data (B2).
                     onDragStart={(e) => { drag.current = { g: g.id, url: item.url }; try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.url); } catch { /* old browsers */ } }}
                     onDragEnter={(e) => { if (drag.current?.g === g.id) { e.preventDefault(); setOver(item.url); } }}
@@ -215,10 +234,12 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
                     onDragEnd={() => { drag.current = null; setOver(null); }}
                     className={cn("flex min-h-14 items-center gap-2.5 rounded-md px-1 py-1 hover:bg-accent/60", over === item.url && drag.current?.url !== item.url && "bg-accent ring-1 ring-signal/60")}>
                     <DotsSixVertical size={16} className="flex-shrink-0 cursor-grab text-muted-foreground" />
-                    {g.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} draggable={false} className="pointer-events-none h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" muted preload="metadata" />
-                      : g.kind === "audio" ? <span className="flex h-[42px] w-14 flex-shrink-0 items-center justify-center rounded-xs bg-muted">♪</span>
-                        : <img src={dzThumb(item.url, 128)} alt="" draggable={false} className="h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" />}
-                    <span className="min-w-0 flex-1">
+                    <span className={cn("flex-shrink-0", item.off && "dz-off")}>
+                      {g.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} draggable={false} className="pointer-events-none h-[42px] w-14 rounded-xs object-cover" muted preload="metadata" />
+                        : g.kind === "audio" ? <span className="flex h-[42px] w-14 items-center justify-center rounded-xs bg-muted">♪</span>
+                          : <img src={dzThumb(item.url, 128)} alt="" draggable={false} className="h-[42px] w-14 rounded-xs object-cover" />}
+                    </span>
+                    <span className={cn("min-w-0 flex-1", item.off && "text-muted-foreground")}>
                       {/* The file's own name gets the width (up to two lines, B6); the tag and role go under it. */}
                       <span className="line-clamp-2 break-words text-base leading-5" title={item.name || t?.label || g.label}>{item.name || t?.label || g.label}</span>
                       <span className="block truncate text-xs text-muted-foreground">{[t ? `@${t.tag}` : "", item.name ? t?.label : ""].filter(Boolean).join(" · ")}</span>
@@ -237,6 +258,10 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
                         )}
                       </div>
                     ) : <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">{g.kind === "video" ? "Video" : g.kind === "audio" ? "Audio" : "Ref"}</span>}
+                    {canOn && (
+                      <button type="button" onClick={() => (item.off.why === "limit" ? st.bringOn(item) : st.turnOn([item.role]))}
+                        className="flex h-7 flex-shrink-0 items-center rounded-md px-2 text-xs font-semibold underline decoration-input underline-offset-[3px] hover:bg-accent">Send</button>
+                    )}
                     <button type="button" onClick={() => setAttached((a) => removeFromGroup(a, g, item.url, item.role))} aria-label="Remove" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
                   </div>
                 );
@@ -246,7 +271,7 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
         })}
       </div>
       <div className="flex min-w-0 flex-1 flex-col py-5 pr-5">
-        {group && <Browser key={group.id} group={group} attached={attached} setAttached={setAttached} columns={4} onError={onError} onUploading={onUploading} />}
+        {group && Object.keys(group.roleMax || {}).length > 0 && <Browser key={group.id} group={group} attached={attached} setAttached={setAttached} columns={4} onError={onError} onUploading={onUploading} st={st} />}
         {group && <p className="mt-2 text-sm text-muted-foreground">Click a {group.kind === "video" ? "video" : "picture"} to add it to {group.label}. Drag a row on the left to reorder.</p>}
       </div>
     </StudioPanel>

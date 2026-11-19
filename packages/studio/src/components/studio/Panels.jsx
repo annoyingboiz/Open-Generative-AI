@@ -144,7 +144,7 @@ const MOVE_CSS = `
 const MOVE_ANIM = { "dolly-in": "mv-in", "push-in": "mv-in", "zoom-in": "mv-in", "dolly-out": "mv-out", "pan-left": "mv-pl", "pan-right": "mv-pr", "truck-left": "mv-pl", "truck-right": "mv-pr",
   "tilt-up": "mv-tu", "tilt-down": "mv-td", "crane-up": "mv-cu", "crane-down": "mv-cd", orbit: "mv-or", handheld: "mv-hh", drone: "mv-dr", "dolly-zoom": "mv-dz", tracking: "mv-tr" };
 
-export function MovePanel({ open, onClose, move, setMove }) {
+export function MovePanel({ open, onClose, move, setMove, hints = [] }) {
   const [q, setQ] = useState("");
   const moves = [{ id: "", label: "Auto" }, ...(lookData().moves || [])];
   const shown = moves.filter((m) => !q.trim() || m.label.toLowerCase().includes(q.trim().toLowerCase()));
@@ -175,6 +175,7 @@ export function MovePanel({ open, onClose, move, setMove }) {
           );
         })}
       </div>
+      {hints.length > 0 && <ul className="mt-4 space-y-1 text-sm text-warning">{hints.map((h, i) => <li key={i}>{h}</li>)}</ul>}
     </StudioPanel>
   );
 }

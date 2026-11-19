@@ -33,7 +33,7 @@ import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
 import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
-import { cleanLook, renderLook, lookHints } from './look.js';
+import { cleanLook, renderLook, lookHints, lookAdvice } from './look.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
 import { EditError, sweepTemp, frameOf } from './edit.js';
 import { storyboardPage } from './storyboard-print.js';
@@ -748,6 +748,7 @@ export async function buildApp(config, { logger = true } = {}) {
       model: { provider: providerId, id: variant.providerModel, family: variant.family },
       rules: built.memo ? { memo: built.memo.id, name: built.memo.name, generic: built.memo.generic, place: built.memo.look?.place || 'end', camera: built.memo.look?.camera || null, style: built.memo.look?.style || null } : null,
       hints: built.look ? lookHints(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],
+      advice: built.look ? lookAdvice(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],
     };
   });
 

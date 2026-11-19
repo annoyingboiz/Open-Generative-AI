@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, Minus, At, X, Check, Cube, Rectangle, Monitor, Clock, VideoCamera, Images, MagicWand, Camera, ArrowsOutCardinal, Palette, SlidersHorizontal,
-  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, Info, Warning, ArrowsClockwise, ArrowElbowDownRight, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
+  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, Info, Warning, WarningCircle, ArrowsClockwise, ArrowElbowDownRight, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
 } from "@phosphor-icons/react";
 import { dzThumb } from "../api.js";
 import { dzLibrary } from "../dzLibrary.js";
@@ -19,7 +19,7 @@ import DrawModal from "./DrawModal.jsx";
 import { lookData, autoLook, elementTags, elementFits, TAG_RE, buildBody, paramsOf, splitEdit } from "../dzCreate.js";
 import { DropdownMenuParts, Spinner, cn } from "../ui/index.js";
 import { Overline, Chip, ChipMenu, MenuRow, useEscLayer, fmtDur } from "./studio/ui.jsx";
-import { groupsFor, groupItems, addToGroup, removeFromGroup } from "./studio/attachments.js";
+import { groupsFor, groupItems, addToGroup, removeFromGroup, GROUPS } from "./studio/attachments.js";
 import ModelMenu from "./studio/ModelMenu.jsx";
 import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList } from "./studio/Library.jsx";
@@ -33,6 +33,8 @@ const RATIO_RE = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/;
 const ratioNum = (v) => { const m = RATIO_RE.exec(String(v || "")); return m ? Number(m[1]) / Number(m[2]) : null; };
 const shapeWord = (v) => { const r = ratioNum(v); return r == null ? "" : r > 1.05 ? "Landscape" : r < 0.95 ? "Vertical" : "Square"; };
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
+// One sentence for the composer's error line: the provider's words, made plain, ending with a stop.
+const plainSentence = (m) => { const t = plainError(m).replace(/\s+/g, " ").trim(); return /[.!?…]$/.test(t) ? t : `${t}.`; };
 const TITLE = { create: "Studio", image: "Image", video: "Video" };
 const STUDIO_TABS = [["all", "All"], ["image", "Images"], ["video", "Videos"]];
 const LIGHT_TABS = [["all", "All"], ["liked", "Liked"], ["upscaled", "Upscaled"]];
@@ -305,27 +307,33 @@ function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS
   );
 }
 
-// ── Strip (§5.4) ────────────────────────────────────────────────────────────
-function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu }) {
+// ── Strip (§5.4; package 04) ────────────────────────────────────────────────
+// Every attached file is on (sent) or off (dimmed, kept, never sent). Nothing is
+// hidden: off files stay where they are; files over a limit fold into one dimmed
+// "+N". The only text is a tooltip on what is dimmed (package 04, §2.4).
+function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off = false, onActivate, tip }) {
   const [dur, setDur] = useState(null);
   const [open, setOpen] = useState(false);
   const anchor = useRef(null);
+  const click = off ? (onActivate ? (e) => { e?.stopPropagation(); onActivate(); } : undefined) : menu ? () => setOpen((v) => !v) : undefined;
   return (
     <div ref={anchor} className="dz-pop group/t relative h-12 w-12 flex-shrink-0" draggable onDragStart={onDragStart} tabIndex={0}
-      onClick={menu ? () => setOpen((v) => !v) : undefined} role={menu ? "button" : undefined} aria-haspopup={menu ? "menu" : undefined}>
+      onClick={click} onKeyDown={(e) => { if (click && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); click(e); } }}
+      role={click ? "button" : undefined} aria-haspopup={!off && menu ? "menu" : undefined} {...(off ? tip : {})}>
       {/* "Image to edit" has a small menu: Draw to edit (package 03, §8), Replace, Remove. */}
-      {menu && (
+      {menu && !off && (
         <ChipMenu open={open} onClose={() => setOpen(false)} anchor={anchor} className="w-[200px] p-1.5">
           {menu.map(([Icon, text, run]) => <MenuRow key={text} className="h-8 text-sm" onClick={(e) => { e.stopPropagation(); setOpen(false); run(); }}><Icon size={16} />{text}</MenuRow>)}
         </ChipMenu>
       )}
-      <div className={cn("h-12 w-12 overflow-hidden rounded-slot bg-muted ring-signal transition-shadow duration-state group-hover/t:ring-2 group-focus/t:ring-2", fault && "ring-2 ring-destructive")}>
+      <div className={cn("h-12 w-12 overflow-hidden rounded-slot bg-muted ring-signal transition-[box-shadow,opacity,filter] duration-state", !off && "group-hover/t:ring-2 group-focus/t:ring-2", off && "dz-off", off && onActivate && "cursor-pointer group-hover/t:ring-2 group-hover/t:ring-input group-focus/t:ring-2 group-focus/t:ring-input", fault && "ring-2 ring-destructive")}>
         {kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} muted preload="metadata" className="h-full w-full object-cover" onLoadedMetadata={(e) => setDur(e.currentTarget.duration)} />
           : kind === "audio" ? <span className="flex h-full items-center justify-center text-muted-foreground">♪</span>
             : <img src={dzThumb(item.url, 128)} alt="" className="h-full w-full object-cover" />}
         {(label || dur) && <span className="absolute inset-x-0 bottom-0 rounded-b-slot bg-overlay/70 text-center text-[11px] font-semibold leading-4 text-overlay-foreground">{label || fmtDur(dur)}</span>}
       </div>
-      <span className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-popover transition-opacity delay-0 duration-state group-hover/t:opacity-100 group-hover/t:delay-300 group-focus/t:opacity-100">{tag}</span>
+      {/* An off file is never offered as an @tag: its tooltip says why it is off instead. */}
+      {!off && <span className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-popover transition-opacity delay-0 duration-state group-hover/t:opacity-100 group-hover/t:delay-300 group-focus/t:opacity-100">{tag}</span>}
       <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label={`Remove ${tag}`}
         className="absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border border-border bg-popover text-foreground opacity-0 transition-opacity delay-0 duration-state hover:bg-accent focus:opacity-100 group-hover/t:opacity-100 group-hover/t:delay-300 group-focus/t:opacity-100"><X size={10} weight="bold" /></button>
     </div>
@@ -337,16 +345,40 @@ const EmptySlot = ({ label, onClick, fault, small }) => (
     <Plus size={small ? 12 : 14} />{label && <span className="text-[11px] leading-3">{label}</span>}
   </button>
 );
-const More = ({ n, onClick }) => <button type="button" onClick={onClick} className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-slot bg-muted text-base font-semibold text-foreground hover:bg-accent">+{n}</button>;
+// "+N": more files that are on (normal), or files that are off (dimmed, dashed).
+const More = ({ n, onClick, off = false, tip }) => (
+  <button type="button" onClick={onClick} disabled={!onClick && !off} {...(off ? tip : {})}
+    className={cn("flex h-12 min-w-12 flex-shrink-0 items-center justify-center rounded-slot border px-2.5 text-base font-semibold text-foreground", off ? "dz-off-more border-dashed border-border bg-muted" : "border-transparent bg-muted hover:bg-accent", off && onClick && "hover:bg-accent", off && !onClick && "cursor-default")}>+{n}</button>
+);
+// OR between two groups the model can't send together (package 04, §2.2): 11 px,
+// weight 600, centred on the row of thumbnails, the divider line above and below.
+const OrDivider = () => (
+  <div className="mx-2 flex w-[26px] flex-shrink-0 flex-col items-center self-stretch" aria-hidden="true">
+    <span className="w-px flex-1 bg-border" />
+    <span className="flex h-[22px] items-center text-[11px] font-semibold leading-[14px] tracking-[.06em] text-muted-foreground">OR</span>
+    <span className="h-[13px] w-px bg-border" />
+  </div>
+);
+
+// Two groups conflict when some slot of one and some slot of the other are each taken
+// by an endpoint of this model, but never by the same endpoint (from the catalog).
+function groupsConflict(entry, a, b) {
+  const vs = entry?.variants || [];
+  const taken = (r) => vs.some((v) => v.media[r]);
+  return a.roles.some((ra) => taken(ra) && b.roles.some((rb) => taken(rb) && !vs.some((v) => v.media[ra] && v.media[rb])));
+}
 
 // The strip never overflows (redesign 02, §2.3): when the groups don't fit, the
 // group with the most items shows fewer thumbnails (3 → 2 → 1) and "+N" takes the
 // rest. Frames keep Start and End; their mids go into "+N" first.
-function Strip({ groups, sent, attached, setAttached, activeGroup, openLibrary, openList, tagOf, fault, unusedCount, unusedOpen, onUnused, onDraw }) {
+function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary, openList, tagOf, fault, onDraw, st }) {
   const dragging = useRef(null);
   const box = useRef(null);
   const [caps, setCaps] = useState({});
   const [width, setWidth] = useState(0);
+  const [tip, setTip] = useState(null); // { x, text, action }
+  const tipTimer = useRef(null);
+  useEffect(() => () => clearTimeout(tipTimer.current), []);
   useEffect(() => {
     const el = box.current;
     if (!el || typeof ResizeObserver === "undefined") return undefined;
@@ -354,152 +386,160 @@ function Strip({ groups, sent, attached, setAttached, activeGroup, openLibrary, 
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const shape = groups.map((g) => `${g.id}:${groupItems(sent, g).length}/${groupItems(attached, g).length}/${g.max}`).join("|") + `|${unusedCount}`;
+  const view = groups.map((g) => {
+    const all = groupItems(attached, g).map((x) => ({ ...x, off: st.stateOf(x) }));
+    const on = all.filter((x) => !x.off);
+    const off = all.filter((x) => x.off);
+    return { g, all, on, off, groupOff: all.length > 0 && !on.length, max: st.maxOf(g, on.length) };
+  });
+  const shape = view.map((v) => `${v.g.id}:${v.on.length}/${v.off.length}/${v.max}`).join("|");
+  // A conflict is clickable as long as anything in it can be turned on.
+  useEffect(() => { setTip(null); }, [shape]);
   // Start wide each time the row or what is in it changes, then step down until it fits (before paint).
   useLayoutEffect(() => { setCaps({}); }, [width, shape]);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el || el.scrollWidth <= el.clientWidth + 1) return;
     const floor = (g) => (g.id === "frames" ? 2 : 1);
-    const cand = groups.map((g) => ({ g, n: groupItems(sent, g).length, cap: caps[g.id] || 3 }))
+    const cand = view.map((v) => ({ g: v.g, n: v.all.length, cap: caps[v.g.id] || 3 }))
       .filter((x) => x.cap > floor(x.g) && x.n > (x.g.id === "frames" ? 0 : x.cap - 1))
       .sort((x, y) => y.n - x.n || y.cap - x.cap);
     if (cand[0]) setCaps((c) => ({ ...c, [cand[0].g.id]: cand[0].cap - 1 }));
   });
+  // Tooltip on anything dimmed: on hover after a moment, at once on keyboard focus.
+  const tipFor = (reason) => {
+    if (!reason) return {};
+    const show = (e, wait) => {
+      const el = e.currentTarget;
+      clearTimeout(tipTimer.current);
+      tipTimer.current = setTimeout(() => {
+        const host = box.current?.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        if (host) setTip({ x: Math.max(0, r.left - host.left), ...reason });
+      }, wait);
+    };
+    const hide = () => { clearTimeout(tipTimer.current); setTip(null); };
+    return { onMouseEnter: (e) => show(e, 250), onMouseLeave: hide, onFocus: (e) => show(e, 0), onBlur: hide, "aria-describedby": "dz-off-tip" };
+  };
   const drop = (g) => (e) => {
     const d = dragging.current;
     dragging.current = null;
     if (!d || d.group === g.id) return;
     e.preventDefault();
     const from = groups.find((x) => x.id === d.group);
-    if (!from || from.kind !== g.kind) return;
-    // Only when the target has room: a full group leaves the item where it was.
-    setAttached((a) => (groupItems(a, g).length >= g.max ? a : addToGroup(removeFromGroup(a, from, d.item.url, d.item.role), g, [{ url: d.item.url, name: d.item.name }])));
+    if (!from || from.kind !== g.kind || !Object.keys(g.roleMax || {}).length) return;
+    // Only when the target has room (files that are on): a full group leaves the item where it was.
+    setAttached((a) => {
+      const next = addToGroup(removeFromGroup(a, from, d.item.url, d.item.role), g, [{ url: d.item.url, name: d.item.name }], null, st.isOn);
+      return groupItems(next, g).some((x) => x.url === d.item.url) ? next : a;
+    });
   };
   const tagText = (item, fallback) => { const t = tagOf(item.url); return t ? `@${t.tag} · ${t.label || fallback}` : fallback; };
-  const thumb = (g, item, label) => (
-    <Thumb key={item.url} item={item} kind={g.kind} label={label} tag={tagText(item, label || g.label)} fault={fault === g.id}
-      menu={g.id === "edit" ? [[PencilSimple, "Draw to edit…", () => onDraw?.(item.url)], [ArrowsClockwise, "Replace…", () => openLibrary("edit")], [Trash, "Remove", () => setAttached((a) => removeFromGroup(a, g, item.url, item.role))]] : null}
-      onDragStart={(e) => { dragging.current = { group: g.id, item: { url: item.url, name: item.name, role: item.role } }; try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ } }}
-      onRemove={() => setAttached((a) => removeFromGroup(a, g, item.url, item.role))} />
-  );
+  const thumb = (g, item, label) => {
+    const off = item.off;
+    const canOn = off && off.why === "together";
+    return (
+      <Thumb key={`${item.role}-${item.url}`} item={item} kind={g.kind} label={label} tag={tagText(item, label || g.label)} fault={fault === g.id && !off}
+        off={Boolean(off)} onActivate={canOn ? () => st.turnOn([item.role]) : undefined} tip={tipFor(off?.reason)}
+        menu={g.id === "edit" ? [[PencilSimple, "Draw to edit…", () => onDraw?.(item.url)], [ArrowsClockwise, "Replace…", () => openLibrary("edit")], [Trash, "Remove", () => setAttached((a) => removeFromGroup(a, g, item.url, item.role))]] : null}
+        onDragStart={(e) => { dragging.current = { group: g.id, item: { url: item.url, name: item.name, role: item.role } }; try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ } }}
+        onRemove={() => setAttached((a) => removeFromGroup(a, g, item.url, item.role))} />
+    );
+  };
+  // Dimmed "+N" for off files: over a limit (click: the full list, to choose which are sent) or another reason.
+  const offMore = (g, list) => {
+    if (!list.length) return null;
+    const limit = list.every((x) => x.off.why === "limit");
+    return <More key={`off-${g.id}-${list[0].role}`} n={list.length} off onClick={limit ? () => openList(g.id) : undefined} tip={tipFor(list[0].off.reason)} />;
+  };
   return (
-    <div ref={box} className="flex min-w-0 items-start">
-      {groups.map((g, gi) => {
-        const items = groupItems(sent, g);
-        const room = groupItems(attached, g).length < g.max;
+    <div ref={box} className="relative flex min-w-0 items-start">
+      {tip && (
+        <div id="dz-off-tip" role="tooltip" style={{ left: Math.min(tip.x, Math.max(0, (box.current?.clientWidth || 0) - 360)) }}
+          className="glass pointer-events-none absolute bottom-[calc(100%+24px)] z-30 max-w-[360px] rounded-[10px] border border-border px-3 py-2.5 text-[13px] leading-[19px] text-foreground shadow-float">
+          {tip.text}
+          {tip.action && <span className="mt-1 block text-xs text-muted-foreground">{tip.action}</span>}
+        </div>
+      )}
+      {view.map(({ g, all, on, off, groupOff, max }, gi) => {
         const cap = caps[g.id] || 3;
+        const takes = Object.keys(g.roleMax || {}).length > 0;
+        const groupTip = groupOff ? off.find((x) => x.off.why === "together")?.off.reason || off[0]?.off.reason : null;
+        const groupCanOn = groupOff && off.some((x) => x.off.why === "together");
         let body;
         if (g.id === "frames") {
-          const start = items.find((x) => x.role === "first");
-          const mids = items.filter((x) => x.role === "middle");
-          const end = items.find((x) => x.role === "last");
-          const midShown = cap >= 3 ? mids.slice(0, 1) : [];
-          const midRoom = g.roleMax.middle && (attached.middle || []).length < g.roleMax.middle;
+          const start = all.find((x) => x.role === "first");
+          const end = all.find((x) => x.role === "last");
+          const midsOn = on.filter((x) => x.role === "middle");
+          const midsOff = off.filter((x) => x.role === "middle");
+          const midShown = cap >= 3 ? midsOn.slice(0, 1) : [];
+          const midRoom = !groupOff && g.roleMax.middle && midsOn.length < (st.variantMax("middle") ?? g.roleMax.middle);
+          const midOffShown = cap >= 3 ? midsOff.slice(0, 1) : [];
           body = (
             <>
-              {g.roleMax.first && (start ? thumb(g, start, "Start") : <EmptySlot label="Start" onClick={() => openLibrary(g.id)} fault={fault === g.id} />)}
-              {midShown.map((m) => thumb(g, m, "Mid 1"))}
-              {mids.length > midShown.length && <More n={mids.length - midShown.length} onClick={() => openList(g.id)} />}
-              {midRoom && <EmptySlot label="Mid" onClick={() => openLibrary(g.id)} />}
-              {g.roleMax.last && (end ? thumb(g, end, "End") : <EmptySlot label="End" onClick={() => openLibrary(g.id)} />)}
+              {start ? thumb(g, start, "Start") : (g.roleMax.first && !groupOff && <EmptySlot label="Start" onClick={() => openLibrary(g.id)} fault={fault === g.id} />)}
+              {midShown.map((m) => thumb(g, m, "Mid"))}
+              {midsOn.length > midShown.length && <More n={midsOn.length - midShown.length} onClick={() => openList(g.id)} />}
+              {midOffShown.map((m) => thumb(g, m, "Mid"))}
+              {offMore(g, midsOff.slice(midOffShown.length))}
+              {midRoom && cap >= 3 && <EmptySlot label="Mid" onClick={() => openLibrary(g.id)} />}
+              {end ? thumb(g, end, "End") : (g.roleMax.last && !groupOff && <EmptySlot label="End" onClick={() => openLibrary(g.id)} />)}
             </>
           );
         } else {
+          const offLimit = off.filter((x) => x.off.why === "limit");
+          const offOther = off.filter((x) => x.off.why !== "limit");
+          const shownOff = groupOff ? offOther.slice(0, cap) : [];
           body = (
             <>
-              {items.slice(0, cap).map((it) => thumb(g, it, ""))}
-              {items.length > cap && <More n={items.length - cap} onClick={() => openList(g.id)} />}
-              {room && <EmptySlot onClick={() => openLibrary(g.id)} fault={fault === g.id && !items.length} />}
+              {on.slice(0, cap).map((it) => thumb(g, it, ""))}
+              {on.length > cap && <More n={on.length - cap} onClick={() => openList(g.id)} />}
+              {shownOff.map((it) => thumb(g, it, ""))}
+              {offMore(g, groupOff ? offOther.slice(shownOff.length) : [])}
+              {offMore(g, offLimit)}
+              {takes && !groupOff && on.length < max && <EmptySlot onClick={() => openLibrary(g.id)} fault={fault === g.id && !on.length} />}
             </>
           );
         }
+        const prev = gi > 0 ? view[gi - 1].g : null;
+        const or = prev && groupsConflict(entry, prev, g);
+        const counter = groupOff ? `${all.length} · off` : `${on.length} / ${max}${off.length ? ` · ${off.length} off` : ""}`;
         return (
-          <div key={g.id} className={cn("flex flex-shrink-0", gi > 0 && "ml-3.5 border-l border-border pl-3.5")} onDragOver={(e) => { if (dragging.current && dragging.current.group !== g.id) e.preventDefault(); }} onDrop={drop(g)}>
-            <div>
-              <button type="button" onClick={() => openLibrary(g.id)} className="relative mb-2 flex h-4 items-center gap-1.5 whitespace-nowrap">
-                <Overline className={cn("whitespace-nowrap", activeGroup === g.id && "text-foreground")}>{g.label}</Overline>
-                <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">{items.length}{" "}/{" "}{g.max}</span>
-                {activeGroup === g.id && <span className="absolute inset-x-0 -bottom-1 h-0.5 rounded-full bg-signal" />}
-              </button>
-              <div className="flex gap-2">{body}</div>
+          <div key={g.id} className="flex flex-shrink-0 self-stretch">
+            {prev && (or ? <OrDivider /> : <span className="mx-3.5 w-px flex-shrink-0 self-stretch bg-border" />)}
+            <div className={cn("flex flex-shrink-0", groupOff && "dz-goff", groupCanOn && "-mx-2 -my-1.5 cursor-pointer rounded-[10px] px-2 py-1.5 transition-colors duration-state hover:bg-accent")}
+              onDragOver={(e) => { if (dragging.current && dragging.current.group !== g.id) e.preventDefault(); }} onDrop={drop(g)}
+              {...(groupCanOn ? { role: "button", tabIndex: 0, onClick: () => st.turnOn(g.roles), onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); st.turnOn(g.roles); } } } : {})}
+              {...(groupOff ? tipFor(groupTip) : {})}>
+              <div>
+                <button type="button" onClick={(e) => { if (groupCanOn) return; e.stopPropagation(); if (takes) openLibrary(g.id); }} tabIndex={groupCanOn ? -1 : 0} className="relative mb-2 flex h-4 items-center gap-1.5 whitespace-nowrap">
+                  <Overline className={cn("whitespace-nowrap", activeGroup === g.id && "text-foreground")}>{g.label}</Overline>
+                  <span className={cn("whitespace-nowrap text-[11px] font-medium uppercase tabular-nums", groupOff ? "text-muted-foreground" : "text-subtle")}>{counter}</span>
+                  {activeGroup === g.id && <span className="absolute inset-x-0 -bottom-1 h-0.5 rounded-full bg-signal" />}
+                </button>
+                <div className="flex gap-2">{body}</div>
+              </div>
             </div>
           </div>
         );
       })}
-      {unusedCount > 0 && (
-        <button type="button" onClick={onUnused} aria-expanded={unusedOpen} aria-haspopup="dialog"
-          className={cn("ml-auto mt-6 flex h-12 flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-warning/45 px-3 text-[13px] font-semibold text-warning transition-colors duration-state",
-            unusedOpen ? "bg-warning/20" : "bg-warning/10 hover:bg-warning/20")}>
-          <Warning size={16} />{unusedCount} not used
-        </button>
-      )}
-    </div>
-  );
-}
-
-// The list of files this model does not get (redesign 02, §2.1, screen 02).
-function NotUsedList({ open, onClose, items, modelName, tagOf, onRemove, onRemoveAll, anchor }) {
-  const box = useRef(null);
-  useEscLayer(open, onClose);
-  useEffect(() => {
-    if (!open) return undefined;
-    const on = (e) => { if (box.current && !box.current.contains(e.target) && !anchor.current?.contains(e.target)) onClose(); };
-    const t = setTimeout(() => document.addEventListener("pointerdown", on), 0);
-    return () => { clearTimeout(t); document.removeEventListener("pointerdown", on); };
-  }, [open, onClose, anchor]);
-  if (!open || !items.length) return null;
-  const shown = items.slice(0, 4);
-  const rest = items.slice(4);
-  const restWords = (() => {
-    if (!rest.length) return "";
-    const roles = [...new Set(rest.map((x) => x.role))];
-    const NOUN = { first: "start frame", middle: "middle frame", last: "end frame", reference: "reference", video: "reference video", source: "video to edit", audio: "audio file" };
-    if (roles.length === 1) return `and ${rest.length} more ${NOUN[roles[0]]}${rest.length === 1 ? "" : "s"}`;
-    return `and ${rest.length} more…`;
-  })();
-  return (
-    <div ref={box} role="dialog" aria-label={`Not used by ${modelName}`}
-      className="glass absolute bottom-[calc(100%+8px)] right-0 z-30 flex w-[440px] flex-col gap-0.5 rounded-xl border border-border p-2 shadow-float">
-      <div className="px-2 pb-2 pt-1.5 text-[13px] leading-[18px] text-muted-foreground">
-        <b className="block text-[14px] font-semibold leading-5 text-foreground">Not used by {modelName}</b>
-        These stay attached but are not sent. Switch to a model that takes them and they come back.
-      </div>
-      {shown.map((it) => {
-        const t = tagOf(it.url);
-        const video = it.role === "video" || it.role === "source";
-        return (
-          <div key={`${it.role}-${it.url}`} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] leading-[18px] hover:bg-accent">
-            {video ? <video src={it.url} poster={dzThumb(it.url, 96)} muted preload="metadata" className="h-9 w-9 flex-shrink-0 rounded-md object-cover" />
-              : it.role === "audio" ? <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-muted">♪</span>
-                : <img src={dzThumb(it.url, 96)} alt="" className="h-9 w-9 flex-shrink-0 rounded-md object-cover" />}
-            <span className="min-w-0 flex-1">
-              <span className="block truncate">{[t?.label || it.name || "", t ? `@${t.tag}` : ""].filter(Boolean).join(" · ")}</span>
-              <span className="block text-xs leading-4 text-muted-foreground">{it.reason}</span>
-            </span>
-            <button type="button" onClick={() => onRemove(it)} aria-label="Remove" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
-          </div>
-        );
-      })}
-      {restWords && <div className="px-2 py-1.5 text-[13px] leading-[18px] text-muted-foreground">{restWords}</div>}
-      <div className="mt-1.5 flex items-center gap-2 border-t border-border px-2 pb-1 pt-2">
-        <button type="button" onClick={onRemoveAll} className="flex h-7 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"><Trash size={16} />Remove all {items.length}</button>
-        <span className="flex-1" />
-        <button type="button" onClick={onClose} className="h-7 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Keep</button>
-      </div>
     </div>
   );
 }
 
 // ── Blocks (§5.3, row 2) ────────────────────────────────────────────────────
-function Block({ icon: Icon, label, value, auto, onClick, active }) {
+function Block({ icon: Icon, label, value, auto, onClick, active, advice = false }) {
   return (
     <button type="button" onClick={onClick}
       className={cn("flex h-14 min-w-0 items-center gap-3 rounded-md border px-3 text-left transition-colors duration-state hover:bg-accent", active ? "border-input bg-accent" : "border-border")}>
       <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Icon size={18} /></span>
       <span className="min-w-0">
         <Overline className="block">{label}</Overline>
-        <span className={cn("block truncate text-sm", auto ? "text-muted-foreground" : "text-foreground")}>{value}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className={cn("truncate text-sm", auto ? "text-muted-foreground" : "text-foreground")}>{value}</span>
+          {/* Advice about this setting (package 04, §2.5): the dot here, the text inside the panel. */}
+          {advice && <span className="h-[7px] w-[7px] flex-shrink-0 rounded-full bg-warning" aria-label="Advice inside" />}
+        </span>
       </span>
     </button>
   );
@@ -671,11 +711,14 @@ export default function DzStudio(props) {
   // One component for three tabs (package 03): Studio, and the light Image and Video tabs.
   const mode = props.mode === "image" || props.mode === "video" ? props.mode : "create";
   const light = mode !== "create";
-  const engine = useDzCreateEngine({ ...props, mode });
+  // Real errors (package 04, §2.5): one line inside the composer, above the bottom row;
+  // it goes away on the next action. Set by Generate, uploads and what Generate needs.
+  const [err, setErr] = useState(null); // { head, text, retry? }
+  const engine = useDzCreateEngine({ ...props, mode, onGenerationError: (m) => setErr({ head: "Not generated.", text: plainSentence(m), retry: true }) });
   const {
     kind, setKind, entries, entry, attached, setAttached, params, values, setValue, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount,
     canRun, missing, price, priceLoading, generate, busy, history, sel, ctx, kindFilter, setKindFilter, viewing, setViewing, applyResult, mention, mentionOptions,
-    tags, look, adaptModel, adaptContext, quoteBody, variant, sentPreview, sentOpen, setSentOpen, addFiles, pickModel, elements, unusedCount, merged, elementSpec, activeElements, finalPrompt, plan, openForEdit, focusSeq, drawOpen, setDrawOpen,
+    tags, look, adaptModel, adaptContext, quoteBody, variant, sentPreview, sentOpen, setSentOpen, addFiles, pickModel, elements, merged, elementSpec, activeElements, finalPrompt, plan, openForEdit, focusSeq, drawOpen, setDrawOpen,
   } = engine;
 
   // The look in the Studio: every part Auto unless chosen.
@@ -714,24 +757,32 @@ export default function DzStudio(props) {
   const fileInput = useRef(null);
 
   const groups = useMemo(() => groupsFor(entry), [entry]);
+  // The strip also shows groups this model doesn't take while they hold files: dimmed in place (package 04, §2.3).
+  const stripGroups = useMemo(() => GROUPS.map((g) => groups.find((x) => x.id === g.id) || (groupItems(attached, g).length ? { ...g, max: 0, roleMax: {} } : null)).filter(Boolean), [groups, attached]);
   // What the model gets (first N of each group, within its limits) and what it doesn't (§2.1).
   const sent = useMemo(() => splitEdit(plan.sent), [plan.sent]);
-  const unused = plan.unused;
-  const [unusedOpen, setUnusedOpen] = useState(false);
-  const unusedAnchor = useRef(null);
-  useEffect(() => { if (!unused.length) setUnusedOpen(false); }, [unused.length]);
-  const dropUnused = (list) => {
-    const before = attached;
-    const gone = new Set(list.map((x) => `${x.role}|${x.url}`));
-    setAttached((a) => Object.fromEntries(Object.entries(a).map(([role, files]) => [role, (files || []).filter((f) => !gone.has(`${role}|${f.url}`))])));
-    return before;
-  };
-  const removeAllUnused = () => {
-    const before = dropUnused(unused);
-    const n = unused.length;
-    setUnusedOpen(false);
-    notify({ type: "notice", title: "Removed", message: `${n} file${n === 1 ? "" : "s"} removed from this shot.`, undo: () => setAttached(before) });
-  };
+  // On / off of every attached file (package 04): the plan is the one source of truth.
+  const offMap = useMemo(() => new Map(plan.off.map((x) => [`${x.role}|${x.url}`, x])), [plan.off]);
+  const st = useMemo(() => {
+    const stateOf = (item) => offMap.get(`${item.role}|${item.url}`) || null;
+    const variantMax = (role) => {
+      const m = plan.variant?.media?.[role === "edit" ? "reference" : role];
+      return m ? (role === "edit" ? 1 : m.max) : null;
+    };
+    return {
+      stateOf,
+      isOn: (item) => !stateOf(item),
+      variantMax,
+      // Files that can be on in a group now: the chosen endpoint's limits while the group sends; its own otherwise.
+      maxOf: (g, onCount) => {
+        if (!onCount || !plan.variant) return g.max;
+        const edit = (sent.edit || []).length;
+        return g.roles.reduce((n, r) => n + (r === "reference" ? Math.max(0, (variantMax("reference") || 0) - edit) : variantMax(r) || 0), 0) || g.max;
+      },
+      turnOn: (roles) => engine.touch(roles),
+      bringOn: (item) => engine.bringOn(item.role, item.url),
+    };
+  }, [offMap, plan.variant, sent, engine.touch, engine.bringOn]); // eslint-disable-line react-hooks/exhaustive-deps
   const tagOf = (url) => tags.find((t) => t.url === url);
   const closeAll = () => { setPanel(null); setPop(null); setLibGroup(null); };
   const openLibrary = (gid) => { setPop(null); setPanel(null); setLibGroup(gid || groups.find((g) => g.id === "reference")?.id || groups[0]?.id || null); };
@@ -739,18 +790,7 @@ export default function DzStudio(props) {
 
   // A picture sent here from another tab (Make video, Continue, Edit): the prompt takes focus.
   useEffect(() => { if (focusSeq) { setMini(false); requestAnimationFrame(() => engine.promptRef.current?.focus()); } }, [focusSeq]); // eslint-disable-line react-hooks/exhaustive-deps
-  // "Image to edit" appears for a model that can edit: one notice per model, in the notice row.
-  const [editTip, setEditTip] = useState(null);
-  useEffect(() => {
-    if (!entry?.canEdit) { setEditTip(null); return; }
-    let seen = [];
-    try { seen = JSON.parse(localStorage.getItem("dz_edit_tip_seen") || "[]"); } catch { /* optional */ }
-    if (seen.includes(entry.family)) { setEditTip(null); return; }
-    setEditTip(`${entry.familyName} can edit a picture. Drop one into Image to edit, or leave it empty.`);
-    try { localStorage.setItem("dz_edit_tip_seen", JSON.stringify([...seen, entry.family].slice(-50))); } catch { /* optional */ }
-  }, [entry?.family, entry?.canEdit]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Model change: files the new model does not take stay attached; the notice row says so (§2.1, no toast).
+  // Model change: nothing is removed; what the new model can't send is dimmed in place (package 04, §2.6).
   const choose = (key, { close } = {}) => {
     if (key !== entry?.key) pickModel(key);
     if (close) setPop(null);
@@ -796,6 +836,12 @@ export default function DzStudio(props) {
     : mode === "video" && startUrl ? "Say what happens in this picture."
       : "Describe the shot. Type @ to use an element or anything you attached.";
 
+  // Advice about a setting (package 04, §2.5): an amber dot on its block, the text inside its panel.
+  const adviceFor = (block) => {
+    const data = sentPreview.data;
+    if (Array.isArray(data?.advice)) return data.advice.filter((x) => x.block === block).map((x) => x.text);
+    return block === "camera" ? data?.hints || [] : []; // a gateway from before package 04
+  };
   // Block values: only what is not Auto.
   const d = lookData();
   const name = (list, id) => (list || []).find((x) => x.id === id)?.label || "";
@@ -803,13 +849,22 @@ export default function DzStudio(props) {
   const lookParts = [name(d.palettes, a.palette), name(d.lights, a.light), name(d.genres, a.genre), name(d.eras, a.era)].filter(Boolean);
   const moveLabel = move ? name(d.moves, move) : "";
 
+  // Generate is never blocked by off files. What it still needs (a required file) is said when pressed.
+  const canGo = canRun || Boolean(variant && missing && !engine.uploads);
   const generateNow = () => {
-    if (!canRun) return;
+    if (!canRun) {
+      if (canGo) { setMini(false); setErr({ head: "Not generated.", text: `${missing.replace(/\.$/, "")}. Add it, then try again.`, add: faultGroup }); }
+      return;
+    }
+    setErr(null);
     closeAll();
     generate();
     const what = kind === "video" ? (count > 1 ? "videos" : "video") : (count > 1 ? "pictures" : "picture");
     notify({ type: "notice", title: "Generate", message: light ? `${count > 1 ? `${count} ${what}` : `1 ${what}`} added to the queue.` : count > 1 ? `${count} jobs added. The tiles appear first in the grid.` : "Added to the queue. The tile appears first in the grid." });
   };
+
+  // The error line goes away on the next action (package 04, §2.5).
+  useEffect(() => { setErr(null); }, [prompt, attached, entry?.key, kind, count, engine.touched, values]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── What the tiles and the viewer can do (package 03, §5–§7) ──
   const { isNew, markSeen } = useSeen();
@@ -820,7 +875,7 @@ export default function DzStudio(props) {
   const addRef = (it) => {
     const gid = it.kind === "video" ? "video" : "reference";
     const g = groups.find((x) => x.id === gid);
-    if (g) setAttached((prev) => addToGroup(prev, g, [{ url: it.url, name: "result" }]));
+    if (g) setAttached((prev) => addToGroup(prev, g, [{ url: it.url, name: "result" }], null, st.isOn));
     else setAttached((prev) => ({ ...prev, [gid]: [...(prev[gid] || []), { url: it.url, name: "result" }] }));
     notify({ type: "notice", title: "References", message: "Added to References." });
   };
@@ -916,7 +971,7 @@ export default function DzStudio(props) {
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-background">
-      <style>{`.dz-pop{animation:dzPop 180ms cubic-bezier(.2,.8,.2,1)}@keyframes dzPop{from{transform:scale(.8);opacity:0}}.dz-sel-in{animation:dzSelIn 160ms cubic-bezier(.2,.8,.2,1)}@keyframes dzSelIn{from{transform:translateY(-4px);opacity:0}}`}</style>
+      <style>{`.dz-off{opacity:.42;filter:saturate(.35)}:root[data-theme="light"] .dz-off{opacity:.32}.dz-off-more{opacity:.55}.dz-goff{opacity:.45}.dz-pop{animation:dzPop 180ms cubic-bezier(.2,.8,.2,1)}@keyframes dzPop{from{transform:scale(.8);opacity:0}}.dz-sel-in{animation:dzSelIn 160ms cubic-bezier(.2,.8,.2,1)}@keyframes dzSelIn{from{transform:translateY(-4px);opacity:0}}`}</style>
       <div ref={scroller} onScroll={onScroll} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 [container-type:inline-size]">
         <div className="flex items-baseline gap-3 pb-3 pt-6">
           <h1 className="text-xl font-semibold">{TITLE[mode]}</h1>
@@ -983,29 +1038,24 @@ export default function DzStudio(props) {
             className="pointer-events-auto flex h-14 w-[min(640px,100%)] items-center gap-3 rounded-xl border border-border bg-card pl-4 pr-2 text-left shadow-float transition-[width] duration-[260ms] ease-soft">
             <span className={cn("min-w-0 flex-1 truncate text-base", !prompt && "text-muted-foreground")}>{prompt || "Describe the shot"}</span>
             <span className="flex-shrink-0 text-sm text-muted-foreground">{entry?.familyName}{total ? ` · ${total} attached` : ""}</span>
-            <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); generateNow(); }} aria-disabled={!canRun}
-              className={cn("flex h-10 items-center rounded-md bg-primary px-4 text-base font-medium text-primary-foreground", !canRun && "opacity-50")}>Generate</span>
+            <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); generateNow(); }} aria-disabled={!canGo}
+              className={cn("flex h-10 items-center rounded-md bg-primary px-4 text-base font-medium text-primary-foreground", !canGo && "opacity-50")}>Generate</span>
           </button>
         ) : (
           <div className={cn("pointer-events-auto relative max-w-full rounded-xl border border-border bg-card p-4 shadow-float", COMPOSER_W[mode])}
+            onPointerDownCapture={(e) => { if (err && !e.target.closest?.("[data-dz-err]")) setErr(null); }}
             onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
             onDrop={(e) => { const files = Array.from(e.dataTransfer?.files || []); if (files.length) { e.preventDefault(); e.stopPropagation(); takeFiles(files); } }}>
-            <LibraryWindow open={libraryOpen} groups={groups} groupId={libGroup} setGroupId={setLibGroup} attached={attached} sent={sent} setAttached={setAttached}
-              onClose={() => setLibGroup(null)} onError={(m) => notify({ type: "error", title: "Upload", message: m })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
+            <LibraryWindow open={libraryOpen} groups={groups} groupId={libGroup} setGroupId={setLibGroup} attached={attached} sent={sent} setAttached={setAttached} st={st}
+              onClose={() => setLibGroup(null)} onError={(m) => setErr({ head: "Not uploaded.", text: plainSentence(m) })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
 
-            {/* 1. Attachments strip — always visible */}
-            {/* The chip and its list share one anchor, so a click on the chip toggles rather than closes and reopens. */}
-            <div ref={unusedAnchor}>
-              <NotUsedList open={unusedOpen} onClose={() => setUnusedOpen(false)} items={unused} modelName={entry?.familyName || "this model"} tagOf={tagOf} anchor={unusedAnchor}
-                onRemove={(it) => dropUnused([it])} onRemoveAll={removeAllUnused} />
-            {groups.length > 0 || unused.length > 0 ? (
-              <Strip groups={groups} sent={sent} attached={attached} setAttached={setAttached} activeGroup={libGroup || (panel === "list" ? listGroup : null)}
-                openLibrary={openLibrary} openList={openList} tagOf={tagOf} fault={faultGroup}
-                unusedCount={unused.length} unusedOpen={unusedOpen} onUnused={() => setUnusedOpen((v) => !v)} onDraw={act.draw} />
+            {/* 1. Attachments strip — always visible. Files the model can't send stay here, dimmed (package 04). */}
+            {stripGroups.length > 0 ? (
+              <Strip entry={entry} groups={stripGroups} attached={attached} setAttached={setAttached} activeGroup={libGroup || (panel === "list" ? listGroup : null)}
+                openLibrary={openLibrary} openList={openList} tagOf={tagOf} fault={err?.add || null} onDraw={act.draw} st={st} />
             ) : (
               <p className="flex h-[66px] items-center text-sm text-muted-foreground">{entry ? `${entry.familyName} takes text only.` : "Loading models…"}</p>
             )}
-            </div>
 
             {/* 2–4 fold away while the library is open */}
             <div className={cn("grid grid-cols-[minmax(0,1fr)] transition-[grid-template-rows,opacity] duration-[240ms] ease-soft", libraryOpen ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
@@ -1013,34 +1063,22 @@ export default function DzStudio(props) {
               <div className={cn("min-w-0", libraryOpen ? "overflow-hidden" : "overflow-visible")}>
                 {/* Camera · Move · Look · Settings live in Studio only; Image and Video have a Settings chip (package 03, §2). */}
                 {!light && <div className={cn("mt-3 grid gap-2", kind === "video" ? "grid-cols-4" : "grid-cols-3")}>
-                  <Block icon={Camera} label="Camera" value={camParts.length ? camParts.join(" · ") : "Auto"} auto={!camParts.length} onClick={() => setPanel("camera")} active={panel === "camera"} />
-                  {kind === "video" && <Block icon={ArrowsOutCardinal} label="Move" value={moveLabel || "Auto"} auto={!moveLabel} onClick={() => setPanel("move")} active={panel === "move"} />}
+                  <Block icon={Camera} label="Camera" value={camParts.length ? camParts.join(" · ") : "Auto"} auto={!camParts.length} onClick={() => setPanel("camera")} active={panel === "camera"} advice={adviceFor("camera").length > 0} />
+                  {kind === "video" && <Block icon={ArrowsOutCardinal} label="Move" value={moveLabel || "Auto"} auto={!moveLabel} onClick={() => setPanel("move")} active={panel === "move"} advice={adviceFor("move").length > 0} />}
                   <Block icon={Palette} label="Look" value={lookParts.length ? `${lookParts[0]}${lookParts.length > 1 ? ` +${lookParts.length - 1}` : ""}` : "Auto"} auto={!lookParts.length} onClick={() => setPanel("look")} active={panel === "look"} />
                   <Block icon={SlidersHorizontal} label="Settings" value={settingsChanged ? "Changed" : "Model defaults"} auto={!settingsChanged} onClick={() => setPanel("settings")} active={panel === "settings"} />
                 </div>}
 
                 <div className="mt-3"><PromptField engine={engineForPrompt} onFocusChange={setFocus} mentionGroups={mentionGroups} onPasteFiles={takeFiles} placeholder={placeholder} /></div>
-                {/* Notice row (§2.1): full sentences, wrapped, never cut — files not sent, what is missing, look hints. */}
-                {(plan.summary || missing || editTip || sentPreview.data?.hints?.length > 0) && (
-                  <div className="mt-3 flex flex-col gap-1.5">
-                    {editTip && (
-                      <div className="flex items-start gap-2.5 text-[13px] leading-5 text-muted-foreground">
-                        <Info size={16} className="mt-0.5 flex-shrink-0" /><span className="min-w-0 flex-1">{editTip}</span>
-                        <button type="button" onClick={() => setEditTip(null)} aria-label="Dismiss" className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-xs hover:bg-accent hover:text-foreground"><X size={12} /></button>
-                      </div>
-                    )}
-                    {plan.summary && (
-                      <div className="flex items-start gap-2.5 text-[13px] leading-5 text-warning">
-                        <Warning size={16} className="mt-0.5 flex-shrink-0" />
-                        <span className="min-w-0 flex-1">{plan.summary}</span>
-                        <span className="flex flex-shrink-0 gap-3.5 font-semibold text-foreground">
-                          <button type="button" onClick={() => setUnusedOpen(true)} className="hover:underline">Show</button>
-                          <button type="button" onClick={removeAllUnused} className="hover:underline">Remove them</button>
-                        </span>
-                      </div>
-                    )}
-                    {missing && <div className="flex items-start gap-2.5 text-[13px] leading-5 text-warning"><Warning size={16} className="mt-0.5 flex-shrink-0" /><span className="min-w-0 flex-1">{missing}</span></div>}
-                    {(sentPreview.data?.hints || []).map((h) => <div key={h} className="flex items-start gap-2.5 text-[13px] leading-5 text-warning"><Info size={16} className="mt-0.5 flex-shrink-0" /><span className="min-w-0 flex-1">{h}</span></div>)}
+                {/* A real error (package 04, §2.5): one line above the bottom row; link-style actions; gone on the next action. */}
+                {err && (
+                  <div data-dz-err="" role="alert" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-destructive">
+                    <WarningCircle size={14} className="mt-[3px] flex-shrink-0" />
+                    <span className="min-w-0 text-foreground"><b className="font-semibold text-destructive">{err.head}</b> {err.text}
+                      {err.retry && <button type="button" onClick={generateNow} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Try again</button>}
+                      {err.add && <button type="button" onClick={() => { setErr(null); openLibrary(err.add); }} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Add</button>}
+                      <button type="button" onClick={() => setErr(null)} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Dismiss</button>
+                    </span>
                   </div>
                 )}
 
@@ -1094,7 +1132,7 @@ export default function DzStudio(props) {
                   <button type="button" onClick={() => variant && setSentOpen(true)} disabled={!variant}
                     className={cn("h-8 flex-shrink-0 rounded-md px-1.5 text-sm tabular-nums hover:bg-accent hover:text-foreground disabled:hover:bg-transparent", priceLoading ? "text-subtle" : "text-muted-foreground")}
                     title={`What goes to the model${price ? (price.exact ? " · exact price for your account" : " · estimate") : ""}`}>{priceText}</button>
-                  <button type="button" onClick={generateNow} disabled={!canRun}
+                  <button type="button" onClick={generateNow} disabled={!canGo}
                     className="ml-2 flex h-10 flex-shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground transition-[background-color,transform] duration-state hover:bg-primary-hover active:scale-[.98] disabled:opacity-50">
                     {busy > 0 && <Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" />}Generate
                   </button>
@@ -1107,16 +1145,16 @@ export default function DzStudio(props) {
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm" multiple className="hidden"
         onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) takeFiles(f); }} />
 
-      <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={sentPreview.data?.hints || []} />
-      <MovePanel open={panel === "move"} onClose={() => setPanel(null)} move={move} setMove={setMove} />
+      <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")} />
+      <MovePanel open={panel === "move"} onClose={() => setPanel(null)} move={move} setMove={setMove} hints={adviceFor("move")} />
       <LookPanel open={panel === "look"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} />
       <SettingsPanel open={panel === "settings"} onClose={() => setPanel(null)} modelName={entry?.familyName} params={settingsParams} values={values} setValue={setValue}
         onReset={() => setValuesByKind((prev) => { const next = { ...(prev[kind] || {}) }; for (const p of settingsParams) delete next[p.key]; return { ...prev, [kind]: next }; })} />
       <AdaptPanel open={panel === "adapt"} onClose={() => setPanel(null)} prompt={prompt} model={adaptModel} context={adaptContext} look={look}
         request={variant ? { endpoint: variant.model.endpoint, body: quoteBody ? { ...quoteBody } : null } : null}
         onUse={(t) => { setPrompt(t); setPanel(null); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} />
-      <FullList open={panel === "list"} onClose={() => setPanel(null)} groups={groups} groupId={listGroup} setGroupId={setListGroup} attached={attached} sent={sent} setAttached={setAttached}
-        tagOf={tagOf} modelName={entry?.familyName || ""} onError={(m) => notify({ type: "error", title: "Upload", message: m })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
+      <FullList open={panel === "list"} onClose={() => setPanel(null)} groups={stripGroups} groupId={listGroup} setGroupId={setListGroup} attached={attached} sent={sent} setAttached={setAttached} st={st}
+        tagOf={tagOf} modelName={entry?.familyName || ""} onError={(m) => setErr({ head: "Not uploaded.", text: plainSentence(m) })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
       <StudioViewer item={viewing} items={items} onClose={() => setViewing(null)} onMove={(it) => { markSeen(it); setViewing(it); }} act={{ ...act, hasMore: history.hasMore }} />
       <DrawModal isOpen={drawOpen} onClose={() => { setDrawOpen(false); setDrawImage(null); }} apiKey={props.apiKey} batchSize={1} studio={mode} initialImage={drawImage}
         onError={(m) => notify({ type: "error", title: "Draw to Edit", message: m })} onDone={() => refreshHistory(mode)} />

@@ -170,23 +170,29 @@ export function cleanLook(input) {
   return out.on || out.filter || out.era || out.light || out.palette || out.genre || out.move ? out : null;
 }
 
-// "Unusual" combinations: not an error — a hint (it may look great or odd).
-export function lookHints(look, { kind = 'video', aspect = null, size = null } = {}) {
+// "Unusual" combinations: not an error — advice (it may look great or odd).
+// Each piece names the block it is about (package 04, §2.5: an amber dot on that
+// block, the text inside its panel): camera or move.
+export function lookAdvice(look, { kind = 'video', aspect = null, size = null } = {}) {
   const l = look || {};
-  const hints = [];
+  const out = [];
+  const add = (block, h) => out.push({ block, text: `${h} Not typical in real shooting — the result can be great or odd. Experiment!` });
   const lens = byId(LENSES, l.lens);
   const camera = byId(CAMERAS, l.camera);
   const ap = APERTURES.find((a) => a.f === l.aperture);
   if (l.on !== false && lens?.focal && l.focal && (l.focal < lens.focal[0] || l.focal > lens.focal[1])) {
-    hints.push(`${lens.label} lenses are usually ${lens.focal[0]}–${lens.focal[1]} mm.`);
+    add('camera', `${lens.label} lenses are usually ${lens.focal[0]}–${lens.focal[1]} mm.`);
   }
-  if (l.on !== false && lens?.maxAperture && ap && ap.n > lens.maxAperture) hints.push(`${lens.label} swirl shows only wide open (f/${lens.maxAperture} or wider).`);
-  if (l.on !== false && lens?.id === 'macro' && ap && ap.n < 5.6) hints.push('Real macro is shot at f/8–f/16 — wide open only a sliver is sharp.');
-  if (l.on !== false && camera?.sensor === 'small' && ap && ap.n <= 2) hints.push(`${camera.label} rarely gives strong background blur, even at ${ap.f}.`);
-  if (l.on !== false && l.focal && l.focal <= 16 && /close-up/.test(String(size || ''))) hints.push('Very wide lenses distort faces in close-ups.');
-  if (l.on !== false && lens?.wide && /^9:16|^3:4|^4:5/.test(String(aspect || ''))) hints.push('Anamorphic is a widescreen look; a vertical frame crops it.');
-  if (kind === 'video' && l.move === 'zoom-in' && byId(LENSES, l.lens) && !['vintage-zoom'].includes(l.lens) && l.on !== false) hints.push('Prime lenses can’t zoom — the model may treat it as a push-in.');
-  return hints.map((h) => `${h} Not typical in real shooting — the result can be great or odd. Experiment!`);
+  if (l.on !== false && lens?.maxAperture && ap && ap.n > lens.maxAperture) add('camera', `${lens.label} swirl shows only wide open (f/${lens.maxAperture} or wider).`);
+  if (l.on !== false && lens?.id === 'macro' && ap && ap.n < 5.6) add('camera', 'Real macro is shot at f/8–f/16 — wide open only a sliver is sharp.');
+  if (l.on !== false && camera?.sensor === 'small' && ap && ap.n <= 2) add('camera', `${camera.label} rarely gives strong background blur, even at ${ap.f}.`);
+  if (l.on !== false && l.focal && l.focal <= 16 && /close-up/.test(String(size || ''))) add('camera', 'Very wide lenses distort faces in close-ups.');
+  if (l.on !== false && lens?.wide && /^9:16|^3:4|^4:5/.test(String(aspect || ''))) add('camera', 'Anamorphic is a widescreen look; a vertical frame crops it.');
+  if (kind === 'video' && l.move === 'zoom-in' && byId(LENSES, l.lens) && !['vintage-zoom'].includes(l.lens) && l.on !== false) add('move', 'Prime lenses can’t zoom — the model may treat it as a push-in.');
+  return out;
+}
+export function lookHints(look, opts = {}) {
+  return lookAdvice(look, opts).map((a) => a.text);
 }
 
 // Data the studio needs to draw the controls (labels and ranges, no prompt words).

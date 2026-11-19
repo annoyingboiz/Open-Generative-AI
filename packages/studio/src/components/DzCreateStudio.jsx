@@ -5,7 +5,7 @@
 // (see dzCreate.js): media slots, @ references, main settings, Advanced,
 // camera look and camera moves, price before you press Generate. History
 // comes from the server Library.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { dzGenerate, dzWithMeta, uploadFile, dzThumb } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
@@ -411,6 +411,30 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const [move, setMove] = useState(saved.move || "");
   const [count, setCount] = useState(saved.count || 1); // ×1–4: same request, several results
   const [attached, setAttached] = useState(saved.attached || {});
+  // Package 04: the slots the user touched, the last first. When two slots can't be
+  // sent together, the one touched last is on and the other is dimmed (off).
+  const [touched, setTouched] = useState(Array.isArray(saved.touched) ? saved.touched : []);
+  const touch = useCallback((roles) => {
+    const list = (Array.isArray(roles) ? roles : [roles]).filter(Boolean);
+    if (!list.length) return;
+    setTouched((prev) => {
+      const next = [...list, ...prev.filter((r) => !list.includes(r))].slice(0, 12);
+      return next.length === prev.length && next.every((r, i) => r === prev[i]) ? prev : next;
+    });
+  }, []);
+  // Adding a file to a slot touches it, whichever way it came (picker, drop, paste, another tab).
+  const attachedBefore = useRef(attached);
+  useLayoutEffect(() => {
+    const before = attachedBefore.current;
+    attachedBefore.current = attached;
+    if (before === attached) return;
+    const grew = Object.keys(attached).filter((r) => {
+      const had = new Set((before[r] || []).map((f) => f.url));
+      return (attached[r] || []).some((f) => !had.has(f.url));
+    });
+    // Frames in time order: Start, Mid, End — a new End then wins over a new Start.
+    if (grew.length) touch([...ROLE_ORDER, "edit"].filter((r) => grew.includes(r)).reverse());
+  }, [attached, touch]);
   const [uploadingRole, setUploadingRole] = useState(null);
   const [elements, setElements] = useState(saved.elements || []); // chosen elements (Library or project)
   // Keep the chosen elements in step with what the user can see now (current
@@ -459,8 +483,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const storedValues = valuesByKind[kind] || {};
 
   useEffect(() => {
-    try { localStorage.setItem(cfg.store, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count })); } catch { /* optional */ }
-  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count]);
+    try { localStorage.setItem(cfg.store, JSON.stringify({ kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched })); } catch { /* optional */ }
+  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched]);
 
   // Only the slots this model has; other attached files are kept but not sent.
   // What is sent and what is kept but not sent (over a limit, a kind the model does
@@ -468,7 +492,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const slotRoles = new Set((entry?.slots || []).map((s) => s.role));
   // "Image to edit" travels as the model's first image (package 03).
   const sendable = useMemo(() => withEditFirst(attached, entry), [attached, entry]);
-  const plan = useMemo(() => planAttachments(entry, sendable), [entry, sendable]);
+  const plan = useMemo(() => planAttachments(entry, sendable, { touched }), [entry, sendable, touched]);
   const used = plan.sent;
   const unusedCount = plan.unused.length;
   // Elements: natively (Kling `elements`) or as extra reference files.
@@ -584,15 +608,18 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     const info = ROLE_INFO[role];
     const slot = entry?.slots.find((s) => s.role === role);
     if (!slot) return;
-    const room = slot.max - (attached[role]?.length || 0);
+    // Only files that are on take room (package 04): a dimmed file never fills a slot.
+    const onNow = (splitEdit(plan.sent)[role] || []).length;
+    const room = slot.max - onNow;
     const list = files.filter((f) => f.type.startsWith(`${info.kind}/`)).slice(0, Math.max(0, room));
-    if (!list.length) { onGenerationError?.(`Choose ${info.kind} files for “${info.label}”.`); return; }
+    if (!list.length) { onGenerationError?.(room <= 0 ? `${info.label} is full. Remove one first.` : `Choose ${info.kind} files for “${info.label}”.`); return; }
     setUploadingRole(role);
     setUploads((n) => n + 1);
     try {
       for (const f of list) {
         const url = await uploadFile(apiKey, f);
-        setAttached((prev) => ({ ...prev, [role]: [...(prev[role] || []), { url, name: f.name }].slice(0, slot.max) }));
+        // A one-file slot holding a dimmed file gets the new one instead.
+        setAttached((prev) => ({ ...prev, [role]: slot.max === 1 ? [{ url, name: f.name }] : [...(prev[role] || []), { url, name: f.name }] }));
       }
     } catch (e) {
       onGenerationError?.(String(e?.message || e));
@@ -600,7 +627,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       setUploads((n) => n - 1);
       setUploadingRole((r) => (r === role ? null : r));
     }
-  }, [apiKey, attached, entry, onGenerationError]);
+  }, [apiKey, plan, entry, onGenerationError]);
 
   // Files dropped anywhere on the page.
   useEffect(() => {
@@ -623,6 +650,20 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       const add = list.filter((x) => !have.some((h) => h.url === x.url)).map((x) => ({ url: x.url, name: x.name || "" }));
       return { ...prev, [role]: [...have, ...add].slice(0, slot.max) };
     });
+  };
+  // An over-the-limit file into the sent ones (package 04, §2.3): it takes the last
+  // place that is sent; the file that held it is the first one not sent.
+  const bringOn = (role, url) => {
+    const onNow = (splitEdit(plan.sent)[role] || []).length;
+    setAttached((prev) => {
+      const list = prev[role] || [];
+      const i = list.findIndex((f) => f.url === url);
+      if (i < 0 || i < onNow) return prev;
+      const rest = [...list.slice(0, i), ...list.slice(i + 1)];
+      const at = Math.max(0, onNow - 1);
+      return { ...prev, [role]: [...rest.slice(0, at), list[i], ...rest.slice(at)] };
+    });
+    touch(role);
   };
   const removeFile = (role, i) => setAttached((prev) => ({ ...prev, [role]: (prev[role] || []).filter((_, j) => j !== i) }));
 
@@ -783,7 +824,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     // Each candidate's tag as it will be once added (next to the chosen ones only).
     const tagIfAdded = (e) => elementTags([...activeElements, e]).get(e.id);
     const list = [
-      ...tags.map((t) => ({ ...t, add: false })),
+      // A file that is off is never offered as an @tag (package 04, §2.1).
+      ...tags.filter((t) => !(t.kind === "file" && t.unused)).map((t) => ({ ...t, add: false })),
       ...candidates.map((e) => ({ tag: tagIfAdded(e), label: e.project_name ? `${e.name} · ${e.project_name}` : e.name, kind: "element", element: e, url: e.images?.[0] || null, add: true, disabled: whyNot(e) })),
     ];
     return list.filter((o) => !q || o.tag.toLowerCase().includes(q) || String(o.label || "").toLowerCase().includes(q))
@@ -815,7 +857,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {

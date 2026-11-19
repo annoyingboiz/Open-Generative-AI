@@ -44,17 +44,24 @@ export function distributeFrames(list, roleMax) {
 }
 const strip = ({ url, name }) => ({ url, name: name || "" });
 
-// Add files to a group within its limit. Frames: into `at` (first / middle / last)
-// when given and free, else the first free of Start → End → Mid. Returns the new `attached`.
-export function addToGroup(attached, group, files, at = null) {
+// Add files to a group within its limit. Only files that are on take room
+// (package 04: `isOn(item)`; a dimmed file never fills a slot). Frames: into `at`
+// (first / middle / last) when given and free, else an empty slot of Start → End → Mid,
+// else one held only by a dimmed file — a one-file slot then gets the new file
+// instead of the dimmed one. Returns the new `attached`.
+export function addToGroup(attached, group, files, at = null, isOn = null) {
   const next = { ...attached };
   const known = new Set(groupItems(attached, group).map((x) => x.url));
+  const onCount = (r) => (next[r] || []).filter((f, index) => !isOn || isOn({ ...f, role: r, index })).length;
+  const room = (r) => group.roleMax[r] && onCount(r) < group.roleMax[r];
   for (const f of files) {
     if (known.has(f.url)) continue;
-    const order = group.id === "frames" ? [at, "first", "last", "middle"].filter((r, i, a) => r && a.indexOf(r) === i) : group.roles;
-    const role = order.find((r) => group.roleMax[r] && (next[r] || []).length < group.roleMax[r]);
+    const order = group.id === "frames" ? ["first", "last", "middle"] : group.roles;
+    const role = (at && room(at) && at)
+      || order.find((r) => room(r) && (next[r] || []).length < group.roleMax[r])
+      || order.find((r) => room(r));
     if (!role) break;
-    next[role] = [...(next[role] || []), strip(f)];
+    next[role] = group.roleMax[role] === 1 ? [strip(f)] : [...(next[role] || []), strip(f)];
     known.add(f.url);
   }
   return next;
@@ -93,9 +100,3 @@ export function clearGroup(attached, group) {
 
 // Role words for a frame in order.
 export const frameLabel = (item, i, n) => (item.role === "first" ? "Start" : item.role === "last" ? "End" : `Mid ${item.index + 1}`);
-
-// Attachments this model does not take (kept, not sent).
-export function unusedItems(attached, groups) {
-  const taken = new Set(groups.flatMap((g) => Object.keys(g.roleMax)));
-  return Object.entries(attached || {}).filter(([role]) => !taken.has(role)).flatMap(([role, files]) => (files || []).map((f, index) => ({ ...f, role, index })));
-}

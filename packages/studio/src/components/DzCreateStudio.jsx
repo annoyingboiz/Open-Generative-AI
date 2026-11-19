@@ -488,7 +488,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // Only values this endpoint accepts (attaching files can switch the endpoint).
   const values = variant ? keepValues(storedValues, variant) : storedValues;
   const syntax = variant ? refSyntaxFor(variant.model) : null;
-  const missing = entry && !fitted && activeElements.length && !merged.native ? "The elements' pictures don't fit next to these files. Remove some references or an element." : missingFor(variant, merged.attached);
+  // Elements change what an endpoint gets: when none fits them with these files, say so (Generate stays off).
+  const missing = entry && !fitted && activeElements.length ? "The elements don't fit next to these files on this model. Remove some files or an element." : missingFor(variant, merged.attached);
   // Our tags (@img1, @char_mike) → this model's own words, then Camera.
   // Tags are named over everything attached (with the elements' own files), so a
   // tag stays the same when a model can't take some files.

@@ -65,6 +65,7 @@ export function removeFromGroup(attached, group, url, role = null) {
   if (!r) return attached;
   const list = attached[r] || [];
   const i = list.findIndex((f) => f.url === url);
+  if (i < 0) return attached;
   return { ...attached, [r]: [...list.slice(0, i), ...list.slice(i + 1)] };
 }
 

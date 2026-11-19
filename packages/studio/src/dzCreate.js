@@ -260,17 +260,21 @@ export function promptTags({ attached = {}, all = null, syntax = null, elements 
   // whole attachment list decides its tag, so a tag does not change when a
   // model can't take some files (redesign 02, §2.1). Files the model does not
   // get keep their tag, marked `unused`, and are left out of the sent prompt.
+  // `own` counts the user's files in a role: what is sent is always the first N of
+  // them, so role + own index names the same file in both passes (even a repeated url).
   const walk = (att, cb) => {
+    const own = {};
+    const go = (f, role, k) => { const i = own[role] || 0; if (!f.element) own[role] = i + 1; cb(f, role, { ...k, own: i }); };
     let frameN = 0;
     for (const role of ["first", "middle", "last"]) {
-      (att[role] || []).forEach((f, i) => { frameN += 1; cb(f, role, { frameN, i, mids: (att.middle || []).length }); });
+      (att[role] || []).forEach((f, i) => { frameN += 1; go(f, role, { frameN, i, mids: (att.middle || []).length }); });
     }
     let n = 0;
-    for (const f of att.reference || []) { n += 1; cb(f, "reference", { n }); }
+    for (const f of att.reference || []) { n += 1; go(f, "reference", { n }); }
     let v = 0;
-    for (const role of ["video", "source"]) for (const f of att[role] || []) { v += 1; cb(f, role, { v }); }
+    for (const role of ["video", "source"]) for (const f of att[role] || []) { v += 1; go(f, role, { v }); }
     let a = 0;
-    for (const f of att.audio || []) { a += 1; cb(f, "audio", { a }); }
+    for (const f of att.audio || []) { a += 1; go(f, "audio", { a }); }
   };
   const sentTo = new Map();
   const firstImage = new Map(); // element id → its first reference number at the model
@@ -286,7 +290,7 @@ export function promptTags({ attached = {}, all = null, syntax = null, elements 
     else if (role === "reference") to = syntax ? syntax.image(k.n) : `image ${k.n}`;
     else if (k.v) to = syntax ? syntax.video(k.v) : `video ${k.v}`;
     else to = syntax ? syntax.audio(k.a) : `audio ${k.a}`;
-    sentTo.set(`${role}|${f.url}`, to);
+    sentTo.set(`${role}|${k.own}`, to);
   });
   walk(all || attached, (f, role, k) => {
     if (f.element) return;
@@ -298,7 +302,7 @@ export function promptTags({ attached = {}, all = null, syntax = null, elements 
     } else if (role === "reference") { tag = `img${k.n}`; label = `Reference ${k.n}`; }
     else if (k.v) { tag = `vid${k.v}`; label = role === "source" ? "Video to edit" : `Reference video ${k.v}`; }
     else { tag = `aud${k.a}`; label = `Audio ${k.a}`; }
-    const key = `${role}|${f.url}`;
+    const key = `${role}|${k.own}`;
     const unused = !sentTo.has(key);
     out.push({ tag, to: unused ? "" : sentTo.get(key), label, kind: "file", role, url: f.url, ...(unused ? { unused: true } : {}) });
   });
@@ -441,8 +445,10 @@ export function planAttachments(entry, attached = {}) {
     }
     return { v, sent, count };
   });
-  const required = (e) => (missingFor(e.v, e.sent) ? 1 : 0);
-  evals.sort((a, b) => b.count - a.count || required(a) - required(b) || Object.keys(a.v.media).length - Object.keys(b.v.media).length);
+  // An endpoint that can run with what it gets comes first (if it gets anything);
+  // then the one that sends the most, then the simplest.
+  const ready = (e) => (e.count > 0 && !missingFor(e.v, e.sent) ? 0 : 1);
+  evals.sort((a, b) => ready(a) - ready(b) || b.count - a.count || Object.keys(a.v.media).length - Object.keys(b.v.media).length);
   const best = evals[0];
   if (!best) return { variant: null, sent: {}, unused: [], summary: null };
   const takes = (role) => entry.variants.some((v) => v.media[role]);

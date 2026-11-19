@@ -748,10 +748,10 @@ export default function DzStudio(props) {
               onClose={() => setLibGroup(null)} onError={(m) => notify({ type: "error", title: "Upload", message: m })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
 
             {/* 1. Attachments strip — always visible */}
+            {/* The chip and its list share one anchor, so a click on the chip toggles rather than closes and reopens. */}
             <div ref={unusedAnchor}>
               <NotUsedList open={unusedOpen} onClose={() => setUnusedOpen(false)} items={unused} modelName={entry?.familyName || "this model"} tagOf={tagOf} anchor={unusedAnchor}
                 onRemove={(it) => dropUnused([it])} onRemoveAll={removeAllUnused} />
-            </div>
             {groups.length > 0 || unused.length > 0 ? (
               <Strip groups={groups} sent={sent} attached={attached} setAttached={setAttached} activeGroup={libGroup || (panel === "list" ? listGroup : null)}
                 openLibrary={openLibrary} openList={openList} tagOf={tagOf} fault={faultGroup}
@@ -759,6 +759,7 @@ export default function DzStudio(props) {
             ) : (
               <p className="flex h-[66px] items-center text-sm text-muted-foreground">{entry ? `${entry.familyName} takes text only.` : "Loading models…"}</p>
             )}
+            </div>
 
             {/* 2–4 fold away while the library is open */}
             <div className={cn("grid transition-[grid-template-rows,opacity] duration-[240ms] ease-soft", libraryOpen ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>

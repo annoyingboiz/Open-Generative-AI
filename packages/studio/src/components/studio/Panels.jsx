@@ -360,10 +360,10 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
   const sameModel = saved && saved.model === modelKey(model);
   const status = !saved ? null
     : sameModel && saved.used != null && saved.used === prompt ? "inUse"
-      : sameModel && saved.used == null && saved.source === prompt ? "fresh" : "changed";
+      : sameModel && saved.source === prompt ? "fresh" : "changed";
   const use = () => {
     const rec = readAdapt()[as];
-    if (rec?.result && state.result === rec.result) writeAdapt(as, { ...rec, used: text });
+    if (rec?.result && saved && state.result === saved.result) writeAdapt(as, { ...rec, used: text });
     else if (state.result) writeAdapt(as, { result: state.result, source: prompt, used: text, model: modelKey(model), llm: chosen, at: Date.now() });
     onUse(text);
   };

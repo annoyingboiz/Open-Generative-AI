@@ -106,6 +106,12 @@ test('assistants: from a template, knowledge files, a chat that uses rules + kno
   assert.equal((await as('wife', 'POST', `/dz/api/chats/${chat.id}/messages`, { text: 'hi' })).statusCode, 404);
   res = await as('admin', 'GET', `/dz/api/assistants/${a.id}/chats`);
   assert.equal(res.json().chats[0].n, 6);
+  // B16: the list says which assistant you talked to last, so the side chat reopens there after a reload.
+  res = await as('admin', 'GET', '/dz/api/assistants');
+  const mine = res.json().personal.find((x) => x.id === a.id);
+  assert.equal(mine.chatCount, 1);
+  assert.ok(mine.lastChatAt > 0);
+  assert.equal((await as('wife', 'GET', '/dz/api/assistants')).json().personal.length, 0);
 });
 
 test('in a project: members use and edit the assistant, each with their own chats', async () => {

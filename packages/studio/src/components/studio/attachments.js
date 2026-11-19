@@ -22,6 +22,8 @@ export function groupsFor(entry) {
 }
 
 // Items of a group, each { url, name, role, index } (index inside its role list).
+// Pass the plan's `sent` view to get what the model gets: then a counter never
+// passes its limit (B4); the rest is in the "not used" list.
 export function groupItems(attached, group) {
   return group.roles.flatMap((role) => (attached[role] || []).map((f, index) => ({ ...f, role, index })));
 }
@@ -56,21 +58,30 @@ export function addToGroup(attached, group, files, at = null) {
   return next;
 }
 
-export function removeFromGroup(attached, group, url) {
-  if (group.id === "frames") return { ...attached, ...distributeFrames(groupItems(attached, group).filter((x) => x.url !== url).map(strip), group.roleMax) };
-  const role = group.roles[0];
-  return { ...attached, [role]: (attached[role] || []).filter((f) => f.url !== url) };
+// Remove exactly one item (B1): the one with this url, in its own role. Nothing
+// else moves, so the kept-but-unused items stay where they were.
+export function removeFromGroup(attached, group, url, role = null) {
+  const r = role || group.roles.find((x) => (attached[x] || []).some((f) => f.url === url));
+  if (!r) return attached;
+  const list = attached[r] || [];
+  const i = list.findIndex((f) => f.url === url);
+  return { ...attached, [r]: [...list.slice(0, i), ...list.slice(i + 1)] };
 }
 
+// Move one item onto another's place inside a group (B2). Frames keep how many
+// Start / Mid / End there are: the order changes, the roles' sizes do not.
 export function reorderGroup(attached, group, fromUrl, toUrl) {
-  const list = groupItems(attached, group).map(strip);
+  const sizes = group.roles.map((r) => (attached[r] || []).length);
+  const list = group.roles.flatMap((r) => (attached[r] || []).map(strip));
   const from = list.findIndex((x) => x.url === fromUrl);
   const to = list.findIndex((x) => x.url === toUrl);
   if (from < 0 || to < 0 || from === to) return attached;
   const [x] = list.splice(from, 1);
   list.splice(to, 0, x);
-  if (group.id === "frames") return { ...attached, ...distributeFrames(list, group.roleMax) };
-  return { ...attached, [group.roles[0]]: list };
+  const next = { ...attached };
+  let at = 0;
+  group.roles.forEach((r, i) => { next[r] = list.slice(at, at + sizes[i]); at += sizes[i]; });
+  return next;
 }
 
 export function clearGroup(attached, group) {

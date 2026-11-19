@@ -21,9 +21,9 @@ import { DzMediaPicker } from "./DzMedia.jsx";
 import DzSentPanel, { useDzPromptPreview, DzHints } from "./DzSentPanel.jsx";
 import { Viewer } from "./DzLibrary.jsx";
 import {
-  createEntries, chooseVariant, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
+  createEntries, chooseVariant, planAttachments, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, promptTags, translateTags, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
-  ROLE_INFO, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags,
+  ROLE_INFO, ROLE_ORDER, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags,
 } from "../dzCreate.js";
 import {
   Button, Segmented, ScrollTabs, Switch, Slider, Textarea, Input, Logo, Spinner, InfoTip, Tip, cn,
@@ -463,15 +463,20 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count]);
 
   // Only the slots this model has; other attached files are kept but not sent.
+  // What is sent and what is kept but not sent (over a limit, a kind the model does
+  // not take, or a combination none of its endpoints accepts) — see planAttachments.
   const slotRoles = new Set((entry?.slots || []).map((s) => s.role));
-  const used = Object.fromEntries(Object.entries(attached).filter(([role, files]) => slotRoles.has(role) && files?.length));
-  const unusedCount = Object.entries(attached).filter(([role]) => !slotRoles.has(role)).reduce((n, [, f]) => n + (f?.length || 0), 0);
+  const plan = useMemo(() => planAttachments(entry, attached), [entry, attached]);
+  const used = plan.sent;
+  const unusedCount = plan.unused.length;
   // Elements: natively (Kling `elements`) or as extra reference files.
   const nativeElements = entryTakesElements(entry);
   const canUseElements = Boolean(entry && (nativeElements || entry.slots.some((sl) => sl.role === "reference" || sl.role === "video")));
   const activeElements = canUseElements ? elements : [];
   const merged = entry ? mergeElements(entry, used, activeElements) : { attached: used, native: false };
-  const variant = entry ? chooseVariant(entry, merged.attached, { native: merged.native }) : null;
+  const fitted = entry ? chooseVariant(entry, merged.attached, { native: merged.native }) : null;
+  // The plan's endpoint when the elements' own files tip it over (the request is then blocked below).
+  const variant = fitted || plan.variant;
   const elementSpec = variant ? elementsInputOf(variant.model) : null;
   // What actually goes into the request: Kling subjects, or element files among the references.
   const elementPairs = elementSpec ? klingElementPairs(activeElements, elementSpec) : [];
@@ -479,13 +484,24 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const elementsUsed = elementPairs.length > 0 || elementFilesUsed;
   const elementMax = elementSpec?.maxItems || (nativeElements ? (entry.variants.map((v) => elementsInputOf(v.model)?.maxItems || 0).reduce((a, b) => Math.max(a, b), 0) || 7) : 7);
   elementMaxRef.current = elementMax;
-  const params = variant ? paramsOf(variant.model) : { main: [], advanced: [] };
+  const params = variant ? paramsOf(variant.model) : entry?.variants[0] ? paramsOf(entry.variants[0].model) : { main: [], advanced: [] };
   // Only values this endpoint accepts (attaching files can switch the endpoint).
   const values = variant ? keepValues(storedValues, variant) : storedValues;
   const syntax = variant ? refSyntaxFor(variant.model) : null;
-  const missing = entry && !variant ? "This model can't take these files together. Remove some or pick another model." : missingFor(variant, merged.attached);
+  const missing = entry && !fitted && activeElements.length && !merged.native ? "The elements' pictures don't fit next to these files. Remove some references or an element." : missingFor(variant, merged.attached);
   // Our tags (@img1, @char_mike) → this model's own words, then Camera.
-  const tags = promptTags({ attached: merged.attached, syntax, elements: activeElements, elementPairs, variant });
+  // Tags are named over everything attached (with the elements' own files), so a
+  // tag stays the same when a model can't take some files.
+  const allFiles = useMemo(() => {
+    const out = {};
+    for (const role of ROLE_ORDER) {
+      const own = (attached[role] || []).filter((f) => !f.element);
+      const els = (merged.attached?.[role] || []).filter((f) => f.element);
+      if (own.length || els.length) out[role] = [...own, ...els];
+    }
+    return out;
+  }, [attached, merged.attached]);
+  const tags = promptTags({ attached: merged.attached, all: allFiles, syntax, elements: activeElements, elementPairs, variant });
   // Native elements beyond what the chosen endpoint takes are left out — say so.
   const nativeDropped = elementSpec ? activeElements.filter((e) => !elementPairs.some((p) => p.element.id === e.id)).map((e) => e.name) : [];
   const trimmed = merged.trimmed || (nativeDropped.length ? { dropped: nativeDropped, cut: 0 } : null);
@@ -494,7 +510,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const look = useMemo(() => lookOf(camera, kind === "video" ? move : ""), [camera, kind, move]);
   const usedTags = useMemo(() => {
     const names = new Set([...String(prompt).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()));
-    return tags.filter((t) => names.has(t.tag.toLowerCase()));
+    return tags.filter((t) => names.has(t.tag.toLowerCase()) && !(t.kind === "file" && t.unused));
   }, [prompt, tags]);
   const jsonPrompt = useMemo(() => parseJsonPrompt(prompt), [prompt]);
   // What "Adapt to model" needs to know: the model, what's attached, the settings.
@@ -511,7 +527,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     return {
       mode, duration: values.duration, aspect: values.aspect_ratio || values.ratio, audio,
       camera: cameraText || undefined,
-      tags: tags.map((t) => ({ tag: t.tag, label: `${t.label || t.kind}${t.to ? ` (sent to the model as ${t.to})` : ""}` })),
+      tags: tags.filter((t) => !(t.kind === "file" && t.unused)).map((t) => ({ tag: t.tag, label: `${t.label || t.kind}${t.to ? ` (sent to the model as ${t.to})` : ""}` })),
     };
   }, [merged.attached, kind, values, camera, move, tags, elementsUsed]); // eslint-disable-line react-hooks/exhaustive-deps
   const needsPrompt = variant?.model.promptRequired;
@@ -742,11 +758,11 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {
-  const { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey } = useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode });
+  const { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey } = useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode });
   const items = history.items;
 
   return (

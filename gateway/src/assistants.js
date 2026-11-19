@@ -84,6 +84,8 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     chats: db.prepare('SELECT id, assistant_id, title, updated_at, json_array_length(messages_json) AS n FROM chats WHERE user_id = ? AND assistant_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100'),
     chatSave: db.prepare('UPDATE chats SET title = ?, messages_json = ?, updated_at = ? WHERE id = ? AND updated_at = ?'),
     chatRemove: db.prepare('UPDATE chats SET deleted_at = ? WHERE id = ? AND user_id = ?'),
+    // Your latest chat per assistant: the side chat reopens where you were.
+    lastChats: db.prepare('SELECT assistant_id, MAX(updated_at) AS at, COUNT(*) AS n FROM chats WHERE user_id = ? AND deleted_at IS NULL GROUP BY assistant_id'),
   };
 
   // Personal: the owner only. In a project: its current members.
@@ -130,9 +132,11 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
   }
 
   function list(user, { project } = {}) {
-    const personal = q.personal.all(user.id).map((r) => view(r, user));
+    const last = new Map(q.lastChats.all(user.id).map((r) => [r.assistant_id, r]));
+    const withChats = (a) => ({ ...a, lastChatAt: last.get(a.id)?.at || null, chatCount: last.get(a.id)?.n || 0 });
+    const personal = q.personal.all(user.id).map((r) => withChats(view(r, user)));
     let inProject = [];
-    if (project && project !== 'none') inProject = q.inProject.all(projects.get(user, String(project)).project.id).map((r) => view(r, user));
+    if (project && project !== 'none') inProject = q.inProject.all(projects.get(user, String(project)).project.id).map((r) => withChats(view(r, user)));
     return { personal, project: inProject, templates: TEMPLATES.map(({ id, name, description }) => ({ id, name, description })) };
   }
 

@@ -120,6 +120,22 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     return t ? { prompt: t, changes: [] } : null;
   }
 
+  // The one JSON object in a text: as is, inside a ```json fence, or with words before / after it.
+  function jsonObjectIn(text) {
+    const tryParse = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
+    const t = String(text || '').trim();
+    const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
+    for (const cand of [t, fenced?.[1]?.trim()]) {
+      if (!cand) continue;
+      const whole = tryParse(cand);
+      if (whole !== undefined) return whole;
+      const i = cand.indexOf('{');
+      const j = cand.lastIndexOf('}');
+      if (i >= 0 && j > i) { const part = tryParse(cand.slice(i, j + 1)); if (part !== undefined) return part; }
+    }
+    return undefined;
+  }
+
   const tagsIn = (s) => [...new Set([...String(s).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()))];
 
   async function adapt(user, body = {}) {
@@ -161,8 +177,9 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     }
     if (!out?.prompt) throw new AdaptError('The text model returned nothing usable. Try again or pick another text model.', 424);
     if (json) {
-      let parsed;
-      try { parsed = JSON.parse(out.prompt); } catch { throw new AdaptError('The text model broke the JSON. Try again or pick another text model.', 424); }
+      // Only the object goes into the prompt: no code fence, no comment, no text around it.
+      const parsed = jsonObjectIn(out.prompt);
+      if (parsed === undefined) throw new AdaptError('The text model broke the JSON. Try again or pick another text model.', 424);
       // Rebuilt by the model's blocks: still JSON, not empty, roughly as rich as yours.
       const size = (v) => JSON.stringify(v).length;
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.keys(parsed).length) throw new AdaptError('The text model returned empty JSON. Try again or pick another text model.', 424);

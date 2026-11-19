@@ -75,13 +75,14 @@ export default function ModelMenu({ entries, entry, onPick, onClose }) {
   }).sort((a, b) => (group === "recommended" ? (a.recommended ?? 1e9) - (b.recommended ?? 1e9) : 0));
 
   return (
-    <div className="flex h-[min(560px,calc(100vh-160px))] w-[min(720px,calc(100vw-48px))] flex-col p-3">
-      <label className="flex h-9 flex-shrink-0 items-center gap-2 rounded-md border border-input px-3">
+    <div className="flex h-[min(560px,calc(100vh-160px))] w-[min(720px,calc(100vw-48px))] flex-col">
+      {/* Values from package 02, §3: top block 16, vendors 12 / 200, list 12, rows 46 (0 12), providers 4 0 10 34 / 8. */}
+      <div className="flex-shrink-0 border-b border-border p-4"><label className="flex h-9 items-center gap-2 rounded-md border border-input px-3">
         <MagnifyingGlass size={16} className="text-muted-foreground" />
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${families.length} models`} className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground focus-visible:outline-none" />
-      </label>
-      <div className="mt-3 flex min-h-0 flex-1 gap-2">
-        <nav className="custom-scrollbar w-[176px] flex-shrink-0 overflow-y-auto border-r border-border pr-2" aria-label="Model groups">
+      </label></div>
+      <div className="flex min-h-0 flex-1">
+        <nav className="custom-scrollbar w-[200px] flex-shrink-0 overflow-y-auto border-r border-border p-3" aria-label="Model groups">
           {groups.map(([id, label, n]) => (
             <button key={id} type="button" onClick={() => { setGroup(id); setQ(""); }}
               className={cn("flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-base font-medium transition-colors duration-state", group === id && !needle ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
@@ -91,7 +92,7 @@ export default function ModelMenu({ entries, entry, onPick, onClose }) {
             </button>
           ))}
         </nav>
-        <div className="custom-scrollbar min-w-0 flex-1 overflow-y-auto pl-1" role="listbox" aria-label="Models">
+        <div className="custom-scrollbar min-w-0 flex-1 overflow-y-auto p-3" role="listbox" aria-label="Models">
           {shown.length === 0 && <p className="p-6 text-center text-muted-foreground">No models found.</p>}
           {shown.map((f) => {
             const chosen = f.family === entry?.family;
@@ -106,7 +107,7 @@ export default function ModelMenu({ entries, entry, onPick, onClose }) {
                     const keep = f.providers.find((p) => p.entry.key === entry?.key) || f.providers.find((p) => p.entry.key === saved) || f.providers[0];
                     onPick(keep.entry.key, { close: f.providers.length === 1 });
                   }}
-                  className={cn("flex h-11 w-full items-center gap-2.5 rounded-slot border px-2.5 text-left transition-colors duration-state",
+                  className={cn("flex h-[46px] w-full items-center gap-2.5 rounded-slot border px-3 text-left transition-colors duration-state",
                     chosen ? "border-signal bg-signal/[.06]" : "border-transparent hover:bg-accent")}>
                   <Monogram name={f.vendor} />
                   <span className="truncate text-base font-semibold">{f.name}</span>
@@ -118,7 +119,7 @@ export default function ModelMenu({ entries, entry, onPick, onClose }) {
                   </span>
                 </button>
                 {expanded && (
-                  <div className="ml-8 mt-1 rounded-slot border border-border p-1.5">
+                  <div className="mb-2.5 ml-[34px] mt-1 rounded-slot border border-border p-2">
                     <div className="px-2 pb-1 pt-0.5"><span className="text-overline uppercase text-muted-foreground">Provider · {f.providers.length}</span></div>
                     {f.providers.map((p) => {
                       const on = p.entry.key === entry?.key;
@@ -140,7 +141,7 @@ export default function ModelMenu({ entries, entry, onPick, onClose }) {
           })}
         </div>
       </div>
-      <div className="mt-2 flex flex-shrink-0 items-center gap-4 border-t border-border pt-2 text-xs text-muted-foreground">
+      <div className="flex flex-shrink-0 items-center gap-4 border-t border-border px-4 py-2 text-xs text-muted-foreground">
         {CAPS.map(([k, Icon, title]) => <span key={k} className="flex items-center gap-1"><Icon size={12} /> {title}</span>)}
       </div>
     </div>

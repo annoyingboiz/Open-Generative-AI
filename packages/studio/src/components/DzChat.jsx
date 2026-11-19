@@ -13,6 +13,7 @@ import { Button, Textarea, Input, Spinner, Switch, OptionSelect, Tip, cn, Select
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } = SelectParts;
 const LAST_KEY = "dz_chat_assistant";
+const LAST_CHAT_KEY = "dz_chat_last_chats";
 const when = (t) => {
   const d = new Date(t);
   const today = new Date();
@@ -229,7 +230,10 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
   const notify = (message) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Chat", message } }));
 
   const all = useMemo(() => [...lists.project, ...lists.personal], [lists]);
-  const assistant = all.find((a) => a.id === assistantId) || all[0] || null;
+  // The remembered assistant; else the one you chatted with last (chats live on the
+  // server, so a new browser or a cleared one opens your latest conversation).
+  const latest = useMemo(() => [...all].sort((a, b) => (b.lastChatAt || 0) - (a.lastChatAt || 0))[0] || null, [all]);
+  const assistant = all.find((a) => a.id === assistantId) || latest || null;
   // A project's assistant in an archived project is read only; your own ones never are.
   const readOnly = Boolean(assistant?.project_id && ctx.project?.archived);
 
@@ -261,7 +265,9 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
       const r = await dzAssistants.chats(aid);
       if (seq !== chatSeq.current) return;
       setChats(r.chats);
-      const id = pick || r.chats[0]?.id;
+      let remembered = null;
+      try { remembered = JSON.parse(localStorage.getItem(LAST_CHAT_KEY) || "{}")[aid] || null; } catch { /* optional */ }
+      const id = pick || (r.chats.some((x) => x.id === remembered) ? remembered : r.chats[0]?.id);
       const c = id ? (await dzAssistants.chat(id)).chat : null;
       if (seq === chatSeq.current) setChat(c);
     } catch (e) { if (seq === chatSeq.current) notify(String(e.message || e)); } finally { if (seq === chatSeq.current) setLoadingChat(false); }
@@ -274,6 +280,11 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
   };
   useEffect(() => { if (open && assistant?.id) loadChats(assistant.id); }, [open, assistant?.id, loadChats]);
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [chat?.messages?.length, sending]);
+  // Remember the open chat of each assistant.
+  useEffect(() => {
+    if (!chat?.id || !chat.assistant_id) return;
+    try { const m = JSON.parse(localStorage.getItem(LAST_CHAT_KEY) || "{}"); m[chat.assistant_id] = chat.id; localStorage.setItem(LAST_CHAT_KEY, JSON.stringify(m)); } catch { /* optional */ }
+  }, [chat?.id, chat?.assistant_id]);
 
   const createFrom = async (template) => {
     try {
@@ -362,13 +373,13 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
                   {lists.project.length > 0 && (
                     <SelectGroup>
                       <SelectLabel>{ctx.project?.name || "This project"}</SelectLabel>
-                      {lists.project.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      {lists.project.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}{a.chatCount ? ` · ${a.chatCount} chat${a.chatCount === 1 ? "" : "s"}` : ""}</SelectItem>)}
                     </SelectGroup>
                   )}
                   {lists.personal.length > 0 && (
                     <SelectGroup>
                       <SelectLabel>My assistants</SelectLabel>
-                      {lists.personal.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                      {lists.personal.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}{a.chatCount ? ` · ${a.chatCount} chat${a.chatCount === 1 ? "" : "s"}` : ""}</SelectItem>)}
                     </SelectGroup>
                   )}
                   <SelectItem value="__new">+ New assistant…</SelectItem>

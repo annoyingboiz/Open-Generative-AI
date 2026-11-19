@@ -132,26 +132,26 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
 const hintFor = (group, full) => (full ? "Full. Remove one to pick another." : group?.kind === "video" ? "Only videos are shown for this group." : group?.kind === "audio" ? "Only sounds are shown for this group." : "Only pictures are shown for this group.");
 
 // Above the strip, same width as the composer (the composer folds to the strip meanwhile).
-export function LibraryWindow({ open, groups, groupId, setGroupId, attached, setAttached, onClose, onError, onUploading }) {
+export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sent = attached, setAttached, onClose, onError, onUploading }) {
   const { mounted, shown } = usePresence(open, 240);
   useEscLayer(open, onClose);
   const box = useRef(null);
   useDialogFocus(open && mounted, box, { trap: false });
   const group = groups.find((g) => g.id === groupId) || groups[0];
   if (!mounted || !group) return null;
-  const chosen = groupItems(attached, group);
-  const full = chosen.length >= group.max;
+  const chosen = groupItems(sent, group);
+  const full = groupItems(attached, group).length >= group.max;
   return (
     <div ref={box} tabIndex={-1} className={cn("glass absolute inset-x-0 bottom-[calc(100%+12px)] z-20 flex outline-none h-[min(640px,calc(100vh-260px))] flex-col rounded-2xl border border-border p-4 shadow-float transition-[opacity,transform] duration-[240ms] ease-soft",
       shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-4 scale-[.985] opacity-0")} role="dialog" aria-label="Library">
       <div className="mb-3 flex h-8 flex-shrink-0 items-center gap-5">
         {groups.map((g) => {
-          const n = groupItems(attached, g).length;
+          const n = groupItems(sent, g).length;
           const on = g.id === group.id;
           return (
             <button key={g.id} type="button" onClick={() => setGroupId(g.id)}
-              className={cn("relative h-8 text-base font-medium transition-colors duration-state", on ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
-              {g.label} <span className={cn("tabular-nums", n >= g.max ? "text-signal" : "text-muted-foreground")}>{n} / {g.max}</span>
+              className={cn("relative h-8 whitespace-nowrap text-base font-medium transition-colors duration-state", on ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
+              {g.label} <span className={cn("tabular-nums", n >= g.max ? "text-signal" : "text-muted-foreground")}>{n}{"\u00a0"}/{"\u00a0"}{g.max}</span>
               {on && <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-signal" />}
             </button>
           );
@@ -170,16 +170,17 @@ export function LibraryWindow({ open, groups, groupId, setGroupId, attached, set
 }
 
 // The full list (screen 12): every attachment by group on the left, the library on the right.
-export function FullList({ open, onClose, groups, groupId, setGroupId, attached, setAttached, tagOf, modelName, onError, onUploading }) {
+export function FullList({ open, onClose, groups, groupId, setGroupId, attached, sent = attached, setAttached, tagOf, modelName, onError, onUploading }) {
   const group = groups.find((g) => g.id === groupId) || groups[0];
   const drag = useRef(null);
-  const total = groups.reduce((n, g) => n + groupItems(attached, g).length, 0);
+  const [over, setOver] = useState(null);
+  const total = groups.reduce((n, g) => n + groupItems(sent, g).length, 0);
   const [roleMenu, setRoleMenu] = useState(null);
   const moveTo = (item, fromGroup, role) => {
     const target = groups.find((g) => g.roles.includes(role));
     if (!target) return;
     setAttached((a) => {
-      const cleared = removeFromGroup(a, fromGroup, item.url);
+      const cleared = removeFromGroup(a, fromGroup, item.url, item.role);
       return addToGroup(cleared, target, [{ url: item.url, name: item.name }], role);
     });
   };
@@ -191,13 +192,13 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
           <button type="button" onClick={() => setAttached((a) => groups.reduce((acc, g) => clearGroup(acc, g), a))} className="h-8 rounded-md px-2.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Clear all</button>
         </>
       )}>
-      <div className="custom-scrollbar w-[340px] flex-shrink-0 overflow-y-auto border-r border-border p-5">
+      <div className="custom-scrollbar w-[380px] flex-shrink-0 overflow-y-auto border-r border-border p-5">
         {groups.map((g) => {
-          const list = groupItems(attached, g);
+          const list = groupItems(sent, g);
           return (
             <section key={g.id} className="mb-5">
-              <button type="button" onClick={() => setGroupId(g.id)} className={cn("relative mb-2 text-base font-medium", g.id === group?.id ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
-                {g.label} <span className="tabular-nums text-muted-foreground">{list.length} / {g.max}</span>
+              <button type="button" onClick={() => setGroupId(g.id)} className={cn("relative mb-2 whitespace-nowrap text-base font-medium", g.id === group?.id ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
+                {g.label} <span className="tabular-nums text-muted-foreground">{list.length}{"\u00a0"}/{"\u00a0"}{g.max}</span>
                 {g.id === group?.id && <span className="absolute inset-x-0 -bottom-1 h-0.5 rounded-full bg-signal" />}
               </button>
               {list.length === 0 && <p className="text-sm text-muted-foreground">Nothing yet.</p>}
@@ -205,16 +206,20 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
                 const t = tagOf(item.url);
                 const roles = g.id === "frames" ? Object.keys(g.roleMax) : [];
                 return (
-                  <div key={item.url} draggable onDragStart={() => { drag.current = { g: g.id, url: item.url }; }}
-                    onDragOver={(e) => { if (drag.current?.g === g.id) e.preventDefault(); }}
-                    onDrop={(e) => { e.preventDefault(); if (drag.current?.g === g.id) setAttached((a) => reorderGroup(a, g, drag.current.url, item.url)); drag.current = null; }}
-                    className="flex h-14 items-center gap-2.5 rounded-md px-1 hover:bg-accent/60">
+                  <div key={item.url} draggable
+                    // Safari starts a drag only when it carries data (B2).
+                    onDragStart={(e) => { drag.current = { g: g.id, url: item.url }; try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.url); } catch { /* old browsers */ } }}
+                    onDragEnter={(e) => { if (drag.current?.g === g.id) { e.preventDefault(); setOver(item.url); } }}
+                    onDragOver={(e) => { if (drag.current?.g === g.id) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; } }}
+                    onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const d = drag.current; if (d?.g === g.id) setAttached((a) => reorderGroup(a, g, d.url, item.url)); drag.current = null; setOver(null); }}
+                    onDragEnd={() => { drag.current = null; setOver(null); }}
+                    className={cn("flex min-h-14 items-center gap-2.5 rounded-md px-1 py-1 hover:bg-accent/60", over === item.url && drag.current?.url !== item.url && "bg-accent ring-1 ring-signal/60")}>
                     <DotsSixVertical size={16} className="flex-shrink-0 cursor-grab text-muted-foreground" />
-                    {g.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} className="h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" muted preload="metadata" />
+                    {g.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} draggable={false} className="pointer-events-none h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" muted preload="metadata" />
                       : g.kind === "audio" ? <span className="flex h-[42px] w-14 flex-shrink-0 items-center justify-center rounded-xs bg-muted">♪</span>
-                        : <img src={dzThumb(item.url, 128)} alt="" className="h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" />}
+                        : <img src={dzThumb(item.url, 128)} alt="" draggable={false} className="h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" />}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-base">{t?.label || item.name || g.label}</span>
+                      <span className="line-clamp-2 break-words text-base leading-5" title={t?.label || item.name || g.label}>{t?.label || item.name || g.label}</span>
                       <span className="block truncate text-xs text-muted-foreground">{t ? `@${t.tag}` : ""}{item.name ? ` · ${item.name}` : ""}</span>
                     </span>
                     {roles.length > 1 ? (
@@ -231,7 +236,7 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
                         )}
                       </div>
                     ) : <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">{g.kind === "video" ? "Video" : g.kind === "audio" ? "Audio" : "Ref"}</span>}
-                    <button type="button" onClick={() => setAttached((a) => removeFromGroup(a, g, item.url))} aria-label="Remove" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
+                    <button type="button" onClick={() => setAttached((a) => removeFromGroup(a, g, item.url, item.role))} aria-label="Remove" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
                   </div>
                 );
               })}

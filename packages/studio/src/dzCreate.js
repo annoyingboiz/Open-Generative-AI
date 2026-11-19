@@ -252,38 +252,56 @@ export function elementFits(entry, e) {
 // model gets), frames have their own tags (@start, @mid1…, @end). A model
 // with no reference input numbers its frames as images instead.
 const FRAME_WORDS = { first: "the start frame", middle: "the middle frame", last: "the end frame" };
-export function promptTags({ attached = {}, syntax = null, elements = [], elementPairs = [], variant = null }) {
+export function promptTags({ attached = {}, all = null, syntax = null, elements = [], elementPairs = [], variant = null }) {
   const out = [];
   const tagOf = elementTags(elements);
   const hasRefInput = variant ? Boolean(variant.media?.reference) : Boolean((attached.reference || []).length);
-  let frameN = 0;
-  for (const role of ["first", "middle", "last"]) {
-    (attached[role] || []).forEach((f, i) => {
-      frameN += 1;
-      const to = !hasRefInput && syntax ? syntax.image(frameN) : role === "middle" && (attached.middle || []).length > 1 ? `${FRAME_WORDS.middle} ${i + 1}` : FRAME_WORDS[role];
-      const tag = role === "first" ? "start" : role === "last" ? "end" : `mid${i + 1}`;
-      const label = role === "first" ? "Start frame" : role === "last" ? "End frame" : `Mid ${i + 1}`;
-      out.push({ tag, to, label, kind: "file", role, url: f.url });
-    });
-  }
-  let n = 0;
-  const firstImage = new Map(); // element id → its first reference number
-  for (const f of attached.reference || []) {
-    n += 1;
-    if (f.element) { if (!firstImage.has(f.element)) firstImage.set(f.element, n); continue; }
-    out.push({ tag: `img${n}`, to: syntax ? syntax.image(n) : `image ${n}`, label: `Reference ${n}`, kind: "file", role: "reference", url: f.url });
-  }
-  let v = 0;
-  const firstVideo = new Map();
-  for (const role of ["video", "source"]) {
-    for (const f of attached[role] || []) {
-      v += 1;
-      if (f.element) { if (!firstVideo.has(f.element)) firstVideo.set(f.element, v); continue; }
-      out.push({ tag: `vid${v}`, to: syntax ? syntax.video(v) : `video ${v}`, label: role === "source" ? "Video to edit" : `Reference video ${v}`, kind: "file", role, url: f.url });
+  // Two passes: what is sent decides each file's number at the model (`to`); the
+  // whole attachment list decides its tag, so a tag does not change when a
+  // model can't take some files (redesign 02, §2.1). Files the model does not
+  // get keep their tag, marked `unused`, and are left out of the sent prompt.
+  const walk = (att, cb) => {
+    let frameN = 0;
+    for (const role of ["first", "middle", "last"]) {
+      (att[role] || []).forEach((f, i) => { frameN += 1; cb(f, role, { frameN, i, mids: (att.middle || []).length }); });
     }
-  }
-  let a = 0;
-  for (const f of attached.audio || []) { a += 1; out.push({ tag: `aud${a}`, to: syntax ? syntax.audio(a) : `audio ${a}`, label: `Audio ${a}`, kind: "file", role: "audio", url: f.url }); }
+    let n = 0;
+    for (const f of att.reference || []) { n += 1; cb(f, "reference", { n }); }
+    let v = 0;
+    for (const role of ["video", "source"]) for (const f of att[role] || []) { v += 1; cb(f, role, { v }); }
+    let a = 0;
+    for (const f of att.audio || []) { a += 1; cb(f, "audio", { a }); }
+  };
+  const sentTo = new Map();
+  const firstImage = new Map(); // element id → its first reference number at the model
+  const firstVideo = new Map();
+  walk(attached, (f, role, k) => {
+    if (f.element) {
+      if (role === "reference" && !firstImage.has(f.element)) firstImage.set(f.element, k.n);
+      if ((role === "video" || role === "source") && !firstVideo.has(f.element)) firstVideo.set(f.element, k.v);
+      return;
+    }
+    let to;
+    if (k.frameN) to = !hasRefInput && syntax ? syntax.image(k.frameN) : role === "middle" && k.mids > 1 ? `${FRAME_WORDS.middle} ${k.i + 1}` : FRAME_WORDS[role];
+    else if (role === "reference") to = syntax ? syntax.image(k.n) : `image ${k.n}`;
+    else if (k.v) to = syntax ? syntax.video(k.v) : `video ${k.v}`;
+    else to = syntax ? syntax.audio(k.a) : `audio ${k.a}`;
+    sentTo.set(`${role}|${f.url}`, to);
+  });
+  walk(all || attached, (f, role, k) => {
+    if (f.element) return;
+    let tag;
+    let label;
+    if (k.frameN) {
+      tag = role === "first" ? "start" : role === "last" ? "end" : `mid${k.i + 1}`;
+      label = role === "first" ? "Start frame" : role === "last" ? "End frame" : `Mid ${k.i + 1}`;
+    } else if (role === "reference") { tag = `img${k.n}`; label = `Reference ${k.n}`; }
+    else if (k.v) { tag = `vid${k.v}`; label = role === "source" ? "Video to edit" : `Reference video ${k.v}`; }
+    else { tag = `aud${k.a}`; label = `Audio ${k.a}`; }
+    const key = `${role}|${f.url}`;
+    const unused = !sentTo.has(key);
+    out.push({ tag, to: unused ? "" : sentTo.get(key), label, kind: "file", role, url: f.url, ...(unused ? { unused: true } : {}) });
+  });
   const native = new Map(elementPairs.map((p, i) => [p.element.id, `@element_${i + 1}`]));
   for (const e of elements) {
     const tag = tagOf.get(e.id);
@@ -341,8 +359,9 @@ export function translateTags(prompt, tags = []) {
   return text.replace(TAG_RE, (all, pre, name) => {
     const to = map.get(name.toLowerCase());
     if (to == null) return all;
+    if (to === "") return `${pre}\u0000`; // a file this model does not get
     return `${pre}${json ? JSON.stringify(String(to)).slice(1, -1) : to}`;
-  });
+  }).replace(/ ?\u0000 ?/g, (m) => (m.length === 3 ? " " : ""));
 }
 
 // One element in Kling's shape.
@@ -392,6 +411,97 @@ export function chooseVariant(entry, attached, { native = false } = {}) {
   // Prefer endpoints whose required media are all attached, then the simplest one.
   const score = (v) => (missingFor(v, attached) ? 1000 : 0) + Object.keys(v.media).length;
   return [...fits].sort((a, b) => score(a) - score(b))[0];
+}
+
+// ── What is sent, and what is not (redesign 02, §2.1) ───────────────────────
+// A model at a provider has several endpoints (image-to-video, reference-to-video,
+// video edit…), each taking its own media with its own limits. The plan picks the
+// endpoint that sends the most of what is attached; the first N of each group stay
+// (the group order decides), everything else is kept but not sent, with a reason.
+const NOUN = {
+  first: ["start frame", "start frames"], middle: ["middle frame", "middle frames"], last: ["end frame", "end frames"],
+  reference: ["reference image", "reference images"], video: ["reference video", "reference videos"],
+  source: ["video to edit", "videos to edit"], audio: ["audio file", "audio files"],
+};
+const GROUP_NOUN = { first: "frames", middle: "frames", last: "frames", reference: "reference images", video: "reference videos", source: "a video to edit", audio: "audio" };
+const nounOf = (role, n) => NOUN[role][n === 1 ? 0 : 1];
+const listWords = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+export function planAttachments(entry, attached = {}) {
+  const roles = ROLE_ORDER.filter((r) => (attached[r] || []).length);
+  if (!entry) return { variant: null, sent: {}, unused: [], summary: null };
+  const evals = entry.variants.map((v) => {
+    const sent = {};
+    let count = 0;
+    for (const role of roles) {
+      const m = v.media[role];
+      if (!m) continue;
+      sent[role] = attached[role].slice(0, m.max);
+      count += sent[role].length;
+    }
+    return { v, sent, count };
+  });
+  const required = (e) => (missingFor(e.v, e.sent) ? 1 : 0);
+  evals.sort((a, b) => b.count - a.count || required(a) - required(b) || Object.keys(a.v.media).length - Object.keys(b.v.media).length);
+  const best = evals[0];
+  if (!best) return { variant: null, sent: {}, unused: [], summary: null };
+  const takes = (role) => entry.variants.some((v) => v.media[role]);
+  const sentRoles = Object.keys(best.sent).filter((r) => best.sent[r].length);
+  const unused = [];
+  for (const role of roles) {
+    const list = attached[role];
+    const m = best.v.media[role];
+    if (m) {
+      list.slice(m.max).forEach((f, i) => unused.push({ ...f, role, index: m.max + i, why: "limit",
+        reason: `Over the limit — this model takes ${m.max} ${nounOf(role, m.max)}` }));
+      continue;
+    }
+    let why;
+    let reason;
+    let blockers = "";
+    if (takes(role)) {
+      // Another endpoint takes it, but not together with what is sent now.
+      blockers = listWords([...new Set(sentRoles.filter((r) => entry.variants.filter((v) => v.media[role]).every((v) => !v.media[r])).map((r) => GROUP_NOUN[r]))]) || "the other files";
+      why = "together";
+      reason = `${ROLE_INFO[role].label.replace(/s$/, "")} — can't go together with ${blockers} on this model`;
+    } else {
+      why = "kind";
+      reason = {
+        middle: takes("first") || takes("last") ? "Middle frame — this model takes Start and End only" : "Middle frame — this model takes no frames",
+        first: "Start frame — this model takes no start frame",
+        last: "End frame — this model takes no end frame",
+        reference: "Reference — this model takes no reference images",
+        video: "Reference video — this model takes no reference videos",
+        source: "Video to edit — this model can't edit a video",
+        audio: "Audio — this model takes no audio",
+      }[role];
+    }
+    list.forEach((f, index) => unused.push({ ...f, role, index, why, reason, blockers }));
+  }
+  return { variant: best.v, sent: best.sent, unused, summary: unusedSummary(entry, unused, best.v) };
+}
+
+// One sentence for the notice row: counts and the reason, never cut.
+export function unusedSummary(entry, unused, variant) {
+  if (!unused.length) return null;
+  const groups = [];
+  const FRAME = new Set(["first", "middle", "last"]);
+  for (const u of unused) {
+    // Frames refused for the same reason read as one group ("2 frames").
+    const key = FRAME.has(u.role) && u.why === "together" ? "frames:together" : `${u.role}:${u.why}`;
+    let g = groups.find((x) => x.key === key);
+    if (!g) groups.push((g = { key, role: u.role, why: u.why, blockers: u.blockers, n: 0 }));
+    g.n += 1;
+  }
+  const parts = groups.map((g) => {
+    const what = g.key === "frames:together" ? `${g.n} ${g.n === 1 ? "frame" : "frames"}` : `${g.n} ${nounOf(g.role, g.n)}`;
+    if (g.why === "limit") return `${what} (over its limit of ${variant?.media[g.role]?.max})`;
+    if (g.why === "together") return `${what} (it can't go together with ${g.blockers})`;
+    if (g.role === "middle" && entry.variants.some((v) => v.media.first || v.media.last)) return `${what} (it takes Start and End only)`;
+    return what;
+  });
+  const n = unused.length;
+  return `${n} ${n === 1 ? "file is" : "files are"} not sent to ${entry.familyName}: ${listWords(parts)}. They stay attached and come back when you switch model.`;
 }
 
 // What is missing for the chosen endpoint (required media) — null when ready.

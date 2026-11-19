@@ -4,10 +4,10 @@
 // fills the screen; the composer floats over its bottom. The engine (models,
 // attachments, price, generate, history) is the same as Image / Video
 // (useDzCreateEngine); this file is only how the Studio looks and behaves.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, Minus, At, X, Check, Cube, Rectangle, Monitor, Clock, VideoCamera, Images, MagicWand, Camera, ArrowsOutCardinal, Palette, SlidersHorizontal,
-  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, Info,
+  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, Info, Warning,
 } from "@phosphor-icons/react";
 import { dzThumb } from "../api.js";
 import { dzLibrary } from "../dzLibrary.js";
@@ -18,7 +18,7 @@ import DzSentPanel from "./DzSentPanel.jsx";
 import { lookData, autoLook, elementTags, elementFits, TAG_RE, buildBody } from "../dzCreate.js";
 import { DropdownMenuParts, Spinner, cn } from "../ui/index.js";
 import { Overline, Chip, ChipMenu, MenuRow, useEscLayer, fmtDur } from "./studio/ui.jsx";
-import { groupsFor, groupItems, addToGroup, removeFromGroup, unusedItems, GROUP_OF_ROLE } from "./studio/attachments.js";
+import { groupsFor, groupItems, addToGroup, removeFromGroup } from "./studio/attachments.js";
 import ModelMenu from "./studio/ModelMenu.jsx";
 import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList } from "./studio/Library.jsx";
@@ -251,8 +251,33 @@ const EmptySlot = ({ label, onClick, fault, small }) => (
 );
 const More = ({ n, onClick }) => <button type="button" onClick={onClick} className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-slot bg-muted text-base font-semibold text-foreground hover:bg-accent">+{n}</button>;
 
-function Strip({ groups, unused, attached, setAttached, activeGroup, openLibrary, openList, tagOf, modelName, fault }) {
+// The strip never overflows (redesign 02, §2.3): when the groups don't fit, the
+// group with the most items shows fewer thumbnails (3 → 2 → 1) and "+N" takes the
+// rest. Frames keep Start and End; their mids go into "+N" first.
+function Strip({ groups, sent, attached, setAttached, activeGroup, openLibrary, openList, tagOf, fault, unusedCount, unusedOpen, onUnused }) {
   const dragging = useRef(null);
+  const box = useRef(null);
+  const [caps, setCaps] = useState({});
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => setWidth(Math.round(el.clientWidth)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const shape = groups.map((g) => `${g.id}:${groupItems(sent, g).length}/${groupItems(attached, g).length}/${g.max}`).join("|") + `|${unusedCount}`;
+  // Start wide each time the row or what is in it changes, then step down until it fits (before paint).
+  useLayoutEffect(() => { setCaps({}); }, [width, shape]);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || el.scrollWidth <= el.clientWidth + 1) return;
+    const floor = (g) => (g.id === "frames" ? 2 : 1);
+    const cand = groups.map((g) => ({ g, n: groupItems(sent, g).length, cap: caps[g.id] || 3 }))
+      .filter((x) => x.cap > floor(x.g) && x.n > (x.g.id === "frames" ? 0 : x.cap - 1))
+      .sort((x, y) => y.n - x.n || y.cap - x.cap);
+    if (cand[0]) setCaps((c) => ({ ...c, [cand[0].g.id]: cand[0].cap - 1 }));
+  });
   const drop = (g) => (e) => {
     const d = dragging.current;
     dragging.current = null;
@@ -261,48 +286,51 @@ function Strip({ groups, unused, attached, setAttached, activeGroup, openLibrary
     const from = groups.find((x) => x.id === d.group);
     if (!from || from.kind !== g.kind) return;
     // Only when the target has room: a full group leaves the item where it was.
-    setAttached((a) => (groupItems(a, g).length >= g.max ? a : addToGroup(removeFromGroup(a, from, d.item.url), g, [d.item])));
+    setAttached((a) => (groupItems(a, g).length >= g.max ? a : addToGroup(removeFromGroup(a, from, d.item.url, d.item.role), g, [{ url: d.item.url, name: d.item.name }])));
   };
   const tagText = (item, fallback) => { const t = tagOf(item.url); return t ? `@${t.tag} · ${t.label || fallback}` : fallback; };
   const thumb = (g, item, label) => (
     <Thumb key={item.url} item={item} kind={g.kind} label={label} tag={tagText(item, label || g.label)} fault={fault === g.id}
-      onDragStart={() => { dragging.current = { group: g.id, item: { url: item.url, name: item.name } }; }}
-      onRemove={() => setAttached((a) => removeFromGroup(a, g, item.url))} />
+      onDragStart={(e) => { dragging.current = { group: g.id, item: { url: item.url, name: item.name, role: item.role } }; try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ } }}
+      onRemove={() => setAttached((a) => removeFromGroup(a, g, item.url, item.role))} />
   );
   return (
-    <div className="flex items-start">
+    <div ref={box} className="flex min-w-0 items-start">
       {groups.map((g, gi) => {
-        const items = groupItems(attached, g);
-        const room = items.length < g.max;
+        const items = groupItems(sent, g);
+        const room = groupItems(attached, g).length < g.max;
+        const cap = caps[g.id] || 3;
         let body;
         if (g.id === "frames") {
           const start = items.find((x) => x.role === "first");
           const mids = items.filter((x) => x.role === "middle");
           const end = items.find((x) => x.role === "last");
+          const midShown = cap >= 3 ? mids.slice(0, 1) : [];
+          const midRoom = g.roleMax.middle && (attached.middle || []).length < g.roleMax.middle;
           body = (
             <>
               {g.roleMax.first && (start ? thumb(g, start, "Start") : <EmptySlot label="Start" onClick={() => openLibrary(g.id)} fault={fault === g.id} />)}
-              {mids.slice(0, 1).map((m) => thumb(g, m, "Mid 1"))}
-              {mids.length > 1 && <More n={mids.length - 1} onClick={() => openList(g.id)} />}
-              {g.roleMax.middle && mids.length < g.roleMax.middle && <EmptySlot label="Mid" onClick={() => openLibrary(g.id)} />}
+              {midShown.map((m) => thumb(g, m, "Mid 1"))}
+              {mids.length > midShown.length && <More n={mids.length - midShown.length} onClick={() => openList(g.id)} />}
+              {midRoom && <EmptySlot label="Mid" onClick={() => openLibrary(g.id)} />}
               {g.roleMax.last && (end ? thumb(g, end, "End") : <EmptySlot label="End" onClick={() => openLibrary(g.id)} />)}
             </>
           );
         } else {
           body = (
             <>
-              {items.slice(0, 3).map((it) => thumb(g, it, ""))}
-              {items.length > 3 && <More n={items.length - 3} onClick={() => openList(g.id)} />}
+              {items.slice(0, cap).map((it) => thumb(g, it, ""))}
+              {items.length > cap && <More n={items.length - cap} onClick={() => openList(g.id)} />}
               {room && <EmptySlot onClick={() => openLibrary(g.id)} fault={fault === g.id && !items.length} />}
             </>
           );
         }
         return (
-          <div key={g.id} className={cn("flex", gi > 0 && "ml-3.5 border-l border-border pl-3.5")} onDragOver={(e) => { if (dragging.current && dragging.current.group !== g.id) e.preventDefault(); }} onDrop={drop(g)}>
+          <div key={g.id} className={cn("flex flex-shrink-0", gi > 0 && "ml-3.5 border-l border-border pl-3.5")} onDragOver={(e) => { if (dragging.current && dragging.current.group !== g.id) e.preventDefault(); }} onDrop={drop(g)}>
             <div>
-              <button type="button" onClick={() => openLibrary(g.id)} className="relative mb-2 flex h-4 items-center gap-1.5">
-                <Overline className={cn(activeGroup === g.id && "text-foreground")}>{g.label}</Overline>
-                <span className="text-[11px] tabular-nums text-muted-foreground">{items.length} / {g.max}</span>
+              <button type="button" onClick={() => openLibrary(g.id)} className="relative mb-2 flex h-4 items-center gap-1.5 whitespace-nowrap">
+                <Overline className={cn("whitespace-nowrap", activeGroup === g.id && "text-foreground")}>{g.label}</Overline>
+                <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">{items.length}{" "}/{" "}{g.max}</span>
                 {activeGroup === g.id && <span className="absolute inset-x-0 -bottom-1 h-0.5 rounded-full bg-signal" />}
               </button>
               <div className="flex gap-2">{body}</div>
@@ -310,21 +338,66 @@ function Strip({ groups, unused, attached, setAttached, activeGroup, openLibrary
           </div>
         );
       })}
-      {unused.length > 0 && (
-        <div className="ml-3.5 border-l border-border pl-3.5 opacity-50" title="Kept, not sent to this model">
-          <div className="mb-2 flex h-4 items-center gap-1.5"><Overline>Not used by {modelName}</Overline><span className="text-[11px] text-muted-foreground">{unused.length}</span></div>
-          <div className="flex gap-2">
-            {unused.slice(0, 2).map((it) => (
-              <div key={`${it.role}-${it.url}`} className="h-12 w-12 overflow-hidden rounded-slot bg-muted">
-                {GROUP_OF_ROLE[it.role] === "video" || it.role === "source" ? <video src={it.url} poster={dzThumb(it.url, 128)} muted preload="metadata" className="h-full w-full object-cover" /> : it.role === "audio" ? <span className="flex h-full items-center justify-center">♪</span> : <img src={dzThumb(it.url, 128)} alt="" className="h-full w-full object-cover" />}
-              </div>
-            ))}
-            {unused.length > 2 && <span className="flex h-12 w-12 items-center justify-center rounded-slot bg-muted text-base font-semibold">+{unused.length - 2}</span>}
-            <button type="button" onClick={() => setAttached((a) => Object.fromEntries(Object.entries(a).filter(([role]) => groups.some((g) => g.roleMax[role]))))} aria-label="Remove the unused items"
-              className="flex h-12 w-12 items-center justify-center rounded-slot border border-dashed border-input text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
-          </div>
-        </div>
+      {unusedCount > 0 && (
+        <button type="button" onClick={onUnused} aria-expanded={unusedOpen} aria-haspopup="dialog"
+          className={cn("ml-auto mt-6 flex h-12 flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-warning/45 px-3 text-[13px] font-semibold text-warning transition-colors duration-state",
+            unusedOpen ? "bg-warning/20" : "bg-warning/10 hover:bg-warning/20")}>
+          <Warning size={16} />{unusedCount} not used
+        </button>
       )}
+    </div>
+  );
+}
+
+// The list of files this model does not get (redesign 02, §2.1, screen 02).
+function NotUsedList({ open, onClose, items, modelName, tagOf, onRemove, onRemoveAll, anchor }) {
+  const box = useRef(null);
+  useEscLayer(open, onClose);
+  useEffect(() => {
+    if (!open) return undefined;
+    const on = (e) => { if (box.current && !box.current.contains(e.target) && !anchor.current?.contains(e.target)) onClose(); };
+    const t = setTimeout(() => document.addEventListener("pointerdown", on), 0);
+    return () => { clearTimeout(t); document.removeEventListener("pointerdown", on); };
+  }, [open, onClose, anchor]);
+  if (!open || !items.length) return null;
+  const shown = items.slice(0, 4);
+  const rest = items.slice(4);
+  const restWords = (() => {
+    if (!rest.length) return "";
+    const roles = [...new Set(rest.map((x) => x.role))];
+    const NOUN = { first: "start frame", middle: "middle frame", last: "end frame", reference: "reference", video: "reference video", source: "video to edit", audio: "audio file" };
+    if (roles.length === 1) return `and ${rest.length} more ${NOUN[roles[0]]}${rest.length === 1 ? "" : "s"}`;
+    return `and ${rest.length} more…`;
+  })();
+  return (
+    <div ref={box} role="dialog" aria-label={`Not used by ${modelName}`}
+      className="glass absolute bottom-[calc(100%+8px)] right-0 z-30 flex w-[440px] flex-col gap-0.5 rounded-xl border border-border p-2 shadow-float">
+      <div className="px-2 pb-2 pt-1.5 text-[13px] leading-[18px] text-muted-foreground">
+        <b className="block text-[14px] font-semibold leading-5 text-foreground">Not used by {modelName}</b>
+        These stay attached but are not sent. Switch to a model that takes them and they come back.
+      </div>
+      {shown.map((it) => {
+        const t = tagOf(it.url);
+        const video = it.role === "video" || it.role === "source";
+        return (
+          <div key={`${it.role}-${it.url}`} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] leading-[18px] hover:bg-accent">
+            {video ? <video src={it.url} poster={dzThumb(it.url, 96)} muted preload="metadata" className="h-9 w-9 flex-shrink-0 rounded-md object-cover" />
+              : it.role === "audio" ? <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-muted">♪</span>
+                : <img src={dzThumb(it.url, 96)} alt="" className="h-9 w-9 flex-shrink-0 rounded-md object-cover" />}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{[t?.label || it.name || "", t ? `@${t.tag}` : ""].filter(Boolean).join(" · ")}</span>
+              <span className="block text-xs leading-4 text-muted-foreground">{it.reason}</span>
+            </span>
+            <button type="button" onClick={() => onRemove(it)} aria-label="Remove" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
+          </div>
+        );
+      })}
+      {restWords && <div className="px-2 py-1.5 text-[13px] leading-[18px] text-muted-foreground">{restWords}</div>}
+      <div className="mt-1.5 flex items-center gap-2 border-t border-border px-2 pb-1 pt-2">
+        <button type="button" onClick={onRemoveAll} className="flex h-7 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"><Trash size={16} />Remove all {items.length}</button>
+        <span className="flex-1" />
+        <button type="button" onClick={onClose} className="h-7 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Keep</button>
+      </div>
     </div>
   );
 }
@@ -362,7 +435,8 @@ function PromptField({ engine, onFocusChange, mentionGroups, onPasteFiles }) {
         onFocus={() => { setFocused(true); onFocusChange(true); }}
         onBlur={() => { setFocused(false); onFocusChange(false); setTimeout(() => setMention(null), 150); }}
         onPasteFiles={onPasteFiles}
-        className={cn("rounded-[10px] px-3 py-2.5 caret-signal transition-colors duration-state", focused && "bg-muted shadow-[inset_0_0_0_1px_hsl(var(--input))]")} />
+        // At rest the text has no side padding; the focus fill grows 12 px out to the sides and 8 px up and down (§3).
+        className={cn("-mx-3 -my-2 rounded-[10px] px-3 py-2 text-foreground caret-signal transition-colors duration-state", focused && "bg-muted shadow-[inset_0_0_0_1px_hsl(var(--input))]")} />
       {mention && (
         <div id="dz-mention-list" className="glass absolute bottom-[calc(100%+8px)] left-0 z-30 w-[420px] rounded-xl border border-border p-1.5 shadow-popover" role="listbox" aria-label="Tags">
           {mentionGroups.length === 0 && <p className="px-2.5 py-2 text-sm text-muted-foreground">{mention.query ? `Nothing called “${mention.query}”.` : "Nothing to tag yet."} Attach files with + or make elements.</p>}
@@ -430,7 +504,7 @@ function ElementsWindow({ open, onClose, engine, anchor }) {
 }
 
 // ── Option menus: ratio, resolution, length (§5.7) ─────────────────────────
-function ParamMenu({ p, value, onChange, title, icon, render, caption, modelName }) {
+function ParamMenu({ p, value, onChange, title, icon, render, caption, modelName, note }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef(null);
   if (!p) return null;
@@ -445,7 +519,7 @@ function ParamMenu({ p, value, onChange, title, icon, render, caption, modelName
         <div className="custom-scrollbar max-h-[320px] overflow-y-auto">
           {options.map((o) => (
             <MenuRow key={String(o)} on={String(o) === String(current)} onClick={() => { onChange(o); setOpen(false); }}>
-              {render(o, true)}
+              {render(o, true, note ? options.find((x) => note(x)) === o : false)}
             </MenuRow>
           ))}
         </div>
@@ -454,6 +528,19 @@ function ParamMenu({ p, value, onChange, title, icon, render, caption, modelName
     </div>
   );
 }
+// Resolution names (redesign 02, §2.4). At Atlas "-esr" is an enhancement: the
+// provider makes the nearest native size, then Tencent ESR sharpens and enlarges it;
+// "-sr" is a plain upscale of the same kind (Seedance has both).
+const isEnhanced = (v) => /-(e?sr)\b/i.test(String(v));
+function resParts(v) {
+  const raw = String(v);
+  const m = /^(\d+(?:p|k))(?:-(esr|sr))?(?:\s*&\s*(\d+)\s*fps)?$/i.exec(raw.trim());
+  if (!m) return { base: raw, kind: "", fps: "" };
+  const base = /k$/i.test(m[1]) ? m[1].toUpperCase() : m[1].toLowerCase();
+  return { base, kind: (m[2] || "").toLowerCase(), fps: m[3] || "" };
+}
+const resName = (v) => { const r = resParts(v); return [r.base, r.kind === "esr" ? "Enhanced" : r.kind === "sr" ? "Upscaled" : "", r.fps ? `· ${r.fps} fps` : ""].filter(Boolean).join(" "); };
+const resShort = (v) => { const r = resParts(v); return `${r.base}${r.kind === "esr" ? "+" : r.kind === "sr" ? "↑" : ""}${r.fps ? ` ${r.fps}fps` : ""}`; };
 const RatioIcon = ({ v }) => {
   const r = ratioNum(v) || 1;
   const w = r >= 1 ? 18 : Math.max(8, Math.round(18 * r));
@@ -467,7 +554,7 @@ export default function DzStudio(props) {
   const {
     kind, setKind, entries, entry, attached, setAttached, params, values, setValue, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount,
     canRun, missing, price, priceLoading, generate, busy, history, sel, ctx, kindFilter, setKindFilter, viewing, setViewing, applyResult, mention, mentionOptions,
-    tags, look, adaptModel, adaptContext, quoteBody, variant, sentPreview, sentOpen, setSentOpen, addFiles, pickModel, elements, unusedCount, merged, elementSpec, activeElements, finalPrompt,
+    tags, look, adaptModel, adaptContext, quoteBody, variant, sentPreview, sentOpen, setSentOpen, addFiles, pickModel, elements, unusedCount, merged, elementSpec, activeElements, finalPrompt, plan,
   } = engine;
 
   // The look in the Studio: every part Auto unless chosen.
@@ -480,6 +567,23 @@ export default function DzStudio(props) {
   const [listGroup, setListGroup] = useState(null);
   const [focus, setFocus] = useState(false);
   const [mini, setMini] = useState(false);
+  // The bottom row (§2.3): first the model chip drops the provider, then Adapt its word, then it wraps.
+  const rowRef = useRef(null);
+  const [squeeze, setSqueeze] = useState(0);
+  const [rowWidth, setRowWidth] = useState(0);
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => setRowWidth(Math.round(el.clientWidth)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mini]);
+  const rowKey = `${rowWidth}|${entry?.key}|${kind}|${count}|${values[RES_KEYS.find((k) => values[k] != null)] ?? ""}|${priceLoading}`;
+  useLayoutEffect(() => { setSqueeze(0); }, [rowKey]);
+  useLayoutEffect(() => {
+    const el = rowRef.current;
+    if (el && squeeze < 3 && el.scrollWidth > el.clientWidth + 1) setSqueeze(squeeze + 1);
+  });
   const [aspects, measure] = useAspects();
   const modelAnchor = useRef(null);
   const atAnchor = useRef(null);
@@ -489,7 +593,24 @@ export default function DzStudio(props) {
   const fileInput = useRef(null);
 
   const groups = useMemo(() => groupsFor(entry), [entry]);
-  const unused = useMemo(() => unusedItems(attached, groups), [attached, groups]);
+  // What the model gets (first N of each group, within its limits) and what it doesn't (§2.1).
+  const sent = plan.sent;
+  const unused = plan.unused;
+  const [unusedOpen, setUnusedOpen] = useState(false);
+  const unusedAnchor = useRef(null);
+  useEffect(() => { if (!unused.length) setUnusedOpen(false); }, [unused.length]);
+  const dropUnused = (list) => {
+    const before = attached;
+    const gone = new Set(list.map((x) => `${x.role}|${x.url}`));
+    setAttached((a) => Object.fromEntries(Object.entries(a).map(([role, files]) => [role, (files || []).filter((f) => !gone.has(`${role}|${f.url}`))])));
+    return before;
+  };
+  const removeAllUnused = () => {
+    const before = dropUnused(unused);
+    const n = unused.length;
+    setUnusedOpen(false);
+    notify({ type: "notice", title: "Removed", message: `${n} file${n === 1 ? "" : "s"} removed from this shot.`, undo: () => setAttached(before) });
+  };
   const tagOf = (url) => tags.find((t) => t.url === url);
   const closeAll = () => { setPanel(null); setPop(null); setLibGroup(null); };
   const openLibrary = (gid) => { setPop(null); setPanel(null); setLibGroup(gid || groups.find((g) => g.id === "reference")?.id || groups[0]?.id || null); };
@@ -502,17 +623,9 @@ export default function DzStudio(props) {
     return () => window.removeEventListener("dz:studio-open", on);
   }, [setViewing]);
 
-  // Model change: attachments the new model does not take stay, dimmed, with Undo.
+  // Model change: files the new model does not take stay attached; the notice row says so (§2.1, no toast).
   const choose = (key, { close } = {}) => {
-    const prevKey = entry?.key;
-    if (key !== prevKey) {
-      const next = entries.find((e) => e.key === key);
-      const lost = unusedItems(attached, groupsFor(next)).length;
-      pickModel(key);
-      if (lost > unused.length) {
-        notify({ type: "notice", title: next?.familyName, message: `${next?.familyName || "This model"} does not take ${lost} of your items. ${lost === 1 ? "It is" : "They are"} kept but not sent.`, undo: () => pickModel(prevKey) });
-      }
-    }
+    if (key !== entry?.key) pickModel(key);
     if (close) setPop(null);
   };
 
@@ -565,7 +678,7 @@ export default function DzStudio(props) {
 
   const items = history.items;
   const rows = useMemo(() => justify(items, aspects, gridWidth), [items, aspects, gridWidth]);
-  const total = groups.reduce((n, g) => n + groupItems(attached, g).length, 0);
+  const total = groups.reduce((n, g) => n + groupItems(sent, g).length, 0);
   const faultGroup = missing ? (groups.find((g) => /start frame|first/i.test(missing) && g.id === "frames") || groups.find((g) => new RegExp(g.label, "i").test(missing)))?.id : null;
   const priceText = price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}` : entry?.priceLabel || "";
   const where = ctx.project ? [ctx.project.name, ...(ctx.folderPath || [])].join(" / ") : "Library";
@@ -628,16 +741,21 @@ export default function DzStudio(props) {
               className={cn("flex h-10 items-center rounded-md bg-primary px-4 text-base font-medium text-primary-foreground", !canRun && "opacity-50")}>Generate</span>
           </button>
         ) : (
-          <div className="pointer-events-auto relative w-[min(1080px,100%)] rounded-xl border border-border bg-card p-3.5 shadow-float"
+          <div className="pointer-events-auto relative w-[clamp(960px,100%,1320px)] max-w-full rounded-xl border border-border bg-card p-4 shadow-float"
             onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
             onDrop={(e) => { const files = Array.from(e.dataTransfer?.files || []); if (files.length) { e.preventDefault(); e.stopPropagation(); takeFiles(files); } }}>
-            <LibraryWindow open={libraryOpen} groups={groups} groupId={libGroup} setGroupId={setLibGroup} attached={attached} setAttached={setAttached}
+            <LibraryWindow open={libraryOpen} groups={groups} groupId={libGroup} setGroupId={setLibGroup} attached={attached} sent={sent} setAttached={setAttached}
               onClose={() => setLibGroup(null)} onError={(m) => notify({ type: "error", title: "Upload", message: m })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
 
             {/* 1. Attachments strip — always visible */}
+            <div ref={unusedAnchor}>
+              <NotUsedList open={unusedOpen} onClose={() => setUnusedOpen(false)} items={unused} modelName={entry?.familyName || "this model"} tagOf={tagOf} anchor={unusedAnchor}
+                onRemove={(it) => dropUnused([it])} onRemoveAll={removeAllUnused} />
+            </div>
             {groups.length > 0 || unused.length > 0 ? (
-              <Strip groups={groups} unused={unused} attached={attached} setAttached={setAttached} activeGroup={libGroup || (panel === "list" ? listGroup : null)}
-                openLibrary={openLibrary} openList={openList} tagOf={tagOf} modelName={entry?.familyName || "this model"} fault={faultGroup} />
+              <Strip groups={groups} sent={sent} attached={attached} setAttached={setAttached} activeGroup={libGroup || (panel === "list" ? listGroup : null)}
+                openLibrary={openLibrary} openList={openList} tagOf={tagOf} fault={faultGroup}
+                unusedCount={unused.length} unusedOpen={unusedOpen} onUnused={() => setUnusedOpen((v) => !v)} />
             ) : (
               <p className="flex h-[66px] items-center text-sm text-muted-foreground">{entry ? `${entry.familyName} takes text only.` : "Loading models…"}</p>
             )}
@@ -653,12 +771,28 @@ export default function DzStudio(props) {
                 </div>
 
                 <div className="mt-3"><PromptField engine={engineForPrompt} onFocusChange={setFocus} mentionGroups={mentionGroups} onPasteFiles={takeFiles} /></div>
-                {sentPreview.data?.hints?.length > 0 && <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warning"><Info size={14} className="mt-px flex-shrink-0" />{sentPreview.data.hints[0]}</p>}
+                {/* Notice row (§2.1): full sentences, wrapped, never cut — files not sent, what is missing, look hints. */}
+                {(plan.summary || missing || sentPreview.data?.hints?.length > 0) && (
+                  <div className="mt-3 flex flex-col gap-1.5">
+                    {plan.summary && (
+                      <div className="flex items-start gap-2.5 text-[13px] leading-5 text-warning">
+                        <Warning size={16} className="mt-0.5 flex-shrink-0" />
+                        <span className="min-w-0 flex-1">{plan.summary}</span>
+                        <span className="flex flex-shrink-0 gap-3.5 font-semibold text-foreground">
+                          <button type="button" onClick={() => setUnusedOpen(true)} className="hover:underline">Show</button>
+                          <button type="button" onClick={removeAllUnused} className="hover:underline">Remove them</button>
+                        </span>
+                      </div>
+                    )}
+                    {missing && <div className="flex items-start gap-2.5 text-[13px] leading-5 text-warning"><Warning size={16} className="mt-0.5 flex-shrink-0" /><span className="min-w-0 flex-1">{missing}</span></div>}
+                    {(sentPreview.data?.hints || []).map((h) => <div key={h} className="flex items-start gap-2.5 text-[13px] leading-5 text-warning"><Info size={16} className="mt-0.5 flex-shrink-0" /><span className="min-w-0 flex-1">{h}</span></div>)}
+                  </div>
+                )}
 
                 {/* 4. Bottom row — never wraps */}
-                <div className="mt-3 flex items-center gap-1.5 whitespace-nowrap max-[1000px]:flex-wrap max-[1000px]:gap-y-2">
+                <div ref={rowRef} className={cn("mt-3 flex items-center gap-1.5 whitespace-nowrap", squeeze >= 3 && "flex-wrap gap-y-2")}>
                   <button type="button" onClick={() => openLibrary()} aria-label="Add from the library" disabled={!groups.length}
-                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={18} /></button>
+                    className="-ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={18} /></button>
                   <div className="relative" ref={atAnchor}>
                     <button type="button" onClick={() => setPop(pop === "els" ? null : "els")} aria-label="Elements" aria-expanded={pop === "els"}
                       className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground", pop === "els" && "bg-accent text-foreground")}><At size={18} /></button>
@@ -672,7 +806,7 @@ export default function DzStudio(props) {
                   </div>
                   <div className="relative" ref={modelAnchor}>
                     <Chip icon={Cube} active={pop === "model"} onClick={() => setPop(pop === "model" ? null : "model")} aria-expanded={pop === "model"} className="max-w-[240px]">
-                      <span className="truncate">{entry ? `${entry.familyName} · ${entry.providerName}` : "Choose a model"}</span><CaretDown size={12} className="flex-shrink-0 text-muted-foreground" />
+                      <span className="truncate" title={entry ? `${entry.familyName} · ${entry.providerName}` : undefined}>{entry ? (squeeze >= 1 ? entry.familyName : `${entry.familyName} · ${entry.providerName}`) : "Choose a model"}</span><CaretDown size={12} className="flex-shrink-0 text-muted-foreground" />
                     </Chip>
                     <ChipMenu open={pop === "model"} onClose={() => setPop(null)} anchor={modelAnchor}>
                       <ModelMenu entries={entries} entry={entry} onPick={choose} onClose={() => setPop(null)} />
@@ -680,7 +814,10 @@ export default function DzStudio(props) {
                   </div>
                   <ParamMenu p={ratioP} value={values[ratioP?.key]} onChange={(v) => setValue(ratioP.key, v)} title="Aspect ratio" icon={Rectangle} modelName={entry?.familyName}
                     render={(v, row) => (row ? <><RatioIcon v={v} /><span className="w-12 tabular-nums">{String(v)}</span><span className="text-muted-foreground">{shapeWord(v)}</span></> : String(v))} />
-                  <ParamMenu p={resP} value={values[resP?.key]} onChange={(v) => setValue(resP.key, v)} title="Resolution" icon={Monitor} modelName={entry?.familyName} render={(v) => String(v)} />
+                  <ParamMenu p={resP} value={values[resP?.key]} onChange={(v) => setValue(resP.key, v)} title="Resolution" icon={Monitor} modelName={entry?.familyName}
+                    render={(v, row, first) => (row ? <><span className="flex-1">{resName(v)}</span>{first && <span className="text-xs text-muted-foreground">Sharper detail</span>}</> : resShort(v))}
+                    note={(v) => isEnhanced(v)}
+                    caption={resP?.enum?.some(isEnhanced) ? "Enhanced is upscaled by the provider and takes longer. The price updates next to Generate." : null} />
                   <ParamMenu p={durP} value={values[durP?.key]} onChange={(v) => setValue(durP.key, v)} title="Length" icon={Clock} modelName={entry?.familyName}
                     render={(v) => (Number(v) === -1 ? "Auto" : `${v}s`)} caption="The price updates next to Generate." />
                   <div className="flex h-8 flex-shrink-0 items-center gap-0.5 rounded-md border border-border px-1 text-sm font-medium" aria-label="How many results">
@@ -689,10 +826,12 @@ export default function DzStudio(props) {
                     <button type="button" onClick={() => setCount(Math.min(4, count + 1))} disabled={count >= 4} aria-label="More" className="flex h-6 w-6 items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={12} /></button>
                   </div>
                   <span className="min-w-0 flex-1" />
-                  {variant && <button type="button" onClick={() => setSentOpen(true)} className="h-8 flex-shrink-0 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground" title="What goes to the model">Sent</button>}
-                  <Chip icon={MagicWand} onClick={() => setPanel("adapt")} disabled={!adaptModel || !prompt.trim()} title={prompt.trim() ? "Rewrite the prompt for this model" : "Write a prompt first"}>Adapt</Chip>
-                  {missing && <span className="max-w-[200px] flex-shrink truncate text-xs text-warning" title={missing}>{missing}</span>}
-                  <span className={cn("flex-shrink-0 text-sm tabular-nums", priceLoading ? "text-subtle" : "text-muted-foreground")} title={price ? (price.exact ? "Exact price for your account" : "Estimate") : undefined}>{priceText}</span>
+                  <Chip icon={MagicWand} onClick={() => setPanel("adapt")} disabled={!adaptModel || !prompt.trim()} aria-label="Adapt"
+                    title={squeeze >= 2 ? "Adapt" : prompt.trim() ? "Rewrite the prompt for this model" : "Write a prompt first"}>{squeeze >= 2 ? null : "Adapt"}</Chip>
+                  {/* The price opens what goes to the model (the bare "Sent" label is gone, B10). */}
+                  <button type="button" onClick={() => variant && setSentOpen(true)} disabled={!variant}
+                    className={cn("h-8 flex-shrink-0 rounded-md px-1.5 text-sm tabular-nums hover:bg-accent hover:text-foreground disabled:hover:bg-transparent", priceLoading ? "text-subtle" : "text-muted-foreground")}
+                    title={`What goes to the model${price ? (price.exact ? " · exact price for your account" : " · estimate") : ""}`}>{priceText}</button>
                   <button type="button" onClick={generateNow} disabled={!canRun}
                     className="ml-2 flex h-10 flex-shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground transition-[background-color,transform] duration-state hover:bg-primary-hover active:scale-[.98] disabled:opacity-50">
                     {busy > 0 && <Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" />}Generate
@@ -714,7 +853,7 @@ export default function DzStudio(props) {
       <AdaptPanel open={panel === "adapt"} onClose={() => setPanel(null)} prompt={prompt} model={adaptModel} context={adaptContext} look={look}
         request={variant ? { endpoint: variant.model.endpoint, body: quoteBody ? { ...quoteBody } : null } : null}
         onUse={(t) => { setPrompt(t); setPanel(null); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} />
-      <FullList open={panel === "list"} onClose={() => setPanel(null)} groups={groups} groupId={listGroup} setGroupId={setListGroup} attached={attached} setAttached={setAttached}
+      <FullList open={panel === "list"} onClose={() => setPanel(null)} groups={groups} groupId={listGroup} setGroupId={setListGroup} attached={attached} sent={sent} setAttached={setAttached}
         tagOf={tagOf} modelName={entry?.familyName || ""} onError={(m) => notify({ type: "error", title: "Upload", message: m })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
       <Viewer item={viewing} onClose={() => setViewing(null)} />
       <DzSentPanel open={sentOpen} onOpenChange={setSentOpen}

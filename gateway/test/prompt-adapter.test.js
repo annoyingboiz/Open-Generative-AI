@@ -114,3 +114,19 @@ test('text → JSON on request; JSON → text on request', async () => {
   const r2 = await createPromptAdapter({ llm: llm2 }).adapt({ id: 1 }, { prompt: '{"subject":"a woman"}', as: 'text', model: { family: 'dz-seedance-2-5', kind: 'video' } });
   assert.equal(r2.format, 'text');
 });
+
+test('JSON adapt puts only the object into the prompt: fenced answers and trailing prose are cleaned, broken JSON is an error', async () => {
+  const obj = { scene: 'a bar at night, rain on the windows', camera: 'slow dolly in', sound: 'rain, low room tone' };
+  const fenced = JSON.stringify({ prompt: '```json\n' + JSON.stringify(obj, null, 2) + '\n```', changes: ['Split into blocks'] });
+  let a = createPromptAdapter({ llm: fakeLlm([fenced]) });
+  let r = await a.adapt({ id: 1 }, { prompt: 'a bar at night with rain, slow dolly in, rain sound', model: { family: 'dz-kling-4', kind: 'video' }, as: 'json' });
+  assert.deepEqual(JSON.parse(r.prompt), obj);
+  assert.doesNotMatch(r.prompt, /```/);
+  const prose = 'Sure! Here is the adapted prompt:\n' + JSON.stringify({ prompt: JSON.stringify(obj) + '\n\nThis keeps every detail you wrote.', changes: [] }) + '\nHope it helps.';
+  a = createPromptAdapter({ llm: fakeLlm([prose]) });
+  r = await a.adapt({ id: 1 }, { prompt: 'a bar at night with rain, slow dolly in, rain sound', model: { family: 'dz-kling-4', kind: 'video' }, as: 'json' });
+  assert.deepEqual(JSON.parse(r.prompt), obj);
+  assert.ok(r.prompt.trim().startsWith('{') && r.prompt.trim().endsWith('}'));
+  a = createPromptAdapter({ llm: fakeLlm([JSON.stringify({ prompt: '{"scene": "a bar at night", "camera": ', changes: [] })]) });
+  await assert.rejects(a.adapt({ id: 1 }, { prompt: 'a bar at night', model: { family: 'dz-kling-4', kind: 'video' }, as: 'json' }), /broke the JSON/);
+});

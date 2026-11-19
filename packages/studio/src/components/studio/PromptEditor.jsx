@@ -83,7 +83,7 @@ function setOffset(root, start, end = start) {
 }
 
 // Draw the prompt: text nodes, plus a chip for every known tag (no HTML is parsed).
-function render(root, value, tagMap) {
+function render(root, value, tagMap, modelName = "this model") {
   root.textContent = "";
   let last = 0;
   const text = String(value || "");
@@ -98,6 +98,8 @@ function render(root, value, tagMap) {
     chip.contentEditable = "false";
     chip.className = CHIP;
     chip.title = t.label ? `@${m[2]} · ${t.label}` : `@${m[2]}`;
+    // A file this model does not get: kept in the prompt, dimmed, left out when sent.
+    if (t.kind === "file" && t.unused) { chip.style.opacity = "0.45"; chip.title = `Not sent to ${modelName}`; chip.dataset.unused = "1"; }
     if (t.url) {
       const img = document.createElement("img");
       img.src = dzThumb(t.url, 64);
@@ -121,7 +123,7 @@ const hasLooseTag = (root, tagMap) => [...root.childNodes].some((c) => c.nodeTyp
   return end < c.nodeValue.length;
 }));
 
-export default function PromptEditor({ value, onChange, tags, inputRef, json, placeholder, onKeyDown, onKeyUp, onClick, onFocus, onBlur, onPasteFiles, className, ariaProps }) {
+export default function PromptEditor({ value, onChange, tags, modelName, inputRef, json, placeholder, onKeyDown, onKeyUp, onClick, onFocus, onBlur, onPasteFiles, className, ariaProps }) {
   const composing = useRef(false);
   // A caret asked for by the engine (after an @ pick, an insert): kept for the next redraw,
   // which may come after it (React commits the new prompt later than the request).
@@ -132,7 +134,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
   const root = useRef(null);
   const emitted = useRef(null);
   const tagMap = useMemo(() => new Map(tags.map((t) => [t.tag.toLowerCase(), t])), [tags]);
-  const chipKey = useMemo(() => tags.map((t) => `${t.tag}:${t.url || ""}`).join("|"), [tags]);
+  const chipKey = useMemo(() => `${modelName}#${tags.map((t) => `${t.tag}:${t.url || ""}:${t.unused ? 1 : 0}`).join("|")}`, [tags, modelName]);
 
   // The textarea-like face the engine uses.
   useEffect(() => {
@@ -161,7 +163,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
     const focused = document.activeElement === el;
     const want = wanted.current && Date.now() - wanted.current.at < 1000 ? wanted.current : null;
     const off = want || (focused ? getOffset(el) : null);
-    render(el, value, tagMap);
+    render(el, value, tagMap, modelName);
     el.dataset.chips = chipKey;
     emitted.current = value;
     inputsAtRedraw.current = inputs.current;
@@ -179,7 +181,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
     const v = serialize(el);
     const off = getOffset(el) || { start: v.length, end: v.length };
     const next = v.slice(0, off.start) + text + v.slice(off.end);
-    render(el, next, tagMap);
+    render(el, next, tagMap, modelName);
     setOffset(el, off.start + text.length);
     emit(next);
   };
@@ -207,7 +209,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
         const messy = [...el.childNodes].some((c) => c.nodeType === 1 && !c.dataset?.tag && !c.dataset?.end && !(c.tagName === "BR" && c === el.lastChild));
         if (!e.nativeEvent.isComposing && !composing.current && (messy || hasLooseTag(el, tagMap))) {
           const off = getOffset(el);
-          render(el, next, tagMap);
+          render(el, next, tagMap, modelName);
           if (off) setOffset(el, off.start, off.end);
           next = serialize(el);
         }
@@ -216,7 +218,7 @@ export default function PromptEditor({ value, onChange, tags, inputRef, json, pl
         emit(next);
       }}
       onCompositionStart={() => { composing.current = true; }}
-      onCompositionEnd={() => { composing.current = false; const el = root.current; if (el && hasLooseTag(el, tagMap)) { const off = getOffset(el); const v = serialize(el); render(el, v, tagMap); if (off) setOffset(el, off.start, off.end); emit(v); } }}
+      onCompositionEnd={() => { composing.current = false; const el = root.current; if (el && hasLooseTag(el, tagMap)) { const off = getOffset(el); const v = serialize(el); render(el, v, tagMap, modelName); if (off) setOffset(el, off.start, off.end); emit(v); } }}
       onKeyDown={(e) => {
         // While an IME composes, Enter picks its candidate: leave the keys to it.
         if (e.nativeEvent.isComposing || e.keyCode === 229 || composing.current) return;

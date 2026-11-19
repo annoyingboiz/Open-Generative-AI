@@ -219,8 +219,9 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
                       : g.kind === "audio" ? <span className="flex h-[42px] w-14 flex-shrink-0 items-center justify-center rounded-xs bg-muted">♪</span>
                         : <img src={dzThumb(item.url, 128)} alt="" draggable={false} className="h-[42px] w-14 flex-shrink-0 rounded-xs object-cover" />}
                     <span className="min-w-0 flex-1">
-                      <span className="line-clamp-2 break-words text-base leading-5" title={t?.label || item.name || g.label}>{t?.label || item.name || g.label}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{t ? `@${t.tag}` : ""}{item.name ? ` · ${item.name}` : ""}</span>
+                      {/* The file's own name gets the width (up to two lines, B6); the tag and role go under it. */}
+                      <span className="line-clamp-2 break-words text-base leading-5" title={item.name || t?.label || g.label}>{item.name || t?.label || g.label}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{[t ? `@${t.tag}` : "", item.name ? t?.label : ""].filter(Boolean).join(" · ")}</span>
                     </span>
                     {roles.length > 1 ? (
                       <div className="relative">

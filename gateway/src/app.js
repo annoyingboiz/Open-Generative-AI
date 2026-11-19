@@ -33,7 +33,7 @@ import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
 import { cleanLook, renderLook, lookHints } from './look.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
-import { EditError, sweepTemp } from './edit.js';
+import { EditError, sweepTemp, frameOf } from './edit.js';
 import { storyboardPage } from './storyboard-print.js';
 import { createDirector, DirectorError } from './director.js';
 import { createAssistants, AssistantError } from './assistants.js';
@@ -869,6 +869,73 @@ export async function buildApp(config, { logger = true } = {}) {
     .send(catalog.clientScript(req.user)));
 
   // Stop a job that is still waiting or running (this server's jobs).
+  // A frame of a video (package 03, §5–§7): { at: "first" | "last" | seconds, save }.
+  // save: a new picture next to the video (marked New in the grid); otherwise an
+  // upload, for the Start frame of the next video.
+  app.post('/dz/api/generations/:id/frame', async (req, reply) => {
+    try {
+      const row = generations.visibleRow(req.user, req.params.id);
+      if (row.kind !== 'video' || row.status !== 'completed') return reply.code(409).send({ detail: 'Only a finished video has frames.' });
+      const at = ['first', 'last'].includes(req.body?.at) ? req.body.at : Number.isFinite(Number(req.body?.at)) ? Number(req.body.at) : 'last';
+      const file = generations.mediaFile(req.user, 'g', row.id, 0);
+      if (!file?.path) return reply.code(404).send({ detail: 'The video file is gone.' });
+      const label = at === 'first' ? 'first frame' : at === 'last' ? 'last frame' : `frame at ${Number(at).toFixed(1)} s`;
+      if (req.body?.save) {
+        let meta = null;
+        try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
+        const { id } = generations.addLocalEdit(req.user, {
+          kind: 'image',
+          prompt: row.prompt || '',
+          studio: row.studio,
+          meta: { frameOf: row.id, at, modelName: `${label[0].toUpperCase()}${label.slice(1)} · ${meta?.modelName || 'video'}` },
+          projectId: row.project_id || null,
+          folderId: row.folder_id || null,
+          make: () => frameOf(file.path, at),
+        });
+        return { id };
+      }
+      const frame = await frameOf(file.path, at);
+      try {
+        const saved = await generations.saveUpload(req.user, { stream: fs.createReadStream(frame.path), mime: 'image/png', filename: `${String(row.prompt || 'video').slice(0, 40)} – ${label}.png`, projectId: row.project_id || null });
+        return { url: saved.url };
+      } finally { frame.cleanup(); }
+    } catch (error) {
+      if (error instanceof EditError) return reply.code(422).send({ detail: error.message });
+      return sendGenError(reply, error);
+    }
+  });
+
+  // Try a failed job again (package 03, §3.3 "Retry"): the same provider body,
+  // model, studio, settings and place; priced and limited like a new request.
+  app.post('/dz/api/generations/:id/retry', async (req, reply) => {
+    try {
+      const { row, meta, body } = generations.retrySource(req.user, req.params.id);
+      const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([\w-]+))?$/.exec(String(row.endpoint || ''));
+      if (!m) return reply.code(409).send({ detail: 'This generation cannot be tried again here.' });
+      const resolved = resolveEndpoint(req.user, row.provider, row.provider_model, m[3]);
+      if (!resolved || resolved.video) return reply.code(409).send({ detail: 'This model is not available any more.' });
+      const price = await priceFor(req.user, resolved, row.provider, row.provider_model, body);
+      if (req.user.monthly_limit_usd != null && !Number.isFinite(price?.usd)) {
+        return reply.code(402).send({ detail: 'This model has no known price, so it is not available with a spending limit.' });
+      }
+      const { id } = await generations.submit(req.user, {
+        providerId: row.provider,
+        modelId: row.provider_model,
+        body,
+        endpoint: row.endpoint,
+        kind: row.kind,
+        estCostUsd: price?.usd ?? null,
+        estSource: !price ? null : price.source === 'quote' ? (price.exact ? 'quote' : 'quote~') : 'estimate',
+        studio: row.studio,
+        displayPrompt: row.prompt,
+        meta: meta ? { ...meta, retryOf: row.id } : { retryOf: row.id },
+        projectId: row.project_id,
+        folderId: row.folder_id,
+      });
+      return { request_id: id, id, status: 'processing' };
+    } catch (error) { return sendGenError(reply, error); }
+  });
+
   app.post('/api/v1/predictions/:id/cancel', async (req, reply) => {
     try { return await generations.cancel(req.user, req.params.id); } catch (error) {
       if (error.status && !(error instanceof GenerationError)) return reply.code(error.status >= 500 ? 424 : error.status).send({ detail: error.message, error: error.message });

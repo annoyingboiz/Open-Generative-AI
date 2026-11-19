@@ -21,7 +21,7 @@ import { DzMediaPicker } from "./DzMedia.jsx";
 import DzSentPanel, { useDzPromptPreview, DzHints } from "./DzSentPanel.jsx";
 import { Viewer } from "./DzLibrary.jsx";
 import {
-  createEntries, chooseVariant, planAttachments, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
+  createEntries, chooseVariant, planAttachments, withEditFirst, splitEdit, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, promptTags, translateTags, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
   ROLE_INFO, ROLE_ORDER, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags,
 } from "../dzCreate.js";
@@ -466,7 +466,9 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // What is sent and what is kept but not sent (over a limit, a kind the model does
   // not take, or a combination none of its endpoints accepts) — see planAttachments.
   const slotRoles = new Set((entry?.slots || []).map((s) => s.role));
-  const plan = useMemo(() => planAttachments(entry, attached), [entry, attached]);
+  // "Image to edit" travels as the model's first image (package 03).
+  const sendable = useMemo(() => withEditFirst(attached, entry), [attached, entry]);
+  const plan = useMemo(() => planAttachments(entry, sendable), [entry, sendable]);
   const used = plan.sent;
   const unusedCount = plan.unused.length;
   // Elements: natively (Kling `elements`) or as extra reference files.
@@ -496,19 +498,20 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const allFiles = useMemo(() => {
     const out = {};
     for (const role of ROLE_ORDER) {
-      const own = (attached[role] || []).filter((f) => !f.element);
+      const own = (sendable[role] || []).filter((f) => !f.element);
       const els = (merged.attached?.[role] || []).filter((f) => f.element);
       if (own.length || els.length) out[role] = [...own, ...els];
     }
     return out;
-  }, [attached, merged.attached]);
+  }, [sendable, merged.attached]);
   const tags = promptTags({ attached: merged.attached, all: allFiles, syntax, elements: activeElements, elementPairs, variant });
   // Native elements beyond what the chosen endpoint takes are left out — say so.
   const nativeDropped = elementSpec ? activeElements.filter((e) => !elementPairs.some((p) => p.element.id === e.id)).map((e) => e.name) : [];
   const trimmed = merged.trimmed || (nativeDropped.length ? { dropped: nativeDropped, cut: 0 } : null);
   const finalPrompt = composePrompt(translateTags(prompt, tags));
   // The look goes to the server, which writes it into the prompt for this model.
-  const look = useMemo(() => lookOf(camera, kind === "video" ? move : ""), [camera, kind, move]);
+  // Camera look and Move live in Studio; the light tabs (Image, Video) send none (package 03, §8).
+  const look = useMemo(() => (mode === "create" ? lookOf(camera, kind === "video" ? move : "") : null), [camera, kind, move, mode]);
   const usedTags = useMemo(() => {
     const names = new Set([...String(prompt).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()));
     return tags.filter((t) => names.has(t.tag.toLowerCase()) && !(t.kind === "file" && t.unused));
@@ -571,8 +574,10 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // Create shows both kinds (with a filter); Image and Video their own.
   const [kindFilter, setKindFilter] = useState("all");
   const [viewing, setViewing] = useState(null); // a result opened in the viewer
-  const showKind = mode === "image" ? "image" : mode === "video" ? "video" : kindFilter === "all" ? null : kindFilter;
-  const history = useDzHistory({ ...(showKind ? { kind: showKind } : {}), ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
+  const showKind = mode === "image" ? "image" : mode === "video" ? "video" : ["image", "video"].includes(kindFilter) ? kindFilter : null;
+  // Image and Video tabs: All · Liked · Upscaled (package 03).
+  const tabFilter = kindFilter === "liked" ? { liked: true } : kindFilter === "upscaled" ? { studio: "upscale" } : {};
+  const history = useDzHistory({ ...(showKind ? { kind: showKind } : {}), ...tabFilter, ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
   const sel = useDzSelection(history.items);
 
   const addFiles = useCallback(async (role, files) => {
@@ -643,16 +648,19 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       values,
       camera,
       move: kind === "video" ? move : "",
-      attached: used,
+      attached: splitEdit(used),
+      count,
       elements: (elementSpec ? elementPairs.map((p) => p.element) : elementsUsed ? activeElements : []).map((e) => ({ id: e.id, name: e.name })),
     };
     const request = { endpoint: variant.model.endpoint, ...body };
     // ×N: the same request N times, each its own job and result card.
-    const one = async () => {
+    // ×N: each job knows its place ("2 of 4" on the tile, package 03 §3.3).
+    const batchId = Math.random().toString(36).slice(2, 10);
+    const one = async (_, i) => {
       setBusy((n) => n + 1);
       onGenerationStart?.();
       try {
-        const res = await dzWithMeta({ studio: mode, meta, look }, () => dzGenerate(apiKey, request));
+        const res = await dzWithMeta({ studio: mode, meta: count > 1 ? { ...meta, batch: { id: batchId, n: count, i } } : meta, look }, () => dzGenerate(apiKey, request));
         onGenerationEnd?.();
         if (res?.url) onGenerationComplete?.({ url: res.url, type: kind });
       } catch (e) {
@@ -680,31 +688,79 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     }
     setAttached((prev) => ({ ...prev, reference: [...(prev.reference || []), { url: item.url, name: "result" }] }));
   };
-  // Video tab: take a picture sent from the Image tab (Animate).
+  // Pictures sent to this tab from another one (package 03, §7):
+  // { to: "video", url } → Start frame (Make video, Continue, First frame as start);
+  // { to: "image", url, role: "edit" } → Image to edit; role "reference" → References.
+  const [focusSeq, setFocusSeq] = useState(0);
   useEffect(() => {
-    if (mode !== "video") return undefined;
+    if (mode !== "video" && mode !== "image") return undefined;
     const onSend = (e) => {
-      const { to, url } = e.detail || {};
-      if (to !== "video" || typeof url !== "string") return;
-      const next = animateInto(entries, entry?.key, attachedRef.current, url);
-      if (next.modelKey && next.modelKey !== entry?.key) setModelByKind((prev) => ({ ...prev, video: next.modelKey }));
-      setAttached(next.attached);
+      const { to, url, role = mode === "video" ? "first" : "reference" } = e.detail || {};
+      if (to !== mode || typeof url !== "string") return;
+      if (role === "first") {
+        const next = animateInto(entries, entry?.key, attachedRef.current, url);
+        if (next.modelKey && next.modelKey !== entry?.key) setModelByKind((prev) => ({ ...prev, video: next.modelKey }));
+        setAttached(next.attached);
+      } else if (role === "edit") {
+        openForEdit(url);
+      } else {
+        setAttached((prev) => ({ ...prev, reference: [...(prev.reference || []).filter((f) => f.url !== url), { url, name: "result" }] }));
+      }
+      setFocusSeq((n) => n + 1);
     };
     window.addEventListener(DZ_SEND_EVENT, onSend);
     return () => window.removeEventListener(DZ_SEND_EVENT, onSend);
-  }, [mode, entry, entries]);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The last model used that can edit a picture: "Edit this picture" switches to it when needed.
+  useEffect(() => {
+    if (entry?.canEdit) { try { localStorage.setItem("dz_last_edit_model", entry.key); } catch { /* optional */ } }
+  }, [entry?.key, entry?.canEdit]);
+  const openForEdit = (url) => {
+    const file = { url, name: "picture" };
+    if (entry?.canEdit) { setAttached((prev) => ({ ...prev, edit: [file] })); return; }
+    let last = null;
+    try { last = localStorage.getItem("dz_last_edit_model"); } catch { /* optional */ }
+    const target = entries.find((x) => x.key === last && x.canEdit) || entries.find((x) => x.canEdit);
+    if (!target) { onGenerationError?.("No image model here can edit a picture."); return; }
+    const prevKey = entry?.key;
+    const prevAttached = attachedRef.current;
+    pickModel(target.key);
+    setAttached((prev) => ({ ...prev, edit: [file] }));
+    window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "notice", title: "Edit", message: `${entry?.familyName || "That model"} can't edit pictures, so this uses ${target.familyName} · ${target.providerName}.`, undo: () => { if (prevKey) pickModel(prevKey); setAttached(prevAttached); } } }));
+  };
 
   const reuse = (item) => {
     const m = item.meta || {};
+    // Made with a camera look or a move: only Studio has those (package 03, §8).
+    const hasLook = Boolean(m.look || (m.camera && m.camera.auto === false && Object.entries(m.camera).some(([k, v]) => k !== "auto" && v)) || m.move);
+    if (mode !== "create" && hasLook) {
+      window.dispatchEvent(new CustomEvent("dz:open-tab", { detail: { tab: "create" } }));
+      setTimeout(() => window.dispatchEvent(new CustomEvent("dz:reuse", { detail: { to: "create", item } })), 0);
+      return;
+    }
+    if (fixedKind && m.kind && m.kind !== fixedKind) {
+      window.dispatchEvent(new CustomEvent("dz:open-tab", { detail: { tab: m.kind } }));
+      setTimeout(() => window.dispatchEvent(new CustomEvent("dz:reuse", { detail: { to: m.kind, item } })), 0);
+      return;
+    }
     if (m.kind && !fixedKind) setKind(m.kind);
     if (fixedKind && m.kind && m.kind !== fixedKind) return;
     if (m.entryKey) setModelByKind((prev) => ({ ...prev, [m.kind || kind]: m.entryKey }));
     if (m.values) setValuesByKind((prev) => ({ ...prev, [m.kind || kind]: cleanValues(m.values) }));
     if (typeof m.prompt === "string") setPrompt(migrateTags(m.prompt, keepTags(elements)));
     if (m.camera) setCamera(normalizeCamera(m.camera, { auto: mode === "create" }));
+    if ([1, 2, 3, 4].includes(m.count)) setCount(m.count);
     setMove(m.move || "");
     if (isObj(m.attached)) setAttached(normalizeSaved({ attached: m.attached }).attached || {});
   };
+
+  // "Reuse prompt and settings" handed over from another tab.
+  useEffect(() => {
+    const on = (e) => { if (e.detail?.to === mode && e.detail.item) reuse(e.detail.item); };
+    window.addEventListener("dz:reuse", on);
+    return () => window.removeEventListener("dz:reuse", on);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Typing "@": our tags for what is attached and chosen, plus every element
   // the user can add (picking one adds it). Arrow keys, Enter/Tab, Esc.
@@ -759,7 +815,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {

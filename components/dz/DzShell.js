@@ -331,17 +331,41 @@ export default function DzShell() {
   }), [push, refreshBalance]);
 
   // ── Drag and drop (Image and Video studios accept dropped files) ─────
+  // The overlay is for files coming from outside the page. It used to stay on
+  // screen after a drop (Loom 19.11, iMac): the composer handles its own drop and
+  // stops it, so the shell never heard the drop; and Safari reports a picture
+  // dragged inside the page as "Files" and leaves with no relatedTarget.
+  // Now: drags that start in the page never show it, and any drop, drag end or
+  // leaving the window hides it (listeners on window, capture phase).
+  const internalDrag = useRef(false);
+  useEffect(() => {
+    const start = () => { internalDrag.current = true; };
+    // Reset the flag after the page's own drop handlers have run.
+    const stop = () => { setDragging(false); setTimeout(() => { internalDrag.current = false; }, 0); };
+    const leave = (e) => { if (!e.relatedTarget && (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight)) setDragging(false); };
+    window.addEventListener('dragstart', start, true);
+    window.addEventListener('dragend', stop, true);
+    window.addEventListener('drop', stop, true);
+    window.addEventListener('dragleave', leave, true);
+    return () => {
+      window.removeEventListener('dragstart', start, true);
+      window.removeEventListener('dragend', stop, true);
+      window.removeEventListener('drop', stop, true);
+      window.removeEventListener('dragleave', leave, true);
+    };
+  }, []);
   const onDragEnter = (e) => {
     e.preventDefault();
-    if (Array.from(e.dataTransfer?.types || []).includes('Files')) setDragging(true);
+    if (!internalDrag.current && Array.from(e.dataTransfer?.types || []).includes('Files')) setDragging(true);
   };
   const onDragLeave = (e) => {
     e.preventDefault();
-    if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false);
+    if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) setDragging(false);
   };
   const onDrop = (e) => {
     e.preventDefault();
     setDragging(false);
+    if (internalDrag.current) return;
     const files = Array.from(e.dataTransfer?.files || []);
     if (files.length) setDroppedFiles(files);
   };
@@ -567,10 +591,10 @@ export default function DzShell() {
             <DzTools key={project?.id || 'library'} {...studioProps} {...callbacks('tools')} />
           </div>
           <div className={activeTab === 'image' ? 'h-full w-full' : 'hidden'}>
-            <DzCreateStudio mode="image" {...studioProps} {...callbacks('image')} droppedFiles={activeTab === 'image' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+            <DzStudio mode="image" {...studioProps} {...callbacks('image')} droppedFiles={activeTab === 'image' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
           <div className={activeTab === 'video' ? 'h-full w-full' : 'hidden'}>
-            <DzCreateStudio mode="video" {...studioProps} {...callbacks('video')} droppedFiles={activeTab === 'video' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
+            <DzStudio mode="video" {...studioProps} {...callbacks('video')} droppedFiles={activeTab === 'video' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
           {WORK_TABS[activeTab] && (
             <div className="h-full w-full">

@@ -3,6 +3,8 @@
 // per model. Frames are one group in time order: Start, Mid…, End.
 
 export const GROUPS = [
+  // Package 03: image models that can edit get one slot for the picture to change.
+  { id: "edit", label: "Image to edit", roles: ["edit"], kind: "image" },
   { id: "frames", label: "Frames", roles: ["first", "middle", "last"], kind: "image" },
   { id: "reference", label: "References", roles: ["reference"], kind: "image" },
   { id: "video", label: "Reference videos", roles: ["video"], kind: "video" },

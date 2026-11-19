@@ -99,3 +99,27 @@ export function lastFrame(file) {
     }
   });
 }
+
+// One frame of a video as a PNG: "first", "last" or a time in seconds (package 03:
+// Save frame, Continue from the last frame, First frame as start).
+export function frameOf(file, at = 'last') {
+  if (at === 'last') return lastFrame(file).then((f) => ({ ...f, ext: 'png', mime: 'image/png' }));
+  return queued(async () => {
+    const info = await videoInfo(file);
+    if (!info) throw new EditError('The video can\'t be read.');
+    const t = at === 'first' ? 0 : Math.max(0, Math.min(Number(at) || 0, Math.max(0, info.duration - 0.05)));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dz-frame-'));
+    const out = path.join(dir, 'frame.png');
+    const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+    try {
+      // -ss after -i: exact frame (decodes up to it); short videos, so this is quick.
+      await ffmpeg(['-i', file, '-ss', t.toFixed(3), '-frames:v', '1', '-q:v', '1', out], 60_000);
+      if (!fs.existsSync(out) || !fs.statSync(out).size) throw new EditError('No frame at that time.');
+      return { path: out, ext: 'png', mime: 'image/png', cleanup };
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+  });
+}
+

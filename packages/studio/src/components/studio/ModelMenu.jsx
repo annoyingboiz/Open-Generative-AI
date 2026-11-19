@@ -4,7 +4,7 @@
 // the composer. Left: Recommended, vendors, This server, All models. Right: one
 // row per model; the chosen model lists its providers (radio, tag, price).
 import { useMemo, useState } from "react";
-import { MagnifyingGlass, ImageSquare, Images, FilmStrip, SpeakerHigh } from "@phosphor-icons/react";
+import { MagnifyingGlass, ImageSquare, Images, FilmStrip, SpeakerHigh, PencilSimple, TextAa } from "@phosphor-icons/react";
 import { cn } from "../../ui/index.js";
 import { Monogram } from "./ui.jsx";
 import { paramsOf } from "../../dzCreate.js";
@@ -40,16 +40,21 @@ export function familiesOf(entries) {
     f.from = priced.length ? priced.reduce((a, b) => (a.price.usd <= b.price.usd ? a : b)).price : null;
     f.local = f.providers.every((p) => p.local);
     const slots = new Set(f.providers.flatMap((p) => p.entry.slots.map((s) => s.role)));
-    f.caps = { start: slots.has("first"), refs: slots.has("reference"), edit: slots.has("source"), sound: f.providers.some((p) => p.entry.variants.some((v) => { const ps = paramsOf(v.model); return [...ps.main, ...ps.advanced].some((x) => SOUND.test(x.key)); })) };
+    f.caps = { start: slots.has("first"), refs: slots.has("reference"), edit: slots.has("source"), editPic: f.providers.some((p) => p.entry.canEdit), text: GOOD_TEXT.test(f.family), sound: f.providers.some((p) => p.entry.variants.some((v) => { const ps = paramsOf(v.model); return [...ps.main, ...ps.advanced].some((x) => SOUND.test(x.key)); })) };
   }
   return [...byFamily.values()];
 }
 
-const CAPS = [
-  ["start", ImageSquare, "start frame"], ["refs", Images, "references"], ["edit", FilmStrip, "video to edit"], ["sound", SpeakerHigh, "sound"],
-];
+// Models known to write legible text in pictures. The providers publish no field for
+// this, so it is a short list of our own (package 03, §3.2) — update it with the catalog.
+const GOOD_TEXT = /^(nano-banana-(pro|2)|gpt-image|ideogram|seedream-4|qwen-image|recraft|flux-2)/;
+const CAPS_BY_KIND = {
+  video: [["start", ImageSquare, "start frame"], ["refs", Images, "references"], ["edit", FilmStrip, "video to edit"], ["sound", SpeakerHigh, "sound"]],
+  image: [["refs", Images, "references"], ["editPic", PencilSimple, "edits a picture"], ["text", TextAa, "good at text"]],
+};
 
-export default function ModelMenu({ entries, entry, onPick, onClose }) {
+export default function ModelMenu({ entries, entry, onPick, onClose, kind = entry?.kind || "video" }) {
+  const CAPS = CAPS_BY_KIND[kind] || CAPS_BY_KIND.video;
   const families = useMemo(() => familiesOf(entries), [entries]);
   const [q, setQ] = useState("");
   const [group, setGroup] = useState(() => (families.some((f) => f.recommended != null) ? "recommended" : "all"));

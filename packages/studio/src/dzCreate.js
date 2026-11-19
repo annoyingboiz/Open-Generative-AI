@@ -24,8 +24,26 @@ export const ROLE_INFO = {
   video: { label: "Reference videos", kind: "video" },
   source: { label: "Video to edit", kind: "video" },
   audio: { label: "Audio", kind: "audio" },
+  // Package 03: a picture to change, for image models that can edit. Providers have
+  // no field of its own for it — it is sent as the first input image (see withEditFirst).
+  edit: { label: "Image to edit", kind: "image" },
 };
 export const ROLE_ORDER = ["first", "middle", "last", "reference", "video", "source", "audio"];
+
+// "Image to edit" goes first into the model's images when the model can edit;
+// otherwise it stays its own role and is reported as not used.
+export function withEditFirst(attached = {}, entry = null) {
+  const edit = attached.edit || [];
+  if (!edit.length || !entry?.canEdit) return attached;
+  const { edit: _e, ...rest } = attached;
+  return { ...rest, reference: [{ ...edit[0], edit: true }, ...(attached.reference || [])] };
+}
+// …and back, for what the strip shows.
+export function splitEdit(attached = {}) {
+  const refs = attached.reference || [];
+  if (!refs.some((f) => f.edit)) return attached;
+  return { ...attached, edit: refs.filter((f) => f.edit), reference: refs.filter((f) => !f.edit) };
+}
 
 const FIRST = /^(first_frame|first_frame_image|start_image|start_frame|start_image_url|first_frame_url)$/;
 const LAST = /^(last_image|last_frame|last_frame_image|end_image|end_frame|tail_image|last_frame_url|end_image_url)$/;
@@ -147,6 +165,9 @@ export function createEntries(kind, { match = null } = {}) {
       }
     }
     entry.slots = ROLE_ORDER.filter((r) => slots[r]).map((r) => slots[r]);
+    // An image model with an image-to-image endpoint can change a picture.
+    entry.canEdit = kind === "image" && entry.variants.some((v) => v.mode === "i2i" && v.media.reference);
+    if (entry.canEdit) entry.slots = [{ role: "edit", max: 1 }, ...entry.slots];
     entry.textOnly = entry.variants.some((v) => Object.keys(v.media).length === 0 && v.model.hasPrompt !== false);
   }
   return [...byKey.values()].sort((a, b) => (a.recommended ?? 1e9) - (b.recommended ?? 1e9) || a.familyName.localeCompare(b.familyName));
@@ -217,7 +238,7 @@ export function mergeElements(entry, attached, elements = []) {
 const CYR = { а: "a", б: "b", в: "v", г: "g", ґ: "g", д: "d", е: "e", є: "ye", ё: "e", ж: "zh", з: "z", и: "i", і: "i", ї: "yi", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" };
 const TAG_PREFIX = { character: "char", object: "prop", place: "loc", other: "obj" };
 // Names the attachments use (and used before 19.11): an element never gets one.
-const RESERVED_TAG = /^(start|end|first|last|middle|mid_?\d+|img_?\d+|vid_?\d+|aud_?\d+|image_?\d+|video_?\d+|audio_?\d+)$/i;
+const RESERVED_TAG = /^(start|end|edit|first|last|middle|mid_?\d+|img_?\d+|vid_?\d+|aud_?\d+|image_?\d+|video_?\d+|audio_?\d+)$/i;
 export function elementTag(e) {
   const own = e?.tag ? String(e.tag).replace(/^@/, "") : null;
   if (own) return RESERVED_TAG.test(own) ? `el_${own}` : own;
@@ -270,7 +291,8 @@ export function promptTags({ attached = {}, all = null, syntax = null, elements 
       (att[role] || []).forEach((f, i) => { frameN += 1; go(f, role, { frameN, i, mids: (att.middle || []).length }); });
     }
     let n = 0;
-    for (const f of att.reference || []) { n += 1; go(f, "reference", { n }); }
+    let r = 0; // the user's reference number: the picture to edit is not one of them
+    for (const f of att.reference || []) { n += 1; if (!f.edit) r += 1; go(f, "reference", { n, r }); }
     let v = 0;
     for (const role of ["video", "source"]) for (const f of att[role] || []) { v += 1; go(f, role, { v }); }
     let a = 0;
@@ -299,7 +321,8 @@ export function promptTags({ attached = {}, all = null, syntax = null, elements 
     if (k.frameN) {
       tag = role === "first" ? "start" : role === "last" ? "end" : `mid${k.i + 1}`;
       label = role === "first" ? "Start frame" : role === "last" ? "End frame" : `Mid ${k.i + 1}`;
-    } else if (role === "reference") { tag = `img${k.n}`; label = `Reference ${k.n}`; }
+    } else if (role === "reference" && f.edit) { tag = "edit"; label = "Image to edit"; }
+    else if (role === "reference") { tag = `img${k.r}`; label = `Reference ${k.r}`; }
     else if (k.v) { tag = `vid${k.v}`; label = role === "source" ? "Video to edit" : `Reference video ${k.v}`; }
     else { tag = `aud${k.a}`; label = `Audio ${k.a}`; }
     const key = `${role}|${k.own}`;
@@ -426,13 +449,14 @@ const NOUN = {
   first: ["start frame", "start frames"], middle: ["middle frame", "middle frames"], last: ["end frame", "end frames"],
   reference: ["reference image", "reference images"], video: ["reference video", "reference videos"],
   source: ["video to edit", "videos to edit"], audio: ["audio file", "audio files"],
+  edit: ["picture to edit", "pictures to edit"],
 };
-const GROUP_NOUN = { first: "frames", middle: "frames", last: "frames", reference: "reference images", video: "reference videos", source: "a video to edit", audio: "audio" };
+const GROUP_NOUN = { first: "frames", middle: "frames", last: "frames", reference: "reference images", video: "reference videos", source: "a video to edit", audio: "audio", edit: "a picture to edit" };
 const nounOf = (role, n) => NOUN[role][n === 1 ? 0 : 1];
 const listWords = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 export function planAttachments(entry, attached = {}) {
-  const roles = ROLE_ORDER.filter((r) => (attached[r] || []).length);
+  const roles = [...ROLE_ORDER, "edit"].filter((r) => (attached[r] || []).length);
   if (!entry) return { variant: null, sent: {}, unused: [], summary: null };
   const evals = entry.variants.map((v) => {
     const sent = {};
@@ -458,7 +482,7 @@ export function planAttachments(entry, attached = {}) {
     const list = attached[role];
     const m = best.v.media[role];
     if (m) {
-      list.slice(m.max).forEach((f, i) => unused.push({ ...f, role, index: m.max + i, why: "limit",
+      list.slice(m.max).forEach((f, i) => unused.push({ ...f, role: f.edit ? "edit" : role, index: m.max + i, why: "limit",
         reason: `Over the limit — this model takes ${m.max} ${nounOf(role, m.max)}` }));
       continue;
     }
@@ -480,6 +504,7 @@ export function planAttachments(entry, attached = {}) {
         video: "Reference video — this model takes no reference videos",
         source: "Video to edit — this model can't edit a video",
         audio: "Audio — this model takes no audio",
+        edit: "Image to edit — this model can't edit a picture",
       }[role];
     }
     list.forEach((f, index) => unused.push({ ...f, role, index, why, reason, blockers }));

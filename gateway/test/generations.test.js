@@ -239,3 +239,33 @@ test('quote: provider price for our account, media replaced by placeholders, lim
   assert.match(res.json().detail, /Monthly limit/);
   nextQuote = null;
 });
+
+test('retry: a failed job goes again as sent, in the same place; only the author, only when failed', async () => {
+  let res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image?m=t2i', headers: { cookie: adminCookie },
+    payload: { prompt: 'a dog', size: '1:1', _dz: { studio: 'image', meta: { entryKey: 'x', prompt: 'a dog' } } } });
+  assert.equal(res.statusCode, 200, res.body);
+  const id = res.json().request_id;
+  res = await app.inject({ method: 'POST', url: `/dz/api/generations/${id}/retry`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 409, 'not failed yet');
+  app.ctx.db.prepare("UPDATE generations SET status = 'failed', error = 'content filter' WHERE id = ?").run(id);
+  res = await app.inject({ method: 'POST', url: `/dz/api/generations/${id}/retry`, headers: { cookie: userCookie } });
+  assert.ok([403, 404].includes(res.statusCode), 'someone else\'s');
+  const before = calls.submit.length;
+  res = await app.inject({ method: 'POST', url: `/dz/api/generations/${id}/retry`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200, res.body);
+  const again = res.json().request_id;
+  assert.notEqual(again, id);
+  assert.equal(calls.submit.length, before + 1);
+  assert.deepEqual(calls.submit.at(-1).req.body, { prompt: 'a dog', size: '1:1' });
+  const row = app.ctx.db.prepare('SELECT studio, meta_json, prompt FROM generations WHERE id = ?').get(again);
+  assert.equal(row.studio, 'image');
+  assert.equal(row.prompt, 'a dog');
+  assert.equal(JSON.parse(row.meta_json).retryOf, id);
+  res = await app.inject({ url: '/api/v1/history?studio=image', headers: { cookie: adminCookie } });
+  assert.ok(res.json().items.some((i) => i.id === again && 'completed_at' in i));
+});
+
+test('frame: only a finished video has frames', async () => {
+  const res = await app.inject({ method: 'POST', url: `/dz/api/generations/${genId}/frame`, headers: { cookie: adminCookie }, payload: { at: 'last' } });
+  assert.equal(res.statusCode, 409, 'a picture has no frames');
+});

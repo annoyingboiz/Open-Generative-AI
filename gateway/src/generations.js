@@ -381,6 +381,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       note: row.status === 'completed' || row.status === 'failed' ? null : row.note || null,
       cancellable: Boolean(providerById(row.provider)?.cancel) && ['submitted', 'processing'].includes(row.status) && row.user_id === user?.id,
       created_at: row.created_at,
+      completed_at: row.completed_at || null,
       timestamp: new Date(row.created_at).toISOString(),
       project_id: row.project_id || null,
       folder_id: row.folder_id || null,
@@ -459,6 +460,16 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     const row = visible(user, id);
     if (row.user_id !== user.id) throw new GenerationError('Only the author can do this.', 403);
     return row;
+  }
+
+  // A failed job of this user, for "Retry" (package 03, §3.3): what was sent, as sent.
+  function retrySource(user, id) {
+    const row = owned(user, id);
+    if (row.status !== 'failed') throw new GenerationError('Only a failed generation can be tried again.', 409);
+    let meta = null;
+    try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
+    if (meta?.upscale || row.provider === 'dz') throw new GenerationError('Start this one again from its own tool.', 409);
+    return { row, meta, body: JSON.parse(row.params_json || '{}') };
   }
 
   // Stop a job that is still waiting or running (providers that can: this server).
@@ -691,7 +702,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,
     cachedProviderUrl,
-    saveUpload, addLocalEdit, uploads, deleteUploads, submit, result, history, cancel, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
+    saveUpload, addLocalEdit, uploads, deleteUploads, submit, result, history, cancel, retrySource, visibleRow: visible, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { stitch, lastFrame } from '../src/edit.js';
+import { stitch, lastFrame, frameOf } from '../src/edit.js';
 import { videoInfo } from '../src/video-upscale.js';
 
 let has = true;
@@ -26,5 +26,18 @@ test('stitch: clips of different size, with and without sound → one video; las
   assert.ok(fs.statSync(f.path).size > 100);
   f.cleanup(); out.cleanup();
   assert.throws(() => stitch([{ path: a }]), /at least two/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('frameOf: first, last and a time in seconds → a PNG', { skip: !has && 'no ffmpeg' }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dz-frame-test-'));
+  const a = path.join(dir, 'a.mp4');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=24:duration=2', '-pix_fmt', 'yuv420p', a]);
+  for (const at of ['first', 'last', 1.2, 99]) {
+    const f = await frameOf(a, at);
+    assert.equal(f.mime, 'image/png');
+    assert.ok(fs.statSync(f.path).size > 100, `frame ${at}`);
+    f.cleanup();
+  }
   fs.rmSync(dir, { recursive: true, force: true });
 });

@@ -12,6 +12,7 @@ export default function DrawModal({
   onDone, // DZ: (count) — results land in the studio history
   studio = "create", // DZ: whose history the result goes to
   onError, // DZ: (message)
+  initialImage = null, // DZ package 03: open straight on this picture (Image to edit, viewer Edit)
 }) {
   const [activeTab, setActiveTab] = useState("draw-to-edit"); // 'sketch-to-video' | 'draw-to-video' | 'draw-to-edit'
   const [viewState, setViewState] = useState("setup"); // 'setup' | 'canvas'
@@ -792,6 +793,15 @@ export default function DrawModal({
   }, [brushSize]);
 
   // Upload background file
+  // DZ: a picture handed in (package 03, §8 Draw to Edit): start on the canvas with it.
+  useEffect(() => {
+    if (!isOpen || !initialImage) return;
+    setActiveTab("draw-to-edit");
+    setBgImageUrl(initialImage);
+    setAspectRatio("Auto");
+    setViewState("canvas");
+  }, [isOpen, initialImage]);
+
   const handleUploadBg = (filesOrEvent) => {
     const files = Array.isArray(filesOrEvent)
       ? filesOrEvent

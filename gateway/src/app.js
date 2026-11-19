@@ -21,6 +21,7 @@ import { PROVIDERS, providerById, createProviderSettings, fetchBalances } from '
 import { local, configureLocal, localConfigured } from './providers/local.js';
 import { apimart, configureApimartFiles } from './providers/apimart.js';
 import { elevenlabs, configureElevenlabsFiles, toSrt } from './providers/elevenlabs.js';
+import { ProviderHttpError } from './providers/http.js';
 import { validateProxyUrl } from './providers/http.js';
 import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
@@ -489,7 +490,7 @@ export async function buildApp(config, { logger = true } = {}) {
       return renderSettings(req, reply, { error: `${provider.name}: saved, but the check failed — ${balance.error}` });
     }
     return renderSettings(req, reply, {
-      notice: !balance?.ok ? `${provider.name}: saved.` : balance.amount == null ? `${provider.name}: saved, key works.` : `${provider.name}: saved, key works — balance $${balance.amount.toFixed(2)}.`,
+      notice: !balance?.ok ? `${provider.name}: saved.` : balance.amount == null ? `${provider.name}: saved, key works.` : balance.currency === 'CREDITS' ? `${provider.name}: saved, key works — ${Math.round(balance.amount).toLocaleString('en-US')} credits left${balance.note ? ` (${balance.note})` : ''}.` : `${provider.name}: saved, key works — balance $${balance.amount.toFixed(2)}.`,
     });
   });
 
@@ -888,6 +889,7 @@ export async function buildApp(config, { logger = true } = {}) {
       return { ...out, srt: toSrt(out.words), model };
     } catch (error) {
       req.log.warn(`transcribe: ${error.message}`);
+      if (error instanceof ProviderHttpError) return reply.code(424).send({ detail: error.message.slice(0, 300) });
       return sendGenError(reply, error);
     }
   });

@@ -72,8 +72,12 @@ function TranscribePanel({ apiKey, onError }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-4">
-        <MediaSlot role="audio" max={1} label="Recording" files={file} apiKey={apiKey} onError={onError}
-          onUploading={(on) => setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} onPick={(list) => setFile(list.slice(0, 1).map((x) => ({ url: x.url, name: x.name || "" })))} onRemove={() => setFile([])} />
+        {/* A recording or a video: whichever is picked last is transcribed. */}
+        {[["audio", "Recording"], ["source", "or a video"]].map(([role, label]) => (
+          <MediaSlot key={role} role={role} max={1} label={label} files={file.filter((f) => f.role === role)} apiKey={apiKey} onError={onError}
+            onUploading={(on) => setUploads((n) => Math.max(0, n + (on ? 1 : -1)))}
+            onPick={(list) => setFile(list.slice(0, 1).map((x) => ({ url: x.url, name: x.name || "", role })))} onRemove={() => setFile([])} />
+        ))}
         <label className="flex h-10 items-center gap-2 text-muted-foreground"><span>Model</span>
           <select value={model} onChange={(e) => setModel(e.target.value)} className="h-10 rounded-xl border border-input bg-background px-3 text-foreground">
             <option value="scribe_v2">Scribe v2</option><option value="scribe_v3">Scribe v3 (most accurate)</option>

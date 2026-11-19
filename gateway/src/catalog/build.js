@@ -337,15 +337,14 @@ const slider = (name, title, min, max, step, def, description) => ({ name, title
 
 export function buildElevenlabsVariants(models = [], voices = []) {
   const out = [];
-  const voice = voiceInput(voices);
-  if (!voice) return out;
+  const voice = voiceInput(voices); // null without voices: then only sound effects
   const add = ({ id, slug, family, familyName, fields, price, description }) => {
     const endpoint = `p/elevenlabs/${id}?m=t2a`;
     const model = studioModel({ provider: 'elevenlabs', mode: 't2a', slug, endpoint, family, familyName, vendorId: 'elevenlabs', fields, price, description });
     out.push({ key: endpoint, provider: 'elevenlabs', providerModel: id, mode: 't2a', kind: 'audio', family, model, server: { rename: { prompt: 'text' }, allowed: null, drop: [], fixed: {}, price } });
   };
   const ids = new Set(models.map((m) => m.model_id));
-  for (const [id, spec] of Object.entries(ELEVEN_TTS)) {
+  for (const [id, spec] of Object.entries(voice ? ELEVEN_TTS : {})) {
     const m = models.find((x) => x.model_id === id);
     if (!m || m.can_do_text_to_speech === false) continue;
     const inputs = {
@@ -368,7 +367,7 @@ export function buildElevenlabsVariants(models = [], voices = []) {
     });
   }
   // Any recording in your voice (or another one of yours).
-  if (ids.has(ELEVEN_STS_MODEL)) {
+  if (voice && ids.has(ELEVEN_STS_MODEL)) {
     add({
       id: 'voice-changer', slug: 'voice-changer', family: 'elevenlabs-voice-changer', familyName: 'ElevenLabs Voice Changer',
       fields: {

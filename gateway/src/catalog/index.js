@@ -157,7 +157,10 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     }
     if (providerId === 'elevenlabs') {
       // Voices change when you clone or design one: fetched on every refresh, not once a day.
-      if (fresh && !force && fs.existsSync(fileOf('elevenlabs-voices.json'))) return;
+      const voicesFile = fileOf('elevenlabs-voices.json');
+      let age = Infinity;
+      try { age = Date.now() - fs.statSync(voicesFile).mtimeMs; } catch { /* none yet */ }
+      if (!force && age < 3_600_000) return; // the hourly refresh picks up a new voice
       const voices = await provider.voices(cfg);
       writeJsonAtomic(fileOf('elevenlabs-voices.json'), voices);
       log?.info(`catalog: elevenlabs — ${list.length} models, ${voices.length} voices`);

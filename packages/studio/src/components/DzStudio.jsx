@@ -603,7 +603,8 @@ function ParamMenu({ p, value, onChange, title, icon, render, caption, modelName
   if (!p) return null;
   const own = Array.isArray(p.enum) ? p.enum
     : p.minValue != null && p.maxValue != null ? Array.from({ length: Math.min(30, Math.floor((p.maxValue - p.minValue) / (p.step || 1)) + 1) }, (_, i) => p.minValue + i * (p.step || 1)) : [];
-  const extra = others.filter((o) => !own.some((x) => String(x) === String(o)));
+  const same = (x, o) => String(x).toLowerCase().replace(/\s+/g, "") === String(o).toLowerCase().replace(/\s+/g, "");
+  const extra = others.filter((o) => !own.some((x) => same(x, o)));
   const current = locked ? locked.value : value ?? p.default ?? own[0];
   return (
     <div className="relative" ref={anchor}>
@@ -639,7 +640,7 @@ function familyValues(entries, entry, keys) {
     for (const v of e.variants) {
       const ps = paramsOf(v.model);
       const p = [...ps.main, ...ps.advanced].find((x) => keys.includes(x.key) && Array.isArray(x.enum));
-      for (const o of p?.enum || []) if (!out.some((x) => String(x) === String(o))) out.push(o);
+      for (const o of p?.enum || []) if (!out.some((x) => String(x).toLowerCase() === String(o).toLowerCase())) out.push(o);
     }
   }
   return out;

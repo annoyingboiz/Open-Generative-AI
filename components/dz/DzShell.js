@@ -5,9 +5,9 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DzCreateStudio, DzStudio, DzDirector, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
+import { DzCreateStudio, DzStudio, DzStoryboard, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
   DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT,
-  DzProjectsPage, DzElementsPage, ToElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
+  DzProjectsPage, DzElementsPage, ToElementDialog, VideoElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
   DropdownMenuParts, DialogParts, cn } from 'studio';
 import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, SquaresFour, Images, Shapes, Layout, Trash, FolderSimple, Plus,
   SidebarSimple, MagnifyingGlass, ChatCircle, CaretUpDown, GearSix, Sun, Moon, SignOut, List, X, ArrowRight } from '@phosphor-icons/react';
@@ -99,6 +99,7 @@ export default function DzShell() {
   const [folderDialog, setFolderDialog] = useState(null); // { mode: 'new', parent } | { mode: 'rename', folder }
   const [moveItem, setMoveItem] = useState(null);
   const [toElement, setToElement] = useState(null); // chosen results → an element
+  const [videoElement, setVideoElement] = useState(null); // Storyboard group: Generate video element (package 05)
   // Only the latest project switch counts; until the first one resolves the studios wait.
   const navSeq = useRef(0);
   const [switching, setSwitching] = useState(true);
@@ -195,8 +196,10 @@ export default function DzShell() {
   }, []);
   useEffect(() => {
     const onTo = (e) => { if (e.detail?.items?.length) setToElement(e.detail.items); };
+    const onVideo = (e) => { if (e.detail?.element) setVideoElement(e.detail.element); };
     window.addEventListener('dz:to-element', onTo);
-    return () => window.removeEventListener('dz:to-element', onTo);
+    window.addEventListener('dz:video-element', onVideo);
+    return () => { window.removeEventListener('dz:to-element', onTo); window.removeEventListener('dz:video-element', onVideo); };
   }, []);
   // Messages from anywhere (Move / Copy / Trash on many items, …).
   useEffect(() => {
@@ -236,7 +239,7 @@ export default function DzShell() {
   };
 
   useEffect(() => {
-    const onUpscale = (e) => { if (e.detail?.url) { setImageMenu(null); setChatOpen(false); setUpscaleDrawer({ url: e.detail.url, result: null }); } };
+    const onUpscale = (e) => { if (e.detail?.url) { setImageMenu(null); setChatOpen(false); setUpscaleDrawer({ url: e.detail.url, result: null, meta: e.detail.meta || null }); } };
     // Videos open straight in the Upscale tab (big preview, before/after).
     const onUpscaleVideo = (e) => { if (e.detail?.url) { setImageMenu(null); setUpscaleDrawer(null); setUpscaleTabPick({ url: e.detail.url, kind: 'video' }); openTabRef.current?.('upscale'); } };
     window.addEventListener('dz:upscale-video', onUpscaleVideo);
@@ -354,9 +357,11 @@ export default function DzShell() {
       window.removeEventListener('dragleave', leave, true);
     };
   }, []);
+  // Tabs that take files dropped anywhere; the Storyboard handles its own drops (package 05).
+  const takesDrop = ['create', 'image', 'video', 'upscale'].includes(activeTab);
   const onDragEnter = (e) => {
     e.preventDefault();
-    if (!internalDrag.current && Array.from(e.dataTransfer?.types || []).includes('Files')) setDragging(true);
+    if (takesDrop && !internalDrag.current && Array.from(e.dataTransfer?.types || []).includes('Files')) setDragging(true);
   };
   const onDragLeave = (e) => {
     e.preventDefault();
@@ -365,7 +370,7 @@ export default function DzShell() {
   const onDrop = (e) => {
     e.preventDefault();
     setDragging(false);
-    if (internalDrag.current) return;
+    if (internalDrag.current || !takesDrop) return;
     const files = Array.from(e.dataTransfer?.files || []);
     if (files.length) setDroppedFiles(files);
   };
@@ -585,7 +590,7 @@ export default function DzShell() {
             )}
           </div>
           <div className={activeTab === 'director' ? 'h-full w-full' : 'hidden'}>
-            <DzDirector key={project?.id || 'library'} {...studioProps} {...callbacks('director')} />
+            <DzStoryboard key={project?.id || 'library'} {...studioProps} {...callbacks('director')} />
           </div>
           <div className={activeTab === 'tools' ? 'h-full w-full' : 'hidden'}>
             <DzTools key={project?.id || 'library'} {...studioProps} {...callbacks('tools')} />
@@ -644,6 +649,7 @@ export default function DzShell() {
                 <DzUpscalePanel
                   apiKey={DZ_SESSION_PLACEHOLDER}
                   imageUrl={upscaleDrawer.url}
+                  meta={upscaleDrawer.meta || null}
                   isAdmin={user.role === 'admin'}
                   compact
                   onStart={() => callbacks('upscale').onGenerationStart()}
@@ -718,6 +724,7 @@ export default function DzShell() {
           setFolders(r.folders || []);
           pickFolder(r.folder.id);
         }} />
+      {videoElement && <VideoElementDialog element={videoElement} onClose={() => setVideoElement(null)} onError={(message) => push({ type: 'error', title: 'Elements', message })} apiKey={DZ_SESSION_PLACEHOLDER} />}
       {toElement && <ToElementDialog items={toElement} onClose={() => setToElement(null)} onError={(message) => push({ type: 'error', title: 'Elements', message })} />}
       <MoveDialog item={moveItem} onOpenChange={(o) => { if (!o) setMoveItem(null); }} projects={projects} />
       <style>{`.dz-toast{animation:dzToastIn 260ms cubic-bezier(.2,.8,.2,1)}@keyframes dzToastIn{from{transform:translateY(-12px);opacity:0}to{transform:none;opacity:1}}.dz-sheet{animation:dzDrawerIn 240ms cubic-bezier(.16,1,.3,1)}@keyframes dzDrawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>

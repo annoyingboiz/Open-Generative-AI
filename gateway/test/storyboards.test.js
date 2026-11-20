@@ -117,7 +117,8 @@ test('storyboards: personal or in a project, plan saves shots, stale edits get 4
   let res = await as('admin', 'POST', '/dz/api/storyboards', { scene: 'A rooftop at night.' });
   assert.equal(res.statusCode, 200, res.body);
   const mine = res.json().storyboard;
-  assert.equal(mine.name, 'Untitled scene');
+  assert.equal(mine.name, 'Untitled film');
+  assert.deepEqual([mine.scenes, mine.shots, mine.mood.items], [[], [], []]); // a new film is empty
   assert.equal(mine.rev, 1);
   assert.equal((await as('wife', 'GET', `/dz/api/storyboards/${mine.id}`)).statusCode, 404);
   assert.equal((await as('admin', 'GET', '/dz/api/storyboards')).json().storyboards.length, 1);
@@ -148,7 +149,7 @@ test('storyboards: personal or in a project, plan saves shots, stale edits get 4
   assert.equal(sb.shots[0].title, 'Close-up');
   assert.equal(sb.shots[0].move, null);
 
-  // A frame made for shot 1: running while the job runs, then it joins the shot and is picked.
+  // A frame made for shot 1: running while the job runs, then it joins the shot — not approved.
   apimart.poll = async () => ({ state: 'completed', outputs: [`http://127.0.0.1:${files.address().port}/f.png`], costUsd: 0.04 });
   res = await as('admin', 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'frame', _dz: { studio: 'director', meta: { forShot: { board: mine.id, shot: s1.id, step: 'frame' } } } });
   assert.equal(res.statusCode, 200, res.body);
@@ -165,16 +166,22 @@ test('storyboards: personal or in a project, plan saves shots, stale edits get 4
   const m = sb.media[s1.id];
   assert.equal(m.frames.length, 1);
   assert.equal(m.frames[0].gen, genId);
-  assert.equal(m.frame, `/media/g/${genId}/0.png`);
+  assert.equal(m.frame, null);
+  assert.deepEqual(m.approved, []);
   assert.deepEqual(sb.jobs, []);
   assert.equal(app.ctx.db.prepare('SELECT studio FROM generations WHERE id = ?').get(genId).studio, 'director');
+  // Approve / remove only among the shot's own files; any number approved.
+  res = await as('admin', 'POST', `/dz/api/storyboards/${mine.id}/media`, { shot: s1.id, op: 'approve', url: m.frames[0].url });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(res.json().storyboard.media[s1.id].approved, [m.frames[0].url]);
+  assert.equal(res.json().storyboard.media[s1.id].frame, m.frames[0].url);
   res = await as('admin', 'GET', '/dz/api/storyboards');
-  assert.equal(res.json().storyboards[0].cover, m.frame);
+  assert.equal(res.json().storyboards[0].cover, m.frames[0].url);
+  assert.equal(res.json().storyboards[0].approved, 1);
 
-  // Pick / remove only among the shot's own files.
   res = await as('admin', 'POST', `/dz/api/storyboards/${mine.id}/media`, { shot: s1.id, kind: 'frame', op: 'pick', url: '/media/g/other/0.png' });
   assert.equal(res.statusCode, 404);
-  res = await as('admin', 'POST', `/dz/api/storyboards/${mine.id}/media`, { shot: s1.id, kind: 'frame', op: 'unpick' });
+  res = await as('admin', 'POST', `/dz/api/storyboards/${mine.id}/media`, { shot: s1.id, op: 'unapprove', url: m.frames[0].url });
   assert.equal(res.json().storyboard.media[s1.id].frame, null);
   res = await as('admin', 'POST', `/dz/api/storyboards/${mine.id}/media`, { shot: s1.id, kind: 'frame', op: 'pick', url: m.frames[0].url });
   assert.equal(res.json().storyboard.media[s1.id].frame, m.frames[0].url);
@@ -249,4 +256,82 @@ test('storyboard print page escapes everything and shows the picked frames', asy
   assert.match(html, /35mm Film · 50mm/);
   assert.match(html, /Phone/);
   assert.match(html, /Orbit/);
+});
+
+test('storyboards v2 (package 05): scenes, any number of shots, groups, targets, several approved, old boards migrated', async () => {
+  const adminId = app.ctx.db.prepare("SELECT id FROM users WHERE username = 'admin'").get().id;
+  // An old board (before package 05): one scene text, two shots, a picked frame.
+  app.ctx.db.prepare(`INSERT INTO storyboards (id, owner_id, project_id, name, scene, shots_json, media_json, rev, created_at, updated_at, v2)
+    VALUES ('sb_old_one', ?, NULL, 'Old', 'A long scene', ?, ?, 4, 1, 1, 0)`).run(adminId,
+    JSON.stringify([{ id: 's_a', title: 'Wide' }, { id: 's_b', title: 'Close' }]),
+    JSON.stringify({ s_a: { frames: [{ url: '/media/g/gen_x/0.png', gen: 'gen_x', at: 1 }], videos: [], frame: '/media/g/gen_x/0.png', video: null } }));
+  const { createStoryboards } = await import('../src/storyboards.js');
+  createStoryboards({ db: app.ctx.db, projects: { isMember: () => false }, generations: {}, log: null }); // runs the migration
+  const raw = app.ctx.db.prepare("SELECT * FROM storyboards WHERE id = 'sb_old_one'").get();
+  assert.equal(raw.v2, 1);
+  assert.equal(raw.rev, 4);
+  const scenes = JSON.parse(raw.scenes_json);
+  assert.equal(scenes.length, 1);
+  assert.deepEqual(JSON.parse(raw.shots_json).map((s) => [s.id, s.scene, s.note]), [['s_a', scenes[0].id, 'Wide'], ['s_b', scenes[0].id, 'Close']]);
+  assert.deepEqual(JSON.parse(raw.media_json).s_a.approved, ['/media/g/gen_x/0.png']);
+  assert.equal(raw.scene, 'A long scene'); // kept with the film
+
+  // More than 24 shots in several scenes; refs keep their sizes; foreign URLs are dropped.
+  let res = await as('admin', 'POST', '/dz/api/storyboards', {});
+  let sb = res.json().storyboard;
+  const sc = [{ id: 'sc_one', name: 'Street', note: 'Mike walks home' }, { id: 'sc_two', name: 'Alley' }];
+  const shots = Array.from({ length: 30 }, (_, i) => ({ id: `s_${i}`, scene: i < 20 ? 'sc_one' : 'sc_two', note: `Shot ${i}`, refs: [{ url: '/media/u/up_1.png', kind: 'image', w: 1600, h: 900 }, { url: 'https://evil.example/x.png' }] }));
+  const mood = { items: [{ id: 'g_mike', type: 'frame', name: 'Mike', color: 'amber', x: 0, y: 0, w: 600, h: 400 }, { id: 'm_1', type: 'image', url: '/media/u/up_2.png', x: 10, y: 10, w: 200, h: 300 }, { type: 'bogus' }] };
+  res = await as('admin', 'PATCH', `/dz/api/storyboards/${sb.id}`, { rev: sb.rev, scenes: sc, shots, mood, note: 'An idea' });
+  assert.equal(res.statusCode, 200, res.body);
+  sb = res.json().storyboard;
+  assert.equal(sb.shots.length, 30);
+  assert.equal(sb.scenes.length, 2);
+  assert.equal(sb.shots[25].scene, 'sc_two');
+  assert.deepEqual(sb.shots[0].refs, [{ url: '/media/u/up_1.png', kind: 'image', w: 1600, h: 900 }]);
+  assert.deepEqual(sb.mood.items.map((x) => x.id), ['g_mike', 'm_1']);
+  assert.equal(sb.note, 'An idea');
+  // A shot whose scene is gone lands in the first scene.
+  res = await as('admin', 'PATCH', `/dz/api/storyboards/${sb.id}`, { rev: sb.rev, scenes: [sc[1]], shots: shots.slice(0, 2) });
+  sb = res.json().storyboard;
+  assert.deepEqual(sb.shots.map((s) => s.scene), ['sc_two', 'sc_two']);
+
+  // A job for the group and two for shot 0: they land there; history filters by target.
+  apimart.poll = async () => ({ state: 'completed', outputs: [`http://127.0.0.1:${files.address().port}/f.png`], costUsd: 0.04 });
+  const run = async (target) => {
+    const r = await as('admin', 'POST', '/api/v1/p/apimart/test-image?m=t2i', { prompt: 'x', _dz: { studio: 'image', meta: { target } } });
+    assert.equal(r.statusCode, 200, r.body);
+    const id = r.json().id;
+    app.ctx.db.prepare('UPDATE generations SET next_poll_at = 0 WHERE id = ?').run(id);
+    return id;
+  };
+  const g1 = await run({ board: sb.id, id: 'g_mike', kind: 'group' });
+  const s1 = await run({ board: sb.id, id: 's_0', kind: 'shot' });
+  const s2 = await run({ board: sb.id, id: 's_0', kind: 'shot' });
+  // Meanwhile the shots are reordered: the results still find shot 0.
+  res = await as('admin', 'PATCH', `/dz/api/storyboards/${sb.id}`, { rev: sb.rev, shots: [sb.shots[1], sb.shots[0]] });
+  sb = res.json().storyboard;
+  await app.ctx.generations.tick();
+  apimart.poll = async () => ({ state: 'processing' });
+  await new Promise((r) => setTimeout(r, 50));
+  sb = (await as('admin', 'GET', `/dz/api/storyboards/${sb.id}`)).json().storyboard;
+  assert.deepEqual(sb.media.g_mike.frames.map((x) => x.gen), [g1]);
+  assert.deepEqual(sb.media.s_0.frames.map((x) => x.gen).sort(), [s1, s2].sort());
+  assert.deepEqual(sb.media.s_0.approved, []);
+  const hist = (await as('admin', 'GET', `/api/v1/history?target=${sb.id}:s_0`)).json().items.map((i) => i.id).sort();
+  assert.deepEqual(hist, [s1, s2].sort());
+  assert.deepEqual((await as('admin', 'GET', `/api/v1/history?target=${sb.id}:g_mike`)).json().items.map((i) => i.id), [g1]);
+
+  // Both approved; unapprove one; a URL of another shot is refused.
+  for (const u of sb.media.s_0.frames.map((x) => x.url)) {
+    res = await as('admin', 'POST', `/dz/api/storyboards/${sb.id}/media`, { target: 's_0', op: 'approve', url: u });
+    assert.equal(res.statusCode, 200, res.body);
+  }
+  assert.equal(res.json().storyboard.media.s_0.approved.length, 2);
+  res = await as('admin', 'POST', `/dz/api/storyboards/${sb.id}/media`, { target: 's_1', op: 'approve', url: sb.media.s_0.frames[0].url });
+  assert.equal(res.statusCode, 404);
+  // Deleting the group drops its list; the generation stays in the Library.
+  res = await as('admin', 'PATCH', `/dz/api/storyboards/${sb.id}`, { rev: sb.rev, mood: { items: [] } });
+  assert.equal(res.json().storyboard.media.g_mike, undefined);
+  assert.equal(app.ctx.db.prepare('SELECT deleted_at FROM generations WHERE id = ?').get(g1).deleted_at, null);
 });

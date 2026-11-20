@@ -256,6 +256,15 @@ const MIGRATIONS = [
   );
   CREATE INDEX chats_user ON chats(user_id, assistant_id, updated_at DESC);
   `,
+  // 15: Storyboard v2 (package 05) — ordered scenes, the Moodboard canvas, a film note.
+  // Shots keep their own scene id, note and references inside shots_json; boards
+  // made before are migrated in place by storyboards.js (one scene, same shots, picks → approved).
+  `
+  ALTER TABLE storyboards ADD COLUMN scenes_json TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE storyboards ADD COLUMN mood_json TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE storyboards ADD COLUMN note TEXT NOT NULL DEFAULT '';
+  ALTER TABLE storyboards ADD COLUMN v2 INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openDatabase(dataDir) {

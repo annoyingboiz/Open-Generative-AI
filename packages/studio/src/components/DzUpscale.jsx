@@ -8,7 +8,7 @@
 // The controls come from the server (window.__DZ_CATALOG__.tools.upscale), the
 // same spec the gateway uses to check fields and compute the price.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dzUpscale, uploadFile } from "../api.js";
+import { dzUpscale, dzWithMeta, uploadFile } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import { DzMediaBrowser } from "./DzMedia.jsx";
@@ -79,7 +79,7 @@ export function useDzUpscaleSpec() {
 const priceLabel = (m) => `${fmtUsd(m.price.usd)} / ${m.price.mp} MP${m.price.assumed ? " ≈" : ""}`;
 
 // Settings + price + Upscale. `imageUrl` must be one of our /media files.
-export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, compact = false, isAdmin = false }) {
+export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, compact = false, isAdmin = false, meta = null }) {
   const spec = useDzUpscaleSpec();
   const saved = useMemo(loadSaved, []);
   const [groupId, setGroupId] = useState(saved.groupId || null);
@@ -133,7 +133,8 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
     if (mounted.current) setBusy((n) => n + 1);
     onStart?.({ source: imageUrl });
     try {
-      const res = await dzUpscale(apiKey, { endpoint: group.endpoint, ...body });
+      // Opened from a storyboard's working screen: the result returns to that shot or group (package 05).
+      const res = meta ? await dzWithMeta({ studio: "upscale", meta }, () => dzUpscale(apiKey, { endpoint: group.endpoint, ...body })) : await dzUpscale(apiKey, { endpoint: group.endpoint, ...body });
       if (!res?.url) throw new Error("No result file");
       onDone?.({ url: res.url, source: imageUrl, model: model.id, factor, id: res.request_id });
     } catch (e) {
@@ -141,7 +142,7 @@ export function DzUpscalePanel({ apiKey, imageUrl, onStart, onDone, onError, com
     } finally {
       if (mounted.current) setBusy((n) => n - 1);
     }
-  }, [canRun, apiKey, group, body, imageUrl, model, factor, onStart, onDone, onError]);
+  }, [canRun, apiKey, group, body, imageUrl, model, factor, onStart, onDone, onError, meta]);
 
   const shell = compact ? "flex h-full flex-col" : "flex h-full flex-col rounded-2xl border border-border bg-card";
 

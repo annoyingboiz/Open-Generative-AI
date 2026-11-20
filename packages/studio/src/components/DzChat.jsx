@@ -213,6 +213,14 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
   const ctx = useDzContext();
   const projectId = ctx.project?.id || null;
   const textModels = useDzTextModelOptions({ all: true });
+  // What the open screen shows the assistant (a storyboard's shot, group, scene…), as one short line.
+  const [sees, setSees] = useState("");
+  useEffect(() => {
+    const read = () => setSees(String(getStudio?.()?.sees || ""));
+    read();
+    window.addEventListener("dz:studio-state", read);
+    return () => window.removeEventListener("dz:studio-state", read);
+  }, [getStudio, activeTab]);
   const [lists, setLists] = useState({ personal: [], project: [], templates: [], loaded: false });
   const [assistantId, setAssistantId] = useState(() => { try { return localStorage.getItem(LAST_KEY) || ""; } catch { return ""; } });
   const [chats, setChats] = useState([]);
@@ -311,7 +319,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
       setText("");
       setImages([]);
       try {
-        const r = await dzAssistants.send(c.id, { text: sentText, images: sentImages.map((x) => x.url), model: model || undefined, context: studio ? { tab: activeTab, model: studio.model, prompt: studio.prompt } : { tab: activeTab } });
+        const r = await dzAssistants.send(c.id, { text: sentText, images: sentImages.map((x) => x.url), model: model || undefined, context: studio ? { tab: activeTab, model: studio.model, prompt: studio.prompt, sees: studio.seesFull || studio.sees || undefined } : { tab: activeTab } });
         if (seq !== chatSeq.current) return; // you moved on: the answer is saved in its chat
         setChat(r.chat);
         setChats((list) => [{ id: r.chat.id, title: r.chat.title, updated_at: r.chat.updated_at, n: r.chat.messages.length }, ...list.filter((x) => x.id !== r.chat.id)]);
@@ -441,6 +449,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
                 ))}
               </div>
             )}
+            {sees && <p className="flex items-center gap-1.5 self-start rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground" title="What the assistant sees with your message">Sees: {sees}</p>}
             {visionWarn && <p className="text-warning">This text model may not see pictures — pick one marked for images (GPT, Claude, Gemini, Qwen VL…).</p>}
             <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} disabled={!assistant}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}

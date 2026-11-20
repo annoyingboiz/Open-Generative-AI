@@ -163,7 +163,7 @@ function TileMenu({ item, act, open, setOpen, timeOf }) {
             <Row icon={VideoCamera} onSelect={() => act.makeVideo(item)}>Make video</Row>
           </>
         )}
-        {canUp && <Row icon={ArrowSquareUp} onSelect={() => (isVideo ? dzOpenVideoUpscale(item.url) : dzOpenUpscale(item.url))}>Upscale</Row>}
+        {canUp && <Row icon={ArrowSquareUp} onSelect={() => act.upscale(item)}>Upscale</Row>}
         {!isVideo && <Row icon={Shapes} onSelect={() => window.dispatchEvent(new CustomEvent("dz:to-element", { detail: { items: [item] } }))}>Make element</Row>}
         {item.meta?.entryKey && <Row icon={ArrowCounterClockwise} onSelect={() => act.reuse(item)}>Reuse prompt and settings</Row>}
         {prompt && <Row icon={Copy} onSelect={() => { navigator.clipboard?.writeText(prompt).then(() => notify({ type: "notice", title: "Copied", message: "The prompt is on the clipboard." }), () => {}); }}>Copy prompt</Row>}
@@ -180,8 +180,8 @@ function QuickActions({ item, act, timeOf }) {
   const isVideo = item.kind === "video";
   const canUp = isVideo ? dzVideoUpscaleSpec() && dzIsOwnImage(item.url) : dzUpscaleSpec() && dzIsOwnImage(item.url);
   const list = isVideo
-    ? [[ArrowLineRight, "Continue from the last frame", () => act.continueFrom(item)], [FrameCorners, "Save a frame as a picture", () => act.saveFrame(item, timeOf?.())], canUp && [ArrowsOutSimple, "Upscale", () => dzOpenVideoUpscale(item.url)]]
-    : [[ImageSquare, "Use as reference", () => act.useRef(item)], [VideoCamera, "Make video", () => act.makeVideo(item)], canUp && [ArrowsOutSimple, "Upscale", () => dzOpenUpscale(item.url)]];
+    ? [[ArrowLineRight, "Continue from the last frame", () => act.continueFrom(item)], [FrameCorners, "Save a frame as a picture", () => act.saveFrame(item, timeOf?.())], canUp && [ArrowsOutSimple, "Upscale", () => act.upscale(item)]]
+    : [[ImageSquare, "Use as reference", () => act.useRef(item)], [VideoCamera, "Make video", () => act.makeVideo(item)], canUp && [ArrowsOutSimple, "Upscale", () => act.upscale(item)]];
   return (
     <div className="absolute bottom-2 left-2 flex gap-1">
       {list.filter(Boolean).map(([Icon, label, run]) => (
@@ -195,7 +195,7 @@ function QuickActions({ item, act, timeOf }) {
   );
 }
 
-function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen, onMenu }) {
+function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen, onMenu, badge = null }) {
   const [menu, setMenuState] = useState(false);
   const setMenu = (v) => { setMenuState(v); onMenu?.(v); };
   const [progress, setProgress] = useState(0);
@@ -234,7 +234,8 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
               onLoad={(e) => onMeasure(item.id, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)} />
           )}
       {done && <span className={cn("pointer-events-none absolute inset-0 rounded-sm transition-colors duration-state", on ? "bg-overlay/[.28] ring-2 ring-inset ring-signal" : "group-hover:bg-overlay-foreground/[.07] group-hover:ring-1 group-hover:ring-inset group-hover:ring-overlay-foreground/10")} />}
-      {fresh && !selecting && <span className="pointer-events-none absolute left-2 top-2 rounded-xs bg-signal px-1.5 text-xs font-semibold leading-5 text-primary-foreground">New</span>}
+      {fresh && !selecting && !badge && <span className="pointer-events-none absolute left-2 top-2 rounded-xs bg-signal px-1.5 text-xs font-semibold leading-5 text-primary-foreground">New</span>}
+      {badge && !selecting && <span className="pointer-events-none absolute left-2 top-2">{badge}</span>}
       {done && (item.studio === "upscale" || duration > 0) && (
         <span className={cn("pointer-events-none absolute bottom-2 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium tabular-nums text-overlay-foreground transition-opacity duration-state", selecting ? "left-2" : "right-2")}>{item.studio === "upscale" ? "Upscaled" : fmtDur(duration)}</span>
       )}
@@ -245,7 +246,12 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
       {!selecting && done && item.kind !== "audio" && (
         <div className={cn("transition-opacity duration-state", menu ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100")}><QuickActions item={item} act={act} timeOf={timeOf} /></div>
       )}
-      {!selecting && done && (
+      {/* A ready picture added to a shot (package 05): not a generation — no like, no menu; it can leave the shot. */}
+      {!selecting && done && item.own && (
+        <button type="button" aria-label="Remove from this shot" onClick={(e) => { e.stopPropagation(); act.removeOwn?.(item); }}
+          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-overlay/55 text-overlay-foreground opacity-0 backdrop-blur-md transition-opacity duration-state hover:bg-overlay/75 group-hover:opacity-100 focus:opacity-100"><X size={14} /></button>
+      )}
+      {!selecting && done && !item.own && (
         <div className={cn("absolute right-2 top-2 flex gap-1.5 transition-opacity duration-state", menu ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100")}>
           <button type="button" aria-label={item.liked ? "Unlike" : "Like"} aria-pressed={Boolean(item.liked)} onClick={(e) => { e.stopPropagation(); act.like(item); }}
             className="flex h-7 w-7 items-center justify-center rounded-full bg-overlay/55 text-overlay-foreground backdrop-blur-md transition-colors duration-state hover:bg-overlay/75"><Heart size={15} weight={item.liked ? "fill" : "regular"} className={item.liked ? "text-signal" : ""} /></button>
@@ -264,7 +270,7 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
 }
 
 // The tabs row, or in its place (same height) the selection actions (§5.2).
-function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS }) {
+function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS, extraActions = null }) {
   const [busy, setBusy] = useState(false);
   const n = sel.count;
   const run = async (action, verb) => {
@@ -287,6 +293,7 @@ function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS
         <span className="mr-2 text-base font-semibold tabular-nums">{n} selected</span>
         <button type="button" onClick={sel.selectAll} className="h-8 rounded-md px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Select all</button>
         <span className="mx-2 h-5 w-px bg-border" />
+        {extraActions && <>{extraActions(sel.chosen, sel.clear)}<span className="mx-2 h-5 w-px bg-border" /></>}
         <Action icon={FolderSimple} onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: { items: sel.chosen, mode: "move" } }))}>Move to</Action>
         <Action icon={Copy} onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: { items: sel.chosen, mode: "copy" } }))}>Copy to</Action>
         <Action icon={DownloadSimple} onClick={async () => { for (const i of sel.chosen) { await download(i.url); await new Promise((r) => setTimeout(r, 250)); } }}>Download</Action>
@@ -724,6 +731,8 @@ export default function DzStudio(props) {
   // One component for three tabs (package 03): Studio, and the light Image and Video tabs.
   const mode = props.mode === "image" || props.mode === "video" ? props.mode : "create";
   const light = mode !== "create";
+  // A storyboard's working screen (package 05): the same Image / Video tool, for one shot or group.
+  const target = props.target || null;
   // Real errors (package 04, §2.5): one line inside the composer, above the bottom row;
   // it goes away on the next action. Set by Generate, uploads and what Generate needs.
   const [err, setErr] = useState(null); // { head, text, retry? }
@@ -878,6 +887,21 @@ export default function DzStudio(props) {
     notify({ type: "notice", title: "Generate", message: light ? `${count > 1 ? `${count} ${what}` : `1 ${what}`} added to the queue.` : count > 1 ? `${count} jobs added. The tiles appear first in the grid.` : "Added to the queue. The tile appears first in the grid." });
   };
 
+  // Working screen opened with something to start from (Make a video, Edit, Reuse): once the models are known.
+  const initialDone = useRef(false);
+  useEffect(() => {
+    const i = target?.initial;
+    if (!i || initialDone.current || !entry) return undefined;
+    initialDone.current = true;
+    const t = setTimeout(() => {
+      if (i.start) window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: engine.addr, url: i.start, role: "first" } }));
+      if (i.edit) window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: engine.addr, url: i.edit, role: "edit" } }));
+      if (i.reuse) window.dispatchEvent(new CustomEvent("dz:reuse", { detail: { to: engine.addr, item: i.reuse } }));
+      if (i.ref) window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: engine.addr, url: i.ref, role: "reference" } }));
+    }, 0);
+    return () => clearTimeout(t);
+  }, [entry]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The error line goes away on the next action (package 04, §2.5).
   useEffect(() => { setErr(null); }, [prompt, attached, entry?.key, kind, count, engine.touched, engine.valuesByKind]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -899,7 +923,11 @@ export default function DzStudio(props) {
     try {
       const r = await dzFrame(it.id, { at });
       const file = { url: r.url, name: at === "first" ? "first frame" : "last frame" };
-      if (mode === "image") { window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: r.url } })); return; }
+      if (mode === "image") {
+        if (target) target.switchTo?.("video", { start: r.url });
+        else window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: r.url } }));
+        return;
+      }
       if (mode === "create") setKind("video");
       setAttached((prev) => ({ ...prev, first: [file] }));
       focusPrompt();
@@ -912,9 +940,13 @@ export default function DzStudio(props) {
     trashStrict: (it) => history.trash(it.id),
     cancel: (it) => dzLibrary.cancel(it.id).catch(fail("Cancel")),
     useRef: addRef,
-    makeVideo: (it) => (mode === "create" ? (applyResult(it, "animate"), focusPrompt()) : window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: it.url } }))),
+    // Working screen: Make a video switches this composer to Video with the picture in Start (package 05, §4.4).
+    makeVideo: (it) => (target ? target.switchTo?.("video", { start: it.url }) : mode === "create" ? (applyResult(it, "animate"), focusPrompt()) : window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: it.url } }))),
+    upscale: (it) => (it.kind === "video" ? dzOpenVideoUpscale(it.url) : dzOpenUpscale(it.url, target ? { target: { board: target.board, id: target.id, kind: target.kind, step: "frame" } } : null)),
+    removeOwn: (it) => target?.removeOwn?.(it),
     edit: (it) => {
       if (mode === "image" || (mode === "create" && kind === "image")) { openForEdit(it.url); focusPrompt(); return; }
+      if (target) { target.switchTo?.("image", { edit: it.url }); return; }
       window.dispatchEvent(new CustomEvent("dz:open-tab", { detail: { tab: "image" } }));
       setTimeout(() => window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "image", url: it.url, role: "edit" } })), 0);
     },
@@ -976,7 +1008,15 @@ export default function DzStudio(props) {
     else if (y <= 0 && mini) setMini(false);
   };
 
-  const items = history.items;
+  // Working screen: plus the ready pictures added to the shot; Approved / Videos / Pictures filter here.
+  const items = useMemo(() => {
+    if (!target) return history.items;
+    let list = kindFilter === "all" ? [...(target.extra || []), ...history.items] : history.items;
+    if (kindFilter === "approved") list = [...(target.extra || []), ...history.items].filter((i) => target.approved?.has(i.url));
+    if (kindFilter === "videos") list = list.filter((i) => i.kind === "video");
+    if (kindFilter === "pictures") list = list.filter((i) => i.kind !== "video");
+    return list;
+  }, [target, history.items, kindFilter]);
   const rows = useMemo(() => justify(items, aspects, gridWidth), [items, aspects, gridWidth]);
   const total = groups.reduce((n, g) => n + groupItems(sent, g).length, 0);
   const priceText = price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}` : entry?.priceLabel || "";
@@ -987,17 +1027,24 @@ export default function DzStudio(props) {
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-background">
       <style>{`.dz-off{opacity:.42;filter:saturate(.35)}:root[data-theme="light"] .dz-off{opacity:.32}.dz-off-more{opacity:.55}.dz-goff{opacity:.45}.dz-pop{animation:dzPop 180ms cubic-bezier(.2,.8,.2,1)}@keyframes dzPop{from{transform:scale(.8);opacity:0}}.dz-sel-in{animation:dzSelIn 160ms cubic-bezier(.2,.8,.2,1)}@keyframes dzSelIn{from{transform:translateY(-4px);opacity:0}}`}</style>
       <div ref={scroller} onScroll={onScroll} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 [container-type:inline-size]">
-        <div className="flex items-baseline gap-3 pb-3 pt-6">
-          <h1 className="text-xl font-semibold">{TITLE[mode]}</h1>
-          <span className="truncate text-sm text-muted-foreground">{where}</span>
-        </div>
+        {target ? (
+          <div className="pt-4">{target.header}{target.above}</div>
+        ) : (
+          <div className="flex items-baseline gap-3 pb-3 pt-6">
+            <h1 className="text-xl font-semibold">{TITLE[mode]}</h1>
+            <span className="truncate text-sm text-muted-foreground">{where}</span>
+          </div>
+        )}
         {(items.length > 0 || !history.loaded || kindFilter !== "all") && (
           // Tabs and Select stay at the top while the grid scrolls (Loom 19.11): see-through blur once stuck; the row keeps its own bottom line.
           <div className={cn("sticky top-0 z-[5] -mx-6 px-6 transition-[background-color,box-shadow,backdrop-filter] duration-state", stuck ? "bg-background/80 backdrop-blur-md" : "bg-background")}>
-            <TabsRow sel={sel} kindFilter={kindFilter} setKindFilter={setKindFilter} canSelect={items.some((i) => i.url)} tabs={light ? LIGHT_TABS : STUDIO_TABS} />
+            <TabsRow sel={sel} kindFilter={kindFilter} setKindFilter={setKindFilter} canSelect={items.some((i) => i.url)} tabs={target?.tabs || (light ? LIGHT_TABS : STUDIO_TABS)} extraActions={target?.selectionActions || null} />
           </div>
         )}
-        {history.loaded && items.length === 0 && light && kindFilter === "all" ? (
+        {target && history.loaded && items.length === 0 && kindFilter === "all" ? (
+          // Working screen empty (package 05, 17 / 18 / 19): its own state, from the storyboard.
+          <div className="pb-64">{target.empty}</div>
+        ) : history.loaded && items.length === 0 && light && kindFilter === "all" ? (
           // Empty Image / Video (package 03, image-01, video-01): three example prompts; a click puts one into the prompt.
           <div className="flex min-h-[60%] flex-col items-center justify-center gap-3 pb-64 pt-24 text-center">
             <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-muted-foreground">{mode === "image" ? <ImageSquare size={20} /> : <VideoCamera size={20} />}</span>
@@ -1031,7 +1078,7 @@ export default function DzStudio(props) {
             {rows.map((row, ri) => (
               <div key={ri} className="flex gap-1.5" style={{ height: row.h }}>
             {row.cells.map(({ item, w }) => (
-              <Tile key={item.id} item={item} items={items} width={w} height={row.h} onMeasure={measure} sel={sel} act={act} isNew={isNew} markSeen={markSeen} onMenu={setTileMenu} />
+              <Tile key={item.id} item={item} items={items} width={w} height={row.h} onMeasure={measure} sel={sel} act={act} isNew={isNew} markSeen={markSeen} onMenu={setTileMenu} badge={target?.badge ? target.badge(item) : null} />
             ))}
               </div>
             ))}

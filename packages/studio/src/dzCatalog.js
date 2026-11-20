@@ -49,9 +49,10 @@ export function dzUpscaleSpec() {
 }
 
 // Opens the upscale drawer for an image from anywhere in the app.
-export function dzOpenUpscale(url) {
+// `meta` (optional): stored with the upscale — e.g. a storyboard target, so the result returns to its shot.
+export function dzOpenUpscale(url, meta = null) {
   if (typeof window === 'undefined' || !url) return;
-  window.dispatchEvent(new CustomEvent('dz:upscale', { detail: { url } }));
+  window.dispatchEvent(new CustomEvent('dz:upscale', { detail: { url, meta } }));
 }
 
 // DZ: video upscaling models (fal + Atlas), present when one of them has a key.

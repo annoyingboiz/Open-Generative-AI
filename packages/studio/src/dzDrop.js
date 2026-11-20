@@ -47,10 +47,10 @@ export function dzPictureDragStart(p) {
   if (!picture) return;
   window.dispatchEvent(new CustomEvent(EVT, { detail: picture }));
   // Ends with the drag, wherever it ends (a drop anywhere, Escape, leaving the window).
-  const end = () => { window.removeEventListener("dragend", end, true); window.removeEventListener("drop", later, true); dzPictureDragEnd(); };
-  const later = () => setTimeout(end, 0); // after the drop handlers have read it
-  window.addEventListener("dragend", end, true);
-  window.addEventListener("drop", later, true);
+  // Safety: a drag can end without a dragend reaching the page (Safari, outside the window).
+  const evs = [["dragend", () => end()], ["drop", () => setTimeout(end, 0)], ["blur", () => end()], ["pagehide", () => end()], ["pointerdown", () => end()]];
+  const end = () => { for (const [n, f] of evs) window.removeEventListener(n, f, true); dzPictureDragEnd(); };
+  for (const [n, f] of evs) window.addEventListener(n, f, true);
 }
 export function dzPictureDragEnd() {
   if (!picture) return;

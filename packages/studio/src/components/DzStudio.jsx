@@ -27,7 +27,7 @@ import { LibraryWindow, FullList, PickerHereContext, pickerStartFor } from "./st
 import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
-import { dzPictureDragStart, useDzPictureDrag } from "../dzDrop.js";
+import { dzPictureDragStart, dzPictureDragEnd, useDzPictureDrag } from "../dzDrop.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const RATIO_KEYS = ["aspect_ratio", "ratio", "size", "image_size"];
@@ -219,6 +219,7 @@ const dragWithPicture = (props, item) => ({
     try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ }
     if (item.kind === "image" || item.kind === "video") dzPictureDragStart({ url: item.url, kind: item.kind, name: item.prompt?.slice(0, 40) || "" });
   },
+  onDragEnd: () => dzPictureDragEnd(),
 });
 
 function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen, onMenu, badge = null }) {
@@ -243,7 +244,7 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
   return (
     <div role={done ? "button" : undefined} tabIndex={done ? 0 : -1} aria-pressed={selecting ? on : undefined}
       onClick={(e) => { if (!done) return; if (selecting) { sel.toggle(item, e); return; } act.open(item); }}
-      onKeyDown={(e) => { if (done && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); if (selecting) sel.toggle(item, e); else act.open(item); } }}
+      onKeyDown={(e) => { if (done && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); if (selecting) sel.toggle(item, e); else act.open(item); } }}
       onMouseEnter={enter} onMouseLeave={leave}
       {...(done ? dragWithPicture(sel.dragProps(item), item) : {})}
       className="group relative flex-shrink-0 cursor-pointer overflow-hidden rounded-sm bg-muted"
@@ -422,7 +423,13 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
   // A picture dragged from the gallery or the references row (package 09, P4).
   const pic = useDzPictureDrag();
   const [over, setOver] = useState(null); // "groupId:role" under the pointer
-  useEffect(() => { if (!pic) setOver(null); }, [pic]);
+  useEffect(() => { if (!pic) setOver(null); else dragging.current = null; }, [pic]);
+  // A move inside the strip that ends anywhere (Escape, outside the window) leaves nothing behind.
+  useEffect(() => {
+    const end = () => { dragging.current = null; };
+    window.addEventListener("dragend", end, true);
+    return () => window.removeEventListener("dragend", end, true);
+  }, []);
   const box = useRef(null);
   const [caps, setCaps] = useState({});
   const [width, setWidth] = useState(0);
@@ -482,7 +489,9 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
   const place = (g, role) => {
     const file = { url: pic.url, name: pic.name || "", ...(pic.label ? { label: pic.label } : {}) };
     const max = g.roleMax || {};
-    const r = role && max[role] ? role : null;
+    const sole = g.roles.filter((x) => max[x]);
+    // No slot under the pointer: a one-slot group (Image to edit) still replaces.
+    const r = role && max[role] ? role : sole.length === 1 ? sole[0] : null;
     setAttached((a0) => {
       const there = groupItems(a0, g).find((x) => x.url === file.url);
       if (there && (!r || there.role === r)) return a0;

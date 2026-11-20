@@ -108,6 +108,22 @@ export function useFilm(id) {
   const base = useRef(null); // the last copy the server confirmed (for merging on 409)
   const retries = useRef(0);
   filmRef.current = film;
+  // Approvals not confirmed yet (package 09, P1): "target|url" → { op, n }. Every copy that
+  // comes from the server gets them on top, so a slower answer never undoes a newer click.
+  const pending = useRef(new Map());
+  const withPending = (media) => {
+    if (!pending.current.size) return media;
+    const out = { ...(media || {}) };
+    for (const [k, { op }] of pending.current) {
+      const [tid, url] = k.split("|");
+      const m = out[tid] || { frames: [], videos: [], approved: [] };
+      const list = (m.approved || []).filter((u) => u !== url);
+      out[tid] = { ...m, approved: op === "approve" ? [...list, url] : list };
+    }
+    return out;
+  };
+  const fromServer = (sb) => (sb ? { ...sb, media: withPending(sb.media) } : sb);
+  const queue = useRef(Promise.resolve()); // media changes go to the server one after another, in click order
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -116,9 +132,9 @@ export function useFilm(id) {
       setError(null);
       setFilm((cur) => {
         // Local edits not saved yet stay; media, jobs and the revision come from the server.
-        if (cur && dirty.current) return { ...cur, media: storyboard.media, jobs: storyboard.jobs };
+        if (cur && dirty.current) return { ...cur, media: withPending(storyboard.media), jobs: storyboard.jobs };
         base.current = storyboard;
-        return storyboard;
+        return fromServer(storyboard);
       });
     } catch (e) { setError(e); }
   }, [id]);
@@ -136,8 +152,8 @@ export function useFilm(id) {
         const { storyboard } = await dzStoryboards.update(f.id, { rev: f.rev, name: f.name, note: f.note, scene: f.scene, scenes: f.scenes, shots: f.shots, mood: f.mood });
         base.current = { ...f, rev: storyboard.rev };
         retries.current = 0;
-        if (seq.current === mine) { dirty.current = false; base.current = storyboard; setFilm(storyboard); }
-        else setFilm((cur) => (cur ? { ...cur, rev: storyboard.rev, media: storyboard.media, jobs: storyboard.jobs } : storyboard));
+        if (seq.current === mine) { dirty.current = false; base.current = storyboard; setFilm(fromServer(storyboard)); }
+        else setFilm((cur) => (cur ? { ...cur, rev: storyboard.rev, media: withPending(storyboard.media), jobs: storyboard.jobs } : fromServer(storyboard)));
         return true;
       } catch (e) {
         if (e.status === 409 && e.storyboard) {
@@ -180,29 +196,35 @@ export function useFilm(id) {
   }, [flush]);
 
   // Approve / remove / add a ready file: the target must be saved first.
-  const media = useCallback(async (body) => {
-    // Approve / remove approval shows at once (package 09, P1): the server's answer then replaces it.
+  // Approve / remove approval shows at once (package 09, P1) and stays until the server confirms it.
+  const media = useCallback((body) => {
     const tid = body?.target || body?.shot;
-    if (tid && (body.op === "approve" || body.op === "unapprove") && body.url) {
-      setFilm((cur) => {
-        if (!cur) return cur;
-        const m = cur.media?.[tid] || { frames: [], videos: [], approved: [] };
-        const list = (m.approved || []).filter((u) => u !== body.url);
-        return { ...cur, media: { ...cur.media, [tid]: { ...m, approved: body.op === "approve" ? [...list, body.url] : list } } };
-      });
+    const k = tid && (body.op === "approve" || body.op === "unapprove") && body.url ? `${tid}|${body.url}` : null;
+    const n = k ? (pending.current.get(k)?.n || 0) + 1 : 0;
+    if (k) {
+      pending.current.set(k, { op: body.op, n });
+      setFilm((cur) => (cur ? { ...cur, media: withPending(cur.media) } : cur));
     }
-    if (!(await flush())) { load(); return null; }
-    const f = filmRef.current;
-    try {
-      const { storyboard } = await dzStoryboards.media(f.id, body);
-      setFilm((cur) => (cur ? { ...cur, media: storyboard.media, jobs: storyboard.jobs } : storyboard));
-      return storyboard;
-    } catch (e) {
-      notify({ type: "error", title: "Storyboard", message: e.message });
-      load();
-      return null;
-    }
-  }, [flush, load]);
+    const done = () => { if (k && pending.current.get(k)?.n === n) pending.current.delete(k); };
+    const run = async () => {
+      if (!(await flush())) { done(); load(); return null; }
+      const f = filmRef.current;
+      try {
+        const { storyboard } = await dzStoryboards.media(f.id, body);
+        done();
+        setFilm((cur) => (cur ? { ...cur, media: withPending(storyboard.media), jobs: storyboard.jobs } : fromServer(storyboard)));
+        return storyboard;
+      } catch (e) {
+        done();
+        notify({ type: "error", title: "Storyboard", message: e.message });
+        load();
+        return null;
+      }
+    };
+    const p = queue.current.then(run, run);
+    queue.current = p.catch(() => {});
+    return p;
+  }, [flush, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // New results arrive from the server: refresh on generation events and while jobs run.
   useEffect(() => {

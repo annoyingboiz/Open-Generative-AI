@@ -180,7 +180,8 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
             can be in more than one section; choosing it in one marks it in all. No "Add all" here. */}
         {source === "here" && here && (
           hereAll.length ? (() => {
-            const match = (x) => !needle || `${x.name || ""} ${x.prompt || ""}`.toLowerCase().includes(needle);
+            // These are the shot's own few; search (by prompt) does not narrow them.
+            const match = () => true;
             const list = (l) => ofKind(l).filter(match);
             return (
               <>

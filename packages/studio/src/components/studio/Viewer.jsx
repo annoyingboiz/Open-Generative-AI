@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   X, CaretLeft, CaretRight, Heart, DownloadSimple, DotsThree, Copy, ArrowCounterClockwise, ImageSquare, PencilSimple, VideoCamera,
-  ArrowsOutSimple, ArrowLineRight, Flag, Play, Pause, Repeat, SpeakerHigh, SpeakerSlash, CornersOut, FrameCorners, Trash, Shapes, PaintBrush,
+  ArrowsOutSimple, ArrowLineRight, Flag, Play, Pause, Repeat, SpeakerHigh, SpeakerSlash, CornersOut, FrameCorners, Trash, Shapes, PaintBrush, Check,
 } from "@phosphor-icons/react";
 import { DropdownMenuParts, cn } from "../../ui/index.js";
 import { dzThumb } from "../../api.js";
@@ -188,6 +188,16 @@ export default function StudioViewer({ item, items = [], onClose, onMove, act })
           <IconBtn label="Close" onClick={onClose}><X size={18} /></IconBtn>
           {index >= 0 && <span className="text-sm tabular-nums text-overlay-foreground/70">{index + 1} of {list.length}{act.hasMore ? "+" : ""}</span>}
           <span className="flex-1" />
+          {/* Storyboard working screen (package 09, P1): green "Approved" while approved; a click removes it. */}
+          {act.approve && !String(item.id).startsWith("att-") && (() => {
+            const on = act.isApproved(item);
+            return (
+              <button type="button" onClick={() => act.approve(item)} aria-pressed={on}
+                className={cn("mr-1 flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition-colors duration-state", on ? "border-transparent bg-success text-overlay-foreground hover:bg-success/85" : "border-overlay-foreground/25 text-overlay-foreground hover:bg-overlay-foreground/10")}>
+                <Check size={16} weight="bold" />{on ? "Approved" : "Approve"}
+              </button>
+            );
+          })()}
           {real && <IconBtn label={item.liked ? "Unlike" : "Like"} onClick={() => act.like(item)}><Heart size={18} weight={item.liked ? "fill" : "regular"} className={item.liked ? "text-signal" : ""} /></IconBtn>}
           <IconBtn label="Download" onClick={() => download(item.url)}><DownloadSimple size={18} /></IconBtn>
           {real && (

@@ -181,7 +181,17 @@ export function useFilm(id) {
 
   // Approve / remove / add a ready file: the target must be saved first.
   const media = useCallback(async (body) => {
-    if (!(await flush())) return null;
+    // Approve / remove approval shows at once (package 09, P1): the server's answer then replaces it.
+    const tid = body?.target || body?.shot;
+    if (tid && (body.op === "approve" || body.op === "unapprove") && body.url) {
+      setFilm((cur) => {
+        if (!cur) return cur;
+        const m = cur.media?.[tid] || { frames: [], videos: [], approved: [] };
+        const list = (m.approved || []).filter((u) => u !== body.url);
+        return { ...cur, media: { ...cur.media, [tid]: { ...m, approved: body.op === "approve" ? [...list, body.url] : list } } };
+      });
+    }
+    if (!(await flush())) { load(); return null; }
     const f = filmRef.current;
     try {
       const { storyboard } = await dzStoryboards.media(f.id, body);
@@ -189,9 +199,10 @@ export function useFilm(id) {
       return storyboard;
     } catch (e) {
       notify({ type: "error", title: "Storyboard", message: e.message });
+      load();
       return null;
     }
-  }, [flush]);
+  }, [flush, load]);
 
   // New results arrive from the server: refresh on generation events and while jobs run.
   useEffect(() => {

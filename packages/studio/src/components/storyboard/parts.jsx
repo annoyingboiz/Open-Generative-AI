@@ -2,7 +2,7 @@
 
 // Small shared parts of the Storyboard (package 05).
 import { useEffect, useRef, useState } from "react";
-import { LibraryWindow } from "../studio/Library.jsx";
+import { LibraryWindow, PickerHereContext } from "../studio/Library.jsx";
 import { sizeOf } from "../../dzFilm.js";
 import { uploadFile } from "../../api.js";
 import { cn } from "../../ui/index.js";
@@ -72,7 +72,7 @@ const REF_GROUPS = [
 // for a shot's or a group's references. `refs` in order; new ones are added at the end
 // with their sizes (`onChange` gets a list, or a function of the current list).
 // `onPickNew`: instead, every picked file becomes a new shot (on Done).
-export function RefPicker({ open, onClose, refs = [], onChange, onPickNew = null, title }) {
+export function RefPicker({ open, onClose, refs = [], onChange, onPickNew = null, title, here = null }) {
   const [groupId, setGroupId] = useState("reference");
   const [picked, setPicked] = useState([]);
   useEffect(() => { if (open) { setPicked([]); setGroupId("reference"); } }, [open]);
@@ -99,9 +99,33 @@ export function RefPicker({ open, onClose, refs = [], onChange, onPickNew = null
     <>
       <div ref={dzScrollBoxRef} className="fixed inset-0 z-40 bg-scrim" onClick={close} aria-hidden="true" />
       <div className="fixed bottom-6 left-1/2 z-50 h-0 w-[min(1040px,calc(100vw-48px))] -translate-x-1/2" aria-label={title || "References"}>
-        <LibraryWindow open groups={REF_GROUPS} groupId={groupId} setGroupId={setGroupId} attached={attached} setAttached={setAttached} onClose={close} title={title || null}
-          onError={(m) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Upload", message: m } }))} />
+        {/* This shot / This group as the picker's first tab (package 09, P5); it opens on the Moodboard. */}
+        <PickerHereContext.Provider value={here}>
+          <LibraryWindow open groups={REF_GROUPS} groupId={groupId} setGroupId={setGroupId} attached={attached} setAttached={setAttached} onClose={close} title={title || null}
+            onError={(m) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Upload", message: m } }))} />
+        </PickerHereContext.Provider>
       </div>
     </>
   );
 }
+
+// What was generated for one shot or group, for the picker's This shot / This group tab
+// (package 09, P5): from the storyboard's media list (the server adds each finished job),
+// newest first; liked from the library; approved for shots only.
+export function pickerHereOf(film, target, liked = []) {
+  if (!film || !target) return null;
+  const m = film.media?.[target.id] || {};
+  const isShot = target.kind === "shot";
+  const all = [...(m.frames || []), ...(m.videos || [])].filter((x) => x && x.url && !x.gone)
+    .sort((a, b) => (b.at || 0) - (a.at || 0))
+    .map((x) => ({ url: x.url, kind: isVideo(x.url) ? "video" : "image", w: x.w, h: x.h }));
+  const byUrl = new Map(all.map((x) => [x.url, x]));
+  const approvedSet = new Set(m.approved || []);
+  return {
+    label: isShot ? "This shot" : "This group",
+    all,
+    liked: liked.filter((i) => i.url && byUrl.has(i.url)).map((i) => byUrl.get(i.url)),
+    approved: isShot ? all.filter((x) => approvedSet.has(x.url)) : null,
+  };
+}
+const isVideo = (u) => /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u || "");

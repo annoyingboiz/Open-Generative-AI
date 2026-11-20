@@ -13,8 +13,8 @@ import { useDzElements } from "../DzElements.jsx";
 import { dzOpenUpscale, dzOpenVideoUpscale } from "../../dzCatalog.js";
 import { DropdownMenuParts, cn } from "../../ui/index.js";
 import { numbered, shotState, frameRefs, addToFrame, newItemId, isVideoUrl, inFrame } from "../../dzFilm.js";
-import { RefPicker, EmptyState, mediaUrl, uploadAll } from "./parts.jsx";
-import { useDzDropTarget } from "../../dzDrop.js";
+import { RefPicker, EmptyState, mediaUrl, uploadAll, pickerHereOf } from "./parts.jsx";
+import { useDzDropTarget, dzPictureDragStart } from "../../dzDrop.js";
 import { ApprovedBadge } from "./Board.jsx";
 import PlayBetween from "./PlayBetween.jsx";
 
@@ -24,7 +24,9 @@ const H = 88;
 function RefTile({ r, onClick }) {
   const w = r.w && r.h ? Math.max(40, Math.round((H * r.w) / r.h)) : 132;
   return (
-    <button type="button" onClick={onClick} title="Attach to the composer" className="relative flex-shrink-0 overflow-hidden rounded-md bg-muted ring-signal transition-shadow duration-state hover:ring-2 focus-visible:ring-2 focus-visible:ring-ring" style={{ width: w, height: H }}>
+    // A click attaches it to References; a drag puts it into the composer slot it is dropped on (package 09, P4).
+    <button type="button" onClick={onClick} title="Attach to the composer" draggable
+      onDragStart={(e) => { try { e.dataTransfer.setData("text/plain", r.url); e.dataTransfer.effectAllowed = "copy"; } catch { /* optional */ } dzPictureDragStart({ url: r.url, kind: r.kind, name: r.name || "" }); }} className="relative flex-shrink-0 overflow-hidden rounded-md bg-muted ring-signal transition-shadow duration-state hover:ring-2 focus-visible:ring-2 focus-visible:ring-ring" style={{ width: w, height: H }}>
       {r.kind === "video" ? <video src={r.url} poster={dzThumb(r.url, 320)} muted playsInline preload="metadata" className="h-full w-full object-cover" />
         : <img src={dzThumb(r.url, 320)} alt="" className="h-full w-full object-cover" loading="lazy" />}
       {r.kind === "video" && <span className="absolute bottom-1 left-1 flex h-5 w-5 items-center justify-center rounded-full bg-overlay/60 text-overlay-foreground"><Play size={10} weight="fill" /></span>}
@@ -196,6 +198,13 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
     for (const u of urls) await media({ target: target.id, op: allOn ? "unapprove" : "approve", url: u });
   };
   const neighbours = () => ({ prev, next, film });
+  // A filter tab with nothing in it (package 09, P2): its own short line, no upload buttons.
+  const where2 = isShot ? "shot" : "group";
+  const emptyTab = (tab) => (tab === "approved"
+    ? <EmptyState icon={Check} title="Nothing approved yet" text={`Approve the pictures you want to keep for this ${where2}: on a tile, in its menu or in the large view. They will show up here.`} />
+    : <EmptyState icon={ImageSquare} title={{ liked: "Nothing liked yet", upscaled: "Nothing upscaled yet", videos: "No videos yet", pictures: "No pictures yet" }[tab] || "Nothing here yet"} />);
+  // What was generated here, for the picker's first tab (P5).
+  const pickerHere = pickerHereOf(film, target, liked.items);
   const selectionActions = (chosen, clear) => {
     const n = chosen.length;
     const one = n === 1 ? chosen[0] : null;
@@ -218,6 +227,10 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
     key, board: film.id, id: target.id, kind: target.kind, name, project: film.project_id || null,
     header, above, empty, tabs, extra,
     approved,
+    // Approve one picture without Select (package 09, P1): shots only.
+    approve: isShot ? (item) => approve([item]) : null,
+    emptyTab,
+    pickerHere,
     badge: isShot ? (item) => (approved.has(item.url) ? <ApprovedBadge /> : null) : null,
     selectionActions,
     switchTo,
@@ -234,7 +247,7 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
     <div ref={rootRef} className="relative h-full w-full">
       <input ref={(el) => { fileInput.current = el; }} type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ""; if (files.length) addReady(files); }} />
       <DzStudio key={`${key}:${seq}`} {...studioProps} mode="create" target={studioTarget} />
-      <RefPicker open={picker} onClose={() => setPicker(false)} refs={refs} onChange={setRefs} title={`References for ${name}`} />
+      <RefPicker open={picker} onClose={() => setPicker(false)} refs={refs} onChange={setRefs} title={`References for ${name}`} here={pickerHere} />
       <RefPicker open={readyPicker} onClose={() => setReadyPicker(false)} refs={[]} onChange={() => {}} title="A ready picture for this shot"
         onPickNew={async (list) => { for (const r of list) await media({ target: target.id, op: "add", url: r.url, kind: r.kind }); }} />
       {play && <PlayBetween take={play} {...neighbours()} onClose={() => setPlay(null)} />}

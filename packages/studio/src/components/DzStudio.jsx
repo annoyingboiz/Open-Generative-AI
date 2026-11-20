@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, Minus, At, X, Check, Cube, Rectangle, Monitor, Clock, VideoCamera, Images, MagicWand, Camera, ArrowsOutCardinal, Palette, SlidersHorizontal,
-  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, Info, Warning, WarningCircle, ArrowsClockwise, ArrowElbowDownRight, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
+  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, CaretUp, Info, Warning, WarningCircle, ArrowsClockwise, ArrowElbowDownRight, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
 } from "@phosphor-icons/react";
 import { dzThumb } from "../api.js";
 import { dzLibrary } from "../dzLibrary.js";
@@ -18,15 +18,16 @@ import StudioViewer from "./studio/Viewer.jsx";
 import DzSentPanel from "./DzSentPanel.jsx";
 import DrawModal from "./DrawModal.jsx";
 import { lookData, autoLook, elementTags, elementFits, TAG_RE, buildBody, paramsOf, splitEdit } from "../dzCreate.js";
-import { DropdownMenuParts, Spinner, SegSwitch, cn } from "../ui/index.js";
+import { DropdownMenuParts, Spinner, SegSwitch, Tip, cn } from "../ui/index.js";
 import { Overline, Chip, ChipMenu, MenuRow, useEscLayer, fmtDur } from "./studio/ui.jsx";
 import { groupsFor, groupItems, addToGroup, removeFromGroup, GROUPS } from "./studio/attachments.js";
 import ModelMenu from "./studio/ModelMenu.jsx";
 import PromptEditor from "./studio/PromptEditor.jsx";
-import { LibraryWindow, FullList } from "./studio/Library.jsx";
+import { LibraryWindow, FullList, PickerHereContext, pickerStartFor } from "./studio/Library.jsx";
 import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
+import { dzPictureDragStart, useDzPictureDrag } from "../dzDrop.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const RATIO_KEYS = ["aspect_ratio", "ratio", "size", "image_size"];
@@ -152,6 +153,8 @@ function TileMenu({ item, act, open, setOpen, timeOf }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6} className="w-[236px] p-1.5" onClick={(e) => e.stopPropagation()}>
         <Row icon={ArrowsOut} onSelect={() => act.open(item)}>Open</Row>
+        {/* Storyboard working screen (package 09, P1): approve one picture or take without Select. */}
+        {act.approve && <Row icon={Check} onSelect={() => act.approve(item)}>{act.isApproved(item) ? "Remove approval" : "Approve"}</Row>}
         {isVideo ? (
           <>
             <Row icon={ArrowLineRight} onSelect={() => act.continueFrom(item)}>Continue from the last frame</Row>
@@ -197,6 +200,27 @@ function QuickActions({ item, act, timeOf }) {
   );
 }
 
+// Package 09, P1: approve one picture from its tile. Green while approved; a click removes it.
+function ApproveButton({ item, act }) {
+  const on = act.isApproved(item);
+  return (
+    <Tip text={on ? "Remove approval" : "Approve"}>
+      <button type="button" aria-label={on ? "Remove approval" : "Approve"} aria-pressed={on} onClick={(e) => { e.stopPropagation(); act.approve(item); }}
+        className={cn("flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-md transition-colors duration-state", on ? "bg-success text-overlay-foreground hover:bg-success/85" : "bg-overlay/55 text-overlay-foreground hover:bg-overlay/75")}><Check size={14} weight="bold" /></button>
+    </Tip>
+  );
+}
+
+// A tile dragged inside the app is also a picture for a composer slot (package 09, P4).
+const dragWithPicture = (props, item) => ({
+  ...props,
+  onDragStart: (e) => {
+    props.onDragStart?.(e);
+    try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ }
+    if (item.kind === "image" || item.kind === "video") dzPictureDragStart({ url: item.url, kind: item.kind, name: item.prompt?.slice(0, 40) || "" });
+  },
+});
+
 function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen, onMenu, badge = null }) {
   const [menu, setMenuState] = useState(false);
   const setMenu = (v) => { setMenuState(v); onMenu?.(v); };
@@ -221,7 +245,7 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
       onClick={(e) => { if (!done) return; if (selecting) { sel.toggle(item, e); return; } act.open(item); }}
       onKeyDown={(e) => { if (done && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); if (selecting) sel.toggle(item, e); else act.open(item); } }}
       onMouseEnter={enter} onMouseLeave={leave}
-      {...(done ? sel.dragProps(item) : {})}
+      {...(done ? dragWithPicture(sel.dragProps(item), item) : {})}
       className="group relative flex-shrink-0 cursor-pointer overflow-hidden rounded-sm bg-muted"
       style={{ width, height }}>
       {!done ? <PendingTile item={item} items={items} act={act} />
@@ -250,11 +274,15 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
       )}
       {/* A ready picture added to a shot (package 05): not a generation — no like, no menu; it can leave the shot. */}
       {!selecting && done && item.own && (
-        <button type="button" aria-label="Remove from this shot" onClick={(e) => { e.stopPropagation(); act.removeOwn?.(item); }}
-          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-overlay/55 text-overlay-foreground opacity-0 backdrop-blur-md transition-opacity duration-state hover:bg-overlay/75 group-hover:opacity-100 focus:opacity-100"><X size={14} /></button>
+        <div className="absolute right-2 top-2 flex gap-1.5 opacity-0 transition-opacity duration-state group-hover:opacity-100 group-focus-within:opacity-100">
+          {act.approve && <ApproveButton item={item} act={act} />}
+          <button type="button" aria-label="Remove from this shot" onClick={(e) => { e.stopPropagation(); act.removeOwn?.(item); }}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-overlay/55 text-overlay-foreground backdrop-blur-md transition-colors duration-state hover:bg-overlay/75"><X size={14} /></button>
+        </div>
       )}
       {!selecting && done && !item.own && (
         <div className={cn("absolute right-2 top-2 flex gap-1.5 transition-opacity duration-state", menu ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100")}>
+          {act.approve && <ApproveButton item={item} act={act} />}
           <button type="button" aria-label={item.liked ? "Unlike" : "Like"} aria-pressed={Boolean(item.liked)} onClick={(e) => { e.stopPropagation(); act.like(item); }}
             className="flex h-7 w-7 items-center justify-center rounded-full bg-overlay/55 text-overlay-foreground backdrop-blur-md transition-colors duration-state hover:bg-overlay/75"><Heart size={15} weight={item.liked ? "fill" : "regular"} className={item.liked ? "text-signal" : ""} /></button>
           <TileMenu item={item} act={act} open={menu} setOpen={setMenu} timeOf={timeOf} />
@@ -326,7 +354,7 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off
   const anchor = useRef(null);
   const click = off ? (onActivate ? (e) => { e?.stopPropagation(); onActivate(); } : undefined) : menu ? () => setOpen((v) => !v) : undefined;
   return (
-    <div ref={anchor} className="dz-pop group/t relative h-12 w-12 flex-shrink-0" draggable onDragStart={onDragStart} tabIndex={0}
+    <div ref={anchor} className="dz-pop group/t relative h-12 w-12 flex-shrink-0" draggable onDragStart={onDragStart} tabIndex={0} data-dz-role={item.role}
       onClick={click} onKeyDown={(e) => { if (click && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); click(e); } }}
       role={click ? "button" : undefined} aria-haspopup={!off && menu ? "menu" : undefined} {...(off ? tip : {})}>
       {/* "Image to edit" has a small menu: Draw to edit (package 03, §8), Replace, Remove. */}
@@ -348,9 +376,11 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off
     </div>
   );
 }
-const EmptySlot = ({ label, onClick, fault, small }) => (
-  <button type="button" onClick={onClick} aria-label={label ? `Add ${label}` : "Add"}
-    className={cn("flex h-12 w-12 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-slot border border-dashed text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground", fault ? "border-destructive" : "border-input")}>
+// hot: a picture is being dragged that this slot can take (package 09, P4); over: it is under the pointer.
+const EmptySlot = ({ label, onClick, fault, small, role, hot = false, over = false }) => (
+  <button type="button" onClick={onClick} aria-label={label ? `Add ${label}` : "Add"} data-dz-role={role}
+    className={cn("flex h-12 w-12 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-slot border border-dashed text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground",
+      over ? "border-solid border-signal bg-signal/20 text-foreground" : hot ? "border-signal text-signal" : fault ? "border-destructive" : "border-input")}>
     <Plus size={small ? 12 : 14} />{label && <span className="text-[11px] leading-3">{label}</span>}
   </button>
 );
@@ -389,6 +419,10 @@ function groupsConflict(entry, a, b, attached) {
 // rest. Frames keep Start and End; their mids go into "+N" first.
 function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary, openList, tagOf, fault, onDraw, st }) {
   const dragging = useRef(null);
+  // A picture dragged from the gallery or the references row (package 09, P4).
+  const pic = useDzPictureDrag();
+  const [over, setOver] = useState(null); // "groupId:role" under the pointer
+  useEffect(() => { if (!pic) setOver(null); }, [pic]);
   const box = useRef(null);
   const [caps, setCaps] = useState({});
   const [width, setWidth] = useState(0);
@@ -439,7 +473,29 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
     const hide = () => { clearTimeout(tipTimer.current); setTip(null); };
     return { onMouseEnter: (e) => show(e, 250), onMouseLeave: hide, onFocus: (e) => show(e, 0), onBlur: hide, "aria-describedby": "dz-off-tip" };
   };
-  const drop = (g) => (e) => {
+  // Which group can take the dragged picture: its kind, files to take, not switched off.
+  const canTake = (v) => Boolean(pic) && v.g.kind === pic.kind && Object.keys(v.g.roleMax || {}).length > 0 && !v.groupOff;
+  const roleAt = (e) => e.target?.closest?.("[data-dz-role]")?.getAttribute("data-dz-role") || null;
+  const firstFree = (g) => (g.id === "frames" ? (!(attached.first || []).length ? "first" : !(attached.last || []).length ? "last" : "middle") : g.roles[0]);
+  // The picture stays in the gallery; the slot gets a reference to it. A single slot (Start,
+  // End, Image to edit) is replaced; a full group keeps it past the limit, dimmed (package 04).
+  const place = (g, role) => {
+    const file = { url: pic.url, name: pic.name || "", ...(pic.label ? { label: pic.label } : {}) };
+    const max = g.roleMax || {};
+    const r = role && max[role] ? role : null;
+    setAttached((a0) => {
+      const there = groupItems(a0, g).find((x) => x.url === file.url);
+      if (there && (!r || there.role === r)) return a0;
+      const a = there ? removeFromGroup(a0, g, file.url, there.role) : a0;
+      if (r && max[r] === 1) return { ...a, [r]: [file] };
+      const added = addToGroup(a, g, [file], r, st.isOn);
+      if (groupItems(added, g).some((x) => x.url === file.url)) return added;
+      const to = r || g.roles.find((x) => max[x] > 1) || g.roles.find((x) => max[x]);
+      return to ? { ...a, [to]: [...(a[to] || []), file] } : a;
+    });
+  };
+  const drop = (g, v) => (e) => {
+    if (!dragging.current && pic && canTake(v)) { e.preventDefault(); e.stopPropagation(); place(g, roleAt(e)); setOver(null); return; }
     const d = dragging.current;
     dragging.current = null;
     if (!d || d.group === g.id) return;
@@ -471,7 +527,7 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
     return <More key={`off-${g.id}-${list[0].role}`} n={list.length} off onClick={limit ? () => openList(g.id) : undefined} tip={tipFor(list[0].off.reason)} />;
   };
   return (
-    <div ref={box} className="relative flex min-w-0 items-start" onPointerDown={() => { clearTimeout(tipTimer.current); setTip(null); }} onMouseLeave={() => { clearTimeout(tipTimer.current); setTip(null); }}>
+    <div ref={box} className="relative flex min-w-0 items-start pr-8" onPointerDown={() => { clearTimeout(tipTimer.current); setTip(null); }} onMouseLeave={() => { clearTimeout(tipTimer.current); setTip(null); }}>
       {tip && (
         <div id="dz-off-tip" role="tooltip" style={{ left: Math.min(tip.x, Math.max(0, (box.current?.clientWidth || 0) - 360)) }}
           className="glass pointer-events-none absolute bottom-[calc(100%+24px)] z-30 max-w-[360px] rounded-[10px] border border-border px-3 py-2.5 text-[13px] leading-[19px] text-foreground shadow-float">
@@ -482,6 +538,10 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
       {view.map(({ g, all, on, off, groupOff, max }, gi) => {
         const cap = caps[g.id] || 3;
         const takes = Object.keys(g.roleMax || {}).length > 0;
+        const hot = canTake(view[gi]);
+        const overHere = hot && over?.startsWith(`${g.id}:`) ? over.slice(g.id.length + 1) : null;
+        // The slot under the pointer fills; with no slot under it, the group's first free one.
+        const slotProps = (role) => ({ role, hot, over: overHere != null && (overHere === role || (!overHere && role === firstFree(g))) });
         const groupTip = groupOff ? off.find((x) => x.off.why === "together")?.off.reason || off[0]?.off.reason : null;
         const groupCanOn = groupOff && off.some((x) => x.off.why === "together");
         let body;
@@ -497,14 +557,14 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
           const midOffShown = cap >= 3 ? midsOff.slice(0, 1) : [];
           body = (
             <>
-              {start ? thumb(g, start, "Start") : (g.roleMax.first && !groupOff && <EmptySlot label="Start" onClick={() => openLibrary(g.id)} fault={fault === g.id} />)}
+              {start ? thumb(g, start, "Start") : (g.roleMax.first && !groupOff && <EmptySlot label="Start" onClick={() => openLibrary(g.id)} fault={fault === g.id} {...slotProps("first")} />)}
               {offMore(g, starts.slice(1).filter((x) => x.off))}
               {midShown.map((m) => thumb(g, m, "Mid"))}
               {midsOn.length > midShown.length && <More n={midsOn.length - midShown.length} onClick={() => openList(g.id)} />}
               {midOffShown.map((m) => thumb(g, m, "Mid"))}
               {offMore(g, midsOff.slice(midOffShown.length))}
-              {midRoom && cap >= 3 && <EmptySlot label="Mid" onClick={() => openLibrary(g.id)} />}
-              {end ? thumb(g, end, "End") : (g.roleMax.last && !groupOff && <EmptySlot label="End" onClick={() => openLibrary(g.id)} />)}
+              {midRoom && cap >= 3 && <EmptySlot label="Mid" onClick={() => openLibrary(g.id)} {...slotProps("middle")} />}
+              {end ? thumb(g, end, "End") : (g.roleMax.last && !groupOff && <EmptySlot label="End" onClick={() => openLibrary(g.id)} {...slotProps("last")} />)}
               {offMore(g, ends.slice(1).filter((x) => x.off))}
             </>
           );
@@ -519,7 +579,7 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
               {shownOff.map((it) => thumb(g, it, ""))}
               {offMore(g, groupOff ? offOther.slice(shownOff.length) : [])}
               {offMore(g, offLimit)}
-              {takes && !groupOff && on.length < max && <EmptySlot onClick={() => openLibrary(g.id)} fault={fault === g.id && !on.length} />}
+              {takes && !groupOff && on.length < max && <EmptySlot onClick={() => openLibrary(g.id)} fault={fault === g.id && !on.length} {...slotProps(g.roles[0])} />}
             </>
           );
         }
@@ -529,8 +589,14 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
         return (
           <div key={g.id} className="flex flex-shrink-0 self-stretch">
             {prev && (or ? <OrDivider /> : <span className="mx-3.5 w-px flex-shrink-0 self-stretch bg-border" />)}
-            <div className={cn("flex flex-shrink-0", groupOff && "dz-goff", groupCanOn && "-mx-2 -my-1.5 cursor-pointer rounded-[10px] px-2 py-1.5 transition-colors duration-state hover:bg-accent")}
-              onDragOver={(e) => { if (dragging.current && dragging.current.group !== g.id) e.preventDefault(); }} onDrop={drop(g)}
+            <div className={cn("flex flex-shrink-0", groupOff && "dz-goff", groupCanOn && "-mx-2 -my-1.5 cursor-pointer rounded-[10px] px-2 py-1.5 transition-colors duration-state hover:bg-accent",
+              hot && "rounded-[10px] outline outline-1 outline-offset-4 outline-signal")}
+              onDragOver={(e) => {
+                if (dragging.current && dragging.current.group !== g.id) e.preventDefault();
+                else if (!dragging.current && hot) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"; const k = `${g.id}:${roleAt(e) || ""}`; if (over !== k) setOver(k); }
+              }}
+              onDragLeave={(e) => { if (hot && !e.currentTarget.contains(e.relatedTarget)) setOver((o) => (o?.startsWith(`${g.id}:`) ? null : o)); }}
+              onDrop={drop(g, view[gi])}
               {...(groupCanOn ? { role: "button", tabIndex: 0, onClick: () => st.turnOn(g.roles), onKeyDown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); st.turnOn(g.roles); } } } : {})}
               {...(groupOff ? tipFor(groupTip) : {})}>
               <div>
@@ -810,7 +876,14 @@ export default function DzStudio(props) {
   }, [offMap, plan.variant, sent, engine.touch, engine.bringOn]); // eslint-disable-line react-hooks/exhaustive-deps
   const tagOf = (url) => tags.find((t) => t.url === url);
   const closeAll = () => { setPanel(null); setPop(null); setLibGroup(null); };
-  const openLibrary = (gid, init = null) => { setPop(null); setPanel(null); setLibInit(init); setLibGroup(gid || groups.find((g) => g.id === "reference")?.id || groups[0]?.id || null); };
+  const openLibrary = (gid, init = null) => {
+    setPop(null); setPanel(null);
+    const g = gid || groups.find((x) => x.id === "reference")?.id || groups[0]?.id || null;
+    // On a working screen the picker may open on This shot (package 09, P5; the rule is in pickerStartFor).
+    const here = target?.pickerHere ? pickerStartFor(g, target.pickerHere.all.length) : null;
+    setLibInit(init || (here ? { source: here } : null));
+    setLibGroup(g);
+  };
   // An element clicked on a working screen (package 06, S2): its @tag names the character in the
   // prompt, and the picker opens inside the element; each view picked is one reference picture.
   useEffect(() => {
@@ -953,6 +1026,9 @@ export default function DzStudio(props) {
   };
   const act = {
     open: (it) => { markSeen(it); setViewing(it); },
+    // Approve exists only on a shot's working screen (package 09, P1); elsewhere there is no approved state.
+    approve: target?.approve ? (it) => target.approve(it) : null,
+    isApproved: (it) => Boolean(target?.approved?.has(it.url)),
     like: (it) => history.like(it.id, !it.liked),
     trash: (it) => history.trash(it.id).catch(fail("Trash")),
     trashStrict: (it) => history.trash(it.id),
@@ -1019,12 +1095,20 @@ export default function DzStudio(props) {
     forcedMini.current = false;
   }, [tileMenu]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (busyUi) setMini(false); }, [busyUi]);
+  // Folded by hand (package 09, P3): stays folded when the grid scrolls back up, until it is
+  // opened again (a click on the bar, anything that opens it) or the screen is left.
+  const handFolded = useRef(false);
+  useEffect(() => { if (!mini) handFolded.current = false; }, [mini]);
+  const foldByHand = () => { handFolded.current = true; setMini(true); };
+  // A picture dragged towards the composer opens it, so there is somewhere to drop it (P4).
+  const pictureDrag = useDzPictureDrag();
+  useEffect(() => { if (pictureDrag && mini) setMini(false); }, [pictureDrag]); // eslint-disable-line react-hooks/exhaustive-deps
   const [stuck, setStuck] = useState(false);
   const onScroll = (e) => {
     const y = e.currentTarget.scrollTop;
     if ((y > 56) !== stuck) setStuck(y > 56);
     if (y > 24 && !mini && !busyUi) setMini(true);
-    else if (y <= 0 && mini) setMini(false);
+    else if (y <= 0 && mini && !handFolded.current) setMini(false);
   };
 
   // Working screen: plus the ready pictures added to the shot; Approved / Videos / Pictures filter here.
@@ -1066,6 +1150,9 @@ export default function DzStudio(props) {
         {target && history.loaded && items.length === 0 && kindFilter === "all" ? (
           // Working screen empty (package 05, 17 / 18 / 19): its own state, from the storyboard.
           <div className="pb-64">{target.empty}</div>
+        ) : target && history.loaded && items.length === 0 && target.emptyTab ? (
+          // A filter tab with nothing in it (package 09, P2): one short line, no upload buttons.
+          <div className="pb-64">{target.emptyTab(kindFilter)}</div>
         ) : history.loaded && items.length === 0 && light && kindFilter === "all" ? (
           // Empty Image / Video (package 03, image-01, video-01): three example prompts; a click puts one into the prompt.
           <div className="flex min-h-[60%] flex-col items-center justify-center gap-3 pb-64 pt-24 text-center">
@@ -1123,15 +1210,25 @@ export default function DzStudio(props) {
             <span className="flex-shrink-0 text-sm text-muted-foreground">{entry?.familyName}{total ? ` · ${total} attached` : ""}</span>
             <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); generateNow(); }} aria-disabled={!canGo}
               className={cn("flex h-10 items-center rounded-md bg-primary px-4 text-base font-medium text-primary-foreground", !canGo && "opacity-50")}>Generate</span>
+            <span aria-hidden="true" className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground"><CaretUp size={16} /></span>
           </button>
         ) : (
           <div className={cn("pointer-events-auto relative max-w-full rounded-xl border border-border bg-card p-4 shadow-float", COMPOSER_W[mode])}
             onPointerDownCapture={(e) => { if (err && !e.target.closest?.("[data-dz-err]")) setErr(null); }}
             onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
             onDrop={(e) => { const files = Array.from(e.dataTransfer?.files || []); if (files.length) { e.preventDefault(); e.stopPropagation(); takeFiles(files); } }}>
-            <LibraryWindow open={libraryOpen} groups={groups} groupId={libGroup} setGroupId={setLibGroup} attached={attached} sent={sent} setAttached={setAttached} st={st} initial={libInit}
-              onClose={() => setLibGroup(null)} onError={(m) => setErr({ head: "Not uploaded.", text: plainSentence(m) })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
+            <PickerHereContext.Provider value={target?.pickerHere || null}>
+              <LibraryWindow open={libraryOpen} groups={groups} groupId={libGroup} setGroupId={setLibGroup} attached={attached} sent={sent} setAttached={setAttached} st={st} initial={libInit}
+                onClose={() => setLibGroup(null)} onError={(m) => setErr({ head: "Not uploaded.", text: plainSentence(m) })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
+            </PickerHereContext.Provider>
 
+            {/* Fold by hand into the compact bar (package 09, P3). */}
+            {!libraryOpen && (
+              <Tip text="Collapse">
+                <button type="button" aria-label="Collapse" onClick={foldByHand}
+                  className="absolute right-2.5 top-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground"><CaretDown size={16} /></button>
+              </Tip>
+            )}
             {/* 1. Attachments strip — always visible. Files the model can't send stay here, dimmed (package 04). */}
             {stripGroups.length > 0 ? (
               <Strip entry={entry} groups={stripGroups} attached={attached} setAttached={setAttached} activeGroup={libGroup || (panel === "list" ? listGroup : null)}

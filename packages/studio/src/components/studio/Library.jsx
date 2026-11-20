@@ -22,6 +22,20 @@ const SOURCES = [["uploads", "Uploads"], ["generations", "Generations"], ["liked
 // { frames: [{ id, name, color (CSS colour), items: [{ url, kind, w, h }] }], loose: [...],
 //   place(refs) — put uploaded files on its Moodboard, outside frames }.
 export const PickerBoardContext = createContext(null);
+
+// Package 09, P5: a Storyboard working screen (or a shot on the Storyboard tab) gives the
+// picker a first tab with what was generated for that shot or group:
+// { label: "This shot" | "This group", all: [{ url, kind, w?, h? }], liked: [...], approved: [...] | null }
+// (approved is null for a group: groups have no approval).
+export const PickerHereContext = createContext(null);
+// Which tab the picker opens on, kept in one place (Denis approved "by slot"; switch to
+// "always" to open every picker on This shot when the shot has generations).
+const HERE_RULE = "by-slot";
+export function pickerStartFor(groupId, hereCount) {
+  if (!hereCount) return null; // nothing generated here yet: the usual first tab (Moodboard)
+  if (HERE_RULE === "always") return "here";
+  return groupId === "frames" || groupId === "edit" ? "here" : null;
+}
 const PIC_H = 112;
 const ACCEPT = { image: "image/png,image/jpeg,image/webp", video: "video/mp4,video/quicktime,video/webm", audio: "audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg" };
 
@@ -29,6 +43,7 @@ const ACCEPT = { image: "image/png,image/jpeg,image/webp", video: "video/mp4,vid
 function Browser({ group, attached, setAttached, columns = 8, onError, onUploading, st = null, initial = null, dropActive = true }) {
   const ctx = useDzContext();
   const board = useContext(PickerBoardContext);
+  const here = useContext(PickerHereContext);
   const [source, setSource] = useState(initial?.source || (board ? "moodboard" : "generations"));
   const [inElement, setInElement] = useState(initial?.element || null); // Elements tab: inside one element (S2)
   const box = useRef(null);
@@ -55,7 +70,9 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
     : (e.views || (e.images || []).map((url) => ({ url }))).map((v, i) => ({ url: v.url, label: v.label || (i === 0 ? "Main" : `View ${i + 1}`) })));
   const elementItems = element ? filesOf(element).map((v, i) => ({ key: `${element.id}-${i}`, url: v.url, name: v.label, label: v.label, kind: accept })) : [];
   const boardItems = useMemo(() => (board ? [...board.frames.flatMap((f) => f.items), ...board.loose].filter((x) => (x.kind === "video" ? "video" : "image") === accept) : []), [board, accept]);
-  const all = source === "elements" ? elementItems : source === "moodboard" ? boardItems : paged.items;
+  const ofKind = (list) => (list || []).filter((x) => (x.kind === "video" ? "video" : "image") === accept);
+  const hereAll = useMemo(() => (here ? ofKind(here.all) : []), [here, accept]); // eslint-disable-line react-hooks/exhaustive-deps
+  const all = source === "elements" ? elementItems : source === "moodboard" ? boardItems : source === "here" ? hereAll : paged.items;
   const needle = q.trim().toLowerCase().replace(/^@/, "");
   const items = needle ? all.filter((i) => `${i.name || ""} ${i.prompt || ""} ${i.model || ""}`.toLowerCase().includes(needle)) : all;
   // Package 04: only files that are on count as chosen; a dimmed file never fills a slot.
@@ -94,8 +111,8 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
     } catch (e) { onError?.(String(e?.message || e)); }
     finally { setUploading((n) => n - 1); onUploading?.(false); }
   };
-  const count = (id) => (id === "moodboard" ? `${boardItems.length}` : id === "elements" ? (source === "elements" ? `${elementList.length}` : "") : id === source ? `${items.length}${paged.cursor ? "+" : ""}` : "");
-  const sources = board ? [["moodboard", "Moodboard"], ...SOURCES] : SOURCES;
+  const count = (id) => (id === "here" ? `${hereAll.length}` : id === "moodboard" ? `${boardItems.length}` : id === "elements" ? (source === "elements" ? `${elementList.length}` : "") : id === source ? `${items.length}${paged.cursor ? "+" : ""}` : "");
+  const sources = [...(here ? [["here", here.label]] : []), ...(board ? [["moodboard", "Moodboard"]] : []), ...SOURCES];
   // The open picker takes files dropped on the window (package 06, A2).
   useDzDropTarget({ el: box, title: "Drop files to upload", line: board ? "They also land on the Moodboard" : "", enabled: Boolean(group) && dropActive, onDrop: (files) => upload(files) });
   const tile = (item, h = null) => {
@@ -120,11 +137,11 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
       </button>
     );
   };
-  const section = (key, dot, name, list) => (
+  const section = (key, dot, name, list, addAllButton = true) => (
     <div key={key} className="mb-4">
       <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
         <span className="h-2 w-2 rounded-full" style={{ background: dot }} />{name} <span className="font-normal text-muted-foreground">{list.length}</span>
-        {group && list.length > 0 && <button type="button" onClick={() => addAll(list)} className="ml-auto h-6 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Add all {list.length}</button>}
+        {addAllButton && group && list.length > 0 && <button type="button" onClick={() => addAll(list)} className="ml-auto h-6 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Add all {list.length}</button>}
       </div>
       <div className="flex flex-wrap gap-2.5">{list.map((x) => tile({ ...x, key: `${key}-${x.url}` }, PIC_H))}</div>
     </div>
@@ -159,6 +176,21 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
         ))}
       </div>
       <div className="custom-scrollbar -mx-1 mt-3 min-h-0 flex-1 overflow-y-auto px-1 pb-1">
+        {/* This shot / This group (P5): Approved, Liked, All, like the working screen's tabs. A picture
+            can be in more than one section; choosing it in one marks it in all. No "Add all" here. */}
+        {source === "here" && here && (
+          hereAll.length ? (() => {
+            const match = (x) => !needle || `${x.name || ""} ${x.prompt || ""}`.toLowerCase().includes(needle);
+            const list = (l) => ofKind(l).filter(match);
+            return (
+              <>
+                {here.approved && section("here-approved", "hsl(var(--success))", "Approved", list(here.approved), false)}
+                {section("here-liked", "hsl(var(--signal))", "Liked", list(here.liked), false)}
+                {section("here-all", "hsl(var(--muted-foreground))", "All", hereAll.filter(match), false)}
+              </>
+            );
+          })() : <p className="py-10 text-center text-muted-foreground">Nothing generated in this {here.label === "This group" ? "group" : "shot"} yet.</p>
+        )}
         {source === "moodboard" && board && (
           boardItems.length ? (
             <>
@@ -192,7 +224,7 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
             <span className="text-muted-foreground">@{element.tag} · {element.kind ? `${element.kind[0].toUpperCase()}${element.kind.slice(1)} · ` : ""}{elementItems.length} {accept === "video" ? "video" : "view"}{elementItems.length === 1 ? "" : "s"} · pick the {accept === "video" ? "videos" : "views"} to send</span>
           </div>
         )}
-        {source !== "moodboard" && !(source === "elements" && !element) && (
+        {source !== "moodboard" && source !== "here" && !(source === "elements" && !element) && (
         <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
           {source === "uploads" && group && (
             <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading > 0 || full}
@@ -203,9 +235,9 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
           {items.map((item) => tile(item))}
         </div>
         )}
-        {source !== "moodboard" && (source === "elements" ? (element ? !items.length : !elementList.length) : !paged.loading && !items.length) && <p className="py-10 text-center text-muted-foreground">{source === "elements" ? "No elements with matching files here yet." : `Nothing here yet.`}</p>}
-        {paged.loading && source !== "elements" && source !== "moodboard" && <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>}
-        {paged.cursor && source !== "elements" && source !== "moodboard" && !paged.loading && <div className="flex justify-center py-3"><button type="button" onClick={paged.more} className="h-8 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Load more</button></div>}
+        {source !== "moodboard" && source !== "here" && (source === "elements" ? (element ? !items.length : !elementList.length) : !paged.loading && !items.length) && <p className="py-10 text-center text-muted-foreground">{source === "elements" ? "No elements with matching files here yet." : `Nothing here yet.`}</p>}
+        {paged.loading && source !== "elements" && source !== "moodboard" && source !== "here" && <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>}
+        {paged.cursor && source !== "elements" && source !== "moodboard" && source !== "here" && !paged.loading && <div className="flex justify-center py-3"><button type="button" onClick={paged.more} className="h-8 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Load more</button></div>}
       </div>
       <input ref={fileInput} type="file" accept={ACCEPT[accept]} multiple={group?.max > 1} className="hidden" onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) upload(f); }} />
     </div>

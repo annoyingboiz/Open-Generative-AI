@@ -9,6 +9,7 @@ import { lookData, autoLook, AUTO_LOOK } from "../../dzCreate.js";
 import { useAdaptModels, LLM_KEY, useAdaptResult } from "../DzAdapt.jsx";
 import { RequestView } from "../DzSentPanel.jsx";
 import { StudioPanel, Overline, ChipMenu, MenuRow } from "./ui.jsx";
+import { dzWheelStepper } from "../../dzScroll.js";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 const FOCAL_STOPS = [null, 24, 35, 50, 85, 135];
@@ -21,14 +22,13 @@ function Wheel({ title, options, value, onChange, icon: Icon }) {
   const i = Math.max(0, list.findIndex((o) => o.id === value));
   const n = list.length;
   const go = (to) => onChange(list[(to + n) % n].id);
-  const last = useRef(0);
   const drag = useRef(null);
-  const onWheel = (e) => {
-    const now = Date.now();
-    if (Math.abs(e.deltaY) < 4 || now - last.current < 170) return;
-    last.current = now;
-    go(i + (e.deltaY > 0 ? 1 : -1));
-  };
+  // The wheel belongs to this column only (package 08, rule 3): consumed here, a few
+  // steps per swipe at most (see dzWheelStepper for the numbers).
+  const col = useRef(null);
+  const stepRef = useRef(null);
+  stepRef.current = (dir) => go(i + dir);
+  useEffect(() => (col.current ? dzWheelStepper(col.current, (dir) => stepRef.current(dir)) : undefined), []);
   const Option = ({ o, big, onClick }) => (
     <button type="button" onClick={onClick} title={o.note || undefined} tabIndex={big ? -1 : 0}
       className={cn("flex w-full flex-col items-center justify-center gap-2 rounded-xl px-2 text-center transition-all duration-state ease-soft",
@@ -42,8 +42,7 @@ function Wheel({ title, options, value, onChange, icon: Icon }) {
     </button>
   );
   return (
-    <div className="relative flex min-w-0 flex-col rounded-2xl border border-border bg-card/60 p-1.5"
-      onWheel={onWheel}
+    <div ref={col} className="relative flex min-w-0 flex-col rounded-2xl border border-border bg-card/60 p-1.5"
       onPointerDown={(e) => { drag.current = { y: e.clientY, i }; }}
       onPointerMove={(e) => { if (!drag.current || !e.buttons) return; const steps = Math.trunc((drag.current.y - e.clientY) / 48); if (steps && drag.current.i + steps !== i) go(drag.current.i + steps); }}
       onPointerUp={() => { drag.current = null; }}

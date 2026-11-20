@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DzCreateStudio, DzStudio, DzStoryboard, DropOverlay, dzActiveDropTarget, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
-  DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT,
+  DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT, dzInstallScrollContainment,
   DzProjectsPage, DzElementsPage, ToElementDialog, VideoElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
   DropdownMenuParts, DialogParts, cn } from 'studio';
 import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, SquaresFour, Images, Shapes, Layout, Trash, FolderSimple, Plus,
@@ -104,6 +104,8 @@ export default function DzShell() {
   const navSeq = useRef(0);
   const [switching, setSwitching] = useState(true);
 
+  // Scroll containment for overlays (package 08): installed once for the whole app.
+  useEffect(() => { dzInstallScrollContainment(); }, []);
   // Session check (the gateway already required sign-in) and initial tab.
   useEffect(() => {
     setActiveTab(tabFromPath(window.location.pathname));

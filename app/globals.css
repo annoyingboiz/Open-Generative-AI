@@ -68,6 +68,12 @@
 }
 
 html { font-size: 16px; }
+/* Package 08, scroll containment. Every scroller keeps the vertical gesture: at its
+   end nothing passes to the parent, the panel behind or the page (rule 2). The
+   horizontal axis stays free, so the browser's swipe Back / Forward still works. */
+*, ::before, ::after { overscroll-behavior-y: contain; }
+/* The app shell never moves: no vertical elastic overscroll of the page (rule 1). */
+html, body { overscroll-behavior-y: none; }
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));

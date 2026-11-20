@@ -274,18 +274,41 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
     applyView({ z, x: (r.width - (maxX - minX) * z) / 2 - minX * z, y: Math.max(30, (r.height - 90 - (maxY - minY) * z) / 2) - minY * z });
   };
 
-  // Wheel: Ctrl/⌘ (and pinch) zoom; otherwise pan.
+  // Wheel: Ctrl/⌘ (and pinch) zoom; otherwise pan. Every gesture over the canvas is
+  // the canvas's (package 08, rule 5): no page bounce, no browser zoom, no Back / Forward.
+  // A note being edited scrolls its own text first while it can.
   useEffect(() => {
     const el = host.current;
     if (!el) return undefined;
+    let pinch = null; // Safari: pinch comes as gesture events, not as Ctrl + wheel
     const on = (e) => {
-      if (e.target.closest?.("textarea,input")) return;
+      const field = e.target.closest?.("textarea,input");
+      if (field && !e.ctrlKey && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        const can = e.deltaY > 0 ? field.scrollTop + field.clientHeight < field.scrollHeight - 1 : field.scrollTop > 0;
+        if (can) return;
+      }
       e.preventDefault();
-      if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY);
+      if (e.ctrlKey || e.metaKey) { if (!pinch) zoomAt(Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY); }
       else { const v = viewRef.current; applyView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }); }
     };
+    const start = (e) => { e.preventDefault(); pinch = { s: 1 }; };
+    const change = (e) => {
+      e.preventDefault();
+      if (!pinch || !e.scale) return;
+      zoomAt(e.scale / pinch.s, e.clientX, e.clientY);
+      pinch.s = e.scale;
+    };
+    const end = (e) => { e.preventDefault(); pinch = null; };
     el.addEventListener("wheel", on, { passive: false });
-    return () => el.removeEventListener("wheel", on);
+    el.addEventListener("gesturestart", start, { passive: false });
+    el.addEventListener("gesturechange", change, { passive: false });
+    el.addEventListener("gestureend", end, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", on);
+      el.removeEventListener("gesturestart", start);
+      el.removeEventListener("gesturechange", change);
+      el.removeEventListener("gestureend", end);
+    };
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Saving, with undo/redo ──
@@ -740,7 +763,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
   return (
     <div className="relative h-full w-full overflow-hidden">
       <input ref={fileInput} type="file" multiple accept="image/*,video/*" className="hidden" onChange={(e) => { const f = [...(e.target.files || [])]; e.target.value = ""; if (f.length) uploadAt(f, center()); }} />
-      <div ref={host} tabIndex={0} aria-label="Moodboard canvas" className="absolute inset-0 overflow-hidden outline-none"
+      <div ref={host} tabIndex={0} aria-label="Moodboard canvas" className="absolute inset-0 touch-none overflow-hidden overscroll-none outline-none"
         style={{ cursor, backgroundImage: "radial-gradient(hsl(var(--border)) 1px, transparent 1px)", backgroundSize: `${22 * view.z}px ${22 * view.z}px`, backgroundPosition: `${view.x}px ${view.y}px` }}
         onPointerDown={onDown} onDoubleClick={onDouble}>
         <Stage ref={stageRef} width={size.w} height={size.h} x={viewRef.current.x} y={viewRef.current.y} scaleX={viewRef.current.z} scaleY={viewRef.current.z}>

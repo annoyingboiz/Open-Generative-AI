@@ -11,15 +11,20 @@ import { cn } from "../../ui/index.js";
 export const mediaUrl = (u) => String(u || "").replace(/^https?:\/\/[^/]+(?=\/media\/)/, "");
 
 // Files from the computer → our own files with their sizes (pictures and videos only).
+// A file that fails does not lose the others: the failure is said once, the rest are returned.
 export async function uploadAll(files) {
   const list = [...files].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
   const out = [];
+  const failed = [];
   for (const f of list) {
-    const url = mediaUrl(await uploadFile("session", f));
-    const kind = f.type.startsWith("video/") ? "video" : "image";
-    const { w, h } = await sizeOf(url, kind);
-    out.push({ url, kind, w, h, name: f.name.slice(0, 80) });
+    try {
+      const url = mediaUrl(await uploadFile("session", f));
+      const kind = f.type.startsWith("video/") ? "video" : "image";
+      const { w, h } = await sizeOf(url, kind);
+      out.push({ url, kind, w, h, name: f.name.slice(0, 80) });
+    } catch (e) { failed.push(`${f.name}: ${String(e?.message || e)}`); }
   }
+  if (failed.length) window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Upload", message: failed.join(" · ") } }));
   return out;
 }
 

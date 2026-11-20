@@ -206,8 +206,6 @@ export function createStoryboards({ db, projects, generations, log }) {
     }
   }
   migrateOld();
-  // Package 06, S8.1: the default name is "Untitled storyboard"; names never edited follow it.
-  db.prepare("UPDATE storyboards SET name = 'Untitled storyboard' WHERE name IN ('Untitled film', 'Untitled scene')").run();
   const isTarget = (row, id) => parse(row.shots_json, []).some((x) => x.id === id) || groupIds(parse(row.mood_json, {})).has(id);
 
   // A file of the board that can't be opened from it any more (sent to Trash,

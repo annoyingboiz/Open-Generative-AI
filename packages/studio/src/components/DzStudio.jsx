@@ -338,7 +338,7 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off
         {kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} muted preload="metadata" className="h-full w-full object-cover" onLoadedMetadata={(e) => setDur(e.currentTarget.duration)} />
           : kind === "audio" ? <span className="flex h-full items-center justify-center text-muted-foreground">♪</span>
             : <img src={dzThumb(item.url, 128)} alt="" className="h-full w-full object-cover" />}
-        {(label || dur) && <span className="absolute inset-x-0 bottom-0 rounded-b-slot bg-overlay/70 text-center text-[11px] font-semibold leading-4 text-overlay-foreground">{label || fmtDur(dur)}</span>}
+        {(label || dur) && <span className="absolute inset-x-0 bottom-0 truncate rounded-b-slot bg-overlay/70 px-0.5 text-center text-[11px] font-semibold leading-4 text-overlay-foreground">{label || fmtDur(dur)}</span>}
       </div>
       {/* An off file is never offered as an @tag: its tooltip says why it is off instead. */}
       {!off && <span className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-popover transition-opacity delay-0 duration-state group-hover/t:opacity-100 group-hover/t:delay-300 group-focus-visible/t:opacity-100">{tag}</span>}
@@ -447,7 +447,7 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
     if (!from || from.kind !== g.kind || !Object.keys(g.roleMax || {}).length) return;
     // Only when the target has room (files that are on): a full group leaves the item where it was.
     setAttached((a) => {
-      const next = addToGroup(removeFromGroup(a, from, d.item.url, d.item.role), g, [{ url: d.item.url, name: d.item.name }], null, st.isOn);
+      const next = addToGroup(removeFromGroup(a, from, d.item.url, d.item.role), g, [{ url: d.item.url, name: d.item.name, label: d.item.label }], null, st.isOn);
       return groupItems(next, g).some((x) => x.url === d.item.url) ? next : a;
     });
   };
@@ -459,7 +459,7 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
       <Thumb key={`${item.role}-${item.url}`} item={item} kind={g.kind} label={label || item.label} tag={tagText(item, label || item.label || g.label)} fault={fault === g.id && !off}
         off={Boolean(off)} onActivate={canOn ? () => st.turnOn([item.role]) : undefined} tip={tipFor(off?.reason)}
         menu={g.id === "edit" ? [[PencilSimple, "Draw to edit…", () => onDraw?.(item.url)], [ArrowsClockwise, "Replace…", () => openLibrary("edit")], [Trash, "Remove", () => setAttached((a) => removeFromGroup(a, g, item.url, item.role))]] : null}
-        onDragStart={(e) => { dragging.current = { group: g.id, item: { url: item.url, name: item.name, role: item.role } }; try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ } }}
+        onDragStart={(e) => { dragging.current = { group: g.id, item: { url: item.url, name: item.name, label: item.label, role: item.role } }; try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ } }}
         onRemove={() => setAttached((a) => removeFromGroup(a, g, item.url, item.role))} />
     );
   };

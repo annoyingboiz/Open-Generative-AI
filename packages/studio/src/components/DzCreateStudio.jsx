@@ -462,7 +462,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // within the current model's limit — or says why not.
   const elementMaxRef = useRef(7);
   useEffect(() => {
-    if (mode !== "create") return undefined;
+    // Working screens have their own addressed events (package 06, S1).
+    if (mode !== "create" || target) return undefined;
     const on = (e) => {
       const el = e.detail;
       if (!el?.id || el.status === "draft") return;
@@ -711,7 +712,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       values,
       camera,
       move: kind === "video" ? move : "",
-      attached: splitEdit(used),
+      // Only url and name travel (a view's label is for the strip).
+      attached: Object.fromEntries(Object.entries(splitEdit(used)).map(([r, list]) => [r, Array.isArray(list) ? list.map((f) => ({ url: f.url, name: f.name || "" })) : list])),
       count,
       elements: (elementSpec ? elementPairs.map((p) => p.element) : elementsUsed ? activeElements : []).map((e) => ({ id: e.id, name: e.name })),
       // The result returns to this shot or group, wherever the user is meanwhile (package 05, §3).

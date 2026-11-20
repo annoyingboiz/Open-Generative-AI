@@ -265,6 +265,11 @@ const MIGRATIONS = [
   ALTER TABLE storyboards ADD COLUMN note TEXT NOT NULL DEFAULT '';
   ALTER TABLE storyboards ADD COLUMN v2 INTEGER NOT NULL DEFAULT 0;
   `,
+  // 16: package 06, S8.1 — the default name is "Untitled storyboard"; boards still carrying an
+  // earlier default name follow it (once).
+  `
+  UPDATE storyboards SET name = 'Untitled storyboard' WHERE name IN ('Untitled film', 'Untitled scene');
+  `,
 ];
 
 export function openDatabase(dataDir) {

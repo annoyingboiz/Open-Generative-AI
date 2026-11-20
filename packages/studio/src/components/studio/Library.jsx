@@ -25,7 +25,7 @@ const PIC_H = 112;
 const ACCEPT = { image: "image/png,image/jpeg,image/webp", video: "video/mp4,video/quicktime,video/webm", audio: "audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg" };
 
 // The browsing part: search, scope, source tabs and the grid. Shared by the window and the full list.
-function Browser({ group, attached, setAttached, columns = 8, onError, onUploading, st = null, initial = null }) {
+function Browser({ group, attached, setAttached, columns = 8, onError, onUploading, st = null, initial = null, dropActive = true }) {
   const ctx = useDzContext();
   const board = useContext(PickerBoardContext);
   const [source, setSource] = useState(initial?.source || (board ? "moodboard" : "generations"));
@@ -93,10 +93,10 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
     } catch (e) { onError?.(String(e?.message || e)); }
     finally { setUploading((n) => n - 1); onUploading?.(false); }
   };
-  const count = (id) => (id === "moodboard" ? `${boardItems.length}` : id === source ? `${source === "elements" && !element ? elementList.length : items.length}${id !== "elements" && paged.cursor ? "+" : ""}` : "");
+  const count = (id) => (id === "moodboard" ? `${boardItems.length}` : id === "elements" ? (source === "elements" ? `${elementList.length}` : "") : id === source ? `${items.length}${paged.cursor ? "+" : ""}` : "");
   const sources = board ? [["moodboard", "Moodboard"], ...SOURCES] : SOURCES;
   // The open picker takes files dropped on the window (package 06, A2).
-  useDzDropTarget({ el: box, title: "Drop files to upload", line: board ? "They also land on the Moodboard" : "", enabled: Boolean(group), onDrop: (files) => upload(files) });
+  useDzDropTarget({ el: box, title: "Drop files to upload", line: board ? "They also land on the Moodboard" : "", enabled: Boolean(group) && dropActive, onDrop: (files) => upload(files) });
   const tile = (item, h = null) => {
     const n = chosen.findIndex((x) => x.url === item.url);
     const on = n >= 0;
@@ -202,7 +202,7 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
           {items.map((item) => tile(item))}
         </div>
         )}
-        {source !== "moodboard" && !paged.loading && (source === "elements" ? (element ? !items.length : !elementList.length) : !items.length) && <p className="py-10 text-center text-muted-foreground">{source === "elements" ? "No elements with matching files here yet." : `Nothing here yet.`}</p>}
+        {source !== "moodboard" && (source === "elements" ? (element ? !items.length : !elementList.length) : !paged.loading && !items.length) && <p className="py-10 text-center text-muted-foreground">{source === "elements" ? "No elements with matching files here yet." : `Nothing here yet.`}</p>}
         {paged.loading && source !== "elements" && source !== "moodboard" && <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>}
         {paged.cursor && source !== "elements" && source !== "moodboard" && !paged.loading && <div className="flex justify-center py-3"><button type="button" onClick={paged.more} className="h-8 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Load more</button></div>}
       </div>
@@ -248,7 +248,7 @@ export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sen
         })}
         <button type="button" onClick={onClose} aria-label="Close" className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
       </div>
-      <Browser key={`${group.id}:${initial?.element || ""}`} group={group} attached={attached} setAttached={setAttached} onError={onError} onUploading={onUploading} st={st} initial={initial} />
+      <Browser key={`${group.id}:${initial?.element || ""}`} group={group} attached={attached} setAttached={setAttached} onError={onError} onUploading={onUploading} st={st} initial={initial} dropActive={open && shown} />
       <div className="mt-3 flex h-9 flex-shrink-0 items-center gap-4">
         <span className="text-sm tabular-nums text-muted-foreground">{chosen.length} of {maxOf(group, chosen.length)} chosen</span>
         <button type="button" onClick={() => setAttached((a) => clearGroup(a, group))} disabled={!chosen.length} className="flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Broom size={16} /> Clear</button>
@@ -272,7 +272,7 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
     if (!target) return;
     setAttached((a) => {
       const cleared = removeFromGroup(a, fromGroup, item.url, item.role);
-      return addToGroup(cleared, target, [{ url: item.url, name: item.name }], role, st?.isOn);
+      return addToGroup(cleared, target, [{ url: item.url, name: item.name, label: item.label }], role, st?.isOn);
     });
   };
   return (
@@ -349,7 +349,7 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
         })}
       </div>
       <div className="flex min-w-0 flex-1 flex-col py-5 pr-5">
-        {group && Object.keys(group.roleMax || {}).length > 0 && <Browser key={group.id} group={group} attached={attached} setAttached={setAttached} columns={4} onError={onError} onUploading={onUploading} st={st} />}
+        {group && Object.keys(group.roleMax || {}).length > 0 && <Browser key={group.id} group={group} attached={attached} setAttached={setAttached} columns={4} onError={onError} onUploading={onUploading} st={st} dropActive={open} />}
         {group && <p className="mt-2 text-sm text-muted-foreground">Click a {group.kind === "video" ? "video" : "picture"} to add it to {group.label}. Drag a row on the left to reorder.</p>}
       </div>
     </StudioPanel>

@@ -9,7 +9,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Konva from "konva";
 import { Stage, Layer, Rect, Group, Image as KImage, Text as KText, Arrow as KArrow, Transformer, Line, Circle, RegularPolygon } from "react-konva";
-import { Cursor, Hand, Square, NoteBlank, ArrowUpRight, TextT, ImageSquare, Minus, Plus, CornersOut, UploadSimple, Clipboard, Images, Sparkle, DotsThree, ArrowCounterClockwise, ArrowClockwise, ArrowRight, Rows, ArrowElbowDownRight } from "@phosphor-icons/react";
+import { Cursor, Hand, Square, NoteBlank, ArrowUpRight, TextT, ImageSquare, Minus, Plus, CornersOut, UploadSimple, Clipboard, Images, Sparkle, DotsThree, ArrowCounterClockwise, ArrowClockwise, ArrowRight, Rows, ArrowElbowDownRight, Check } from "@phosphor-icons/react";
 import { dzThumb, uploadFile } from "../../api.js";
 import { DropdownMenuParts, cn } from "../../ui/index.js";
 import { inFrame, newItemId, sizeOf, isVideoUrl, newSceneId, newShotId, numbered } from "../../dzFilm.js";
@@ -60,16 +60,19 @@ function loadImg(src, onReady) {
   if (e) { imgCache.delete(src); imgCache.set(src, e); } // mark as recently used
   else {
     const img = new window.Image();
-    e = { img, state: "loading", cbs: new Set() };
+    e = { img, state: "loading", cbs: new Set(), users: 0 };
     const entry = e;
     img.onload = () => { entry.state = "ok"; entry.cbs.forEach((f) => f()); entry.cbs.clear(); };
     img.onerror = () => { entry.state = "failed"; entry.cbs.clear(); };
     img.src = src;
     imgCache.set(src, e);
-    while (imgCache.size > IMG_LIMIT) { const [k, old] = imgCache.entries().next().value; old.cbs.clear(); imgCache.delete(k); }
+    // Evict the least recently used pictures that no tile on screen holds.
+    for (const [k, old] of imgCache) { if (imgCache.size <= IMG_LIMIT) break; if (!old.users && k !== src) imgCache.delete(k); }
   }
-  let off = () => {};
-  if (e.state === "loading" && onReady) { e.cbs.add(onReady); const entry = e; off = () => entry.cbs.delete(onReady); }
+  e.users += 1;
+  const entry = e;
+  if (e.state === "loading" && onReady) e.cbs.add(onReady);
+  const off = () => { entry.users = Math.max(0, entry.users - 1); if (onReady) entry.cbs.delete(onReady); };
   return { e, off };
 }
 function useImg(src, fallback) {
@@ -718,8 +721,13 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
       const shots = how === "each" ? refs.map((r) => ({ id: newShotId(), scene: id, note: "", refs: [r] })) : [{ id: newShotId(), scene: id, note: "", refs }];
       return { ...film, scenes: [...film.scenes, { id, name: (f.name || "").slice(0, 80), note: "" }], shots: [...film.shots, ...shots] };
     });
-    notify({ type: "notice", title: "Storyboard", message: how === "into" ? `${refs.length} picture${refs.length === 1 ? "" : "s"} added to the shot.` : `Scene “${f.name || "Group"}” added to the Storyboard.` });
+    // Quiet UI: the button itself says it was done, for a moment.
+    setSent(f.id);
+    clearTimeout(sentTimer.current);
+    sentTimer.current = setTimeout(() => setSent(null), 2200);
   };
+  const [sent, setSent] = useState(null);
+  const sentTimer = useRef(0);
   const sceneList = useMemo(() => numbered(film), [film]);
   const editItem = editing && items.find((x) => x.id === editing);
   const selArrow = sel.length === 1 ? items.find((x) => x.id === sel[0] && x.type === "arrow") : null;
@@ -788,7 +796,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
             <div data-overlay-ui className="pointer-events-auto absolute flex items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-popover p-1 shadow-popover" style={{ left: selFrame.x, top: selFrame.y + selFrame.h + 8 / z, transform: `scale(${1 / z})`, transformOrigin: "top left" }}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" disabled={!countIn(selFrame)} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-40"><ArrowRight size={14} /> Send to Storyboard</button>
+                  <button type="button" disabled={!countIn(selFrame)} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-40">{sent === selFrame.id ? <><Check size={14} /> Sent to Storyboard</> : <><ArrowRight size={14} /> Send to Storyboard</>}</button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-72">
                   {(() => { const n = countIn(selFrame); const nm = selFrame.name || "Group"; return (

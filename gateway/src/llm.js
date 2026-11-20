@@ -9,6 +9,7 @@
 // Every call is logged with its tokens and cost and counts toward the user's
 // monthly limit.
 import fs from 'node:fs';
+import sharp from 'sharp';
 import { providerFetch } from './providers/http.js';
 import { newId } from './storage.js';
 import { now } from './db.js';
@@ -22,6 +23,8 @@ const APIMART = 'https://api.apimart.ai';
 const ATLAS = 'https://api.atlascloud.ai';
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const SEND_AS_IS_BYTES = 4 * 1024 * 1024; // bigger pictures go as a 2048 px JPEG
+const SEND_MAX_SIDE = 2048;
 const MAX_INPUT_CHARS = 60_000;
 const DEFAULT_MAX_TOKENS = 4000;
 const MAX_MESSAGES = 100;
@@ -216,17 +219,31 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   }
 
   // ── Calls ───────────────────────────────────────────────────────────────
-  // Our /media/... pictures → base64 (providers can't open our private links).
-  function imagesOf(user, urls) {
+  // Our /media/... pictures → base64 (providers can't open our private links). A large picture
+  // is sent as a 2048 px JPEG: text models scale pictures down to about that size anyway, and
+  // their request limits are a few MB. The original stays as it is.
+  async function imagesOf(user, urls) {
     const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && u).slice(0, MAX_IMAGES + 1);
     if (list.length > MAX_IMAGES) throw new LlmError(`At most ${MAX_IMAGES} pictures per message.`);
-    return list.map((url) => {
+    return Promise.all(list.map(async (url) => {
       const f = generations.mediaFileForUrl(user, url);
       if (!f || !String(f.mime || '').startsWith('image/')) throw new LlmError('A picture is not available (or is not a picture).', 404);
       const st = fs.statSync(f.path);
-      if (st.size > MAX_IMAGE_BYTES) throw new LlmError('A picture is too big for a text model (max 8 MB).');
-      return { mime: f.mime, b64: fs.readFileSync(f.path).toString('base64') };
-    });
+      let meta = null;
+      try { meta = await sharp(f.path, { limitInputPixels: 100_000_000 }).metadata(); } catch { meta = null; }
+      const big = st.size > SEND_AS_IS_BYTES || !meta || Math.max(meta.width || 0, meta.height || 0) > SEND_MAX_SIDE;
+      const plain = ['image/jpeg', 'image/png', 'image/webp'].includes(f.mime);
+      if (!big && plain) return { mime: f.mime, b64: fs.readFileSync(f.path).toString('base64') };
+      try {
+        const buf = await sharp(f.path, { limitInputPixels: 100_000_000, animated: false }).rotate()
+          .resize({ width: SEND_MAX_SIDE, height: SEND_MAX_SIDE, fit: 'inside', withoutEnlargement: true })
+          .flatten({ background: '#ffffff' }).jpeg({ quality: 85 }).toBuffer();
+        if (buf.length > MAX_IMAGE_BYTES) throw new Error('still too big');
+        return { mime: 'image/jpeg', b64: buf.toString('base64') };
+      } catch {
+        throw new LlmError('This picture could not be prepared for a text model.');
+      }
+    }));
   }
 
   function cleanMessages(body) {
@@ -354,7 +371,7 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
     const [, source, model] = m;
     if (source === 'chatgpt' && !chatgpt) throw new LlmError('The ChatGPT account is not connected yet.', 409);
     const msgs = cleanMessages(body);
-    const images = imagesOf(user, body.images);
+    const images = await imagesOf(user, body.images);
     const maxTokens = Math.min(16_000, Math.max(64, Number(body.maxTokens) || DEFAULT_MAX_TOKENS));
     const temperature = body.temperature == null ? null : Math.min(2, Math.max(0, Number(body.temperature)));
     const purpose = String(body.purpose || 'chat').slice(0, 40);

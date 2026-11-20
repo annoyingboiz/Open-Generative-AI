@@ -122,6 +122,26 @@ test('chat on the local machine: free, logged, works even at a $0 limit; busy an
   assert.equal(res.statusCode, 404);
 });
 
+test('a large picture goes to a text model as a 2048 px JPEG, not refused', async () => {
+  const sharp = (await import('sharp')).default;
+  // Larger than a text model takes (3000 px); the same path handles pictures over the byte limit.
+  const png = await sharp({ create: { width: 3000, height: 2000, channels: 3, background: '#884422' } }).png().toBuffer();
+  const boundary = '----dz' + Date.now();
+  const payload = Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="big.png"\r\nContent-Type: image/png\r\n\r\n`), png, Buffer.from(`\r\n--${boundary}--\r\n`)]);
+  let res = await app.inject({ method: 'POST', url: '/api/v1/upload_file', headers: { cookie: cookies.admin, 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+  assert.equal(res.statusCode, 200, res.body);
+  const url = res.json().url;
+  res = await as('admin', 'POST', '/dz/api/llm/chat', { model: 'local:gemma4:31b', prompt: 'what is it', images: [url] });
+  assert.equal(res.statusCode, 200, res.body);
+  const sent = lastChat.messages.flatMap((m) => m.images || []);
+  assert.equal(sent.length, 1);
+  const buf = Buffer.from(sent[0], 'base64');
+  const meta = await sharp(buf).metadata();
+  assert.equal(meta.format, 'jpeg');
+  assert.equal(Math.max(meta.width, meta.height), 2048);
+  assert.ok(buf.length < 8 * 1024 * 1024);
+});
+
 test('settings: default model and a test call', async () => {
   let res = await as('admin', 'POST', '/dz/settings/llm/default', { model: 'local:qwen3.5:9b' });
   assert.equal(res.statusCode, 302);
@@ -201,3 +221,4 @@ test('Settings: your ChatGPT models can be picked as your default; a saved choic
   html = settingsPage({ user, llm: { models: models.slice(1), myDefault: 'chatgpt:gpt-6.2-sol', globalDefault: '', chatgpt: { connected: true } } });
   assert.match(html.slice(html.indexOf('My default text model')), /<option value="chatgpt:gpt-6.2-sol" selected>gpt-6.2-sol — not available right now/);
 });
+

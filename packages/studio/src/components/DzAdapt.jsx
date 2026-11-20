@@ -19,6 +19,55 @@ export async function post(url, body) {
   return data;
 }
 
+// Adapt results (package 07, F2). One result per input, kept per composer.
+// The input is exactly what the adapter gets: the prompt, the target model
+// (family + kind), the context (mode, duration, aspect, audio, camera words, the
+// attached files and elements by tag), the text model and the format. The camera
+// look is not sent (the server adds it on every send), so it is not part of it.
+// The scope is the composer: a tool tab (Image, Video, Studio) or one shot / group.
+const RESULTS_KEY = "dz_adapt_results_v2";
+const MAX_SCOPES = 40;
+function hash(str) { // cyrb53: a short, stable key for a long input
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i += 1) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+export function adaptInputKey({ prompt, model, context, llm, as }) {
+  return hash(JSON.stringify([String(prompt ?? ""), model?.family || "", model?.kind || "", context ?? null, llm || "", as || "text"]));
+}
+function readResults() {
+  try {
+    localStorage.removeItem("dz_studio_adapt_v1"); // one result per format for every composer: the Negroni bug
+    const v = JSON.parse(localStorage.getItem(RESULTS_KEY) || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch { return {}; }
+}
+// rec: { key (the input it was made from), result, at, used?, usedKey? (the input once it is in use) }
+export function adaptRecall(scope, as) {
+  const rec = scope ? readResults()[scope]?.[as] : null;
+  return rec?.result && typeof rec.key === "string" ? rec : null;
+}
+export function adaptRemember(scope, as, rec) {
+  if (!scope) return;
+  try {
+    const all = readResults();
+    all[scope] = { ...(all[scope] || {}), [as]: rec, at: Date.now() };
+    const keep = Object.entries(all).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, MAX_SCOPES);
+    localStorage.setItem(RESULTS_KEY, JSON.stringify(Object.fromEntries(keep)));
+  } catch { /* optional */ }
+}
+export function adaptForget(scope) {
+  if (!scope) return;
+  try { const all = readResults(); if (all[scope]) { delete all[scope]; localStorage.setItem(RESULTS_KEY, JSON.stringify(all)); } } catch { /* optional */ }
+}
+
 // Recommended text models (incl. your ChatGPT), your default first.
 export function useAdaptModels() {
   const llm = useDzLlmModels();
@@ -35,7 +84,7 @@ export function useAdaptModels() {
 
 // look: the chosen camera look (ids) — the rewrite puts it into the model's blocks.
 // request: { endpoint, body } of the current model, to show what will be sent.
-export function DzAdaptButton({ prompt, onUse, model, context, className, look = null, request = null }) {
+export function DzAdaptButton({ prompt, onUse, model, context, className, look = null, request = null, scope = null }) {
   const [open, setOpen] = useState(false);
   const can = Boolean(prompt?.trim() && model?.kind);
   return (
@@ -45,20 +94,19 @@ export function DzAdaptButton({ prompt, onUse, model, context, className, look =
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" /></svg>
         Adapt to model
       </Button>
-      {open && <AdaptDialog prompt={prompt} model={model} context={context} look={look} request={request} onClose={() => setOpen(false)} onUse={(p, info) => { onUse(p, info); setOpen(false); }} />}
+      {open && <AdaptDialog prompt={prompt} model={model} context={context} look={look} request={request} scope={scope} onClose={() => setOpen(false)} onUse={(p, info) => { onUse(p, info); setOpen(false); }} />}
     </>
   );
 }
 
-function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) {
+function AdaptDialog({ prompt, model, context, look, request, scope, onClose, onUse }) {
   const { options, def, loaded } = useAdaptModels();
   const [llmId, setLlmId] = useState(() => { try { return localStorage.getItem(LLM_KEY) || ""; } catch { return ""; } });
   const chosen = options.some((o) => o.value === llmId) ? llmId : def || options[0]?.value || "";
-  const [state, setState] = useState({ busy: false, error: "", result: null });
+  // key: the input the result on screen belongs to; "Use this" only while it is the current one.
+  const [state, setState] = useState({ busy: false, error: "", result: null, key: null });
   // Text or JSON out: starts as your prompt is, switch to compare.
   const [as, setAs] = useState(() => (/^\s*[{[]/.test(prompt || "") ? "json" : "text"));
-  const asRef = useRef(as);
-  asRef.current = as;
   const [text, setText] = useState("");
   const [notes, setNotes] = useState(null); // { name, body, sources } when shown
   const [myDefault, setMyDefault] = useState(null); // set here: the new default
@@ -68,21 +116,42 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
   };
   useEffect(() => { try { if (llmId) localStorage.setItem(LLM_KEY, llmId); } catch { /* optional */ } }, [llmId]);
 
-  const run = async (format = as) => {
-    setState({ busy: true, error: "", result: null });
+  const currentKey = adaptInputKey({ prompt, model, context, llm: chosen, as });
+  const seq = useRef(0);
+  const run = async () => {
+    const mine = ++seq.current;
+    const key = currentKey;
+    const format = as;
+    setState({ busy: true, error: "", result: null, key });
     try {
       const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined, as: format });
-      // Switched Text / JSON while this one ran: run again in the new format.
-      if (asRef.current !== format) { run(asRef.current); return; }
-      setState({ busy: false, error: "", result: r });
+      if (mine !== seq.current) return;
+      setState({ busy: false, error: "", result: r, key });
       setText(r.prompt);
+      adaptRemember(scope, format, { key, result: r, at: Date.now() });
     } catch (e) {
-      setState({ busy: false, error: String(e?.message || e), result: null });
+      if (mine === seq.current) setState({ busy: false, error: String(e?.message || e), result: null, key });
     }
   };
-  // Starts by itself once the text models are known — once (React may run effects twice).
-  const started = useRef(false);
-  useEffect(() => { if (loaded && !started.current) { started.current = true; run(); } }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  // One result per input (package 07, F2): the same input shows what was made; a new one runs by itself.
+  useEffect(() => {
+    if (!loaded || state.key === currentKey) return;
+    const rec = adaptRecall(scope, as);
+    if (rec && (rec.key === currentKey || rec.usedKey === currentKey)) {
+      seq.current += 1;
+      setState({ busy: false, error: "", result: rec.result, key: currentKey });
+      setText(rec.usedKey === currentKey ? rec.used : rec.result.prompt);
+      return;
+    }
+    run();
+  }, [loaded, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const use = () => {
+    if (state.key !== currentKey || !state.result) return;
+    const rec = adaptRecall(scope, as);
+    const source = rec && (rec.key === currentKey || rec.usedKey === currentKey) ? rec : { key: currentKey, result: state.result, at: Date.now() };
+    adaptRemember(scope, as, { ...source, used: text, usedKey: adaptInputKey({ prompt: text, model, context, llm: chosen, as }) });
+    onUse(text);
+  };
 
   const showNotes = async () => {
     if (notes) { setNotes(null); return; }
@@ -109,7 +178,7 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
               <div className="mb-1.5 text-muted-foreground">Text model</div>
               <OptionSelect aria-label="Text model" value={chosen} onValueChange={setLlmId} options={options.length ? options : [{ value: "", label: loaded ? "No text models available" : "Loading…" }]} />
             </div>
-            <Segmented className="w-auto" value={as} onChange={(v) => { setAs(v); asRef.current = v; if (loaded && !state.busy) run(v); }} aria-label="Answer as"
+            <Segmented className="w-auto" value={as} onChange={setAs} aria-label="Answer as"
               options={[{ value: "text", label: "Text" }, { value: "json", label: "JSON" }]} />
             <Button variant="secondary" onClick={() => run()} disabled={state.busy || !loaded}>{state.busy ? <><Spinner className="h-4 w-4" /> Rewriting…</> : r ? "Try again" : "Rewrite"}</Button>
             <Button variant="ghost" onClick={showNotes}>{notes ? "Hide notes" : "Model notes"}</Button>
@@ -160,7 +229,7 @@ function AdaptDialog({ prompt, model, context, look, request, onClose, onUse }) 
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onUse(text)} disabled={!r || !text.trim() || state.busy}>Use this</Button>
+          <Button onClick={use} disabled={!r || !text.trim() || state.busy || state.key !== currentKey}>Use this</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

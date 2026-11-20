@@ -319,7 +319,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
       setText("");
       setImages([]);
       try {
-        const r = await dzAssistants.send(c.id, { text: sentText, images: sentImages.map((x) => x.url), model: model || undefined, context: studio ? { tab: activeTab, model: studio.model, prompt: studio.prompt, sees: studio.seesFull || studio.sees || undefined } : { tab: activeTab } });
+        const r = await dzAssistants.send(c.id, { text: sentText, images: sentImages.map((x) => x.url), model: model || undefined, context: studio ? { tab: activeTab, model: studio.model, prompt: studio.prompt, sees: studio.seesFull || studio.sees || undefined, refs: studio.refs || undefined } : { tab: activeTab } });
         if (seq !== chatSeq.current) return; // you moved on: the answer is saved in its chat
         setChat(r.chat);
         setChats((list) => [{ id: r.chat.id, title: r.chat.title, updated_at: r.chat.updated_at, n: r.chat.messages.length }, ...list.filter((x) => x.id !== r.chat.id)]);
@@ -432,7 +432,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
                 <p>Write a message{assistant.modelNotes ? " — it knows the prompting rules of the model open in the studio" : ""}. Pictures can be attached.</p>
               </div>
             )}
-            {(chat?.messages || []).map((m, i) => <Message key={i} m={m} canInsert={typeof canInsert === "function" ? canInsert() : canInsert} onInsert={onInsert} onOpen={(u) => setViewing(u)} />)}
+            {(chat?.messages || []).map((m, i) => <Message key={i} m={m} canInsert={typeof canInsert === "function" ? canInsert() : canInsert} onInsert={(t, how) => onInsert(t, how, m.refs || [])} onOpen={(u) => setViewing(u)} />)}
             {sending && <div className="flex items-center gap-2 text-muted-foreground"><Spinner className="h-4 w-4" /> Writing…</div>}
           </div>
 

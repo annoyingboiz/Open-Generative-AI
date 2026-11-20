@@ -309,16 +309,24 @@ export default function DzShell() {
   });
 
   // ── Notifications ─────────────────────────────────────────────────────
+  // Every toast closes by itself after NOTIFICATION_TTL (package 07, F3.1): its own
+  // timer from the moment it is shown, plus a sweep when the page is shown again
+  // (a hidden tab's timers can be held back for minutes).
   const push = useCallback((n) => {
     const entry = { ...n, id: `${Date.now()}-${Math.random()}`, expiresAt: Date.now() + NOTIFICATION_TTL };
     setNotifications((prev) => [...prev, entry].slice(-MAX_NOTIFICATIONS));
+    setTimeout(() => setNotifications((prev) => prev.filter((x) => x.id !== entry.id)), NOTIFICATION_TTL + 50);
   }, []);
   const dismiss = useCallback((id) => setNotifications((prev) => prev.filter((n) => n.id !== id)), []);
   useEffect(() => {
     if (!notifications.length) return undefined;
+    const sweep = () => setNotifications((prev) => (prev.some((n) => n.expiresAt <= Date.now()) ? prev.filter((n) => n.expiresAt > Date.now()) : prev));
     const next = Math.min(...notifications.map((n) => n.expiresAt));
-    const timer = setTimeout(() => setNotifications((prev) => prev.filter((n) => n.expiresAt > Date.now())), Math.max(0, next - Date.now()));
-    return () => clearTimeout(timer);
+    const timer = setTimeout(sweep, Math.max(0, next - Date.now()) + 20);
+    const onShow = () => { if (!document.hidden) sweep(); };
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('focus', onShow);
+    return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', onShow); window.removeEventListener('focus', onShow); };
   }, [notifications]);
 
   const callbacks = useCallback((tabId) => ({
@@ -647,7 +655,7 @@ export default function DzShell() {
         <DzChatPanel open={chatOpen} onOpenChange={setChatOpen} activeTab={activeTab} apiKey={DZ_SESSION_PLACEHOLDER}
           canInsert={() => INSERT_TABS.has(activeTab) && dzGetStudioState(activeTab)?.writable !== false}
           getStudio={() => dzGetStudioState(activeTab)}
-          onInsert={(text, how) => window.dispatchEvent(new CustomEvent(DZ_INSERT_EVENT, { detail: { tab: activeTab, text, how } }))} />
+          onInsert={(text, how, refs) => window.dispatchEvent(new CustomEvent(DZ_INSERT_EVENT, { detail: { tab: activeTab, text, how, refs } }))} />
 
         {/* Upscale drawer: opens next to the work, from an image's button or menu.
             Non-modal: the page behind stays usable. */}

@@ -11,7 +11,7 @@ import { useDzQuote } from "./DzPrice.jsx";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
-import { DzAdaptButton } from "./DzAdapt.jsx";
+import { DzAdaptButton, adaptForget } from "./DzAdapt.jsx";
 import { dzSetStudioState, DZ_INSERT_EVENT } from "../dzStudioState.js";
 import DzLikeButton, { DzPendingTile, DzAudioTile } from "./DzLikeButton.jsx";
 import DrawModal from "./DrawModal.jsx";
@@ -23,7 +23,7 @@ import { Viewer } from "./DzLibrary.jsx";
 import {
   createEntries, chooseVariant, planAttachments, withEditFirst, splitEdit, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, promptTags, translateTags, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
-  ROLE_INFO, ROLE_ORDER, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags,
+  ROLE_INFO, ROLE_ORDER, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags, resolveInsertTags,
 } from "../dzCreate.js";
 import {
   Button, Segmented, ScrollTabs, Switch, Slider, Textarea, Input, Logo, Spinner, InfoTip, Tip, cn,
@@ -579,6 +579,15 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       tags: tags.filter((t) => !(t.kind === "file" && t.unused)).map((t) => ({ tag: t.tag, label: `${t.label || t.kind}${t.to ? ` (sent to the model as ${t.to})` : ""}` })),
     };
   }, [merged.attached, kind, values, camera, move, tags, elementsUsed]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Adapt keeps its results per composer (package 07, F2): a tool tab, or one shot / group.
+  // A composer that is emptied starts with no result.
+  const adaptScope = target ? `board:${target.board || ""}:${target.kind || ""}:${target.id || ""}` : `tab:${mode}`;
+  const hadPrompt = useRef(Boolean(prompt.trim()));
+  useEffect(() => {
+    const has = Boolean(prompt.trim());
+    if (hadPrompt.current && !has) adaptForget(adaptScope);
+    hadPrompt.current = has;
+  }, [prompt, adaptScope]);
   const needsPrompt = variant?.model.promptRequired;
   const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
   const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
@@ -590,15 +599,50 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const sentPreview = useDzPromptPreview({ endpoint: variant?.model.endpoint, body: quoteBody ? { ...quoteBody, prompt: "" } : null, look, enabled: Boolean(variant && look && !sentOpen) });
 
   // The side chat sees which model is open here and the prompt; it can put text into the prompt.
+  // What is attached, by tag, for the side chat: the Prompt writer names pictures
+  // the way this composer does (package 07, F1). A string key keeps it from re-reporting on every render.
+  const refsKey = JSON.stringify(tags.map((t) => [t.tag, t.kind === "element" ? `element “${t.label}”` : `${t.label}${t.unused ? " (attached, not sent to this model)" : ""}`, t.kind === "file" ? t.url || "" : ""]));
+  const chatRefs = useMemo(() => JSON.parse(refsKey).map(([tag, label, url]) => ({ tag, label, ...(url ? { url } : {}) })), [refsKey]);
   useEffect(() => {
     // A storyboard's working screen reports as the Storyboard tab, with what it is for (package 05, §4.6).
-    dzSetStudioState(target ? "director" : mode, { model: entry ? { family: entry.family, name: entry.familyName, kind } : null, prompt, ...(target ? { sees: [target.sees, ...activeElements.map((e) => (e.tag ? `@${e.tag}` : e.name)), prompt.trim() ? "your prompt" : null].filter(Boolean).join(" · "), seesFull: target.seesFull || target.sees, writable: true } : {}) });
-  }, [mode, entry, kind, prompt, target?.sees, activeElements]); // eslint-disable-line react-hooks/exhaustive-deps
+    dzSetStudioState(target ? "director" : mode, { model: entry ? { family: entry.family, name: entry.familyName, kind } : null, prompt, refs: chatRefs, ...(target ? { sees: [target.sees, ...activeElements.map((e) => (e.tag ? `@${e.tag}` : e.name)), prompt.trim() ? "your prompt" : null].filter(Boolean).join(" · "), seesFull: target.seesFull || target.sees, writable: true } : {}) });
+  }, [mode, entry, kind, prompt, target?.sees, activeElements, chatRefs]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Insert / Replace from the chat (package 07, F1): every picture the text names becomes
+  // a chip bound to its tile. Pictures only in the chat are added to References (the one
+  // case where files are attached without a click on them); attached ones are matched by
+  // file; element tags add the element like a typed @ mention. What can't be matched stays text.
+  const insertCtx = useRef(null);
+  insertCtx.current = { tags, activeElements, elementLists, canUseElements, entry, elementMax };
   useEffect(() => {
     const on = (e) => {
-      const { tab, text, how } = e.detail || {};
+      const { tab, text, how, refs } = e.detail || {};
       if (tab !== (target ? "director" : mode) || typeof text !== "string" || !text.trim()) return;
-      setPrompt((p) => (how === "replace" || !p.trim() ? text.trim() : `${p.replace(/\s+$/, "")}\n\n${text.trim()}`));
+      const c = insertCtx.current;
+      const own = attachedRef.current?.reference || [];
+      const candidates = [...(c.elementLists.project || []), ...(c.elementLists.library || []), ...(c.elementLists.others || [])].filter((x) => x.status !== "draft");
+      const canAdd = (el, n) => {
+        if (!c.canUseElements) return "this model takes no elements";
+        if (!elementFits(c.entry, el)) return "this model can't take it";
+        return n >= c.elementMax ? `this model takes up to ${c.elementMax} elements` : null;
+      };
+      const r = resolveInsertTags(text.trim(), { refs: Array.isArray(refs) ? refs : [], tags: c.tags, refCount: own.length, active: c.activeElements, candidates, canAdd });
+      if (r.add.length) {
+        setAttached((prev) => {
+          const have = prev.reference || [];
+          return { ...prev, reference: [...have, ...r.add.filter((u) => !have.some((f) => f.url === u)).map((url) => ({ url, name: "" }))] };
+        });
+      }
+      if (r.addElements.length) setElements((list) => [...list, ...r.addElements.filter((x) => !list.some((y) => y.id === x.id))]);
+      setPrompt((p) => (how === "replace" || !p.trim() ? r.text : `${p.replace(/\s+$/, "")}\n\n${r.text}`));
+      // Over the limit (package 04): the pictures are attached, the ones past the model's
+      // limit dimmed. Said once, so nothing is dropped silently.
+      const slot = c.entry?.slots.find((sl) => sl.role === "reference");
+      const total = own.length + r.add.length;
+      const notes = [];
+      if (r.add.length && !slot) notes.push(`${c.entry?.familyName || "This model"} takes no reference pictures: the ${r.add.length === 1 ? "picture is" : `${r.add.length} pictures are`} attached but not sent.`);
+      else if (r.add.length && total > slot.max) notes.push(`${c.entry?.familyName || "This model"} takes up to ${slot.max} references: ${total - slot.max} ${total - slot.max === 1 ? "is" : "are"} attached but not sent. Click a dimmed one to use it instead.`);
+      if (r.unmatched.length) notes.push(`Kept as text: ${r.unmatched.map((u) => `@${u.tag} (${u.why})`).join(", ")}.`);
+      if (notes.length) window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "notice", title: "Insert", message: notes.join(" ") } }));
       requestAnimationFrame(() => promptRef.current?.focus());
     };
     window.addEventListener(DZ_INSERT_EVENT, on);
@@ -906,11 +950,11 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {
-  const { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey } = useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode });
+  const { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey } = useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode });
   const items = history.items;
 
   return (
@@ -1030,7 +1074,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
           <div className="flex flex-wrap items-center justify-end gap-2">
             {variant && <Button variant="ghost" size="sm" onClick={() => setSentOpen(true)}>Sent to the model</Button>}
             {adaptModel && prompt.trim() && (
-              <DzAdaptButton prompt={prompt} model={adaptModel} context={adaptContext} look={look}
+              <DzAdaptButton prompt={prompt} model={adaptModel} context={adaptContext} look={look} scope={adaptScope}
                 request={variant ? { endpoint: variant.model.endpoint, body: quoteBody ? { ...quoteBody } : null } : null}
                 onUse={(p) => setPrompt(p)} />
             )}

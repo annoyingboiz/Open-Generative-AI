@@ -3,10 +3,10 @@
 // Side panels of the Studio composer (redesign 01, §5.9–5.10): Camera, Camera move,
 // Look, Settings, Adapt. Every choice applies at once; Done, ×, Esc and the scrim close.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Aperture, CircleDashed, MagnifyingGlass, ArrowsClockwise, BookOpen, CaretRight, CheckCircle, Info } from "@phosphor-icons/react";
+import { Camera, Aperture, CircleDashed, MagnifyingGlass, ArrowsClockwise, BookOpen, CaretRight, CheckCircle } from "@phosphor-icons/react";
 import { Switch, Slider, Input, Spinner, cn, SelectParts } from "../../ui/index.js";
 import { lookData, autoLook, AUTO_LOOK } from "../../dzCreate.js";
-import { useAdaptModels, post, LLM_KEY } from "../DzAdapt.jsx";
+import { useAdaptModels, post, LLM_KEY, adaptInputKey, adaptRecall, adaptRemember } from "../DzAdapt.jsx";
 import { RequestView } from "../DzSentPanel.jsx";
 import { StudioPanel, Overline, ChipMenu, MenuRow } from "./ui.jsx";
 
@@ -297,10 +297,6 @@ const money = (v) => (v == null ? "" : v === 0 ? "Free" : v < 0.01 ? `$${v.toFix
 
 // The last adaptation per mode (redesign 02, §2.5): opening Adapt on a prompt that
 // was already adapted shows it again; a rewrite happens only on Regenerate.
-const ADAPT_KEY = "dz_studio_adapt_v1";
-const readAdapt = () => { try { return JSON.parse(localStorage.getItem(ADAPT_KEY) || "{}") || {}; } catch { return {}; } };
-const writeAdapt = (as, rec) => { try { const all = readAdapt(); all[as] = rec; localStorage.setItem(ADAPT_KEY, JSON.stringify(all)); } catch { /* optional */ } };
-const modelKey = (m) => (m ? `${m.family || m.name}|${m.kind || ""}` : "");
 function ago(at) {
   const min = Math.max(0, Math.round((Date.now() - at) / 60000));
   if (min < 1) return "just now";
@@ -309,12 +305,16 @@ function ago(at) {
   return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
 }
 
-export function AdaptPanel({ open, onClose, prompt, model, context, look, request, onUse }) {
+// One result per input, kept per composer (package 07, F2; see adaptInputKey).
+// No result for this input: it runs. Same input: the result is shown, no call.
+// Another input: it runs by itself, and "Use this" waits for the new result.
+export function AdaptPanel({ open, onClose, prompt, model, context, look, request, onUse, scope }) {
   const { options, def, loaded } = useAdaptModels();
   const [llmId, setLlmId] = useState(() => { try { return localStorage.getItem(LLM_KEY) || ""; } catch { return ""; } });
   const chosen = options.some((o) => o.value === llmId) ? llmId : def || options[0]?.value || "";
   const [as, setAs] = useState(() => (/^\s*[{[]/.test(prompt || "") ? "json" : "text"));
-  const [state, setState] = useState({ busy: false, error: "", result: null });
+  // key: the input the result on screen belongs to.
+  const [state, setState] = useState({ busy: false, error: "", result: null, key: null });
   const [text, setText] = useState("");
   const [llmMenu, setLlmMenu] = useState(false);
   const [notes, setNotes] = useState(null);
@@ -322,50 +322,44 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
   const seq = useRef(0);
   useEffect(() => { try { if (llmId) localStorage.setItem(LLM_KEY, llmId); } catch { /* optional */ } }, [llmId]);
 
-  // The saved adaptation shown now (null while a fresh rewrite is on screen).
+  const currentKey = adaptInputKey({ prompt, model, context, llm: chosen, as });
+  // The kept result shown now (null while a fresh rewrite is on screen).
   const [saved, setSaved] = useState(null);
-  const run = async (format = as, llm = chosen) => {
+  const run = async () => {
     const mine = ++seq.current;
+    const key = currentKey;
+    const format = as;
     setSaved(null);
-    setState({ busy: true, error: "", result: null });
+    setState({ busy: true, error: "", result: null, key });
     try {
-      const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: llm || undefined, as: format });
+      const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined, as: format });
       if (mine !== seq.current) return;
-      setState({ busy: false, error: "", result: r });
+      setState({ busy: false, error: "", result: r, key });
       setText(r.prompt);
-      const rec = { result: r, source: prompt, used: null, model: modelKey(model), llm: llm || "", at: Date.now() };
-      writeAdapt(format, rec);
+      adaptRemember(scope, format, { key, result: r, at: Date.now() });
     } catch (e) {
-      if (mine === seq.current) setState({ busy: false, error: String(e?.message || e), result: null });
+      if (mine === seq.current) setState({ busy: false, error: String(e?.message || e), result: null, key });
     }
   };
-  // Show the stored result for this mode, if there is one; otherwise rewrite.
-  const showStored = (format) => {
-    const rec = readAdapt()[format];
-    if (!rec?.result) return false;
-    seq.current += 1;
-    setSaved(rec);
-    setState({ busy: false, error: "", result: rec.result });
-    setText(rec.used ?? rec.result.prompt);
-    return true;
-  };
-  const openedFor = useRef(null);
   useEffect(() => {
-    if (!open) { openedFor.current = null; return; }
-    if (loaded && openedFor.current !== prompt) {
-      openedFor.current = prompt;
-      if (!showStored(as)) run();
+    if (!open || !loaded || state.key === currentKey) return;
+    const rec = adaptRecall(scope, as);
+    if (rec && (rec.key === currentKey || rec.usedKey === currentKey)) {
+      seq.current += 1;
+      setSaved(rec);
+      setState({ busy: false, error: "", result: rec.result, key: currentKey });
+      setText(rec.usedKey === currentKey ? rec.used : rec.result.prompt);
+      return;
     }
-  }, [open, loaded, prompt]); // eslint-disable-line react-hooks/exhaustive-deps
-  // in use: the prompt is the stored result, same target model; changed: anything else but the source it was made from.
-  const sameModel = saved && saved.model === modelKey(model);
-  const status = !saved ? null
-    : sameModel && saved.used != null && saved.used === prompt ? "inUse"
-      : sameModel && saved.source === prompt ? "fresh" : "changed";
+    run();
+  }, [open, loaded, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // In use: your prompt is the kept result (as you used it), for the same input.
+  const status = saved && saved.usedKey === currentKey ? "inUse" : null;
+  const current = state.key === currentKey && !state.busy;
   const use = () => {
-    const rec = readAdapt()[as];
-    if (rec?.result && saved && state.result === saved.result) writeAdapt(as, { ...rec, used: text });
-    else if (state.result) writeAdapt(as, { result: state.result, source: prompt, used: text, model: modelKey(model), llm: chosen, at: Date.now() });
+    if (!current || !state.result) return;
+    const source = saved || { key: currentKey, result: state.result, at: Date.now() };
+    adaptRemember(scope, as, { key: source.key, result: source.result, at: source.at, used: text, usedKey: adaptInputKey({ prompt: text, model, context, llm: chosen, as }) });
     onUse(text);
   };
 
@@ -391,7 +385,7 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
           <button type="button" onClick={onClose} className="ml-auto h-8 rounded-md border border-border px-3 text-base font-medium hover:bg-accent">{status === "inUse" ? "Close" : "Cancel"}</button>
           {status === "inUse" && text === saved.used
             ? <button type="button" disabled className="h-8 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground opacity-50">In use</button>
-            : <button type="button" onClick={use} disabled={!r || !text.trim() || state.busy || (as === "json" && !json)} className="h-8 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground transition-colors duration-state hover:bg-primary-hover disabled:opacity-50">Use this</button>}
+            : <button type="button" onClick={use} disabled={!r || !text.trim() || !current || (as === "json" && !json)} className="h-8 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground transition-colors duration-state hover:bg-primary-hover disabled:opacity-50">Use this</button>}
         </>
       )}>
       <div className="flex flex-wrap items-center gap-2">
@@ -399,7 +393,7 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
           <button type="button" onClick={() => setLlmMenu((v) => !v)} className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium hover:bg-accent">{llmLabel}<CaretRight size={12} className="rotate-90 text-muted-foreground" /></button>
           <ChipMenu open={llmMenu} onClose={() => setLlmMenu(false)} anchor={llmAnchor} className="!bottom-auto top-[calc(100%+8px)] w-72 p-1.5">
             {options.map((o) => (
-              <MenuRow key={o.value} on={o.value === chosen} onClick={() => { setLlmId(o.value); setLlmMenu(false); if (o.value !== chosen) run(as, o.value); }}>
+              <MenuRow key={o.value} on={o.value === chosen} onClick={() => { setLlmId(o.value); setLlmMenu(false); }}>
                 <span className="min-w-0 flex-1 truncate">{o.label}</span><span className="text-xs text-muted-foreground">{o.meta || o.description}</span>
               </MenuRow>
             ))}
@@ -407,7 +401,7 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
         </div>
         <div className="flex h-8 items-center rounded-md bg-muted p-0.5" role="group" aria-label="Answer as">
           {[["text", "Text"], ["json", "JSON"]].map(([v, l]) => (
-            <button key={v} type="button" aria-pressed={as === v} onClick={() => { if (as !== v) { setAs(v); if (loaded && !showStored(v)) run(v); } }}
+            <button key={v} type="button" aria-pressed={as === v} onClick={() => setAs(v)}
               className={cn("h-7 rounded-[6px] px-3 text-sm font-medium transition-colors duration-state", as === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
           ))}
         </div>
@@ -426,7 +420,6 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
       </details>
 
       {status === "inUse" && <p className="mt-4 flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-sm"><CheckCircle size={16} className="mt-0.5 flex-shrink-0 text-success" />Your prompt is already the adapted version. Nothing is rewritten until you ask.</p>}
-      {status === "changed" && <p className="mt-4 flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-sm"><Info size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" />Your prompt changed since this was made.</p>}
       <div className="mt-5 flex items-center justify-between"><Overline>Adapted</Overline>
         <span className="text-xs tabular-nums text-muted-foreground">{r ? [saved ? `Adapted ${ago(saved.at)}` : "", r.memo?.name ? `${r.memo.name} notes` : "", !saved && r.ms != null ? `${(r.ms / 1000).toFixed(1)} s` : "", money(r.costUsd)].filter(Boolean).join(" · ") : ""}</span></div>
       {state.error && <p className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">{state.error}</p>}

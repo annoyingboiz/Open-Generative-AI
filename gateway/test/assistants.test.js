@@ -134,3 +134,29 @@ test('in a project: members use and edit the assistant, each with their own chat
   assert.equal((await as('admin', 'POST', '/dz/api/assistants', { name: 'x', model: 'evil:model' })).statusCode, 400);
   assert.equal((await as('admin', 'POST', '/dz/api/assistants', { template: 'nope' })).statusCode, 400);
 });
+
+test('package 07 F1: pictures are named with the composer\'s tags; the answer says which tag is which picture', async () => {
+  const a = (await as('admin', 'POST', '/dz/api/assistants', { template: 'prompt-writer' })).json().assistant;
+  const chat = (await as('admin', 'POST', `/dz/api/assistants/${a.id}/chats`)).json().chat;
+  const upload = async (name) => { const up = multipart(name, 'image/png', PNG); return (await as('admin', 'POST', '/api/v1/upload_file', up.payload, up.headers)).json().url; };
+  const [p1, p2, p3] = [await upload('a.png'), await upload('b.png'), await upload('c.png')];
+  // The composer has p2 as @img1 and p9 (not in the chat) as @img2; the chat sends p1, p2, p3.
+  let res = await as('admin', 'POST', `/dz/api/chats/${chat.id}/messages`, {
+    text: 'Use all three', images: [p1, p2, p3],
+    context: { tab: 'create', refs: [{ tag: 'img1', label: 'Reference 1', url: p2 }, { tag: 'img2', label: 'Reference 2', url: '/media/u/zz.png' }, { tag: 'char_anna', label: 'Anna' }, { tag: 'bad tag!', label: 'x' }] },
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const sent = calls.at(-1);
+  assert.match(sent.messages.at(-1).content, /Pictures attached to this message, in order: @img3, @img1, @img4\]/);
+  assert.match(sent.messages.at(-1).content, /"@char_anna: Anna"/);
+  assert.equal(sent.messages.at(-1).content.includes('bad tag'), false);
+  assert.match(sent.system, /never make up other names such as @image1/);
+  const refs = res.json().answer.refs;
+  assert.deepEqual(refs.map((r) => r.tag), ['img1', 'img2', 'img3', 'img1', 'img4']);
+  assert.equal(refs[2].url, p1);
+  assert.equal(refs[4].url, p3);
+  // Next message, no pictures: the earlier ones keep their names in the history.
+  res = await as('admin', 'POST', `/dz/api/chats/${chat.id}/messages`, { text: 'Shorter', context: { tab: 'create', refs: [{ tag: 'img1', label: 'Reference 1', url: p2 }] } });
+  assert.match(calls.at(-1).messages[0].content, /3 picture\(s\) were attached here: @img2, @img1, @img3\]/);
+  assert.deepEqual(res.json().answer.refs.map((r) => r.tag), ['img1', 'img2', 'img1', 'img3']);
+});

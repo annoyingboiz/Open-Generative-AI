@@ -741,7 +741,7 @@ export default function DzStudio(props) {
   const {
     kind, setKind, entries, entry, attached, setAttached, params, values, setValue, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount,
     canRun, missing, price, priceLoading, generate, busy, history, sel: engineSel, ctx, kindFilter, setKindFilter, viewing, setViewing, applyResult, mention, mentionOptions,
-    tags, look, adaptModel, adaptContext, quoteBody, variant, sentPreview, sentOpen, setSentOpen, addFiles, pickModel, elements, merged, elementSpec, activeElements, finalPrompt, plan, openForEdit, focusSeq, drawOpen, setDrawOpen,
+    tags, look, adaptModel, adaptContext, adaptScope, quoteBody, variant, sentPreview, sentOpen, setSentOpen, addFiles, pickModel, elements, merged, elementSpec, activeElements, finalPrompt, plan, openForEdit, focusSeq, drawOpen, setDrawOpen,
   } = engine;
 
   // The look in the Studio: every part Auto unless chosen.
@@ -898,6 +898,8 @@ export default function DzStudio(props) {
     setErr(null);
     closeAll();
     generate();
+    // On a Storyboard working screen the placeholders appear in its gallery at once: no toast there (package 07, F3.1).
+    if (target) return;
     const what = kind === "video" ? (count > 1 ? "videos" : "video") : (count > 1 ? "pictures" : "picture");
     notify({ type: "notice", title: "Generate", message: light ? `${count > 1 ? `${count} ${what}` : `1 ${what}`} added to the queue.` : count > 1 ? `${count} jobs added. The tiles appear first in the grid.` : "Added to the queue. The tile appears first in the grid." });
   };
@@ -1225,7 +1227,7 @@ export default function DzStudio(props) {
       <LookPanel open={panel === "look"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} />
       <SettingsPanel open={panel === "settings"} onClose={() => setPanel(null)} modelName={entry?.familyName} params={settingsParams} values={values} setValue={setValue}
         onReset={() => setValuesByKind((prev) => { const next = { ...(prev[kind] || {}) }; for (const p of settingsParams) delete next[p.key]; return { ...prev, [kind]: next }; })} />
-      <AdaptPanel open={panel === "adapt"} onClose={() => setPanel(null)} prompt={prompt} model={adaptModel} context={adaptContext} look={look}
+      <AdaptPanel open={panel === "adapt"} onClose={() => setPanel(null)} prompt={prompt} model={adaptModel} context={adaptContext} look={look} scope={adaptScope}
         request={variant ? { endpoint: variant.model.endpoint, body: quoteBody ? { ...quoteBody } : null } : null}
         onUse={(t) => { setPrompt(t); setPanel(null); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} />
       <FullList open={panel === "list"} onClose={() => setPanel(null)} groups={stripGroups} groupId={listGroup} setGroupId={setListGroup} attached={attached} sent={sent} setAttached={setAttached} st={st}

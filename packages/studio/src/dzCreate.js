@@ -719,3 +719,76 @@ export function composePrompt(prompt) {
   return parseJsonPrompt(raw.trim()).ok ? raw : raw.trim();
 }
 
+
+// "Insert into prompt" from the chat (package 07, F1): the inserted text's tags
+// become the composer's, bound to the right files.
+//   refs     what each tag meant when the answer was written: [{ tag, url, src? }]
+//            (src = the file the user picked; url = the chat's own copy)
+//   tags     the composer's tags now (promptTags)
+//   refCount the user's references attached now: a new one gets the next @img number
+//   active   the chosen elements; candidates: every element the user can add here
+//   canAdd   (element, howManyChosen) → null, or why it can't be added
+// Returns { text, add: [url], addElements: [element], unmatched: [{ tag, why }] }.
+// A picture already attached is matched by its file, not added twice. A mention
+// with no file and no element behind it stays plain text.
+const IMAGE_TAG = /^(img\d+|start|end|mid\d+|edit)$/;
+function canonicalTag(name) {
+  const low = String(name).toLowerCase();
+  if (low === "first") return "start";
+  if (low === "last") return "end";
+  if (low === "middle") return "mid1";
+  const m = /^(img|image|vid|video|aud|audio|mid)_?(\d+)$/.exec(low);
+  if (m) return `${{ image: "img", video: "vid", audio: "aud" }[m[1]] || m[1]}${Number(m[2])}`;
+  return low;
+}
+export function resolveInsertTags(text, { refs = [], tags = [], refCount = 0, active = [], candidates = [], canAdd = () => null } = {}) {
+  const meant = new Map(); // tag → [urls], as the answer meant it
+  for (const r of refs || []) {
+    if (!r?.tag) continue;
+    const key = canonicalTag(r.tag);
+    const list = meant.get(key) || [];
+    for (const u of [r.url, r.src]) if (typeof u === "string" && u && !list.includes(u)) list.push(u);
+    meant.set(key, list);
+  }
+  const fileTag = new Map();
+  for (const t of tags) if (t.kind === "file" && t.url && !fileTag.has(t.url)) fileTag.set(t.url, t.tag);
+  const current = new Map(tags.map((t) => [t.tag.toLowerCase(), t.tag]));
+  const byElementTag = new Map();
+  for (const e of [...active, ...candidates]) { const k = elementTag(e).toLowerCase(); if (!byElementTag.has(k)) byElementTag.set(k, e); }
+  const add = [];
+  const added = new Map(); // url → its new tag
+  const addElements = [];
+  const unmatched = [];
+  let next = refCount;
+  const out = String(text).replace(TAG_RE, (all, pre, name) => {
+    const key = canonicalTag(name);
+    const urls = meant.get(key);
+    if (urls?.length) {
+      for (const u of urls) if (fileTag.has(u)) return `${pre}@${fileTag.get(u)}`;
+      for (const u of urls) if (added.has(u)) return `${pre}@${added.get(u)}`;
+      if (IMAGE_TAG.test(key)) {
+        next += 1;
+        const tag = `img${next}`;
+        add.push(urls[0]);
+        added.set(urls[0], tag);
+        return `${pre}@${tag}`;
+      }
+      unmatched.push({ tag: name, why: "the file is no longer attached" });
+      return all;
+    }
+    if (current.has(key)) return `${pre}@${current.get(key)}`;
+    const el = byElementTag.get(key);
+    if (el) {
+      const chosen = [...active, ...addElements];
+      if (!chosen.some((x) => x.id === el.id)) {
+        const why = canAdd(el, chosen.length);
+        if (why) { unmatched.push({ tag: name, why }); return all; }
+        addElements.push(el);
+      }
+      return `${pre}@${elementTags([...active, ...addElements]).get(el.id)}`;
+    }
+    if (IMAGE_TAG.test(key) || /^(vid|aud)\d+$/.test(key)) unmatched.push({ tag: name, why: "no picture has this tag" });
+    return all;
+  });
+  return { text: out, add, addElements, unmatched };
+}

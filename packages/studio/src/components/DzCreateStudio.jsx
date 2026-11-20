@@ -601,7 +601,10 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // The side chat sees which model is open here and the prompt; it can put text into the prompt.
   // What is attached, by tag, for the side chat: the Prompt writer names pictures
   // the way this composer does (package 07, F1). A string key keeps it from re-reporting on every render.
-  const refsKey = JSON.stringify(tags.map((t) => [t.tag, t.kind === "element" ? `element “${t.label}”` : `${t.label}${t.unused ? " (attached, not sent to this model)" : ""}`, t.kind === "file" ? t.url || "" : ""]));
+  // An element is listed once per picture (up to 8), so a chat picture that is one of its views is named by the element's tag.
+  const refsKey = JSON.stringify(tags.flatMap((t) => (t.kind === "element"
+    ? ((t.element?.images || []).length ? t.element.images.slice(0, 8) : [""]).map((u) => [t.tag, `element “${t.label}”`, u || ""])
+    : [[t.tag, `${t.label}${t.unused ? " (attached, not sent to this model)" : ""}`, t.url || ""]])));
   const chatRefs = useMemo(() => JSON.parse(refsKey).map(([tag, label, url]) => ({ tag, label, ...(url ? { url } : {}) })), [refsKey]);
   useEffect(() => {
     // A storyboard's working screen reports as the Storyboard tab, with what it is for (package 05, §4.6).

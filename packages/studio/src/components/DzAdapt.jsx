@@ -25,8 +25,8 @@ export async function post(url, body) {
 // attached files and elements by tag), the text model and the format. The camera
 // look is not sent (the server adds it on every send), so it is not part of it.
 // The scope is the composer: a tool tab (Image, Video, Studio) or one shot / group.
-const RESULTS_KEY = "dz_adapt_results_v2";
-const MAX_SCOPES = 40;
+const RESULTS_KEY = "dz_adapt_results_v3";
+const MAX_RECORDS = 100; // over every composer, the oldest go first
 function hash(str) { // cyrb53: a short, stable key for a long input
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
@@ -42,30 +42,107 @@ function hash(str) { // cyrb53: a short, stable key for a long input
 export function adaptInputKey({ prompt, model, context, llm, as }) {
   return hash(JSON.stringify([String(prompt ?? ""), model?.family || "", model?.kind || "", context ?? null, llm || "", as || "text"]));
 }
+// { [scope]: { [format]: { [inputKey]: rec } } }, rec: { key, result, at, used?, usedKey? }
+// usedKey: the input once the result is in the prompt ("Use this"), so it shows as in use.
 function readResults() {
   try {
     localStorage.removeItem("dz_studio_adapt_v1"); // one result per format for every composer: the Negroni bug
+    localStorage.removeItem("dz_adapt_results_v2");
     const v = JSON.parse(localStorage.getItem(RESULTS_KEY) || "{}");
     return v && typeof v === "object" && !Array.isArray(v) ? v : {};
   } catch { return {}; }
 }
-// rec: { key (the input it was made from), result, at, used?, usedKey? (the input once it is in use) }
-export function adaptRecall(scope, as) {
-  const rec = scope ? readResults()[scope]?.[as] : null;
-  return rec?.result && typeof rec.key === "string" ? rec : null;
+function writeResults(all) {
+  const flat = [];
+  for (const [sc, formats] of Object.entries(all)) for (const [f, recs] of Object.entries(formats || {})) for (const [k, rec] of Object.entries(recs || {})) flat.push([sc, f, k, rec?.at || 0]);
+  if (flat.length > MAX_RECORDS) {
+    flat.sort((a, b) => a[3] - b[3]);
+    for (const [sc, f, k] of flat.slice(0, flat.length - MAX_RECORDS)) {
+      delete all[sc][f][k];
+      if (!Object.keys(all[sc][f]).length) delete all[sc][f];
+      if (!Object.keys(all[sc]).length) delete all[sc];
+    }
+  }
+  try { localStorage.setItem(RESULTS_KEY, JSON.stringify(all)); } catch { /* full or off: nothing kept */ }
+}
+// The kept result for this input: made from it, or put in use by it.
+export function adaptRecall(scope, as, key) {
+  if (!scope) return null;
+  const recs = readResults()[scope]?.[as] || {};
+  const ok = (rec) => rec?.result && typeof rec.result.prompt === "string";
+  if (ok(recs[key])) return { rec: recs[key], inUse: recs[key].usedKey === key };
+  const used = Object.values(recs).find((rec) => ok(rec) && rec.usedKey === key);
+  return used ? { rec: used, inUse: true } : null;
 }
 export function adaptRemember(scope, as, rec) {
-  if (!scope) return;
-  try {
-    const all = readResults();
-    all[scope] = { ...(all[scope] || {}), [as]: rec, at: Date.now() };
-    const keep = Object.entries(all).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, MAX_SCOPES);
-    localStorage.setItem(RESULTS_KEY, JSON.stringify(Object.fromEntries(keep)));
-  } catch { /* optional */ }
+  if (!scope || !rec?.key) return;
+  const all = readResults();
+  all[scope] = all[scope] || {};
+  all[scope][as] = { ...(all[scope][as] || {}), [rec.key]: { ...rec, at: Date.now() } };
+  writeResults(all);
 }
 export function adaptForget(scope) {
   if (!scope) return;
-  try { const all = readResults(); if (all[scope]) { delete all[scope]; localStorage.setItem(RESULTS_KEY, JSON.stringify(all)); } } catch { /* optional */ }
+  const all = readResults();
+  if (all[scope]) { delete all[scope]; writeResults(all); }
+}
+
+// The adaptation on screen for the current input (package 07, F2). One result per
+// input, kept per composer: no result → it runs; the same input → the kept one, no
+// call; another input → it runs by itself and "Use this" waits (`current` is false)
+// until the result for this input is there. A call already running for an input is
+// joined, not repeated; Regenerate (`run(true)`) always makes a new one.
+export function useAdaptResult({ active, loaded, scope, prompt, model, context, llm, as }) {
+  const currentKey = adaptInputKey({ prompt, model, context, llm, as });
+  // key: the input the result on screen belongs to; saved: the kept record shown (null for a fresh run).
+  const [state, setState] = useState({ busy: false, error: "", result: null, key: null, saved: null });
+  const [text, setText] = useState("");
+  const seq = useRef(0);
+  const inflight = useRef(new Map()); // input key → its call
+  const run = async (force = false) => {
+    const mine = ++seq.current;
+    const key = currentKey;
+    const format = as;
+    setState({ busy: true, error: "", result: null, key, saved: null });
+    try {
+      let call = force ? null : inflight.current.get(key);
+      if (!call) {
+        const made = post("/dz/api/prompt/adapt", { prompt, model, context, llm: llm || undefined, as: format });
+        call = made;
+        inflight.current.set(key, made);
+        // Kept for its own input even if the screen moved on meanwhile; a newer call for the same input wins.
+        made.then((r) => { if (inflight.current.get(key) === made) adaptRemember(scope, format, { key, result: r }); }, () => {})
+          .finally(() => { if (inflight.current.get(key) === made) inflight.current.delete(key); });
+      }
+      const r = await call;
+      if (mine !== seq.current) return;
+      setState({ busy: false, error: "", result: r, key, saved: null });
+      setText(r.prompt);
+    } catch (e) {
+      if (mine === seq.current) setState({ busy: false, error: String(e?.message || e), result: null, key, saved: null });
+    }
+  };
+  useEffect(() => {
+    if (!active || !loaded || state.key === currentKey) return;
+    const hit = adaptRecall(scope, as, currentKey);
+    if (hit) {
+      seq.current += 1;
+      setState({ busy: false, error: "", result: hit.rec.result, key: currentKey, saved: hit.rec });
+      setText(hit.inUse && typeof hit.rec.used === "string" ? hit.rec.used : hit.rec.result.prompt);
+      return;
+    }
+    run();
+  }, [active, loaded, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const current = state.key === currentKey && !state.busy && Boolean(state.result);
+  const inUse = Boolean(current && state.saved && state.saved.usedKey === currentKey);
+  // "Use this": remember that this text is now the prompt (its input shows the result as in use).
+  const use = (finalText) => {
+    if (!current) return false;
+    const src = state.saved || { key: currentKey, result: state.result };
+    adaptRemember(scope, as, { key: src.key, result: src.result, used: finalText, usedKey: adaptInputKey({ prompt: finalText, model, context, llm, as }) });
+    return true;
+  };
+  return { currentKey, state, setState, text, setText, run, use, current, inUse, saved: state.saved };
 }
 
 // Recommended text models (incl. your ChatGPT), your default first.
@@ -103,11 +180,9 @@ function AdaptDialog({ prompt, model, context, look, request, scope, onClose, on
   const { options, def, loaded } = useAdaptModels();
   const [llmId, setLlmId] = useState(() => { try { return localStorage.getItem(LLM_KEY) || ""; } catch { return ""; } });
   const chosen = options.some((o) => o.value === llmId) ? llmId : def || options[0]?.value || "";
-  // key: the input the result on screen belongs to; "Use this" only while it is the current one.
-  const [state, setState] = useState({ busy: false, error: "", result: null, key: null });
   // Text or JSON out: starts as your prompt is, switch to compare.
   const [as, setAs] = useState(() => (/^\s*[{[]/.test(prompt || "") ? "json" : "text"));
-  const [text, setText] = useState("");
+  const { state, setState, text, setText, run, use: keep, current } = useAdaptResult({ active: true, loaded, scope, prompt, model, context, llm: chosen, as });
   const [notes, setNotes] = useState(null); // { name, body, sources } when shown
   const [myDefault, setMyDefault] = useState(null); // set here: the new default
   const currentDefault = myDefault || def;
@@ -115,47 +190,7 @@ function AdaptDialog({ prompt, model, context, look, request, scope, onClose, on
     try { await post("/dz/api/llm/my-default", { model: chosen }); setMyDefault(chosen); } catch (e) { setState((s) => ({ ...s, error: String(e?.message || e) })); }
   };
   useEffect(() => { try { if (llmId) localStorage.setItem(LLM_KEY, llmId); } catch { /* optional */ } }, [llmId]);
-
-  const currentKey = adaptInputKey({ prompt, model, context, llm: chosen, as });
-  const seq = useRef(0);
-  const lastRun = useRef({}); // format → its newest run
-  const run = async () => {
-    const mine = ++seq.current;
-    const key = currentKey;
-    const format = as;
-    lastRun.current[format] = mine;
-    setState({ busy: true, error: "", result: null, key });
-    try {
-      const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined, as: format });
-      // Kept for its own input even if the input moved on meanwhile (no second call for it
-      // later), unless a newer run in the same format started after it.
-      if (lastRun.current[format] === mine) adaptRemember(scope, format, { key, result: r, at: Date.now() });
-      if (mine !== seq.current) return;
-      setState({ busy: false, error: "", result: r, key });
-      setText(r.prompt);
-    } catch (e) {
-      if (mine === seq.current) setState({ busy: false, error: String(e?.message || e), result: null, key });
-    }
-  };
-  // One result per input (package 07, F2): the same input shows what was made; a new one runs by itself.
-  useEffect(() => {
-    if (!loaded || state.key === currentKey) return;
-    const rec = adaptRecall(scope, as);
-    if (rec && (rec.key === currentKey || rec.usedKey === currentKey)) {
-      seq.current += 1;
-      setState({ busy: false, error: "", result: rec.result, key: currentKey });
-      setText(rec.usedKey === currentKey ? rec.used : rec.result.prompt);
-      return;
-    }
-    run();
-  }, [loaded, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const use = () => {
-    if (state.key !== currentKey || !state.result) return;
-    const rec = adaptRecall(scope, as);
-    const source = rec && (rec.key === currentKey || rec.usedKey === currentKey) ? rec : { key: currentKey, result: state.result, at: Date.now() };
-    adaptRemember(scope, as, { ...source, used: text, usedKey: adaptInputKey({ prompt: text, model, context, llm: chosen, as }) });
-    onUse(text);
-  };
+  const use = () => { if (keep(text)) onUse(text); };
 
   const showNotes = async () => {
     if (notes) { setNotes(null); return; }
@@ -184,7 +219,7 @@ function AdaptDialog({ prompt, model, context, look, request, scope, onClose, on
             </div>
             <Segmented className="w-auto" value={as} onChange={setAs} aria-label="Answer as"
               options={[{ value: "text", label: "Text" }, { value: "json", label: "JSON" }]} />
-            <Button variant="secondary" onClick={() => run()} disabled={state.busy || !loaded}>{state.busy ? <><Spinner className="h-4 w-4" /> Rewriting…</> : r ? "Try again" : "Rewrite"}</Button>
+            <Button variant="secondary" onClick={() => run(true)} disabled={state.busy || !loaded}>{state.busy ? <><Spinner className="h-4 w-4" /> Rewriting…</> : r ? "Try again" : "Rewrite"}</Button>
             <Button variant="ghost" onClick={showNotes}>{notes ? "Hide notes" : "Model notes"}</Button>
           </div>
           <div className="-mt-2 text-muted-foreground">
@@ -233,7 +268,7 @@ function AdaptDialog({ prompt, model, context, look, request, scope, onClose, on
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={use} disabled={!r || !text.trim() || state.busy || state.key !== currentKey}>Use this</Button>
+          <Button onClick={use} disabled={!r || !text.trim() || !current}>Use this</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

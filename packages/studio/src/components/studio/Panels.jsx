@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Aperture, CircleDashed, MagnifyingGlass, ArrowsClockwise, BookOpen, CaretRight, CheckCircle } from "@phosphor-icons/react";
 import { Switch, Slider, Input, Spinner, cn, SelectParts } from "../../ui/index.js";
 import { lookData, autoLook, AUTO_LOOK } from "../../dzCreate.js";
-import { useAdaptModels, post, LLM_KEY, adaptInputKey, adaptRecall, adaptRemember } from "../DzAdapt.jsx";
+import { useAdaptModels, LLM_KEY, useAdaptResult } from "../DzAdapt.jsx";
 import { RequestView } from "../DzSentPanel.jsx";
 import { StudioPanel, Overline, ChipMenu, MenuRow } from "./ui.jsx";
 
@@ -313,59 +313,14 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
   const [llmId, setLlmId] = useState(() => { try { return localStorage.getItem(LLM_KEY) || ""; } catch { return ""; } });
   const chosen = options.some((o) => o.value === llmId) ? llmId : def || options[0]?.value || "";
   const [as, setAs] = useState(() => (/^\s*[{[]/.test(prompt || "") ? "json" : "text"));
-  // key: the input the result on screen belongs to.
-  const [state, setState] = useState({ busy: false, error: "", result: null, key: null });
-  const [text, setText] = useState("");
   const [llmMenu, setLlmMenu] = useState(false);
   const [notes, setNotes] = useState(null);
   const llmAnchor = useRef(null);
-  const seq = useRef(0);
-  const lastRun = useRef({}); // format → its newest run
   useEffect(() => { try { if (llmId) localStorage.setItem(LLM_KEY, llmId); } catch { /* optional */ } }, [llmId]);
-
-  const currentKey = adaptInputKey({ prompt, model, context, llm: chosen, as });
-  // The kept result shown now (null while a fresh rewrite is on screen).
-  const [saved, setSaved] = useState(null);
-  const run = async () => {
-    const mine = ++seq.current;
-    const key = currentKey;
-    const format = as;
-    lastRun.current[format] = mine;
-    setSaved(null);
-    setState({ busy: true, error: "", result: null, key });
-    try {
-      const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined, as: format });
-      // Kept for its own input even if the input moved on meanwhile (no second call for it
-      // later), unless a newer run in the same format started after it.
-      if (lastRun.current[format] === mine) adaptRemember(scope, format, { key, result: r, at: Date.now() });
-      if (mine !== seq.current) return;
-      setState({ busy: false, error: "", result: r, key });
-      setText(r.prompt);
-    } catch (e) {
-      if (mine === seq.current) setState({ busy: false, error: String(e?.message || e), result: null, key });
-    }
-  };
-  useEffect(() => {
-    if (!open || !loaded || state.key === currentKey) return;
-    const rec = adaptRecall(scope, as);
-    if (rec && (rec.key === currentKey || rec.usedKey === currentKey)) {
-      seq.current += 1;
-      setSaved(rec);
-      setState({ busy: false, error: "", result: rec.result, key: currentKey });
-      setText(rec.usedKey === currentKey ? rec.used : rec.result.prompt);
-      return;
-    }
-    run();
-  }, [open, loaded, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { state, text, setText, run, use: keep, current, inUse, saved } = useAdaptResult({ active: open, loaded, scope, prompt, model, context, llm: chosen, as });
   // In use: your prompt is the kept result (as you used it), for the same input.
-  const status = saved && saved.usedKey === currentKey ? "inUse" : null;
-  const current = state.key === currentKey && !state.busy;
-  const use = () => {
-    if (!current || !state.result) return;
-    const source = saved || { key: currentKey, result: state.result, at: Date.now() };
-    adaptRemember(scope, as, { key: source.key, result: source.result, at: source.at, used: text, usedKey: adaptInputKey({ prompt: text, model, context, llm: chosen, as }) });
-    onUse(text);
-  };
+  const status = inUse ? "inUse" : null;
+  const use = () => { if (keep(text)) onUse(text); };
 
   const r = state.result;
   const blocks = as === "text" ? splitBlocks(text) : null;
@@ -384,7 +339,7 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
     <StudioPanel open={open} onClose={onClose} title={`Adapt to ${model?.name || "this model"}`} width={600}
       foot={(
         <>
-          <button type="button" onClick={() => run()} disabled={state.busy || !loaded}
+          <button type="button" onClick={() => run(true)} disabled={state.busy || !loaded}
             className={cn("flex h-8 items-center gap-2 rounded-md px-3 text-base font-medium transition-colors duration-state disabled:opacity-50", saved ? "border border-border text-foreground hover:bg-accent" : "text-muted-foreground hover:bg-accent hover:text-foreground")}><ArrowsClockwise size={16} /> Regenerate</button>
           <button type="button" onClick={onClose} className="ml-auto h-8 rounded-md border border-border px-3 text-base font-medium hover:bg-accent">{status === "inUse" ? "Close" : "Cancel"}</button>
           {status === "inUse" && text === saved.used

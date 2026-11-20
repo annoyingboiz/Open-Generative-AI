@@ -750,8 +750,18 @@ export function resolveInsertTags(text, { refs = [], tags = [], refCount = 0, ac
     for (const u of [r.url, r.src]) if (typeof u === "string" && u && !list.includes(u)) list.push(u);
     meant.set(key, list);
   }
-  const fileTag = new Map();
-  for (const t of tags) if (t.kind === "file" && t.url && !fileTag.has(t.url)) fileTag.set(t.url, t.tag);
+  // The tiles now, by file. One file can be two tiles (the start frame and a reference,
+  // or the same picture twice): the tag the answer used wins when it still names that
+  // file; otherwise a tile of the same kind (a reference for @imgN), then any.
+  const tilesOf = new Map();
+  for (const t of tags) if (t.kind === "file" && t.url) tilesOf.set(t.url, [...(tilesOf.get(t.url) || []), t.tag]);
+  const family = (tag) => String(tag).toLowerCase().replace(/\d+$/, "");
+  const tileFor = (key, urls) => {
+    for (const u of urls) { const hit = (tilesOf.get(u) || []).find((t) => t.toLowerCase() === key); if (hit) return hit; }
+    for (const u of urls) { const hit = (tilesOf.get(u) || []).find((t) => family(t) === family(key)); if (hit) return hit; }
+    for (const u of urls) { const list = tilesOf.get(u); if (list?.length) return list[0]; }
+    return null;
+  };
   const current = new Map(tags.map((t) => [t.tag.toLowerCase(), t.tag]));
   const byElementTag = new Map();
   for (const e of [...active, ...candidates]) { const k = elementTag(e).toLowerCase(); if (!byElementTag.has(k)) byElementTag.set(k, e); }
@@ -762,9 +772,21 @@ export function resolveInsertTags(text, { refs = [], tags = [], refCount = 0, ac
   let next = refCount;
   const out = String(text).replace(TAG_RE, (all, pre, name) => {
     const key = canonicalTag(name);
+    // An element tag adds the element (its pictures go with it), like a typed @ mention.
+    const el = IMAGE_TAG.test(key) ? null : byElementTag.get(key);
+    if (el) {
+      const chosen = [...active, ...addElements];
+      if (!chosen.some((x) => x.id === el.id)) {
+        const why = canAdd(el, chosen.length);
+        if (why) { unmatched.push({ tag: name, why }); return all; }
+        addElements.push(el);
+      }
+      return `${pre}@${elementTags([...active, ...addElements]).get(el.id)}`;
+    }
     const urls = meant.get(key);
     if (urls?.length) {
-      for (const u of urls) if (fileTag.has(u)) return `${pre}@${fileTag.get(u)}`;
+      const tile = tileFor(key, urls);
+      if (tile) return `${pre}@${tile}`;
       for (const u of urls) if (added.has(u)) return `${pre}@${added.get(u)}`;
       if (IMAGE_TAG.test(key)) {
         next += 1;
@@ -777,16 +799,6 @@ export function resolveInsertTags(text, { refs = [], tags = [], refCount = 0, ac
       return all;
     }
     if (current.has(key)) return `${pre}@${current.get(key)}`;
-    const el = byElementTag.get(key);
-    if (el) {
-      const chosen = [...active, ...addElements];
-      if (!chosen.some((x) => x.id === el.id)) {
-        const why = canAdd(el, chosen.length);
-        if (why) { unmatched.push({ tag: name, why }); return all; }
-        addElements.push(el);
-      }
-      return `${pre}@${elementTags([...active, ...addElements]).get(el.id)}`;
-    }
     if (IMAGE_TAG.test(key) || /^(vid|aud)\d+$/.test(key)) unmatched.push({ tag: name, why: "no picture has this tag" });
     return all;
   });

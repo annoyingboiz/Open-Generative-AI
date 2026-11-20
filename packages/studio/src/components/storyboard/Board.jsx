@@ -8,7 +8,8 @@ import { Plus, CaretLeft, CaretRight, DotsThree, Check, Sparkle, TextAlignLeft, 
 import { dzThumb } from "../../api.js";
 import { DropdownMenuParts, SegSwitch, Tip, cn } from "../../ui/index.js";
 import { numbered, shotState, newSceneId, newShotId, splitScript, isVideoUrl } from "../../dzFilm.js";
-import { RefPicker, EmptyState, InlineText, uploadAll } from "./parts.jsx";
+import { RefPicker, EmptyState, InlineText, uploadAll, pickerHereOf } from "./parts.jsx";
+import { useDzHistory } from "../../dzLibrary.js";
 import { setSceneSelection } from "./assistant.js";
 import { useDzDropTarget, dzDropHit } from "../../dzDrop.js";
 import { dzScrollBoxRef } from "../../dzScroll.js";
@@ -182,6 +183,7 @@ export default function Board({ film, edit, onOpenShot, layer, setLayer, refView
   }, [groups]);
   const totalShots = film.shots.length;
   const [picker, setPicker] = useState(null); // { shot } | { scene } — the reference picker
+  const [pickerHere, setPickerHere] = useState(null); // that shot's generations, for the picker's This shot tab (package 09, P5)
   const [busy, setBusy] = useState(0);
   const [pasting, setPasting] = useState(false);
   const fileFor = useRef(null); // { scene } — files for new shots
@@ -434,7 +436,8 @@ export default function Board({ film, edit, onOpenShot, layer, setLayer, refView
       )}
 
       {/* The reference picker: the existing library window. For a shot: its references; for a scene: new shots. */}
-      <RefPicker open={Boolean(picker)} onClose={() => setPicker(null)}
+      {picker?.shot && <ShotHere film={film} shotId={picker.shot} onHere={setPickerHere} />}
+      <RefPicker open={Boolean(picker)} onClose={() => setPicker(null)} here={picker?.shot ? pickerHere : null}
         title={picker?.shot ? `References for Shot ${groups.flatMap((g) => g.shots).find((s) => s.id === picker.shot)?.n ?? ""}` : "Pictures for new shots"}
         refs={picker?.shot ? (film.shots.find((s) => s.id === picker.shot)?.refs || []) : []}
         onChange={(refs) => {
@@ -465,4 +468,15 @@ function PasteScript({ onClose, onDone }) {
       </div>
     </div>
   );
+}
+
+// The picker opened for a shot on the Storyboard tab gets its This shot tab (package 09, P5):
+// the shot's generations from the storyboard, its liked ones from the library.
+function ShotHere({ film, shotId, onHere }) {
+  const liked = useDzHistory({ target: `${film.id}:${shotId}`, project: film.project_id || "none", liked: true }, { limit: 60 });
+  const here = pickerHereOf(film, { id: shotId, kind: "shot" }, liked.items);
+  const key = JSON.stringify(here);
+  useEffect(() => { onHere(JSON.parse(key)); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onHere(null), []); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
 }

@@ -10,6 +10,7 @@ import { dzGenerate, dzWithMeta, dzThumb, dzPlay } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { createEntries, chooseVariant, missingFor, paramsOf, buildBody } from "../dzCreate.js";
 import { Button, Input, Textarea, Badge, Spinner, Segmented, cn, DialogParts, DropdownMenuParts, SelectParts, Popover, PopoverTrigger, PopoverContent } from "../ui/index.js";
+import { DzPosterVideo } from "./DzPosterVideo.jsx";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } = DialogParts;
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
@@ -69,7 +70,7 @@ export function useDzElements() {
 
 const Thumb = ({ el, className }) => (el.images?.[0]
   ? <img src={dzThumb(el.images[0])} alt="" className={cn("object-cover", className)} loading="lazy" decoding="async" />
-  : el.video ? <video src={el.video} poster={dzThumb(el.video, 480)} className={cn("object-cover", className)} muted playsInline preload="none" /> : <div className={cn("bg-muted", className)} />);
+  : el.video ? <DzPosterVideo url={el.video} w={480} className={cn("object-cover", className)} /> : <div className={cn("bg-muted", className)} />);
 
 // ── Editor ───────────────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ function download(url) {
 }
 
 const MediaTile = ({ url, video, className }) => (video
-  ? <video src={url} poster={dzThumb(url, 256)} className={cn("object-cover", className)} muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
+  ? <DzPosterVideo url={url} w={256} play className={cn("object-cover", className)} />
   : <img src={dzThumb(url, 256)} alt="" className={cn("object-cover", className)} loading="lazy" decoding="async" />);
 
 // ── Editor (right-hand panel) ────────────────────────────────────────────

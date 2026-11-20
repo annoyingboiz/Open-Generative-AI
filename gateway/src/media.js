@@ -106,6 +106,8 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
 
   // ── Playback copies: one at a time, at low priority; never the GPU ──
   const heavyCache = new Map(); // file|size|mtime → boolean
+  const failedAt = new Map(); // playback path → { at, tries }: a failing copy is retried later, not on every request
+  const retryAfter = (tries) => Math.min(24 * 3600_000, 10 * 60_000 * 2 ** (tries - 1));
   const queue = [];
   const queued = new Set();
   let busy = false;
@@ -127,8 +129,15 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
     const out = playbackPath(file);
     if (!out) return null;
     if (fs.existsSync(out)) return out;
+    const failed = failedAt.get(out);
+    if (failed && Date.now() - failed.at < retryAfter(failed.tries)) return null;
     if (await isHeavy(file)) enqueue(file);
     return null;
+  }
+  // The playback copy's version for its own URL (?play=<key>), or null while it is not ready.
+  async function playbackKey(file) {
+    const out = await playbackFor(file);
+    return out ? path.basename(out, '.mp4').slice(0, 16) : null;
   }
   function enqueue(file) {
     if (queued.has(file)) return;
@@ -153,9 +162,11 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
           '-vf', `${fit},format=yuv420p`, '-c:v', 'libx264', '-preset', PLAYBACK.PRESET, '-crf', String(PLAYBACK.CRF), '-maxrate', PLAYBACK.MAXRATE, '-bufsize', PLAYBACK.BUFSIZE,
           '-profile:v', 'high', '-threads', String(PLAYBACK.THREADS), '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', tmp()], { timeoutMs: 30 * 60_000, nice: 15 });
         fs.renameSync(tmp(), out);
+        failedAt.delete(out);
         log?.info?.({ media: 'playback', file: path.basename(file), ms: Date.now() - t0, bytes: fs.statSync(out).size, from: fs.statSync(file).size }, 'playback copy made');
       }
     } catch (error) {
+      if (out) { const f = failedAt.get(out); failedAt.set(out, { at: Date.now(), tries: (f?.tries || 0) + 1 }); if (failedAt.size > 500) failedAt.delete(failedAt.keys().next().value); }
       log?.warn?.(`playback copy for ${path.basename(file)}: ${error.message}`);
     } finally {
       if (out) try { fs.unlinkSync(tmp()); } catch { /* moved or never made */ }
@@ -173,16 +184,25 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
   }
 
   // ── Frame strip: n frames in one webp, made once ──
+  // At most two at a time (each is small); one size only, so a file has one strip.
   const stripInflight = new Map();
-  async function stripFor(file, n = 12) {
+  const STRIP_N = 12;
+  const STRIP_MAX = 2;
+  let stripRunning = 0;
+  const stripWaiting = [];
+  const stripSlot = () => (stripRunning < STRIP_MAX ? (stripRunning += 1, Promise.resolve()) : new Promise((r) => stripWaiting.push(r)));
+  const stripDone = () => { const nextUp = stripWaiting.shift(); if (nextUp) nextUp(); else stripRunning -= 1; };
+  async function stripFor(file) {
     if (!VIDEO_EXT.test(file) && !/\.webm$/i.test(file)) return null;
-    const count = Math.max(2, Math.min(24, Number(n) || 12));
+    if (stripWaiting.length > 20) return null;
+    const count = STRIP_N;
     let out;
     try { out = outFor(file, `strip-${count}`, 'webp'); } catch { return null; }
     if (fs.existsSync(out)) return out;
     if (stripInflight.has(out)) return stripInflight.get(out);
     const job = (async () => {
       const tmp = `${out}.${process.pid}.tmp.webp`;
+      await stripSlot();
       try {
         const p = await probe(file, ffprobePath);
         const d = p?.duration || 0;
@@ -199,11 +219,17 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
       } finally {
         try { fs.unlinkSync(tmp); } catch { /* moved */ }
         stripInflight.delete(out);
+        stripDone();
       }
     })();
     stripInflight.set(out, job);
     return job;
   }
 
-  return { prepare, playbackFor, stripFor, isHeavy };
+  // ?play=<key> → the copy itself, only while <key> still names this file's current copy.
+  function playbackByKey(file, key) {
+    const out = playbackPath(file);
+    return out && /^[0-9a-f]{16}$/.test(String(key)) && path.basename(out).startsWith(key) && fs.existsSync(out) ? out : null;
+  }
+  return { prepare, playbackFor, playbackKey, playbackByKey, stripFor, isHeavy };
 }

@@ -112,9 +112,14 @@ export function sendFile(req, reply, file, mime, { download = false, name, cache
   // has already run for this request.
   const etag = `W/"${stat.size.toString(36)}-${Math.trunc(stat.mtimeMs).toString(36)}"`;
   reply.header('etag', etag);
+  reply.header('last-modified', new Date(Math.trunc(stat.mtimeMs / 1000) * 1000).toUTCString());
   if (!download && !req.headers.range && req.headers['if-none-match'] === etag) return reply.code(304).send();
   if (download) reply.header('content-disposition', `attachment; filename="${(name || path.basename(file)).replace(/"/g, '')}"`);
-  const range = req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+  // If-Range: a range only for the same bytes; otherwise the whole file (RFC 9110 §13.1.5).
+  const ifRange = req.headers['if-range'];
+  const sameBytes = !ifRange || ifRange === etag || ifRange.replace(/^W\//, '') === etag.replace(/^W\//, '')
+    || (!ifRange.startsWith('"') && !ifRange.startsWith('W/') && Date.parse(ifRange) >= Math.trunc(stat.mtimeMs / 1000) * 1000);
+  const range = sameBytes && req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
   if (range) {
     let start = range[1] === '' ? undefined : Number(range[1]);
     let end = range[2] === '' ? undefined : Number(range[2]);

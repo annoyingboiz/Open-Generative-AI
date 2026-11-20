@@ -229,8 +229,14 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
     // Videos with the index first, so the player starts at once (package 10, M1); a heavy one
-    // gets its lighter playback copy in the background.
-    if (media) for (const f of saved) if (await media.prepare(f.path)) f.bytes = fs.statSync(f.path).size;
+    // gets its lighter playback copy in the background. Runs on the final file, after any
+    // fix-up below, and before the result shows up (its URL is then never rewritten).
+    const prepare = async () => {
+      if (!media) return;
+      for (const f of saved) {
+        try { if (await media.prepare(f.path)) f.bytes = fs.statSync(f.path).size; } catch (error) { log?.warn(`prepare ${row.id}: ${error.message}`); }
+      }
+    };
     // Fix-ups on the files before they show up (e.g. the sound back into an
     // upscaled video). They run beside the worker, not in it: the job stays
     // "downloading" with its next check pushed back (a restart just redoes it).
@@ -242,9 +248,11 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       Promise.resolve()
         .then(() => afterDownload.run(row, saved))
         .catch((error) => log?.warn(`after download ${row.id}: ${error.message}`))
+        .then(prepare)
         .finally(() => { if (finishDownload(row, saved)) release(); });
       return;
     }
+    await prepare();
     if (finishDownload(row, saved)) release();
   }
   function finishDownload(row, saved) {

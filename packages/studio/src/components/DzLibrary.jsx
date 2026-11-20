@@ -14,6 +14,7 @@ import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec, dzVideoUpscaleSpec, dzOpenV
 import { Segmented, Button, Input, cn, SelectParts } from "../ui/index.js";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
+import { DzPosterVideo } from "./DzPosterVideo.jsx";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 const TYPES = [
@@ -114,17 +115,7 @@ function Card({ item, view, onOpen, actions, sel }) {
         ) : item.kind === "audio" ? (
           <DzAudioTile url={item.url} title={item.prompt?.slice(0, 80) || "Audio"} controls={false} className="aspect-square w-full" />
         ) : isVideo ? (
-          <video
-            src={dzPlay(item.url)}
-            poster={dzThumb(item.url)}
-            className="aspect-square w-full bg-overlay/40 object-cover"
-            muted
-            loop
-            playsInline
-            preload="none"
-            onMouseOver={(e) => e.currentTarget.play().catch(() => {})}
-            onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
-          />
+<DzPosterVideo url={item.url} w={480} play className="aspect-square w-full bg-overlay/40 object-cover" />
         ) : (
           <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || item.name || "Image"} loading="lazy" decoding="async" className="aspect-square w-full bg-overlay/40 object-cover" />
         )}

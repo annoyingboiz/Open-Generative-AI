@@ -22,3 +22,4 @@ test('faststart moves the index in front of the data without re-encoding', { ski
   assert.equal(await faststart(file), false);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+

@@ -153,12 +153,13 @@ function VideoPlayer({ item, act }) {
 function ScreenImage({ url, alt }) {
   const local = typeof url === "string" && url.startsWith("/media/");
   const [big, setBig] = useState(false);
-  useEffect(() => { setBig(false); }, [url]);
+  const [orig, setOrig] = useState(false); // the screen-size copy failed: the original
+  useEffect(() => { setBig(false); setOrig(false); }, [url]);
   if (!local) return <img src={url} alt={alt} className="max-h-full max-w-full rounded-md object-contain" />;
   return (
     <div className="relative h-full w-full">
       {!big && <img src={dzThumb(url, 480)} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-contain blur-[2px]" />}
-      <img src={dzThumb(url, 2048)} alt={alt} onLoad={() => setBig(true)} onError={(e) => { if (!e.currentTarget.dataset.orig) { e.currentTarget.dataset.orig = "1"; e.currentTarget.src = url; } }}
+      <img key={url} src={orig ? url : dzThumb(url, 2048)} alt={alt} onLoad={() => setBig(true)} onError={() => setOrig(true)}
         className={cn("absolute inset-0 h-full w-full object-contain transition-opacity duration-state", big ? "opacity-100" : "opacity-0")} />
       {!big && <Spinner className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 border-overlay-foreground/30 border-t-overlay-foreground" />}
     </div>

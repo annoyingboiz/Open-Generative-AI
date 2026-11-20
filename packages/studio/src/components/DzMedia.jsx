@@ -12,6 +12,7 @@ import { uploadFile, dzThumb } from "../api.js";
 import { useDzContext } from "../dzContext.js";
 import { useDzElements } from "./DzElements.jsx";
 import { Button, Spinner, Segmented, cn, DialogParts } from "../ui/index.js";
+import { DzPosterVideo } from "./DzPosterVideo.jsx";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } = DialogParts;
 
@@ -160,7 +161,7 @@ export function DzMediaBrowser({ accept = "image", max = 1, onConfirm, onError, 
       <button key={item.key} type="button" onClick={() => pick(item)} disabled={blocked}
         title={item.name || undefined}
         className={cn("group relative aspect-square overflow-hidden rounded-xl border bg-muted transition-colors", on ? "border-signal ring-2 ring-signal" : "border-border hover:border-input", blocked && "opacity-40")}>
-        {item.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 256)} className="h-full w-full object-cover" muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
+        {item.kind === "video" ? <DzPosterVideo url={item.url} w={256} play className="h-full w-full object-cover" />
           : item.kind === "audio" ? <span className="flex h-full items-center justify-center px-2 text-center text-muted-foreground">♪ {item.name}</span>
             : <img src={dzThumb(item.url, 256)} alt={item.name || ""} loading="lazy" decoding="async" className="h-full w-full object-cover" />}
         {badges.length > 0 && (

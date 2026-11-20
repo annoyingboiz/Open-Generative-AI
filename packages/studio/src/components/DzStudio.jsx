@@ -227,6 +227,7 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
   // A video tile is its poster until the pointer is over it (package 10, M4): no video
   // request on page load; the hover preview stops when the large view opens (quiet).
   const [hover, setHover] = useState(false);
+  useEffect(() => { if (quiet) setHover(false); }, [quiet]);
   const setMenu = (v) => { setMenuState(v); onMenu?.(v); };
   const [progress, setProgress] = useState(0);
   const videoRef = useRef(null);

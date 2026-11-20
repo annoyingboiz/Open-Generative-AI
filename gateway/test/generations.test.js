@@ -130,10 +130,45 @@ test('server polls, downloads the result, and serves it to the owner only', asyn
   res = await app.inject({ url: body.outputs[0], headers: { cookie: adminCookie, range: 'bytes=0-3' } });
   assert.equal(res.statusCode, 206);
   assert.equal(res.rawPayload.length, 4);
+  // Package 10: one set of bytes per URL, kept by the browser; If-Range guards a mixed range.
+  assert.equal(res.headers['cache-control'], 'private, max-age=31536000, immutable');
+  assert.ok(res.headers.etag);
+  let r2 = await app.inject({ url: body.outputs[0], headers: { cookie: adminCookie, range: 'bytes=0-3', 'if-range': res.headers.etag } });
+  assert.equal(r2.statusCode, 206);
+  r2 = await app.inject({ url: body.outputs[0], headers: { cookie: adminCookie, range: 'bytes=0-3', 'if-range': '"other"' } });
+  assert.equal(r2.statusCode, 200, 'a range for other bytes gets the whole file');
+  r2 = await app.inject({ url: `${body.outputs[0]}?info=1`, headers: { cookie: adminCookie } });
+  assert.equal(r2.statusCode, 200);
+  assert.equal(r2.json().bytes, PNG.length);
+  r2 = await app.inject({ url: `${body.outputs[0]}?info=1`, headers: { cookie: userCookie } });
+  assert.equal(r2.statusCode, 404, 'the size is private too');
   res = await app.inject({ url: body.outputs[0], headers: { cookie: userCookie } });
   assert.equal(res.statusCode, 404, 'other users cannot open it');
   res = await app.inject({ url: `/api/v1/predictions/${genId}/result`, headers: { cookie: userCookie } });
   assert.equal(res.statusCode, 404);
+});
+
+test('a video URL keeps one set of bytes: ?play=1 only points (package 10)', async (t) => {
+  const { execFileSync } = await import('node:child_process');
+  const tmp = path.join(dataDir, 'clip.mp4');
+  try { execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=10', '-t', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', tmp]); }
+  catch { t.skip('no ffmpeg'); return; }
+  const mp = multipart('file', 'clip.mp4', 'video/mp4', fs.readFileSync(tmp));
+  let res = await app.inject({ method: 'POST', url: '/api/v1/upload_file', headers: { cookie: adminCookie, ...mp.headers }, payload: mp.payload });
+  assert.equal(res.statusCode, 200, res.body);
+  const url = res.json().url;
+  res = await app.inject({ url: `${url}?play=1`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, url, 'a light video plays as itself');
+  assert.match(res.headers['cache-control'], /max-age=30\b/);
+  res = await app.inject({ url: `${url}?play=0123456789abcdef`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, url, 'an unknown copy falls back to the original');
+  res = await app.inject({ url: `${url}?play=1`, headers: { cookie: userCookie } });
+  assert.equal(res.statusCode, 404);
+  res = await app.inject({ url, headers: { cookie: adminCookie, range: 'bytes=0-15' } });
+  assert.equal(res.statusCode, 206);
+  assert.equal(res.rawPayload.subarray(4, 8).toString(), 'ftyp');
 });
 
 test('history is per user; trash hides an item', async () => {

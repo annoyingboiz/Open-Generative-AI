@@ -1170,21 +1170,30 @@ export async function buildApp(config, { logger = true } = {}) {
       return reply.header('cache-control', MEDIA_CACHE).send({ width: dims?.width || null, height: dims?.height || null, bytes });
     }
     if (req.query.strip && !download && String(f.mime).startsWith('video/')) {
-      const strip = await media.stripFor(f.path, req.query.strip);
+      const strip = await media.stripFor(f.path);
       if (strip) return sendFile(req, reply, strip, 'image/webp', { cacheControl: MEDIA_CACHE });
-      return reply.code(404).send({ error: 'No frames' });
+      return reply.code(404).header('cache-control', 'no-store').send({ error: 'No frames' });
     }
     if (req.query.w && !download) {
       const t = await thumbs.thumbFor(f.path, f.mime, req.query.w);
-      if (t === 'busy') return reply.code(503).header('retry-after', '5').send({ error: 'Previews are busy, try again.' });
+      if (t === 'busy') return reply.code(503).header('retry-after', '5').header('cache-control', 'no-store').send({ error: 'Previews are busy, try again.' });
       if (t) { thumbs.touch(t); return sendFile(req, reply, t, 'image/webp', { cacheControl: MEDIA_CACHE }); }
-      if (String(f.mime).startsWith('video/')) return reply.code(404).send({ error: 'No preview' });
+      if (String(f.mime).startsWith('video/')) return reply.code(404).header('cache-control', 'no-store').send({ error: 'No preview' });
+      // No preview could be made: the original, but not kept under this URL (a preview may come later).
+      return sendFile(req, reply, f.path, f.mime, { cacheControl: 'private, no-cache' });
     }
-    if (req.query.play === '1' && !download && String(f.mime).startsWith('video/')) {
-      const play = await media.playbackFor(f.path);
-      // Not ready yet: the original, not kept for long (the copy will answer next time).
-      if (play) return sendFile(req, reply, play, 'video/mp4', { cacheControl: MEDIA_CACHE });
-      return sendFile(req, reply, f.path, f.mime, { cacheControl: 'private, max-age=60' });
+    // ?play=1 only points somewhere (each URL keeps one set of bytes, so ranges never mix):
+    // to ?play=<key> once the lighter copy exists, else to the original itself.
+    if (req.query.play && !download && String(f.mime).startsWith('video/')) {
+      const base = req.raw.url.split('?')[0];
+      if (req.query.play === '1') {
+        const key = await media.playbackKey(f.path);
+        return reply.code(302).header('cache-control', key ? 'private, max-age=86400' : 'private, max-age=30')
+          .header('location', key ? `${base}?play=${key}` : base).send();
+      }
+      const copy = media.playbackByKey(f.path, req.query.play);
+      if (copy) return sendFile(req, reply, copy, 'video/mp4', { cacheControl: MEDIA_CACHE });
+      return reply.code(302).header('cache-control', 'no-store').header('location', base).send(); // an old copy: the original
     }
     return sendFile(req, reply, f.path, f.mime, { download, cacheControl: MEDIA_CACHE });
   };

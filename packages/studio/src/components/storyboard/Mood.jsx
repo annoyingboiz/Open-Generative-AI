@@ -136,6 +136,8 @@ export default function Mood({ film, edit, onOpenGroup }) {
   useEffect(() => {
     const on = (e) => {
       if (e.target.closest?.("input,textarea,[contenteditable=true]")) return;
+      // Only while the Moodboard is on screen (the Storyboard tab stays mounted behind others).
+      if (!host.current || host.current.offsetParent === null || !host.current.getClientRects().length) return;
       const files = [...(e.clipboardData?.files || [])];
       if (files.length) { e.preventDefault(); uploadAt(files, center()); }
     };
@@ -299,7 +301,7 @@ export default function Mood({ film, edit, onOpenGroup }) {
               <div className="absolute bottom-full left-0 mb-2 flex items-center gap-2 whitespace-nowrap" style={{ transform: `scale(${1 / view.z})`, transformOrigin: "bottom left" }}>
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: colorOf(f.color) }} />
                 {editing === f.id ? (
-                  <input autoFocus defaultValue={f.name} maxLength={60} onPointerDown={(e) => e.stopPropagation()} onBlur={(e) => { setEditing(null); if (e.target.value.trim()) setItem(f.id, { name: e.target.value.trim() }); }}
+                  <input autoFocus defaultValue={f.name} maxLength={60} onFocus={(e) => e.target.select()} onPointerDown={(e) => e.stopPropagation()} onBlur={(e) => { setEditing(null); if (e.target.value.trim()) setItem(f.id, { name: e.target.value.trim() }); }}
                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.currentTarget.value = f.name; e.currentTarget.blur(); } }}
                     className="w-48 rounded-sm bg-background px-1 text-base font-semibold outline-none ring-1 ring-ring" />
                 ) : <span className="text-base font-semibold">{f.name || "Group"}</span>}
@@ -315,7 +317,7 @@ export default function Mood({ film, edit, onOpenGroup }) {
           {marquee && <div className="absolute border border-signal bg-signal/10" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
           {/* A selected frame: a small bar under it (Generate from this group, Rename, menu). */}
           {selFrame && !drag.current && (
-            <div className="absolute flex items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-popover" style={{ left: selFrame.x, top: selFrame.y + selFrame.h + 8, transform: `scale(${1 / view.z})`, transformOrigin: "top left" }} onPointerDown={(e) => e.stopPropagation()}>
+            <div className="absolute flex items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-popover p-1 shadow-popover" style={{ left: selFrame.x, top: selFrame.y + selFrame.h + 8, transform: `scale(${1 / view.z})`, transformOrigin: "top left" }} onPointerDown={(e) => e.stopPropagation()}>
               <button type="button" onClick={() => onOpenGroup(selFrame.id)} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover"><Sparkle size={14} /> Generate from this group</button>
               <button type="button" onClick={() => setEditing(selFrame.id)} className="h-8 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Rename</button>
               <DropdownMenu>

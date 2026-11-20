@@ -13,6 +13,7 @@ import { dzThumb } from "../api.js";
 import { dzLibrary } from "../dzLibrary.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
 import { useDzCreateEngine, fmtUsd, download, DZ_SEND_EVENT } from "./DzCreateStudio.jsx";
+import { useDzSelection } from "./DzSelection.jsx";
 import StudioViewer from "./studio/Viewer.jsx";
 import DzSentPanel from "./DzSentPanel.jsx";
 import DrawModal from "./DrawModal.jsx";
@@ -276,7 +277,7 @@ function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS
   const run = async (action, verb) => {
     setBusy(true);
     try {
-      const r = await dzLibrary.batch(action, sel.chosen.map((i) => i.id));
+      const r = await dzLibrary.batch(action, sel.chosen.filter((i) => !i.own).map((i) => i.id)); // ready pictures of a shot are not generations
       const done = r.done?.length || 0;
       notify({ type: r.failed?.length && !done ? "error" : "notice", title: verb, message: r.failed?.length ? `${done} done, ${r.failed.length} not: ${r.failed[0]?.error || ""}` : `${done} item${done === 1 ? "" : "s"}.` });
       if (done) sel.clear();
@@ -739,7 +740,7 @@ export default function DzStudio(props) {
   const engine = useDzCreateEngine({ ...props, mode, onGenerationError: (m) => setErr({ head: "Not generated.", text: plainSentence(m), retry: true }) });
   const {
     kind, setKind, entries, entry, attached, setAttached, params, values, setValue, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount,
-    canRun, missing, price, priceLoading, generate, busy, history, sel, ctx, kindFilter, setKindFilter, viewing, setViewing, applyResult, mention, mentionOptions,
+    canRun, missing, price, priceLoading, generate, busy, history, sel: engineSel, ctx, kindFilter, setKindFilter, viewing, setViewing, applyResult, mention, mentionOptions,
     tags, look, adaptModel, adaptContext, quoteBody, variant, sentPreview, sentOpen, setSentOpen, addFiles, pickModel, elements, merged, elementSpec, activeElements, finalPrompt, plan, openForEdit, focusSeq, drawOpen, setDrawOpen,
   } = engine;
 
@@ -1017,6 +1018,9 @@ export default function DzStudio(props) {
     if (kindFilter === "pictures") list = list.filter((i) => i.kind !== "video");
     return list;
   }, [target, history.items, kindFilter]);
+  // A working screen selects among everything it shows (its ready pictures too).
+  const targetSel = useDzSelection(items);
+  const sel = target ? targetSel : engineSel;
   const rows = useMemo(() => justify(items, aspects, gridWidth), [items, aspects, gridWidth]);
   const total = groups.reduce((n, g) => n + groupItems(sent, g).length, 0);
   const priceText = price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}` : entry?.priceLabel || "";

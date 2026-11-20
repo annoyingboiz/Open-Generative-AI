@@ -622,7 +622,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // Image and Video tabs: All · Liked · Upscaled (package 03).
   const tabFilter = kindFilter === "liked" ? { liked: true } : kindFilter === "upscaled" ? { studio: "upscale" } : {};
   // A working screen shows what was made for its shot or group, pictures and videos alike.
-  const history = useDzHistory(target ? { target: target.key, ...tabFilter } : { ...(showKind ? { kind: showKind } : {}), ...tabFilter, ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
+  const history = useDzHistory(target ? { target: target.key, project: target.project || "none", ...tabFilter } : { ...(showKind ? { kind: showKind } : {}), ...tabFilter, ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
   const sel = useDzSelection(history.items);
 
   const addFiles = useCallback(async (role, files) => {

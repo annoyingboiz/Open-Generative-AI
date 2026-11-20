@@ -12,7 +12,7 @@ import { useDzHistory } from "../../dzLibrary.js";
 import { useDzElements } from "../DzElements.jsx";
 import { dzOpenUpscale, dzOpenVideoUpscale } from "../../dzCatalog.js";
 import { DropdownMenuParts, cn } from "../../ui/index.js";
-import { numbered, shotState, frameRefs, addToFrame, newItemId, isVideoUrl } from "../../dzFilm.js";
+import { numbered, shotState, frameRefs, addToFrame, newItemId, isVideoUrl, inFrame } from "../../dzFilm.js";
 import { RefPicker, EmptyState, mediaUrl } from "./parts.jsx";
 import { ApprovedBadge } from "./Board.jsx";
 import PlayBetween from "./PlayBetween.jsx";
@@ -60,7 +60,7 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
   const els = useDzElements();
   const placeElements = (film.project_id ? els.project : els.library).filter((e) => e.status !== "draft");
   const key = `${film.id}:${target.id}`;
-  const liked = useDzHistory({ target: key, liked: true }, { limit: 60 });
+  const liked = useDzHistory({ target: key, project: film.project_id || "none", liked: true }, { limit: 60 });
 
   const refs = isShot ? (shot?.refs || []) : frameRefs(film.mood, target.id);
   const st = isShot && shot ? shotState(film, shot) : null;
@@ -89,7 +89,9 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
       const next = typeof fn === "function" ? fn(before) : fn;
       const gone = new Set(before.filter((r) => !next.some((x) => x.url === r.url)).map((r) => r.url));
       edit((f) => {
-        let mood = { ...f.mood, items: (f.mood?.items || []).filter((it) => !((it.type === "image" || it.type === "video") && gone.has(it.url) && frameRefs(f.mood, target.id).some((r) => r.url === it.url))) };
+        // Only the copies inside this frame leave (the same picture can be in another group).
+        const fr = (f.mood?.items || []).find((x) => x.id === target.id);
+        let mood = { ...f.mood, items: (f.mood?.items || []).filter((it) => !((it.type === "image" || it.type === "video") && gone.has(it.url) && fr && inFrame(fr, it))) };
         mood = addToFrame(mood, target.id, next.filter((r) => !before.some((x) => x.url === r.url)), newItemId);
         // Sizes that arrived later.
         mood = { ...mood, items: mood.items.map((it) => { const r = next.find((x) => x.url === it.url && x.w && x.h); return r && (it.type === "image" || it.type === "video") && Math.abs(it.w / it.h - r.w / r.h) > 0.02 ? { ...it, w: Math.round((it.h * r.w) / r.h) } : it; }) };
@@ -197,7 +199,7 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
   };
 
   const studioTarget = {
-    key, board: film.id, id: target.id, kind: target.kind, name,
+    key, board: film.id, id: target.id, kind: target.kind, name, project: film.project_id || null,
     header, above, empty, tabs, extra,
     approved,
     badge: isShot ? (item) => (approved.has(item.url) ? <ApprovedBadge /> : null) : null,

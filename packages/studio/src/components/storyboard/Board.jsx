@@ -61,11 +61,11 @@ function ShotFrame({ shot, onNote, onAdd, onRemoveRef, onMoveRef, onFiles, onOpe
   const [scroll, setScroll] = useState({ first: 1, last: 0, can: false, left: false, right: false });
   const refs = shot.refs || [];
   const widths = refs.map((r) => (r.w && r.h ? Math.round((REF_H * r.w) / r.h) : Math.round(REF_H * 1.5)));
-  const natural = widths.reduce((a, b) => a + b + 6, 0) + 56 + 20; // refs + plus + padding
+  const natural = Math.max(240, widths.reduce((a, b) => a + b + 6, 0) + 56 + 26); // refs + plus + padding and border
   const measure = () => {
     const el = row.current;
     if (!el) return;
-    const can = el.scrollWidth > el.clientWidth + 1;
+    const can = el.scrollWidth > el.clientWidth + 4;
     let x = 0; let first = 0; let last = 0;
     widths.forEach((w, i) => {
       const a = x; const b = x + w;

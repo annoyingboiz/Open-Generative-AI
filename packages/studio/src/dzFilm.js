@@ -62,6 +62,39 @@ export function shotState(film, shot) {
   };
 }
 
+// Someone else saved meanwhile (409): their copy, with my edits since the last sync
+// laid over it — per scene, shot and Moodboard item (by id), and per text field.
+function mergeById(base = [], mine = [], theirs = []) {
+  const b = new Map(base.map((x) => [x.id, JSON.stringify(x)]));
+  const m = new Map(mine.map((x) => [x.id, x]));
+  const t = new Map(theirs.map((x) => [x.id, x]));
+  const out = [];
+  // My order when I reordered, else theirs; then whatever the other side added.
+  const myOrderChanged = mine.map((x) => x.id).filter((id) => b.has(id)).join() !== base.map((x) => x.id).filter((id) => m.has(id)).join();
+  const order = myOrderChanged ? [...mine.map((x) => x.id), ...theirs.map((x) => x.id).filter((id) => !m.has(id))] : [...theirs.map((x) => x.id), ...mine.map((x) => x.id).filter((id) => !t.has(id))];
+  for (const id of [...new Set(order)]) {
+    const inBase = b.has(id);
+    const mineX = m.get(id);
+    const theirsX = t.get(id);
+    if (inBase && !mineX) continue; // I deleted it
+    if (inBase && !theirsX) { if (JSON.stringify(mineX) !== b.get(id)) out.push(mineX); continue; } // they deleted it; kept only if I changed it
+    if (mineX && (!inBase || JSON.stringify(mineX) !== b.get(id))) out.push(mineX); // mine is new or changed
+    else if (theirsX) out.push(theirsX);
+  }
+  return out;
+}
+export function mergeFilm(base, mine, theirs) {
+  const pick = (k) => (JSON.stringify(mine[k]) !== JSON.stringify(base[k]) ? mine[k] : theirs[k]);
+  return {
+    ...theirs,
+    name: pick("name"),
+    note: pick("note"),
+    scenes: mergeById(base.scenes, mine.scenes, theirs.scenes),
+    shots: mergeById(base.shots, mine.shots, theirs.shots),
+    mood: { ...(theirs.mood || {}), items: mergeById(base.mood?.items, mine.mood?.items, theirs.mood?.items) },
+  };
+}
+
 // One film: load, edit (saved shortly after, with the revision), media changes, refresh.
 export function useFilm(id) {
   const [film, setFilm] = useState(null);
@@ -71,6 +104,8 @@ export function useFilm(id) {
   const seq = useRef(0); // edits since the last save started
   const timer = useRef(null);
   const saving = useRef(null);
+  const base = useRef(null); // the last copy the server confirmed (for merging on 409)
+  const retries = useRef(0);
   filmRef.current = film;
 
   const load = useCallback(async () => {
@@ -81,6 +116,7 @@ export function useFilm(id) {
       setFilm((cur) => {
         // Local edits not saved yet stay; media, jobs and the revision come from the server.
         if (cur && dirty.current) return { ...cur, media: storyboard.media, jobs: storyboard.jobs };
+        base.current = storyboard;
         return storyboard;
       });
     } catch (e) { setError(e); }
@@ -97,14 +133,25 @@ export function useFilm(id) {
     const run = (async () => {
       try {
         const { storyboard } = await dzStoryboards.update(f.id, { rev: f.rev, name: f.name, note: f.note, scenes: f.scenes, shots: f.shots, mood: f.mood });
-        if (seq.current === mine) { dirty.current = false; setFilm(storyboard); }
+        base.current = { ...f, rev: storyboard.rev };
+        retries.current = 0;
+        if (seq.current === mine) { dirty.current = false; base.current = storyboard; setFilm(storyboard); }
         else setFilm((cur) => (cur ? { ...cur, rev: storyboard.rev, media: storyboard.media, jobs: storyboard.jobs } : storyboard));
         return true;
       } catch (e) {
         if (e.status === 409 && e.storyboard) {
-          dirty.current = false;
-          setFilm(e.storyboard);
-          notify({ type: "error", title: "Storyboard", message: e.message });
+          // Someone saved meanwhile: keep my edits over their copy and save again.
+          const merged = base.current ? mergeFilm(base.current, filmRef.current, e.storyboard) : e.storyboard;
+          base.current = e.storyboard;
+          filmRef.current = merged;
+          setFilm(merged);
+          dirty.current = Boolean(base.current) && merged !== e.storyboard;
+          if (dirty.current && retries.current < 3) { retries.current += 1; timer.current = setTimeout(() => { flush(); }, 200); }
+          notify({ type: "notice", title: "Storyboard", message: "Someone else changed this film meanwhile — both changes are kept." });
+        } else if ((!e.status || e.status >= 500 || e.status === 429) && retries.current < 5) {
+          // A passing failure: try again a little later (the edits stay).
+          retries.current += 1;
+          timer.current = setTimeout(() => { flush(); }, 2000 * retries.current);
         } else notify({ type: "error", title: "Storyboard", message: `Not saved: ${e.message}` });
         return false;
       } finally { saving.current = null; }

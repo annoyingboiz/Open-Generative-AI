@@ -6,6 +6,7 @@ import { LibraryWindow } from "../studio/Library.jsx";
 import { sizeOf } from "../../dzFilm.js";
 import { uploadFile } from "../../api.js";
 import { cn } from "../../ui/index.js";
+import { dzScrollBoxRef } from "../../dzScroll.js";
 
 // Our own media URL without the origin (the server keeps /media/… only).
 export const mediaUrl = (u) => String(u || "").replace(/^https?:\/\/[^/]+(?=\/media\/)/, "");
@@ -96,7 +97,7 @@ export function RefPicker({ open, onClose, refs = [], onChange, onPickNew = null
   if (!open) return null;
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-scrim" onClick={close} aria-hidden="true" />
+      <div ref={dzScrollBoxRef} className="fixed inset-0 z-40 bg-scrim" onClick={close} aria-hidden="true" />
       <div className="fixed bottom-6 left-1/2 z-50 h-0 w-[min(1040px,calc(100vw-48px))] -translate-x-1/2" aria-label={title || "References"}>
         <LibraryWindow open groups={REF_GROUPS} groupId={groupId} setGroupId={setGroupId} attached={attached} setAttached={setAttached} onClose={close} title={title || null}
           onError={(m) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Upload", message: m } }))} />

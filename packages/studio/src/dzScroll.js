@@ -53,15 +53,17 @@ export function dzScrollBoxRef(el) {
 }
 
 // Scrollers that overflow get data-dz-overflows, so CSS holds the gesture at their end
-// (app/globals.css). Checked when the pointer comes over something (and on each wheel,
-// passively), for the scrollers above it: cheap, and it is set before a gesture starts.
-// Horizontal-only strips are left out: they must pass vertical scrolling on.
-const SCROLLER = '.overflow-y-auto,.overflow-auto,.overflow-y-scroll,.overflow-scroll,textarea,[contenteditable="true"]';
+// (app/globals.css). Checked when the pointer comes over something, on pointer down,
+// and on each wheel (passively), for every element above it that scrolls vertically
+// (computed overflow-y auto / scroll / overlay) and has something to scroll. It is set
+// before a gesture in the usual case (the pointer moves onto a list, then scrolls).
+// Horizontal-only strips scroll vertically "auto" too, but have nothing to scroll
+// vertically, so they are not marked and pass vertical scrolling on.
 function markScrollers(e) {
   for (let el = e.target instanceof Element ? e.target : null; el && el !== document.body; el = el.parentElement) {
-    if (!el.matches(SCROLLER)) continue;
-    const over = el.scrollHeight > el.clientHeight + 1;
-    if (over !== el.hasAttribute("data-dz-overflows")) el.toggleAttribute("data-dz-overflows", over);
+    const has = el.hasAttribute("data-dz-overflows");
+    const over = el.scrollHeight > el.clientHeight + 1 && scrollable(getComputedStyle(el).overflowY);
+    if (over !== has) el.toggleAttribute("data-dz-overflows", over);
   }
 }
 let watching = false;
@@ -69,6 +71,7 @@ export function dzWatchScrollers() {
   if (watching || typeof document === "undefined") return;
   watching = true;
   document.addEventListener("mouseover", markScrollers, { passive: true });
+  document.addEventListener("pointerdown", markScrollers, { passive: true });
   document.addEventListener("wheel", markScrollers, { passive: true });
 }
 

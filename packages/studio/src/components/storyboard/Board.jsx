@@ -28,7 +28,7 @@ function Ref({ r, height = REF_H, onRemove, dragData, onDropBefore }) {
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { setOver(false); const raw = e.dataTransfer.getData(DRAG); if (raw) { e.preventDefault(); e.stopPropagation(); onDropBefore(JSON.parse(raw)); } }}
       className={cn("group/r relative flex-shrink-0 cursor-grab overflow-hidden rounded-[10px] bg-muted active:cursor-grabbing", over && "ring-2 ring-signal")} style={{ width: w, height }}>
-      {r.kind === "video" ? <video src={r.url} poster={dzThumb(r.url, 480)} muted playsInline preload="metadata" className="pointer-events-none h-full w-full object-cover" />
+      {r.kind === "video" ? <video src={r.url} poster={dzThumb(r.url, 480)} muted playsInline preload="none" className="pointer-events-none h-full w-full object-cover" />
         : <img src={dzThumb(r.url, 480)} alt="" draggable={false} className="pointer-events-none h-full w-full object-cover" loading="lazy" />}
       {r.kind === "video" && <span className="pointer-events-none absolute bottom-1.5 left-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-overlay/60 text-overlay-foreground"><Play size={10} weight="fill" /></span>}
       <button type="button" aria-label="Remove from the shot" onClick={onRemove}
@@ -125,7 +125,7 @@ function Thumb16({ url, dim, className }) {
   // Pictures keep their own aspect ratio inside the 16:9 tile (package 05, rule 5).
   return (
     <div className={cn("relative aspect-video w-full overflow-hidden rounded-md bg-muted", className)}>
-      {url ? (video ? <video src={url} poster={dzThumb(url, 960)} muted playsInline preload="metadata" className={cn("h-full w-full object-contain", dim && "opacity-40")} />
+      {url ? (video ? <video src={url} poster={dzThumb(url, 960)} muted playsInline preload="none" className={cn("h-full w-full object-contain", dim && "opacity-40")} />
         : <img src={dzThumb(url, 960)} alt="" className={cn("h-full w-full object-contain", dim && "opacity-40")} loading="lazy" />)
         : <span className="flex h-full items-center justify-center text-muted-foreground"><Images size={22} /></span>}
     </div>

@@ -9,7 +9,7 @@ import {
   Plus, Minus, At, X, Check, Cube, Rectangle, Monitor, Clock, VideoCamera, Images, MagicWand, Camera, ArrowsOutCardinal, Palette, SlidersHorizontal,
   Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, CaretUp, Info, Warning, WarningCircle, ArrowsClockwise, ArrowElbowDownRight, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
 } from "@phosphor-icons/react";
-import { dzThumb } from "../api.js";
+import { dzThumb, dzPlay } from "../api.js";
 import { dzLibrary } from "../dzLibrary.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
 import { useDzCreateEngine, fmtUsd, download, DZ_SEND_EVENT } from "./DzCreateStudio.jsx";
@@ -222,8 +222,11 @@ const dragWithPicture = (props, item) => ({
   onDragEnd: () => dzPictureDragEnd(),
 });
 
-function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen, onMenu, badge = null }) {
+function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen, onMenu, badge = null, quiet = false }) {
   const [menu, setMenuState] = useState(false);
+  // A video tile is its poster until the pointer is over it (package 10, M4): no video
+  // request on page load; the hover preview stops when the large view opens (quiet).
+  const [hover, setHover] = useState(false);
   const setMenu = (v) => { setMenuState(v); onMenu?.(v); };
   const [progress, setProgress] = useState(0);
   const videoRef = useRef(null);
@@ -235,12 +238,11 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
   // A video plays muted from the start on hover, with a 2 px progress line; leaving stops it on the poster.
   const enter = () => {
     if (fresh) markSeen(item);
-    const v = videoRef.current;
-    if (v) { v.currentTime = 0; v.play().catch(() => {}); }
+    if (item.kind === "video") setHover(true);
   };
   const lastTime = useRef(0);
   const timeOf = () => (videoRef.current?.currentTime || lastTime.current || 0);
-  const leave = () => { const v = videoRef.current; if (v) { lastTime.current = v.currentTime; v.pause(); v.currentTime = 0; v.load(); } setProgress(0); };
+  const leave = () => { const v = videoRef.current; if (v) lastTime.current = v.currentTime; setHover(false); setProgress(0); };
   return (
     <div role={done ? "button" : undefined} tabIndex={done ? 0 : -1} aria-pressed={selecting ? on : undefined}
       onClick={(e) => { if (!done) return; if (selecting) { sel.toggle(item, e); return; } act.open(item); }}
@@ -252,10 +254,14 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
       {!done ? <PendingTile item={item} items={items} act={act} />
         : item.kind === "audio" ? <span className="flex h-full w-full items-center justify-center p-3 text-center text-muted-foreground">♪ {item.meta?.toolTitle || item.prompt || "Audio"}</span>
           : item.kind === "video" ? (
-            <video ref={videoRef} src={item.url} poster={dzThumb(item.url)} muted playsInline preload="metadata" className="h-full w-full object-cover"
-              onLoadedMetadata={(e) => onMeasure(item.id, e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
-              onTimeUpdate={(e) => { const v = e.currentTarget; if (v.duration) setProgress(v.currentTime / v.duration); }}
-              onEnded={(e) => { e.currentTarget.currentTime = 0; e.currentTarget.play().catch(() => {}); }} />
+            <>
+              <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 80) || "Video"} loading="lazy" decoding="async" className="h-full w-full object-cover"
+                onLoad={(e) => onMeasure(item.id, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)} />
+              {hover && !quiet && (
+                <video ref={videoRef} src={dzPlay(item.url)} muted playsInline autoPlay loop preload="auto" className="absolute inset-0 h-full w-full object-cover"
+                  onTimeUpdate={(e) => { const v = e.currentTarget; if (v.duration) setProgress(v.currentTime / v.duration); }} />
+              )}
+            </>
           ) : (
             <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 80) || "Result"} loading="lazy" decoding="async" className="h-full w-full object-cover"
               onLoad={(e) => onMeasure(item.id, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)} />
@@ -1196,7 +1202,7 @@ export default function DzStudio(props) {
             {rows.map((row, ri) => (
               <div key={ri} className="flex gap-1.5" style={{ height: row.h }}>
             {row.cells.map(({ item, w }) => (
-              <Tile key={item.id} item={item} items={items} width={w} height={row.h} onMeasure={measure} sel={sel} act={act} isNew={isNew} markSeen={markSeen} onMenu={setTileMenu} badge={target?.badge ? target.badge(item) : null} />
+              <Tile key={item.id} item={item} items={items} width={w} height={row.h} onMeasure={measure} sel={sel} act={act} isNew={isNew} markSeen={markSeen} onMenu={setTileMenu} badge={target?.badge ? target.badge(item) : null} quiet={Boolean(viewing)} />
             ))}
               </div>
             ))}

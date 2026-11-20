@@ -41,6 +41,7 @@ import { createDirector, DirectorError } from './director.js';
 import { createFilmSort, SortError } from './film-sort.js';
 import { createAssistants, AssistantError } from './assistants.js';
 import { createThumbs } from './thumbs.js';
+import { createMedia } from './media.js';
 import { createQuoter } from './quotes.js';
 import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
@@ -99,7 +100,9 @@ export async function buildApp(config, { logger = true } = {}) {
   const catalog = createCatalog({ dataDir: config.dataDir, providers, log: app.log, getRecommended, changes, localEnabled: localConfigured });
   const quoter = createQuoter({ providers, log: app.log });
   const projects = createProjects({ db });
-  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
+  // Fast start, playback copies and frame strips for videos (package 10).
+  const media = createMedia({ dataDir: config.dataDir, log: app.log });
+  const generations = createGenerations({ db, storage, providers, catalog, log: app.log, media, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations, log: app.log });
   const storyboards = createStoryboards({ db, projects, generations, log: app.log });
   generations.setOnCompleted(async (row) => {
@@ -229,6 +232,29 @@ export async function buildApp(config, { logger = true } = {}) {
       reply.header('content-security-policy', CSP);
     }
     if (isHttps(req)) reply.header('strict-transport-security', 'max-age=31536000');
+    return payload;
+  });
+
+  // One line per media response (package 10, M6), to explain the next stall: file, size,
+  // range, time to first byte (headers out), total time, bytes sent, status, aborted.
+  app.addHook('onRequest', (req, reply, done) => {
+    if (req.url.startsWith('/media/')) {
+      const sock = req.raw.socket;
+      const m = { t0: process.hrtime.bigint(), b0: sock?.bytesWritten || 0, ttfb: null };
+      req.dzMedia = m;
+      reply.raw.once('close', () => {
+        const ms = (t) => Math.round(Number(t - m.t0) / 1e5) / 10;
+        app.log.info({
+          media: 'serve', url: req.url, status: reply.statusCode, range: req.headers.range || null,
+          size: Number(reply.getHeader('content-length')) || null, ttfbMs: m.ttfb == null ? null : ms(m.ttfb), totalMs: ms(process.hrtime.bigint()),
+          sent: Math.max(0, (sock?.bytesWritten || 0) - m.b0), aborted: !reply.raw.writableFinished,
+        }, 'media');
+      });
+    }
+    done();
+  });
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (req.dzMedia && req.dzMedia.ttfb == null) req.dzMedia.ttfb = process.hrtime.bigint();
     return payload;
   });
 
@@ -1127,17 +1153,40 @@ export async function buildApp(config, { logger = true } = {}) {
   }));
 
   // ── Files: only people who may see them can open them ───────────────────
-  // The browser keeps files but asks every time (a 304 when unchanged), so
-  // access is always checked; never in a shared cache. ?w=480 → a small webp
-  // preview (a video's first frame).
+  // A stored file never changes under its URL (package 10, M2): the browser keeps it for a
+  // year without asking again (private: never in a shared cache; the access check runs
+  // whenever the browser does ask). ?w=480 → a small webp preview (a video's first frame);
+  // ?play=1 → a heavy video's lighter playback copy once it exists (else the original);
+  // ?strip=12 → twelve frames of a video in one webp, for the player's frame strip.
+  const MEDIA_CACHE = 'private, max-age=31536000, immutable';
   const sendMedia = async (req, reply, f) => {
-    if (req.query.w && req.query.download !== '1') {
+    const download = req.query.download === '1';
+    // ?info=1 → the original picture's size, for the large view (it shows a screen-size copy).
+    if (req.query.info === '1') {
+      let dims = null;
+      try { dims = String(f.mime).startsWith('image/') ? imageSize(f.path) : null; } catch { dims = null; }
+      let bytes = 0;
+      try { bytes = fs.statSync(f.path).size; } catch { /* gone */ }
+      return reply.header('cache-control', MEDIA_CACHE).send({ width: dims?.width || null, height: dims?.height || null, bytes });
+    }
+    if (req.query.strip && !download && String(f.mime).startsWith('video/')) {
+      const strip = await media.stripFor(f.path, req.query.strip);
+      if (strip) return sendFile(req, reply, strip, 'image/webp', { cacheControl: MEDIA_CACHE });
+      return reply.code(404).send({ error: 'No frames' });
+    }
+    if (req.query.w && !download) {
       const t = await thumbs.thumbFor(f.path, f.mime, req.query.w);
       if (t === 'busy') return reply.code(503).header('retry-after', '5').send({ error: 'Previews are busy, try again.' });
-      if (t) { thumbs.touch(t); return sendFile(req, reply, t, 'image/webp', { cacheControl: 'private, no-cache' }); }
+      if (t) { thumbs.touch(t); return sendFile(req, reply, t, 'image/webp', { cacheControl: MEDIA_CACHE }); }
       if (String(f.mime).startsWith('video/')) return reply.code(404).send({ error: 'No preview' });
     }
-    return sendFile(req, reply, f.path, f.mime, { download: req.query.download === '1', cacheControl: 'private, no-cache' });
+    if (req.query.play === '1' && !download && String(f.mime).startsWith('video/')) {
+      const play = await media.playbackFor(f.path);
+      // Not ready yet: the original, not kept for long (the copy will answer next time).
+      if (play) return sendFile(req, reply, play, 'video/mp4', { cacheControl: MEDIA_CACHE });
+      return sendFile(req, reply, f.path, f.mime, { cacheControl: 'private, max-age=60' });
+    }
+    return sendFile(req, reply, f.path, f.mime, { download, cacheControl: MEDIA_CACHE });
   };
   app.get('/media/u/:file', async (req, reply) => {
     const f = generations.mediaFile(req.user, 'u', req.params.file.split('.')[0]);

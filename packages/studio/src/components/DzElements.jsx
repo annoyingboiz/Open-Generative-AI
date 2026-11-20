@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useDzContext } from "../dzContext.js";
 import { DzMediaPicker } from "./DzMedia.jsx";
-import { dzGenerate, dzWithMeta, dzThumb } from "../api.js";
+import { dzGenerate, dzWithMeta, dzThumb, dzPlay } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { createEntries, chooseVariant, missingFor, paramsOf, buildBody } from "../dzCreate.js";
 import { Button, Input, Textarea, Badge, Spinner, Segmented, cn, DialogParts, DropdownMenuParts, SelectParts, Popover, PopoverTrigger, PopoverContent } from "../ui/index.js";
@@ -69,7 +69,7 @@ export function useDzElements() {
 
 const Thumb = ({ el, className }) => (el.images?.[0]
   ? <img src={dzThumb(el.images[0])} alt="" className={cn("object-cover", className)} loading="lazy" decoding="async" />
-  : el.video ? <video src={el.video} className={cn("object-cover", className)} muted playsInline preload="metadata" /> : <div className={cn("bg-muted", className)} />);
+  : el.video ? <video src={el.video} poster={dzThumb(el.video, 480)} className={cn("object-cover", className)} muted playsInline preload="none" /> : <div className={cn("bg-muted", className)} />);
 
 // ── Editor ───────────────────────────────────────────────────────────────
 
@@ -301,7 +301,7 @@ function ElementViewer({ element, onClose, onEdit, onGenerateVideo, onUse }) {
         <div className="grid max-h-[92vh] md:grid-cols-[1fr_340px]">
           <div className="flex min-h-0 flex-col bg-overlay">
             <div className="flex min-h-[320px] flex-1 items-center justify-center p-4">
-              {cur ? (cur.video ? <video key={cur.url} src={cur.url} controls autoPlay className="max-h-[66vh] max-w-full rounded-lg" /> : <img src={cur.url} alt={cur.label || element.name} className="max-h-[66vh] max-w-full rounded-lg object-contain" />) : null}
+              {cur ? (cur.video ? <video key={cur.url} src={dzPlay(cur.url)} controls autoPlay className="max-h-[66vh] max-w-full rounded-lg" /> : <img src={cur.url} alt={cur.label || element.name} className="max-h-[66vh] max-w-full rounded-lg object-contain" />) : null}
             </div>
             {cur?.label && <div className="px-4 pb-2 text-center text-foreground">{cur.label}</div>}
             <div className="flex gap-2 overflow-x-auto custom-scrollbar border-t border-border p-3">

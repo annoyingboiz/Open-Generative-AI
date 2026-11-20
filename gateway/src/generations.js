@@ -24,7 +24,7 @@ export class GenerationError extends Error {
 
 const DOWNLOAD_DEADLINE_MS = 60 * 60_000; // give up on a result file after an hour of retries
 
-export function createGenerations({ db, storage, providers, catalog, log, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS, onProviderRejected = null, projects = null, uploadQuotaBytes = Infinity, maxUploadBytes = Infinity }) {
+export function createGenerations({ db, storage, providers, catalog, log, media = null, maxActiveJobsPerUser = 8, settleDelaysMs = SETTLE_DELAYS_MS, onProviderRejected = null, projects = null, uploadQuotaBytes = Infinity, maxUploadBytes = Infinity }) {
   // Personal items: only the author. Project items: every member of the project.
   const isMember = (userId, projectId) => Boolean(projectId && projects?.isMember(userId, projectId));
   // A project item belongs to the project: its author sees it only while still a member.
@@ -95,6 +95,8 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       storage.remove(saved.path);
       throw new GenerationError(saved.bytes > maxUploadBytes ? 'The file is too large.' : 'Upload quota reached. Delete old uploads or ask the admin.', 413);
     }
+    // A video starts at once in the player: index first (package 10, M1).
+    if (media && await media.prepare(saved.path)) saved.bytes = fs.statSync(saved.path).size;
     q.insertUpload.run(saved.id, user.id, saved.path, mime, saved.bytes, filename || null, projectId, folderId, now());
     const ext = saved.path.split('.').pop();
     return { id: saved.id, url: `/media/u/${saved.id}.${ext}` };
@@ -226,6 +228,9 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       const file = await storage.downloadResult({ userId: row.user_id, generationId: row.id, index: i, url: providerOutputs[i], proxy: cfg.proxy });
       saved.push({ path: file.path, mime: file.mime, bytes: file.bytes, ext: file.ext });
     }
+    // Videos with the index first, so the player starts at once (package 10, M1); a heavy one
+    // gets its lighter playback copy in the background.
+    if (media) for (const f of saved) if (await media.prepare(f.path)) f.bytes = fs.statSync(f.path).size;
     // Fix-ups on the files before they show up (e.g. the sound back into an
     // upscaled video). They run beside the worker, not in it: the job stays
     // "downloading" with its next check pushed back (a restart just redoes it).
@@ -686,6 +691,7 @@ export function createGenerations({ db, storage, providers, catalog, log, maxAct
       .then(async (out) => {
         let file;
         try { file = await storage.copyResult({ userId: user.id, generationId: id, index: 0, from: out.path, ext: out.ext }); } finally { out.cleanup?.(); }
+        if (media && await media.prepare(file.path)) file.bytes = fs.statSync(file.path).size;
         if (!q.setCompletedLocal.run(JSON.stringify([{ path: file.path, mime: out.mime, bytes: file.bytes, ext: out.ext }]), now() + settleDelaysMs[0], now(), now(), id).changes) { storage.remove(file.path); return; }
         if (onCompleted) Promise.resolve().then(() => onCompleted(q.byId.get(id))).catch((error) => log?.warn(`after ${id}: ${error.message}`));
       })

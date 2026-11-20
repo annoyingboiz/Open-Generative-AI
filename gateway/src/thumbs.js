@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import sharp from 'sharp';
 
-const WIDTHS = [256, 480, 800];
+const WIDTHS = [256, 480, 800, 1600, 2048]; // 1600 / 2048: the large view shows a picture at screen size, not the 4K original
 const MAX_PARALLEL = 2; // previews never take the whole CPU
 const MAX_WAITING = 120; // more than this waiting → "busy" (try again)
 const MAX_PIXELS = 50_000_000; // bigger pictures get no preview (original is sent)

@@ -28,7 +28,7 @@ function RefTile({ r, onClick }) {
     <button type="button" onClick={onClick} title="Attach to the composer" draggable
       onDragStart={(e) => { try { e.dataTransfer.setData("text/plain", r.url); e.dataTransfer.effectAllowed = "copy"; } catch { /* optional */ } dzPictureDragStart({ url: r.url, kind: r.kind, name: r.name || "" }); }}
       onDragEnd={() => dzPictureDragEnd()} className="relative flex-shrink-0 overflow-hidden rounded-md bg-muted ring-signal transition-shadow duration-state hover:ring-2 focus-visible:ring-2 focus-visible:ring-ring" style={{ width: w, height: H }}>
-      {r.kind === "video" ? <video src={r.url} poster={dzThumb(r.url, 320)} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+      {r.kind === "video" ? <video src={r.url} poster={dzThumb(r.url, 320)} muted playsInline preload="none" className="h-full w-full object-cover" />
         : <img src={dzThumb(r.url, 320)} alt="" className="h-full w-full object-cover" loading="lazy" />}
       {r.kind === "video" && <span className="absolute bottom-1 left-1 flex h-5 w-5 items-center justify-center rounded-full bg-overlay/60 text-overlay-foreground"><Play size={10} weight="fill" /></span>}
     </button>

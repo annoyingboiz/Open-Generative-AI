@@ -86,6 +86,19 @@ let DZ_CURRENT_META = null;
 // Cloudflare error while the server restarts) → a short note instead of markup.
 // DZ: a small preview of one of our files (server-made webp; a video's first
 // frame). Other links are returned as they are.
+// A video for watching (package 10, M3): the server answers with a heavy video's lighter
+// playback copy once it exists, else the original. Download, frames and models use the plain URL.
+export function dzPlay(url) {
+    if (typeof url !== 'string' || !url.startsWith('/media/') || !/\.(mp4|mov|m4v|webm)(\?|$)/i.test(url)) return url;
+    return `${url}${url.includes('?') ? '&' : '?'}play=1`;
+}
+
+// Twelve frames of a video in one picture, for the player's frame strip (package 10, M4).
+export function dzStrip(url, n = 12) {
+    if (typeof url !== 'string' || !url.startsWith('/media/')) return null;
+    return `${url}${url.includes('?') ? '&' : '?'}strip=${n}`;
+}
+
 export function dzThumb(url, width = 480) {
     if (typeof url !== 'string' || !url.startsWith('/media/')) return url;
     return `${url}${url.includes('?') ? '&' : '?'}w=${width}`;

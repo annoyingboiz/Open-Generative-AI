@@ -7,7 +7,7 @@
 // Download / Trash on many at once. Trash keeps items 7 days.
 import { useEffect, useState } from "react";
 import { useDzContext } from "../dzContext.js";
-import { dzThumb } from "../api.js";
+import { dzThumb, dzPlay } from "../api.js";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import DzLikeButton, { DzPendingTile, DzAudioTile } from "./DzLikeButton.jsx";
 import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
@@ -91,9 +91,9 @@ export function Viewer({ item, onClose }) {
         {item.kind === "audio" ? (
           <audio src={item.url} controls autoPlay className="w-full max-w-xl" onClick={(e) => e.stopPropagation()} />
         ) : isVideo ? (
-          <video src={item.url} controls autoPlay className="max-h-full max-w-full rounded-lg" onClick={(e) => e.stopPropagation()} />
+          <video src={dzPlay(item.url)} poster={dzThumb(item.url, 1600)} controls autoPlay preload="auto" className="max-h-full max-w-full rounded-lg" onClick={(e) => e.stopPropagation()} />
         ) : (
-          <img src={item.url} alt={item.prompt || "Image"} className="max-h-full max-w-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+          <img src={item.url?.startsWith("/media/") ? dzThumb(item.url, 2048) : item.url} alt={item.prompt || "Image"} className="max-h-full max-w-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
         )}
       </div>
     </div>
@@ -115,7 +115,7 @@ function Card({ item, view, onOpen, actions, sel }) {
           <DzAudioTile url={item.url} title={item.prompt?.slice(0, 80) || "Audio"} controls={false} className="aspect-square w-full" />
         ) : isVideo ? (
           <video
-            src={item.url}
+            src={dzPlay(item.url)}
             poster={dzThumb(item.url)}
             className="aspect-square w-full bg-overlay/40 object-cover"
             muted

@@ -763,8 +763,15 @@ export function resolveInsertTags(text, { refs = [], tags = [], refCount = 0, ac
     return null;
   };
   const current = new Map(tags.map((t) => [t.tag.toLowerCase(), t.tag]));
+  // Elements by tag: the chosen ones by their tag now (a second "Alex" is char_alex_2),
+  // the others by the tag they get once added, and every one by its own base tag.
   const byElementTag = new Map();
-  for (const e of [...active, ...candidates]) { const k = elementTag(e).toLowerCase(); if (!byElementTag.has(k)) byElementTag.set(k, e); }
+  const put = (k, e) => { const low = String(k || "").toLowerCase(); if (low && !byElementTag.has(low)) byElementTag.set(low, e); };
+  const activeTags = elementTags(active);
+  for (const e of active) put(activeTags.get(e.id), e);
+  for (const e of candidates) if (!active.some((x) => x.id === e.id)) put(elementTags([...active, e]).get(e.id), e);
+  for (const e of [...active, ...candidates]) put(elementTag(e), e);
+  const elementOfUrl = (urls) => [...active, ...candidates].find((e) => (e.images || []).some((u) => urls.includes(u))) || null;
   const add = [];
   const added = new Map(); // url → its new tag
   const addElements = [];
@@ -773,7 +780,7 @@ export function resolveInsertTags(text, { refs = [], tags = [], refCount = 0, ac
   const out = String(text).replace(TAG_RE, (all, pre, name) => {
     const key = canonicalTag(name);
     // An element tag adds the element (its pictures go with it), like a typed @ mention.
-    const el = IMAGE_TAG.test(key) ? null : byElementTag.get(key);
+    const el = IMAGE_TAG.test(key) ? null : byElementTag.get(key) || elementOfUrl(meant.get(key) || []);
     if (el) {
       const chosen = [...active, ...addElements];
       if (!chosen.some((x) => x.id === el.id)) {

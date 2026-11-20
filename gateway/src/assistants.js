@@ -274,7 +274,7 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
   function composerRefs(context) {
     const list = Array.isArray(context?.refs) ? context.refs : [];
     const out = [];
-    for (const r of list.slice(0, 60)) {
+    for (const r of list.slice(0, 120)) { // references, frames, and up to 8 views of each element
       if (!r || typeof r !== 'object' || !TAG_OK.test(String(r.tag || ''))) continue;
       const url = typeof r.url === 'string' && /^\/media\/[ug]\/[A-Za-z0-9_-]{1,80}(?:\.[a-z0-9]{1,8})?(?:\/\d{1,4}(?:\.[a-z0-9]{1,8})?)?$/i.test(r.url) ? r.url : null;
       out.push({ tag: String(r.tag), label: line(r.label, 80), ...(url ? { url } : {}) });

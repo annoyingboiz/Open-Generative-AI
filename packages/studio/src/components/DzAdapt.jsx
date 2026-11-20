@@ -81,8 +81,11 @@ export function adaptRemember(scope, as, rec) {
   all[scope][as] = { ...(all[scope][as] || {}), [rec.key]: { ...rec, at: Date.now() } };
   writeResults(all);
 }
+// A composer that was emptied starts with no result: calls started before that keep nothing.
+const epochs = new Map(); // scope → how many times it was emptied
 export function adaptForget(scope) {
   if (!scope) return;
+  epochs.set(scope, (epochs.get(scope) || 0) + 1);
   const all = readResults();
   if (all[scope]) { delete all[scope]; writeResults(all); }
 }
@@ -103,6 +106,7 @@ export function useAdaptResult({ active, loaded, scope, prompt, model, context, 
     const mine = ++seq.current;
     const key = currentKey;
     const format = as;
+    const epoch = epochs.get(scope) || 0;
     setState({ busy: true, error: "", result: null, key, saved: null });
     try {
       let call = force ? null : inflight.current.get(key);
@@ -111,7 +115,7 @@ export function useAdaptResult({ active, loaded, scope, prompt, model, context, 
         call = made;
         inflight.current.set(key, made);
         // Kept for its own input even if the screen moved on meanwhile; a newer call for the same input wins.
-        made.then((r) => { if (inflight.current.get(key) === made) adaptRemember(scope, format, { key, result: r }); }, () => {})
+        made.then((r) => { if (inflight.current.get(key) === made && (epochs.get(scope) || 0) === epoch) adaptRemember(scope, format, { key, result: r }); }, () => {})
           .finally(() => { if (inflight.current.get(key) === made) inflight.current.delete(key); });
       }
       const r = await call;
@@ -122,8 +126,17 @@ export function useAdaptResult({ active, loaded, scope, prompt, model, context, 
       if (mine === seq.current) setState({ busy: false, error: String(e?.message || e), result: null, key, saved: null });
     }
   };
+  // Emptied: nothing from before is shown or joined, even if the same text is typed again.
+  const empty = !String(prompt ?? "").trim();
   useEffect(() => {
-    if (!active || !loaded || state.key === currentKey) return;
+    if (!empty) return;
+    seq.current += 1;
+    inflight.current.clear();
+    setState({ busy: false, error: "", result: null, key: null, saved: null });
+    setText("");
+  }, [empty]);
+  useEffect(() => {
+    if (!active || !loaded || empty || state.key === currentKey) return;
     const hit = adaptRecall(scope, as, currentKey);
     if (hit) {
       seq.current += 1;
@@ -132,7 +145,7 @@ export function useAdaptResult({ active, loaded, scope, prompt, model, context, 
       return;
     }
     run();
-  }, [active, loaded, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, loaded, currentKey, empty]); // eslint-disable-line react-hooks/exhaustive-deps
   const current = state.key === currentKey && !state.busy && Boolean(state.result);
   const inUse = Boolean(current && state.saved && state.saved.usedKey === currentKey);
   // "Use this": remember that this text is now the prompt (its input shows the result as in use).

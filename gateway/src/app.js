@@ -102,6 +102,13 @@ export async function buildApp(config, { logger = true } = {}) {
   const projects = createProjects({ db });
   // Fast start, playback copies and frame strips for videos (package 10).
   const media = createMedia({ dataDir: config.dataDir, log: app.log });
+  // A new picture gets its screen-size copy (2048 px, for the large view) right away, in the
+  // background, so opening it never waits for one (package 10).
+  const prepareVideo = media.prepare;
+  media.prepare = async (file) => {
+    if (/\.(jpe?g|png|webp)$/i.test(file)) { const mime = /\.png$/i.test(file) ? 'image/png' : /\.webp$/i.test(file) ? 'image/webp' : 'image/jpeg'; thumbs.thumbFor(file, mime, 2048).catch(() => {}); return false; }
+    return prepareVideo(file);
+  };
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, media, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
   const elements = createElements({ db, projects, generations, log: app.log });
   const storyboards = createStoryboards({ db, projects, generations, log: app.log });

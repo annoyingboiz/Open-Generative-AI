@@ -21,8 +21,9 @@ export function createThumbs({ dataDir, log, ffmpegPath = 'ffmpeg' }) {
   const inflight = new Map();
   let running = 0;
   const queue = [];
-  const slot = () => new Promise((resolve) => {
-    if (running < MAX_PARALLEL) { running += 1; resolve(); } else queue.push(resolve);
+  // The picture someone opened (a large size) goes before the grid's small previews.
+  const slot = (first = false) => new Promise((resolve) => {
+    if (running < MAX_PARALLEL) { running += 1; resolve(); } else if (first) queue.unshift(resolve); else queue.push(resolve);
   });
   const release = () => { const next = queue.shift(); if (next) next(); else running -= 1; };
 
@@ -60,7 +61,7 @@ export function createThumbs({ dataDir, log, ffmpegPath = 'ffmpeg' }) {
     if (inflight.has(out)) return inflight.get(out);
     if (queue.length >= MAX_WAITING) return 'busy';
     const job = (async () => {
-      await slot();
+      await slot(width >= 1600);
       const tmp = `${out}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
       try {
         const input = isVideo ? await firstFrame(file) : file;

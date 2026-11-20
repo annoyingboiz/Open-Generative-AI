@@ -206,6 +206,8 @@ export function createStoryboards({ db, projects, generations, log }) {
     }
   }
   migrateOld();
+  // Package 06, S8.1: the default name is "Untitled storyboard"; names never edited follow it.
+  db.prepare("UPDATE storyboards SET name = 'Untitled storyboard' WHERE name IN ('Untitled film', 'Untitled scene')").run();
   const isTarget = (row, id) => parse(row.shots_json, []).some((x) => x.id === id) || groupIds(parse(row.mood_json, {})).has(id);
 
   // A file of the board that can't be opened from it any more (sent to Trash,
@@ -341,7 +343,7 @@ export function createStoryboards({ db, projects, generations, log }) {
     const shotsIn = body.shots || [];
     let scenes = cleanScenes(body.scenes);
     if (!scenes.length && shotsIn.length) scenes = cleanScenes([{ name: '' }]);
-    q.insert.run(id, user.id, projectId, cleanName(body.name || 'Untitled film'), cleanScene(body.scene), JSON.stringify(cleanLook(body.look)),
+    q.insert.run(id, user.id, projectId, cleanName(body.name || 'Untitled storyboard'), cleanScene(body.scene), JSON.stringify(cleanLook(body.look)),
       JSON.stringify(cleanSettings(body.settings)), JSON.stringify(cleanShots(shotsIn, scenes)), t, t,
       JSON.stringify(scenes), JSON.stringify(cleanMood(body.mood)), String(body.note ?? '').slice(0, MAX_NOTE));
     return { storyboard: view(q.byId.get(id), user, { jobs: [] }) };
@@ -513,7 +515,7 @@ export function createStoryboards({ db, projects, generations, log }) {
     return update(user, row.id, {
       rev,
       shots,
-      ...(plan.title && /^Untitled (scene|film)$/.test(row.name) ? { name: plan.title } : {}),
+      ...(plan.title && /^Untitled (scene|film|storyboard)$/.test(row.name) ? { name: plan.title } : {}),
       ...(plan.look ? { look: { ...cleanLook(parse(row.look_json, {})), note: plan.look } } : {}),
     });
   }

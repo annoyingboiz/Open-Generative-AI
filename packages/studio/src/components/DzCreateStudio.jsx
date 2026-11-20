@@ -410,7 +410,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   }, [cfg.store]); // eslint-disable-line react-hooks/exhaustive-deps
   // Events between tabs are addressed by mode; a working screen has its own address.
   const addr = target ? `target:${target.key}` : mode;
-  const [kindState, setKind] = useState(saved.kind === "video" ? "video" : "image");
+  // A working screen (package 06, S1) opens in Image mode unless it was opened for a video.
+  const [kindState, setKind] = useState(target ? (target.initial?.mode === "video" ? "video" : "image") : saved.kind === "video" ? "video" : "image");
   const kind = fixedKind || kindState;
   const [modelByKind, setModelByKind] = useState(saved.modelByKind || {});
   const [valuesByKind, setValuesByKind] = useState(saved.valuesByKind || { image: {}, video: {} });
@@ -757,10 +758,26 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // { to: "image", url, role: "edit" } → Image to edit; role "reference" → References.
   const [focusSeq, setFocusSeq] = useState(0);
   useEffect(() => {
-    if (mode !== "video" && mode !== "image") return undefined;
+    if (mode !== "video" && mode !== "image" && !target) return undefined;
     const onSend = (e) => {
       const { to, url, role = mode === "video" ? "first" : "reference" } = e.detail || {};
       if (to !== addr || typeof url !== "string") return;
+      // The full Studio composer on a working screen (package 06, S1): Start switches it to Video,
+      // a picture to edit switches it to Image (then the same request runs again with that kind's models).
+      if (!fixedKind && role === "first") {
+        const next = animateInto(createEntries("video"), modelByKind.video, attachedRef.current, url);
+        setKind("video");
+        if (next.modelKey && next.modelKey !== modelByKind.video) setModelByKind((prev) => ({ ...prev, video: next.modelKey }));
+        setAttached(next.attached);
+        setFocusSeq((n) => n + 1);
+        return;
+      }
+      if (!fixedKind && role === "edit" && kind !== "image") {
+        setKind("image");
+        const again = e.detail;
+        setTimeout(() => window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: again })), 0);
+        return;
+      }
       if (role === "first") {
         const next = animateInto(entries, entry?.key, attachedRef.current, url);
         if (next.modelKey && next.modelKey !== entry?.key) setModelByKind((prev) => ({ ...prev, video: next.modelKey }));

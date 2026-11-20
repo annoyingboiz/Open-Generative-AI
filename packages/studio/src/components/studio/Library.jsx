@@ -3,8 +3,9 @@
 // Library window (redesign 01, §5.5) and the full list ("+N", screen 12).
 // Every click applies at once: the picture joins the active group, numbered in
 // order of adding; a full group dims the rest. The group decides the type.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MagnifyingGlass, Broom, X, UploadSimple, DotsSixVertical, CaretDown } from "@phosphor-icons/react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { MagnifyingGlass, Broom, X, UploadSimple, DotsSixVertical, CaretDown, CaretLeft } from "@phosphor-icons/react";
+import { useDzDropTarget } from "../../dzDrop.js";
 import { dzThumb, uploadFile } from "../../api.js";
 import { useDzContext } from "../../dzContext.js";
 import { usePaged } from "../DzMedia.jsx";
@@ -14,12 +15,22 @@ import { StudioPanel, Overline, ChipMenu, MenuRow, usePresence, useEscLayer, use
 import { groupItems, addToGroup, removeFromGroup, clearGroup, reorderGroup, GROUPS } from "./attachments.js";
 
 const SOURCES = [["uploads", "Uploads"], ["generations", "Generations"], ["liked", "Liked"], ["elements", "Elements"]];
+
+// Package 06, S3: inside a storyboard the picker gets a first tab with that storyboard's
+// Moodboard, grouped by the user's frames. A storyboard provides:
+// { frames: [{ id, name, color (CSS colour), items: [{ url, kind, w, h }] }], loose: [...],
+//   place(refs) — put uploaded files on its Moodboard, outside frames }.
+export const PickerBoardContext = createContext(null);
+const PIC_H = 112;
 const ACCEPT = { image: "image/png,image/jpeg,image/webp", video: "video/mp4,video/quicktime,video/webm", audio: "audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg" };
 
 // The browsing part: search, scope, source tabs and the grid. Shared by the window and the full list.
-function Browser({ group, attached, setAttached, columns = 8, onError, onUploading, st = null }) {
+function Browser({ group, attached, setAttached, columns = 8, onError, onUploading, st = null, initial = null }) {
   const ctx = useDzContext();
-  const [source, setSource] = useState("generations");
+  const board = useContext(PickerBoardContext);
+  const [source, setSource] = useState(initial?.source || (board ? "moodboard" : "generations"));
+  const [inElement, setInElement] = useState(initial?.element || null); // Elements tab: inside one element (S2)
+  const box = useRef(null);
   const [where, setWhere] = useState(ctx.project ? "project" : "library");
   const [q, setQ] = useState("");
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -31,14 +42,19 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
   const accept = group?.kind || "image";
   const paged = usePaged(source, "all", where, accept, ctx, refresh);
   const els = useDzElements();
-  const elementItems = useMemo(() => {
-    const list = where === "project" && ctx.project ? els.project : els.library;
-    return list.flatMap((e) => [
-      ...(accept === "image" ? (e.images || []).map((url, i) => ({ key: `${e.id}-${i}`, url, name: `${e.name} ${i + 1}`, kind: "image" })) : []),
-      ...(accept === "video" && e.video ? [{ key: `${e.id}-v`, url: e.video, name: `${e.name} video`, kind: "video" }] : []),
-    ]);
-  }, [els, where, ctx.project, accept]);
-  const all = source === "elements" ? elementItems : paged.items;
+  // Elements (S2): the elements first; inside one, its views (or videos) with their labels.
+  const elementList = useMemo(() => {
+    const list = (where === "project" && ctx.project ? els.project : els.library).filter((e) => e.status !== "draft");
+    const all = [...list, ...[...els.project, ...els.library].filter((e) => e.id === inElement && !list.some((x) => x.id === e.id))];
+    return all.filter((e) => (accept === "video" ? (e.videos || []).length : (e.views || e.images || []).length));
+  }, [els, where, ctx.project, accept, inElement]);
+  const element = inElement ? elementList.find((e) => e.id === inElement) : null;
+  const filesOf = (e) => (accept === "video"
+    ? (e.videos || []).map((v, i) => ({ url: v.url, label: v.label || `Video ${i + 1}` }))
+    : (e.views || (e.images || []).map((url) => ({ url }))).map((v, i) => ({ url: v.url, label: v.label || (i === 0 ? "Main" : `View ${i + 1}`) })));
+  const elementItems = element ? filesOf(element).map((v, i) => ({ key: `${element.id}-${i}`, url: v.url, name: v.label, label: v.label, kind: accept })) : [];
+  const boardItems = useMemo(() => (board ? [...board.frames.flatMap((f) => f.items), ...board.loose].filter((x) => (x.kind === "video" ? "video" : "image") === accept) : []), [board, accept]);
+  const all = source === "elements" ? elementItems : source === "moodboard" ? boardItems : paged.items;
   const needle = q.trim().toLowerCase().replace(/^@/, "");
   const items = needle ? all.filter((i) => `${i.name || ""} ${i.prompt || ""} ${i.model || ""}`.toLowerCase().includes(needle)) : all;
   // Package 04: only files that are on count as chosen; a dimmed file never fills a slot.
@@ -56,26 +72,65 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
     const dim = inGroup.find((x) => x.url === item.url && x.off);
     if (dim) { if (dim.off.why === "together") st?.turnOn([dim.role]); else if (dim.off.why === "limit") st?.bringOn(dim); return; }
     if (full) return;
-    setAttached((a) => addToGroup(a, group, [{ url: item.url, name: item.name || "" }], null, isOn));
+    setAttached((a) => addToGroup(a, group, [{ url: item.url, name: item.name || "", ...(item.label ? { label: item.label } : {}) }], null, isOn));
   };
+  const addAll = (list) => { if (group) setAttached((a) => addToGroup(a, group, list.map((x) => ({ url: x.url, name: x.name || "" })), null, isOn)); };
   const upload = async (files) => {
     const list = files.filter((f) => f.type.startsWith(`${accept}/`)).slice(0, Math.max(0, max - chosen.length));
     if (!list.length) { onError?.(`Choose ${accept} files.`); return; }
     setUploading((n) => n + 1);
     onUploading?.(true);
     try {
+      const placed = [];
       for (const f of list) {
         const url = await uploadFile("session", f);
         setAttached((a) => addToGroup(a, group, [{ url, name: f.name }], null, isOn));
+        placed.push({ url, kind: accept, name: f.name });
       }
+      // Inside a storyboard an upload also lands on its Moodboard, outside frames (package 06, A2).
+      if (board?.place && placed.length) board.place(placed);
       if (source === "uploads") setRefresh((k) => k + 1);
     } catch (e) { onError?.(String(e?.message || e)); }
     finally { setUploading((n) => n - 1); onUploading?.(false); }
   };
-  const count = (id) => (id === source ? `${items.length}${id !== "elements" && paged.cursor ? "+" : ""}` : "");
+  const count = (id) => (id === "moodboard" ? `${boardItems.length}` : id === source ? `${source === "elements" && !element ? elementList.length : items.length}${id !== "elements" && paged.cursor ? "+" : ""}` : "");
+  const sources = board ? [["moodboard", "Moodboard"], ...SOURCES] : SOURCES;
+  // The open picker takes files dropped on the window (package 06, A2).
+  useDzDropTarget({ el: box, title: "Drop files to upload", line: board ? "They also land on the Moodboard" : "", enabled: Boolean(group), onDrop: (files) => upload(files) });
+  const tile = (item, h = null) => {
+    const n = chosen.findIndex((x) => x.url === item.url);
+    const on = n >= 0;
+    const dim = !on ? inGroup.find((x) => x.url === item.url && x.off) : null;
+    const blocked = full && !on && !dim;
+    const why = dim?.off.reason ? [dim.off.reason.text, dim.off.reason.action].filter(Boolean).join(" ") : null;
+    const style = h ? { height: h, width: item.w && item.h ? Math.round((h * item.w) / item.h) : h } : undefined;
+    return (
+      <button key={item.key || item.url} type="button" onClick={() => toggle(item)} disabled={blocked} title={why || item.name || item.prompt || undefined} style={style}
+        className={cn("relative overflow-hidden rounded-md bg-muted transition-[opacity,box-shadow] duration-state", !h && "aspect-square", on && "ring-2 ring-signal", dim && "ring-2 ring-input", blocked && "opacity-20")}>
+        {item.kind === "video"
+          ? <video src={item.url} poster={dzThumb(item.url, 256)} className="h-full w-full object-cover" muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
+          : item.kind === "audio" ? <span className="flex h-full items-center justify-center px-2 text-center text-sm text-muted-foreground">♪ {item.name}</span>
+            : <img src={dzThumb(item.url, 256)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
+        {on && !full && <span className="absolute inset-0 bg-overlay/[.38]" />}
+        {on && <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-signal text-xs font-semibold text-primary-foreground">{n + 1}</span>}
+        {dim && <span className="absolute inset-0 bg-card/50" />}
+        {dim && <span className="absolute right-1.5 top-1.5 rounded-full border border-border bg-popover px-1.5 text-[11px] font-semibold uppercase leading-[18px] text-muted-foreground">off</span>}
+        {item.label && <span className="absolute inset-x-1 bottom-1 rounded-xs bg-overlay/[.66] text-center text-[11px] leading-4 text-overlay-foreground">{item.label}</span>}
+      </button>
+    );
+  };
+  const section = (key, dot, name, list) => (
+    <div key={key} className="mb-4">
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+        <span className="h-2 w-2 rounded-full" style={{ background: dot }} />{name} <span className="font-normal text-muted-foreground">{list.length}</span>
+        {group && list.length > 0 && <button type="button" onClick={() => addAll(list)} className="ml-auto h-6 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Add all {list.length}</button>}
+      </div>
+      <div className="flex flex-wrap gap-2.5">{list.map((x) => tile({ ...x, key: `${key}-${x.url}` }, PIC_H))}</div>
+    </div>
+  );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div ref={box} className="flex min-h-0 flex-1 flex-col">
       <div className="flex gap-2">
         <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-input px-3">
           <MagnifyingGlass size={16} className="text-muted-foreground" />
@@ -95,14 +150,48 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
         )}
       </div>
       <div role="tablist" className="mt-3 flex h-9 flex-shrink-0 items-end gap-5 border-b border-border">
-        {SOURCES.map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={source === id} onClick={() => setSource(id)}
+        {sources.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={source === id} onClick={() => { setSource(id); if (id === "elements") setInElement(null); }}
             className={cn("-mb-px h-9 border-b-2 text-base font-medium transition-colors duration-state", source === id ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
             {label} <span className="tabular-nums text-muted-foreground">{count(id)}</span>
           </button>
         ))}
       </div>
       <div className="custom-scrollbar -mx-1 mt-3 min-h-0 flex-1 overflow-y-auto px-1 pb-1">
+        {source === "moodboard" && board && (
+          boardItems.length ? (
+            <>
+              {board.frames.map((f) => { const list = f.items.filter((x) => (x.kind === "video" ? "video" : "image") === accept && (!needle || `${x.name || ""}`.toLowerCase().includes(needle))); return list.length ? section(f.id, f.color, f.name || "Group", list) : null; })}
+              {(() => { const list = board.loose.filter((x) => (x.kind === "video" ? "video" : "image") === accept); return list.length ? section("loose", "hsl(var(--muted-foreground))", "Not in a group", list) : null; })()}
+            </>
+          ) : <p className="py-10 text-center text-muted-foreground">Nothing on this storyboard's Moodboard yet.</p>
+        )}
+        {source === "elements" && !element && (
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.min(columns, 6)}, minmax(0, 1fr))` }}>
+            {elementList.filter((e) => !needle || `${e.name} ${e.tag}`.toLowerCase().includes(needle)).map((e) => {
+              const files = filesOf(e);
+              const picked = files.filter((v) => chosen.some((c) => c.url === v.url)).length;
+              return (
+                <button key={e.id} type="button" onClick={() => setInElement(e.id)} className="group text-left">
+                  <span className="relative block aspect-square overflow-hidden rounded-md bg-muted">
+                    {files[0] && (accept === "video" ? <video src={files[0].url} poster={dzThumb(files[0].url, 256)} muted playsInline preload="none" className="h-full w-full object-cover" /> : <img src={dzThumb(files[0].url, 256)} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-state group-hover:scale-[1.03]" />)}
+                    {picked > 0 && <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-signal px-1 text-xs font-semibold text-primary-foreground">{picked}</span>}
+                  </span>
+                  <span className="mt-1.5 block truncate text-sm font-medium">{e.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{files.length} {accept === "video" ? "video" : "view"}{files.length === 1 ? "" : "s"}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {source === "elements" && element && (
+          <div className="mb-3 flex items-center gap-2 text-sm">
+            <button type="button" onClick={() => setInElement(null)} aria-label="All elements" className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><CaretLeft size={14} /></button>
+            <b className="font-semibold">{element.name}</b>
+            <span className="text-muted-foreground">@{element.tag} · {element.kind ? `${element.kind[0].toUpperCase()}${element.kind.slice(1)} · ` : ""}{elementItems.length} {accept === "video" ? "video" : "view"}{elementItems.length === 1 ? "" : "s"} · pick the {accept === "video" ? "videos" : "views"} to send</span>
+          </div>
+        )}
+        {source !== "moodboard" && !(source === "elements" && !element) && (
         <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
           {source === "uploads" && group && (
             <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading > 0 || full}
@@ -110,30 +199,12 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
               {uploading ? <Spinner className="h-5 w-5" /> : <UploadSimple size={20} />}{uploading ? "Uploading" : "Upload"}
             </button>
           )}
-          {items.map((item) => {
-            const n = chosen.findIndex((x) => x.url === item.url);
-            const on = n >= 0;
-            const dim = !on ? inGroup.find((x) => x.url === item.url && x.off) : null;
-            const blocked = full && !on && !dim;
-            const why = dim?.off.reason ? [dim.off.reason.text, dim.off.reason.action].filter(Boolean).join(" ") : null;
-            return (
-              <button key={item.key} type="button" onClick={() => toggle(item)} disabled={blocked} title={why || item.name || item.prompt || undefined}
-                className={cn("relative aspect-square overflow-hidden rounded-md bg-muted transition-[opacity,box-shadow] duration-state", on && "ring-2 ring-signal", dim && "ring-2 ring-input", blocked && "opacity-20")}>
-                {item.kind === "video"
-                  ? <video src={item.url} poster={dzThumb(item.url, 256)} className="h-full w-full object-cover" muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
-                  : item.kind === "audio" ? <span className="flex h-full items-center justify-center px-2 text-center text-sm text-muted-foreground">♪ {item.name}</span>
-                    : <img src={dzThumb(item.url, 256)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
-                {on && !full && <span className="absolute inset-0 bg-overlay/[.38]" />}
-                {on && <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-signal text-xs font-semibold text-primary-foreground">{n + 1}</span>}
-                {dim && <span className="absolute inset-0 bg-card/50" />}
-                {dim && <span className="absolute right-1.5 top-1.5 rounded-full border border-border bg-popover px-1.5 text-[11px] font-semibold uppercase leading-[18px] text-muted-foreground">off</span>}
-              </button>
-            );
-          })}
+          {items.map((item) => tile(item))}
         </div>
-        {!paged.loading && items.length === 0 && <p className="py-10 text-center text-muted-foreground">{source === "elements" ? "No elements with matching files here yet." : `Nothing here yet.`}</p>}
-        {paged.loading && source !== "elements" && <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>}
-        {paged.cursor && source !== "elements" && !paged.loading && <div className="flex justify-center py-3"><button type="button" onClick={paged.more} className="h-8 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Load more</button></div>}
+        )}
+        {source !== "moodboard" && !paged.loading && (source === "elements" ? (element ? !items.length : !elementList.length) : !items.length) && <p className="py-10 text-center text-muted-foreground">{source === "elements" ? "No elements with matching files here yet." : `Nothing here yet.`}</p>}
+        {paged.loading && source !== "elements" && source !== "moodboard" && <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>}
+        {paged.cursor && source !== "elements" && source !== "moodboard" && !paged.loading && <div className="flex justify-center py-3"><button type="button" onClick={paged.more} className="h-8 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Load more</button></div>}
       </div>
       <input ref={fileInput} type="file" accept={ACCEPT[accept]} multiple={group?.max > 1} className="hidden" onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) upload(f); }} />
     </div>
@@ -143,7 +214,8 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
 const hintFor = (group, full) => (full ? "Full. Remove one to pick another." : group?.kind === "video" ? "Only videos are shown for this group." : group?.kind === "audio" ? "Only sounds are shown for this group." : "Only pictures are shown for this group.");
 
 // Above the strip, same width as the composer (the composer folds to the strip meanwhile).
-export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sent = attached, setAttached, onClose, onError, onUploading, st = null }) {
+export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sent = attached, setAttached, onClose, onError, onUploading, st = null, title = null, initial = null }) {
+  const board = useContext(PickerBoardContext);
   const { mounted, shown } = usePresence(open, 240);
   useEscLayer(open, onClose);
   const box = useRef(null);
@@ -157,24 +229,30 @@ export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sen
     <div ref={box} tabIndex={-1} className={cn("glass absolute inset-x-0 bottom-[calc(100%+12px)] z-20 flex outline-none h-[min(640px,calc(100vh-260px))] flex-col rounded-2xl border border-border p-4 shadow-float transition-[opacity,transform] duration-[240ms] ease-soft",
       shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-4 scale-[.985] opacity-0")} role="dialog" aria-label="Library">
       <div className="mb-3 flex h-8 flex-shrink-0 items-center gap-5">
-        {groups.map((g) => {
+        {/* A titled picker (package 06, S3: "References for Shot N · 2 chosen"); its groups stay as small switches. */}
+        {title && (
+          <span className="relative flex h-8 items-center gap-2 whitespace-nowrap text-base font-semibold">{title} <span className="font-normal tabular-nums text-muted-foreground">{chosen.length} chosen</span>
+            <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-signal" /></span>
+        )}
+        {(!title || groups.length > 1) && groups.map((g) => {
           const n = groupItems(sent, g).length;
           const on = g.id === group.id;
           return (
             <button key={g.id} type="button" onClick={() => setGroupId(g.id)}
               className={cn("relative h-8 whitespace-nowrap text-base font-medium transition-colors duration-state", on ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
-              {g.label} <span className={cn("tabular-nums", n >= maxOf(g, n) ? "text-signal" : "text-muted-foreground")}>{n}{"\u00a0"}/{"\u00a0"}{maxOf(g, n)}</span>
-              {on && <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-signal" />}
+              {g.label} {!title && <span className={cn("tabular-nums", n >= maxOf(g, n) ? "text-signal" : "text-muted-foreground")}>{n}{"\u00a0"}/{"\u00a0"}{maxOf(g, n)}</span>}
+              {on && !title && <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-signal" />}
+              {on && title && <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-foreground" />}
             </button>
           );
         })}
         <button type="button" onClick={onClose} aria-label="Close" className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
       </div>
-      <Browser key={group.id} group={group} attached={attached} setAttached={setAttached} onError={onError} onUploading={onUploading} st={st} />
+      <Browser key={`${group.id}:${initial?.element || ""}`} group={group} attached={attached} setAttached={setAttached} onError={onError} onUploading={onUploading} st={st} initial={initial} />
       <div className="mt-3 flex h-9 flex-shrink-0 items-center gap-4">
         <span className="text-sm tabular-nums text-muted-foreground">{chosen.length} of {maxOf(group, chosen.length)} chosen</span>
         <button type="button" onClick={() => setAttached((a) => clearGroup(a, group))} disabled={!chosen.length} className="flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Broom size={16} /> Clear</button>
-        <span className="ml-auto text-sm text-muted-foreground">{hintFor(group, full)}</span>
+        <span className="ml-auto text-sm text-muted-foreground">{full ? hintFor(group, full) : initial?.element ? "Each view you pick is sent as one reference picture." : board ? "Drop files here to upload. They also land on the Moodboard." : hintFor(group, full)}</span>
         <button type="button" onClick={onClose} className="h-8 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground hover:bg-primary-hover active:scale-[.98]">Done</button>
       </div>
     </div>

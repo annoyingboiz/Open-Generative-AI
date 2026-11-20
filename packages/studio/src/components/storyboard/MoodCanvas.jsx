@@ -9,14 +9,15 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Konva from "konva";
 import { Stage, Layer, Rect, Group, Image as KImage, Text as KText, Arrow as KArrow, Transformer, Line, Circle, RegularPolygon } from "react-konva";
-import { Cursor, Hand, Square, NoteBlank, ArrowUpRight, TextT, ImageSquare, Minus, Plus, CornersOut, UploadSimple, Clipboard, Images, Sparkle, DotsThree, ArrowCounterClockwise, ArrowClockwise } from "@phosphor-icons/react";
+import { Cursor, Hand, Square, NoteBlank, ArrowUpRight, TextT, ImageSquare, Minus, Plus, CornersOut, UploadSimple, Clipboard, Images, Sparkle, DotsThree, ArrowCounterClockwise, ArrowClockwise, ArrowRight, Rows, ArrowElbowDownRight } from "@phosphor-icons/react";
 import { dzThumb, uploadFile } from "../../api.js";
 import { DropdownMenuParts, cn } from "../../ui/index.js";
-import { inFrame, newItemId, sizeOf, isVideoUrl } from "../../dzFilm.js";
+import { inFrame, newItemId, sizeOf, isVideoUrl, newSceneId, newShotId, numbered } from "../../dzFilm.js";
 import { RefPicker, EmptyState, mediaUrl } from "./parts.jsx";
 import { setMoodSelection } from "./assistant.js";
+import { useDzDropTarget } from "../../dzDrop.js";
 
-const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
+const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } = DropdownMenuParts;
 const COLOR_KEYS = [["orange", "signal"], ["amber", "warning"], ["green", "success"], ["red", "destructive"], ["grey", "muted-foreground"]];
 const clampZ = (z) => Math.min(4, Math.max(0.1, z));
 const PIC_H = 220;
@@ -680,10 +681,46 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
     if (it && (it.type === "note" || it.type === "text" || it.type === "frame")) { setSel([it.id]); setEditing(it.id); }
   };
 
-  // Files dropped from the computer: where they land (inside a frame = in that group).
-  const [over, setOver] = useState(false);
+  // Files dropped from the computer land at the drop point (package 06, A2: the shared overlay);
+  // inside a frame they join that group (the frame grows to hold them).
+  const dropAt = async (files, pt) => {
+    const at = toWorld(pt.x, pt.y);
+    const frame = [...itemsRef.current].reverse().find((f) => f.type === "frame" && at.x >= f.x && at.x <= f.x + f.w && at.y >= f.y && at.y <= f.y + f.h);
+    const before = new Set(itemsRef.current.map((x) => x.id));
+    await uploadAt(files, at);
+    if (!frame) return;
+    const added = itemsRef.current.filter((x) => !before.has(x.id) && isMedia(x));
+    if (!added.length) return;
+    const x2 = Math.max(frame.x + frame.w, ...added.map((a) => a.x + a.w + 16));
+    const y2 = Math.max(frame.y + frame.h, ...added.map((a) => a.y + a.h + 16));
+    if (x2 > frame.x + frame.w || y2 > frame.y + frame.h) setItem(frame.id, { w: x2 - frame.x, h: y2 - frame.y });
+  };
+  const dropRef = useRef(dropAt);
+  dropRef.current = dropAt;
+  useDzDropTarget({ el: host, title: "Drop files here", line: (n) => `${n} file${n === 1 ? "" : "s"} · they land where you drop them`, onDrop: (files, pt) => dropRef.current(files, pt) });
   const selFrame = sel.length === 1 ? frames.find((f) => f.id === sel[0]) : null;
   const countIn = (f) => media.filter((x) => inFrame(f, x)).length;
+  // Send to Storyboard (package 06, S4): the frame's pictures, copied, in reading order
+  // (rows top to bottom, left to right). Moodboard and Storyboard stay independent after it.
+  const framePictures = (f) => {
+    const list = media.filter((x) => inFrame(f, x)).sort((a, b) => (Math.abs(a.y - b.y) > Math.min(a.h, b.h) / 2 ? a.y - b.y : a.x - b.x));
+    return list.filter((x, i) => list.findIndex((y) => y.url === x.url) === i).map((x) => {
+      const img = x.type === "video" ? null : imgCache.get(dzThumb(x.url, 640))?.img;
+      return { url: x.url, kind: x.type === "video" ? "video" : "image", w: img?.naturalWidth || Math.round(x.w), h: img?.naturalHeight || Math.round(x.h), name: "" };
+    });
+  };
+  const sendToBoard = (f, how, shotId = null) => {
+    const refs = framePictures(f);
+    if (!refs.length) return;
+    edit((film) => {
+      if (how === "into") return { ...film, shots: film.shots.map((s) => (s.id === shotId ? { ...s, refs: [...(s.refs || []), ...refs.filter((r) => !(s.refs || []).some((x) => x.url === r.url))] } : s)) };
+      const id = newSceneId();
+      const shots = how === "each" ? refs.map((r) => ({ id: newShotId(), scene: id, note: "", refs: [r] })) : [{ id: newShotId(), scene: id, note: "", refs }];
+      return { ...film, scenes: [...film.scenes, { id, name: (f.name || "").slice(0, 80), note: "" }], shots: [...film.shots, ...shots] };
+    });
+    notify({ type: "notice", title: "Storyboard", message: how === "into" ? `${refs.length} picture${refs.length === 1 ? "" : "s"} added to the shot.` : `Scene “${f.name || "Group"}” added to the Storyboard.` });
+  };
+  const sceneList = useMemo(() => numbered(film), [film]);
   const editItem = editing && items.find((x) => x.id === editing);
   const selArrow = sel.length === 1 ? items.find((x) => x.id === sel[0] && x.type === "arrow") : null;
   const cursor = tool === "hand" || space ? (dragging && drag.current?.kind === "pan" ? "grabbing" : "grab") : tool === "select" ? "default" : "crosshair";
@@ -692,12 +729,9 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
   return (
     <div className="relative h-full w-full overflow-hidden">
       <input ref={fileInput} type="file" multiple accept="image/*,video/*" className="hidden" onChange={(e) => { const f = [...(e.target.files || [])]; e.target.value = ""; if (f.length) uploadAt(f, center()); }} />
-      <div ref={host} tabIndex={0} aria-label="Moodboard canvas" className={cn("absolute inset-0 overflow-hidden outline-none", over && "bg-accent/30")}
+      <div ref={host} tabIndex={0} aria-label="Moodboard canvas" className="absolute inset-0 overflow-hidden outline-none"
         style={{ cursor, backgroundImage: "radial-gradient(hsl(var(--border)) 1px, transparent 1px)", backgroundSize: `${22 * view.z}px ${22 * view.z}px`, backgroundPosition: `${view.x}px ${view.y}px` }}
-        onPointerDown={onDown} onDoubleClick={onDouble}
-        onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setOver(true); } }}
-        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false); }}
-        onDrop={(e) => { setOver(false); if (e.dataTransfer.files?.length) { e.preventDefault(); uploadAt([...e.dataTransfer.files], toWorld(e.clientX, e.clientY)); } }}>
+        onPointerDown={onDown} onDoubleClick={onDouble}>
         <Stage ref={stageRef} width={size.w} height={size.h} x={viewRef.current.x} y={viewRef.current.y} scaleX={viewRef.current.z} scaleY={viewRef.current.z}>
           <Layer>
             {frames.filter(visible).map((f) => (
@@ -736,7 +770,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
                 {editing === f.id ? (
                   <input data-overlay-ui autoFocus defaultValue={f.name} maxLength={60} onFocus={(e) => e.target.select()} onBlur={(e) => { setEditing(null); if (e.target.value.trim() && e.target.value.trim() !== f.name) setItem(f.id, { name: e.target.value.trim() }); }}
                     onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.currentTarget.value = f.name; e.currentTarget.blur(); } }}
-                    className="pointer-events-auto w-48 rounded-sm bg-background px-1 text-base font-semibold outline-none ring-1 ring-ring" />
+                    className="pointer-events-auto w-48 rounded-sm bg-background px-1 text-base font-semibold outline-none ring-1 ring-input" />
                 ) : <span className="text-base font-semibold">{f.name || "Group"}</span>}
                 <span className="text-base text-muted-foreground">{countIn(f)}</span>
               </div>
@@ -752,7 +786,40 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
           )}
           {selFrame && !dragging && !editing && (
             <div data-overlay-ui className="pointer-events-auto absolute flex items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-popover p-1 shadow-popover" style={{ left: selFrame.x, top: selFrame.y + selFrame.h + 8 / z, transform: `scale(${1 / z})`, transformOrigin: "top left" }}>
-              <button type="button" onClick={() => onOpenGroup(selFrame.id)} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover"><Sparkle size={14} /> Generate from this group</button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" disabled={!countIn(selFrame)} className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-40"><ArrowRight size={14} /> Send to Storyboard</button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-72">
+                  {(() => { const n = countIn(selFrame); const nm = selFrame.name || "Group"; return (
+                    <>
+                      <DropdownMenuItem onSelect={() => sendToBoard(selFrame, "each")} className="items-start gap-2.5 py-2">
+                        <Rows size={15} className="mt-0.5 flex-shrink-0" />
+                        <span><span className="block">As a scene, one shot per picture</span><span className="block text-sm text-muted-foreground">Scene “{nm}”, {n} shot{n === 1 ? "" : "s"}, left to right, top to bottom</span></span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => sendToBoard(selFrame, "one")} className="items-start gap-2.5 py-2">
+                        <Square size={15} className="mt-0.5 flex-shrink-0" />
+                        <span><span className="block">As a scene, all in one shot</span><span className="block text-sm text-muted-foreground">Scene “{nm}”, 1 shot with {n} reference{n === 1 ? "" : "s"}</span></span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger disabled={!sceneList.some((g) => g.shots.length)} className="items-start gap-2.5 py-2">
+                          <ArrowElbowDownRight size={15} className="mt-0.5 flex-shrink-0" />
+                          <span><span className="block">Into an existing shot…</span><span className="block text-sm text-muted-foreground">Pick the scene and the shot</span></span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-[50vh] w-64 overflow-y-auto">
+                          {sceneList.filter((g) => g.shots.length).map(({ scene, shots }, i) => (
+                            <div key={scene.id}>
+                              <p className="px-2 pb-1 pt-2 text-xs font-semibold text-muted-foreground">Scene {sceneList.findIndex((g) => g.scene.id === scene.id) + 1}{scene.name ? ` · ${scene.name}` : ""}</p>
+                              {shots.map((sh) => <DropdownMenuItem key={sh.id} onSelect={() => sendToBoard(selFrame, "into", sh.id)}>Shot {sh.n}<span className="ml-2 truncate text-muted-foreground">{sh.note}</span></DropdownMenuItem>)}
+                            </div>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    </>
+                  ); })()}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <button type="button" onClick={() => onOpenGroup(selFrame.id)} className="flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium hover:bg-accent"><Sparkle size={14} /> Generate from this group</button>
               <button type="button" onClick={() => setEditing(selFrame.id)} className="h-8 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Rename</button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild><button type="button" aria-label="Group menu" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><DotsThree size={16} weight="bold" /></button></DropdownMenuTrigger>

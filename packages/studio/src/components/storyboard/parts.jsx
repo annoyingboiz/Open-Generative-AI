@@ -4,10 +4,24 @@
 import { useEffect, useRef, useState } from "react";
 import { LibraryWindow } from "../studio/Library.jsx";
 import { sizeOf } from "../../dzFilm.js";
+import { uploadFile } from "../../api.js";
 import { cn } from "../../ui/index.js";
 
 // Our own media URL without the origin (the server keeps /media/… only).
 export const mediaUrl = (u) => String(u || "").replace(/^https?:\/\/[^/]+(?=\/media\/)/, "");
+
+// Files from the computer → our own files with their sizes (pictures and videos only).
+export async function uploadAll(files) {
+  const list = [...files].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+  const out = [];
+  for (const f of list) {
+    const url = mediaUrl(await uploadFile("session", f));
+    const kind = f.type.startsWith("video/") ? "video" : "image";
+    const { w, h } = await sizeOf(url, kind);
+    out.push({ url, kind, w, h, name: f.name.slice(0, 80) });
+  }
+  return out;
+}
 
 // The existing empty-state pattern (icon tile, title, text, actions).
 export function EmptyState({ icon: Icon, title, text, children, className }) {
@@ -33,7 +47,7 @@ export function InlineText({ value, onChange, placeholder, className, maxLength 
     return (
       <input ref={input} value={draft} maxLength={maxLength} onChange={(e) => setDraft(e.target.value)} onBlur={() => done(true)}
         onKeyDown={(e) => { if (e.key === "Enter") done(true); if (e.key === "Escape") { e.stopPropagation(); done(false); } }}
-        className={cn("min-w-[120px] rounded-sm bg-transparent outline-none ring-1 ring-ring", className)} aria-label={placeholder} />
+        className={cn("min-w-[120px] rounded-sm bg-transparent outline-none ring-1 ring-input", className)} aria-label={placeholder} />
     );
   }
   return (
@@ -79,7 +93,7 @@ export function RefPicker({ open, onClose, refs = [], onChange, onPickNew = null
     <>
       <div className="fixed inset-0 z-40 bg-scrim" onClick={close} aria-hidden="true" />
       <div className="fixed bottom-6 left-1/2 z-50 h-0 w-[min(1040px,calc(100vw-48px))] -translate-x-1/2" aria-label={title || "References"}>
-        <LibraryWindow open groups={REF_GROUPS} groupId={groupId} setGroupId={setGroupId} attached={attached} setAttached={setAttached} onClose={close}
+        <LibraryWindow open groups={REF_GROUPS} groupId={groupId} setGroupId={setGroupId} attached={attached} setAttached={setAttached} onClose={close} title={title || null}
           onError={(m) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Upload", message: m } }))} />
       </div>
     </>

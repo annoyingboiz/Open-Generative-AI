@@ -3,12 +3,13 @@
 // Storyboard (package 05): the list of films (01, empty 13) and one film with its
 // Moodboard and Storyboard tabs, and the working screens of a shot or a group.
 // Any order: every tab and screen is reachable at any time; nothing is required.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, CaretLeft, DotsThree, MagnifyingGlass, FilmSlate } from "@phosphor-icons/react";
 import { dzThumb } from "../api.js";
 import { useDzContext } from "../dzContext.js";
 import { DropdownMenuParts, cn } from "../ui/index.js";
-import { useFilm, useFilms, dzStoryboards } from "../dzFilm.js";
+import { useFilm, useFilms, dzStoryboards, inFrame, newItemId } from "../dzFilm.js";
+import { PickerBoardContext } from "./studio/Library.jsx";
 import Board from "./storyboard/Board.jsx";
 import Work from "./storyboard/Work.jsx";
 import Mood from "./storyboard/Mood.jsx";
@@ -110,9 +111,9 @@ function BriefDialog({ value, onClose, onSave }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6" onClick={onClose}>
       <div className="flex max-h-[85vh] w-[min(760px,100%)] flex-col rounded-2xl border border-border bg-card p-5 shadow-float" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="The brief">
         <p className="text-lg font-semibold">The brief</p>
-        <p className="mt-1 text-sm text-muted-foreground">The brief and any original documents, kept with the film as given. Edit freely.</p>
+        <p className="mt-1 text-sm text-muted-foreground">The brief and any original documents, kept with the storyboard as given. Edit freely.</p>
         <textarea ref={area} value={text} onChange={(e) => setText(e.target.value)} maxLength={200000} placeholder="Paste the client's brief here."
-          className="custom-scrollbar mt-3 min-h-[240px] w-full flex-1 resize-none rounded-md border border-input bg-background p-3 text-base outline-none focus:border-ring" />
+          className="custom-scrollbar mt-3 min-h-[240px] w-full flex-1 resize-none rounded-md border border-input bg-background p-3 text-base outline-none focus:border-input" />
         <div className="mt-3 flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{text.length ? `${text.length.toLocaleString()} characters` : ""}</span>
           <button type="button" onClick={onClose} className="ml-auto h-8 rounded-md px-3 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Cancel</button>
@@ -123,9 +124,49 @@ function BriefDialog({ value, onClose, onSave }) {
   );
 }
 
+// A frame's colour key → its theme token (the same as the Moodboard's).
+const FRAME_TOKEN = { orange: "signal", amber: "warning", green: "success", red: "destructive", grey: "muted-foreground" };
+
+// What the picker shows on its Moodboard tab (package 06, S3), and where its uploads land.
+function useBoardPick(film, edit) {
+  return useMemo(() => {
+    if (!film) return null;
+    const items = film.mood?.items || [];
+    const frames = items.filter((x) => x.type === "frame");
+    const media = items.filter((x) => x.type === "image" || x.type === "video");
+    const asRef = (x) => ({ url: x.url, kind: x.type === "video" ? "video" : "image", w: x.w, h: x.h, name: "" });
+    const uniq = (list) => list.filter((x, i) => list.findIndex((y) => y.url === x.url) === i);
+    // Reading order on the canvas: rows top to bottom, left to right inside a row.
+    const order = (list) => [...list].sort((a, b) => (Math.abs(a.y - b.y) > Math.min(a.h, b.h) / 2 ? a.y - b.y : a.x - b.x));
+    return {
+      frames: frames.map((f) => ({ id: f.id, name: f.name || "Group", color: `hsl(var(--${FRAME_TOKEN[f.color] || "signal"}))`, items: uniq(order(media.filter((m) => inFrame(f, m))).map(asRef)) })),
+      loose: uniq(order(media.filter((m) => !frames.some((f) => inFrame(f, m)))).map(asRef)),
+      // Uploads from the picker also land on the Moodboard, outside frames, right of everything.
+      place: (refs) => edit((f) => {
+        const its = f.mood?.items || [];
+        const maxX = its.length ? Math.max(...its.map((x) => (x.type === "arrow" ? Math.max(x.x, x.x2) : x.x + x.w))) : 0;
+        const minY = its.length ? Math.min(...its.map((x) => (x.type === "arrow" ? Math.min(x.y, x.y2) : x.y))) : 0;
+        let x = maxX + 40;
+        let z = Math.max(0, ...its.map((i) => i.z || 0));
+        const add = refs.map((r) => {
+          const h = 220;
+          const w = r.w && r.h ? Math.round((h * r.w) / r.h) : 300;
+          const it = { id: newItemId(r.kind === "video" ? "video" : "image"), type: r.kind === "video" ? "video" : "image", url: r.url, x, y: minY, w, h, z: (z += 1) };
+          x += w + 16;
+          return it;
+        });
+        return { ...f, mood: { ...(f.mood || {}), items: [...its, ...add] } };
+      }),
+    };
+  }, [film?.mood, edit]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 function FilmView({ id, nav, setNav, studioProps, onBack, startBrief = false }) {
   const { film, error, edit, media, reload } = useFilm(id);
   const ctx = useDzContext();
+  const boardPick = useBoardPick(film, edit);
+  // A storyboard of another place (an address kept from before a project switch): back to this place's list (S8.4).
+  useEffect(() => { if (film && (film.project_id || null) !== (ctx.project?.id || null)) onBack(); }, [film?.project_id, ctx.project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [briefOpen, setBriefOpen] = useState(startBrief);
   const [layer, setLayer] = useState("references");
   const [refView, setRefView] = useState("all");
@@ -145,8 +186,10 @@ function FilmView({ id, nav, setNav, studioProps, onBack, startBrief = false }) 
   if (!film) return null;
   if (target) {
     return (
-      <Work film={film} edit={edit} media={media} target={target} studioProps={studioProps} initial={initial} setInitial={setInitial}
-        onBack={() => setNav({ tab: nav.tab })} onNav={(shot) => setNav({ tab: nav.tab, shot })} />
+      <PickerBoardContext.Provider value={boardPick}>
+        <Work film={film} edit={edit} media={media} target={target} studioProps={studioProps} initial={initial} setInitial={setInitial}
+          onBack={() => setNav({ tab: nav.tab })} onNav={(shot) => setNav({ tab: nav.tab, shot })} />
+      </PickerBoardContext.Provider>
     );
   }
   const refsN = (film.mood?.items || []).filter((x) => x.type === "image" || x.type === "video").length;
@@ -159,10 +202,11 @@ function FilmView({ id, nav, setNav, studioProps, onBack, startBrief = false }) 
     try { await dzStoryboards.remove(film.id); onBack(); } catch (e) { notify({ type: "error", title: "Storyboard", message: e.message }); }
   };
   return (
+    <PickerBoardContext.Provider value={boardPick}>
     <div className="relative flex h-full flex-col">
       <div className="flex flex-shrink-0 items-center gap-2 px-6 pt-5">
         <button type="button" onClick={onBack} aria-label="All storyboards" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><CaretLeft size={16} /></button>
-        <InlineText value={film.name} onChange={(v) => v && edit((f) => ({ ...f, name: v }))} placeholder="Untitled film" className="text-xl font-semibold" maxLength={80} />
+        <InlineText value={film.name} onChange={(v) => v && edit((f) => ({ ...f, name: v }))} placeholder="Untitled storyboard" className="text-xl font-semibold" maxLength={80} />
         <span className="min-w-0 truncate text-sm text-muted-foreground">{meta.filter(Boolean).join(" · ")}</span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><button type="button" aria-label="Storyboard menu" className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><DotsThree size={18} weight="bold" /></button></DropdownMenuTrigger>
@@ -175,7 +219,7 @@ function FilmView({ id, nav, setNav, studioProps, onBack, startBrief = false }) 
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="mt-3 flex h-10 flex-shrink-0 items-end gap-6 border-b border-border px-6" role="tablist" aria-label="Film">
+      <div className="mt-3 flex h-10 flex-shrink-0 items-end gap-6 border-b border-border px-6" role="tablist" aria-label="Storyboard">
         {[["mood", "Moodboard"], ["board", "Storyboard"]].map(([v, l]) => (
           <button key={v} type="button" role="tab" aria-selected={nav.tab === v} onClick={() => setNav({ tab: v })}
             className={cn("-mb-px h-10 border-b-2 text-base font-medium transition-colors duration-state", nav.tab === v ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{l}</button>
@@ -191,6 +235,7 @@ function FilmView({ id, nav, setNav, studioProps, onBack, startBrief = false }) 
       )}
       {briefOpen && <BriefDialog value={film.scene} onClose={() => setBriefOpen(false)} onSave={(v) => { edit((f) => ({ ...f, scene: v })); setBriefOpen(false); }} />}
     </div>
+    </PickerBoardContext.Provider>
   );
 }
 
@@ -211,6 +256,12 @@ export default function DzStoryboard(props) {
     const on = () => setNavState(readHash());
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
+  }, []);
+  // The Storyboard link in the sidebar always opens the list (S8.4).
+  useEffect(() => {
+    const on = (e) => { if (e.detail?.tab === "director") { setEntry(false); setNavState({ film: null, tab: "board", shot: null, group: null }); } };
+    window.addEventListener("dz:tab-link", on);
+    return () => window.removeEventListener("dz:tab-link", on);
   }, []);
   const setNav = (s) => setNavState((cur) => ({ film: cur.film, tab: s.tab || cur.tab, shot: s.shot || null, group: s.group || null }));
   const open = (film, tab = "board") => setNavState({ film, tab, shot: null, group: null });

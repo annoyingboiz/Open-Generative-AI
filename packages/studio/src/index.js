@@ -11,6 +11,8 @@ export { default as DzCreateStudio, DZ_SEND_EVENT } from './components/DzCreateS
 export { default as DzStudio } from './components/DzStudio'; // DZ: redesign 01
 export { default as DzDirector } from './components/DzDirector'; // DZ (before package 05)
 export { default as DzStoryboard } from './components/DzStoryboard'; // DZ: package 05
+export { default as DropOverlay } from './components/DropOverlay'; // DZ: package 06, A2
+export { dzActiveDropTarget, useDzDropTarget, dzDropHit } from './dzDrop'; // DZ: package 06, A2
 export { default as DzTools } from './components/DzTools'; // DZ
 export { dzUpscaleSpec, dzOpenUpscale, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from './dzCatalog'; // DZ
 export { default as AudioStudio } from './components/AudioStudio';

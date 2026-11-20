@@ -117,7 +117,7 @@ test('storyboards: personal or in a project, plan saves shots, stale edits get 4
   let res = await as('admin', 'POST', '/dz/api/storyboards', { scene: 'A rooftop at night.' });
   assert.equal(res.statusCode, 200, res.body);
   const mine = res.json().storyboard;
-  assert.equal(mine.name, 'Untitled film');
+  assert.equal(mine.name, 'Untitled storyboard');
   assert.deepEqual([mine.scenes, mine.shots, mine.mood.items], [[], [], []]); // a new film is empty
   assert.equal(mine.rev, 1);
   assert.equal((await as('wife', 'GET', `/dz/api/storyboards/${mine.id}`)).statusCode, 404);

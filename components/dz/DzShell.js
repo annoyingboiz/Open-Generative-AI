@@ -5,7 +5,7 @@
 // tabs for services we do not use). Studios come from the `studio` package.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DzCreateStudio, DzStudio, DzStoryboard, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
+import { DzCreateStudio, DzStudio, DzStoryboard, DropOverlay, dzActiveDropTarget, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
   DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT,
   DzProjectsPage, DzElementsPage, ToElementDialog, VideoElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
   DropdownMenuParts, DialogParts, cn } from 'studio';
@@ -281,6 +281,8 @@ export default function DzShell() {
     window.history.pushState(null, '', pathFor(project, tabId) + (wantLiked ? '#liked' : ''));
     setLiked(wantLiked);
     setActiveTab(tabId);
+    // A tab opened from a link starts at its top (package 06, S8.4: Storyboard → the list).
+    window.dispatchEvent(new CustomEvent('dz:tab-link', { detail: { tab: tabId } }));
     setMobileOpen(false);
   }, [project]);
   const openTabRef = useRef(openTab);
@@ -340,17 +342,35 @@ export default function DzShell() {
   // dragged inside the page as "Files" and leaves with no relatedTarget.
   // Now: drags that start in the page never show it, and any drop, drag end or
   // leaving the window hides it (listeners on window, capture phase).
+  // Package 06, A2: one overlay (DropOverlay) for every surface that takes files. A surface
+  // registers itself (useDzDropTarget); its drop is handled here, before any element below
+  // the pointer, so a file lands where the surface decides. Image / Video / Studio / Upscale
+  // keep their own handling (the composer's slots, droppedFiles).
   const internalDrag = useRef(false);
   useEffect(() => {
     const start = () => { internalDrag.current = true; };
+    const take = (e) => {
+      if (internalDrag.current) return;
+      const files = Array.from(e.dataTransfer?.files || []);
+      const t = files.length ? dzActiveDropTarget() : null;
+      if (!t) return;
+      e.preventDefault();
+      e.stopPropagation();
+      t.onDrop(files, { x: e.clientX, y: e.clientY });
+    };
+    const esc = (e) => { if (e.key === 'Escape') setDragging(false); };
     // Reset the flag after the page's own drop handlers have run.
     const stop = () => { setDragging(false); setTimeout(() => { internalDrag.current = false; }, 0); };
+    window.addEventListener('drop', take, true);
+    window.addEventListener('keydown', esc, true);
     const leave = (e) => { if (!e.relatedTarget && (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight)) setDragging(false); };
     window.addEventListener('dragstart', start, true);
     window.addEventListener('dragend', stop, true);
     window.addEventListener('drop', stop, true);
     window.addEventListener('dragleave', leave, true);
     return () => {
+      window.removeEventListener('drop', take, true);
+      window.removeEventListener('keydown', esc, true);
       window.removeEventListener('dragstart', start, true);
       window.removeEventListener('dragend', stop, true);
       window.removeEventListener('drop', stop, true);
@@ -359,9 +379,16 @@ export default function DzShell() {
   }, []);
   // Tabs that take files dropped anywhere; the Storyboard handles its own drops (package 05).
   const takesDrop = ['create', 'image', 'video', 'upscale'].includes(activeTab);
+  const studioDrop = activeTab === 'upscale'
+    ? { title: 'Drop files here', line: 'A picture or a video to upscale' }
+    : { title: 'Drop files to use them as references', line: '' };
   const onDragEnter = (e) => {
     e.preventDefault();
-    if (takesDrop && !internalDrag.current && Array.from(e.dataTransfer?.types || []).includes('Files')) setDragging(true);
+    if (internalDrag.current || !Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+    const n = Array.from(e.dataTransfer?.items || []).filter((i) => i.kind === 'file').length;
+    const t = dzActiveDropTarget();
+    if (t) setDragging({ title: t.title || 'Drop files here', line: typeof t.line === 'function' ? t.line(n) : (t.line || '') });
+    else if (takesDrop) setDragging(studioDrop);
   };
   const onDragLeave = (e) => {
     e.preventDefault();
@@ -461,11 +488,7 @@ export default function DzShell() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {dragging && (
-        <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center border-2 border-dashed border-signal/60 bg-scrim">
-          <div className="glass rounded-xl border border-border px-6 py-4 text-lg font-semibold text-foreground shadow-popover">Drop files to use them as references</div>
-        </div>
-      )}
+      {dragging && <DropOverlay title={dragging.title} line={dragging.line} />}
 
       {/* Header, 48 px (section 4.1) */}
       <header className="z-50 grid h-12 flex-shrink-0 grid-cols-[1fr_minmax(0,360px)_1fr] items-center gap-3 border-b border-border bg-background px-3">

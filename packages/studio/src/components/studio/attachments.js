@@ -42,7 +42,8 @@ export function distributeFrames(list, roleMax) {
   out.middle = items.slice(0, roleMax.middle || 0);
   return out;
 }
-const strip = ({ url, name }) => ({ url, name: name || "" });
+// A view of an element keeps its label ("Front", "Full"): shown on the strip tile (package 06, S2).
+const strip = ({ url, name, label }) => ({ url, name: name || "", ...(label ? { label } : {}) });
 
 // Add files to a group within its limit. Only files that are on take room
 // (package 04: `isOn(item)`; a dimmed file never fills a slot). Frames: into `at`

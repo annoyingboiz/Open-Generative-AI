@@ -1814,7 +1814,7 @@ export default function DrawModal({
                 if (e.key === "Enter" && !generating) handleGenerateClick();
               }}
               placeholder="Describe what you want to generate…"
-              className="flex-1 mx-3 h-[38px] bg-muted border border-border rounded-xl px-3 text-xs text-foreground placeholder-foreground/25 outline-none focus:border-signal/40 focus:ring-1 focus:ring-signal/20 transition-all"
+              className="flex-1 mx-3 h-[38px] bg-muted border border-border rounded-xl px-3 text-xs text-foreground placeholder-foreground/25 outline-none focus:border-input transition-all"
             />
 
             {/* Right Options */}

@@ -18,7 +18,7 @@ import StudioViewer from "./studio/Viewer.jsx";
 import DzSentPanel from "./DzSentPanel.jsx";
 import DrawModal from "./DrawModal.jsx";
 import { lookData, autoLook, elementTags, elementFits, TAG_RE, buildBody, paramsOf, splitEdit } from "../dzCreate.js";
-import { DropdownMenuParts, Spinner, cn } from "../ui/index.js";
+import { DropdownMenuParts, Spinner, SegSwitch, cn } from "../ui/index.js";
 import { Overline, Chip, ChipMenu, MenuRow, useEscLayer, fmtDur } from "./studio/ui.jsx";
 import { groupsFor, groupItems, addToGroup, removeFromGroup, GROUPS } from "./studio/attachments.js";
 import ModelMenu from "./studio/ModelMenu.jsx";
@@ -456,7 +456,7 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
     const off = item.off;
     const canOn = off && off.why === "together";
     return (
-      <Thumb key={`${item.role}-${item.url}`} item={item} kind={g.kind} label={label} tag={tagText(item, label || g.label)} fault={fault === g.id && !off}
+      <Thumb key={`${item.role}-${item.url}`} item={item} kind={g.kind} label={label || item.label} tag={tagText(item, label || item.label || g.label)} fault={fault === g.id && !off}
         off={Boolean(off)} onActivate={canOn ? () => st.turnOn([item.role]) : undefined} tip={tipFor(off?.reason)}
         menu={g.id === "edit" ? [[PencilSimple, "Draw to edit…", () => onDraw?.(item.url)], [ArrowsClockwise, "Replace…", () => openLibrary("edit")], [Trash, "Remove", () => setAttached((a) => removeFromGroup(a, g, item.url, item.role))]] : null}
         onDragStart={(e) => { dragging.current = { group: g.id, item: { url: item.url, name: item.name, role: item.role } }; try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ } }}
@@ -751,6 +751,7 @@ export default function DzStudio(props) {
   const [panel, setPanel] = useState(null); // camera | move | look | settings | adapt | list
   const [pop, setPop] = useState(null); // model | els
   const [libGroup, setLibGroup] = useState(null); // library window open on a group
+  const [libInit, setLibInit] = useState(null); // where it opens (package 06, S2: inside an element)
   const [listGroup, setListGroup] = useState(null);
   const [focus, setFocus] = useState(false);
   const [mini, setMini] = useState(false);
@@ -808,7 +809,20 @@ export default function DzStudio(props) {
   }, [offMap, plan.variant, sent, engine.touch, engine.bringOn]); // eslint-disable-line react-hooks/exhaustive-deps
   const tagOf = (url) => tags.find((t) => t.url === url);
   const closeAll = () => { setPanel(null); setPop(null); setLibGroup(null); };
-  const openLibrary = (gid) => { setPop(null); setPanel(null); setLibGroup(gid || groups.find((g) => g.id === "reference")?.id || groups[0]?.id || null); };
+  const openLibrary = (gid, init = null) => { setPop(null); setPanel(null); setLibInit(init); setLibGroup(gid || groups.find((g) => g.id === "reference")?.id || groups[0]?.id || null); };
+  // An element clicked on a working screen (package 06, S2): its @tag names the character in the
+  // prompt, and the picker opens inside the element; each view picked is one reference picture.
+  useEffect(() => {
+    const on = (e) => {
+      const { to, element } = e.detail || {};
+      if (to !== engine.addr || !element?.id) return;
+      if (element.tag) setPrompt((p) => (new RegExp(`@${element.tag}\\b`).test(p) ? p : `${p}${p && !/\s$/.test(p) ? " " : ""}@${element.tag} `));
+      const g = groups.find((x) => x.id === "reference") || groups.find((x) => x.kind === "image");
+      if (g) openLibrary(g.id, { source: "elements", element: element.id });
+    };
+    window.addEventListener("dz:open-element-views", on);
+    return () => window.removeEventListener("dz:open-element-views", on);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
   const openList = (gid) => { setLibGroup(null); setListGroup(gid); setPanel("list"); };
 
   // A picture sent here from another tab (Make video, Continue, Edit): the prompt takes focus.
@@ -942,11 +956,12 @@ export default function DzStudio(props) {
     cancel: (it) => dzLibrary.cancel(it.id).catch(fail("Cancel")),
     useRef: addRef,
     // Working screen: Make a video switches this composer to Video with the picture in Start (package 05, §4.4).
-    makeVideo: (it) => (target ? target.switchTo?.("video", { start: it.url }) : mode === "create" ? (applyResult(it, "animate"), focusPrompt()) : window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: it.url } }))),
+    makeVideo: (it) => (mode === "create" ? (applyResult(it, "animate"), focusPrompt()) : target ? target.switchTo?.("video", { start: it.url }) : window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: it.url } }))),
     upscale: (it) => (it.kind === "video" ? dzOpenVideoUpscale(it.url) : dzOpenUpscale(it.url, target ? { target: { board: target.board, id: target.id, kind: target.kind, step: "frame" } } : null)),
     removeOwn: (it) => target?.removeOwn?.(it),
     edit: (it) => {
       if (mode === "image" || (mode === "create" && kind === "image")) { openForEdit(it.url); focusPrompt(); return; }
+      if (target && mode === "create") { window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: engine.addr, url: it.url, role: "edit" } })); focusPrompt(); return; }
       if (target) { target.switchTo?.("image", { edit: it.url }); return; }
       window.dispatchEvent(new CustomEvent("dz:open-tab", { detail: { tab: "image" } }));
       setTimeout(() => window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "image", url: it.url, role: "edit" } })), 0);
@@ -1111,7 +1126,7 @@ export default function DzStudio(props) {
             onPointerDownCapture={(e) => { if (err && !e.target.closest?.("[data-dz-err]")) setErr(null); }}
             onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
             onDrop={(e) => { const files = Array.from(e.dataTransfer?.files || []); if (files.length) { e.preventDefault(); e.stopPropagation(); takeFiles(files); } }}>
-            <LibraryWindow open={libraryOpen} groups={groups} groupId={libGroup} setGroupId={setLibGroup} attached={attached} sent={sent} setAttached={setAttached} st={st}
+            <LibraryWindow open={libraryOpen} groups={groups} groupId={libGroup} setGroupId={setLibGroup} attached={attached} sent={sent} setAttached={setAttached} st={st} initial={libInit}
               onClose={() => setLibGroup(null)} onError={(m) => setErr({ head: "Not uploaded.", text: plainSentence(m) })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
 
             {/* 1. Attachments strip — always visible. Files the model can't send stay here, dimmed (package 04). */}
@@ -1156,12 +1171,7 @@ export default function DzStudio(props) {
                       className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground", pop === "els" && "bg-accent text-foreground")}><At size={18} /></button>
                     <ElementsWindow open={pop === "els"} onClose={() => setPop(null)} engine={engine} anchor={atAnchor} />
                   </div>
-                  {!light && <div className="flex h-8 flex-shrink-0 items-center rounded-md bg-muted p-0.5" role="group" aria-label="Image or video">
-                    {[["image", "Image"], ["video", "Video"]].map(([v, l]) => (
-                      <button key={v} type="button" aria-pressed={kind === v} onClick={() => setKind(v)}
-                        className={cn("h-7 rounded-[6px] px-2.5 text-sm font-medium transition-colors duration-state", kind === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
-                    ))}
-                  </div>}
+                  {!light && <SegSwitch value={kind} onChange={setKind} aria-label="Image or video" options={[["image", "Image"], ["video", "Video"]]} />}
                   <div className="relative" ref={modelAnchor}>
                     <Chip icon={Cube} active={pop === "model"} onClick={() => setPop(pop === "model" ? null : "model")} aria-expanded={pop === "model"} className="max-w-[240px]">
                       <span className="truncate" title={entry ? `${entry.familyName} · ${entry.providerName}` : undefined}>{entry ? (squeeze >= 1 ? entry.familyName : `${entry.familyName} · ${entry.providerName}`) : "Choose a model"}</span><CaretDown size={12} className="flex-shrink-0 text-muted-foreground" />

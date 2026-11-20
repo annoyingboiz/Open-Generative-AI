@@ -15,6 +15,7 @@ import { dzStoryboards, newSceneId, newShotId, newItemId, addToFrame, sizeOf } f
 import { docKind, readDoc, wordsIn } from "../../docText.js";
 import { fmtUsd } from "../DzCreateStudio.jsx";
 import { mediaUrl } from "./parts.jsx";
+import { useDzDropTarget } from "../../dzDrop.js";
 
 const KEPT_MAX = 200_000; // the server's limit for what is kept with the film
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
@@ -60,7 +61,6 @@ export default function Entry({ onClose, onCreated }) {
   const ctx = useDzContext();
   const [text, setText] = useState("");
   const [files, setFiles] = useState([]); // { id, file, kind, thumb?, duration?, doc? }
-  const [over, setOver] = useState(false);
   const [busy, setBusy] = useState("");
   const [failed, setFailed] = useState("");
   const [quote, setQuote] = useState(null);
@@ -101,6 +101,11 @@ export default function Entry({ onClose, onCreated }) {
       }
     }
   };
+  // Files dropped anywhere on the window join the field (package 06, A2: the shared overlay).
+  const rootRef = useRef(null);
+  const addRef = useRef(add);
+  addRef.current = add;
+  useDzDropTarget({ el: rootRef, title: "Drop files here", line: "They are added to this window", enabled: !result, onDrop: (files) => addRef.current(files) });
   const remove = (ids) => { if (!busy) setFiles((cur) => cur.filter((x) => !ids.includes(x.id))); };
 
   const pictures = files.filter((f) => f.kind === "image");
@@ -187,7 +192,7 @@ export default function Entry({ onClose, onCreated }) {
       const cut = false;
       if (keptText.length > KEPT_MAX) {
         setBusy("");
-        setFailed(`Too much to keep with the film (${Math.round(keptText.length / 1000)}k characters; up to ${KEPT_MAX / 1000}k). Remove a document or shorten the text.`);
+        setFailed(`Too much to keep with the storyboard (${Math.round(keptText.length / 1000)}k characters; up to ${KEPT_MAX / 1000}k). Remove a document or shorten the text.`);
         return;
       }
       const { storyboard } = await dzStoryboards.create({ project: ctx.project?.id || undefined, name: sorted?.title || undefined, note, scene: keptText, scenes, shots, mood });
@@ -247,11 +252,11 @@ export default function Entry({ onClose, onCreated }) {
                     sub="Scene and shot texts are notes on the Storyboard. Edit or delete them freely." action="Open Storyboard" onAction={() => go("board")} />
                 ) : r.kind === "brief" ? (
                   <Row key="b" icon={FileText}
-                    title={result.kept.some((k) => k.role === "brief") ? "The brief is kept with the film" : `Kept with the film as given: ${result.kept.map((k) => k.name).join(", ")}`}
-                    sub={[result.briefFound ? `Found: ${result.briefFound}.` : "", result.kept.some((k) => k.role === "script") ? "The original script is kept with it." : "", result.kept.some((k) => k.role === "other") && result.kept.some((k) => k.role !== "other") ? `Also kept: ${result.kept.filter((k) => k.role === "other").map((k) => k.name).join(", ")}.` : "", result.cut ? "Longer than 200,000 characters: the end was not kept." : ""].filter(Boolean).join(" ") || "Open it any time from the film's menu."}
+                    title={result.kept.some((k) => k.role === "brief") ? "The brief is kept with the storyboard" : `Kept with the storyboard as given: ${result.kept.map((k) => k.name).join(", ")}`}
+                    sub={[result.briefFound ? `Found: ${result.briefFound}.` : "", result.kept.some((k) => k.role === "script") ? "The original script is kept with it." : "", result.kept.some((k) => k.role === "other") && result.kept.some((k) => k.role !== "other") ? `Also kept: ${result.kept.filter((k) => k.role === "other").map((k) => k.name).join(", ")}.` : "", result.cut ? "Longer than 200,000 characters: the end was not kept." : ""].filter(Boolean).join(" ") || "Open it any time from the storyboard's menu."}
                     action="Open the brief" quiet onAction={() => go("board", { brief: true })} />
                 ) : (
-                  <Row key="n" icon={Note} title="Your idea is the film note" sub="Shown at the top of the Storyboard." />
+                  <Row key="n" icon={Note} title="Your idea is the storyboard note" sub="Shown at the top of the Storyboard." />
                 )
               ))}
               {result.unread.length > 0 && (
@@ -272,17 +277,14 @@ export default function Entry({ onClose, onCreated }) {
 
   const picExts = [...new Set(pictures.map((p) => ext(p.file.name)).filter(Boolean))].join(", ");
   return (
-    <div className="relative flex h-full flex-col"
-      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); if (busy) e.dataTransfer.dropEffect = "none"; else setOver(true); } }}
-      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false); }}
-      onDrop={(e) => { setOver(false); if (e.dataTransfer.files?.length) { e.preventDefault(); add(e.dataTransfer.files); } }}>
+    <div ref={rootRef} className="relative flex h-full flex-col">
       {header("New storyboard")}
       <input ref={input} type="file" multiple className="hidden" onChange={(e) => { const l = [...(e.target.files || [])]; e.target.value = ""; add(l); }} />
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 pb-16">
         <div className="mx-auto mt-20 w-full max-w-[760px]">
           <h2 className="text-center text-3xl font-semibold">What do you have?</h2>
           <p className="mt-3 text-center text-base text-muted-foreground">Write the idea, paste a script, or drop files: pictures, video, documents. Any mix, or nothing at all.</p>
-          <div className={cn("mt-7 rounded-2xl border bg-card p-4 transition-colors duration-state", over ? "border-signal" : "border-border focus-within:border-ring")}>
+          <div className={cn("mt-7 rounded-2xl border border-border bg-card p-4 transition-colors duration-state focus-within:border-input")}>
             <textarea ref={area} value={text} onChange={(e) => { setText(e.target.value); setFailed(""); }} disabled={Boolean(busy)}
               onPaste={(e) => { if (e.clipboardData?.files?.length) { e.preventDefault(); add(e.clipboardData.files); } }}
               onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !nothing && !reading && quoted && !tooLong) { e.preventDefault(); start(); } }}

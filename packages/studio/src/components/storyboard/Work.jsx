@@ -1,9 +1,9 @@
 "use client";
 
-// Working screen (package 05, §4.4): the existing Image tool — or the Video tool —
-// opened for one shot (10, 11) or one Moodboard group (05). Its composer opens empty;
-// what is generated here returns here (the target is in the job's meta).
-import { useMemo, useState } from "react";
+// Working screen (package 05, §4.4; package 06, S1): the Studio tool with its full composer
+// (Image | Video, Camera, Move, Look, Settings) opened for one shot or one Moodboard group.
+// The composer opens empty, in Image; what is generated here returns here (the job's meta).
+import { useMemo, useRef, useState } from "react";
 import { CaretLeft, CaretUp, CaretDown, Plus, Check, ArrowSquareUp, VideoCamera, Play, UploadSimple, ImageSquare, Shapes, FilmStrip } from "@phosphor-icons/react";
 import DzStudio from "../DzStudio.jsx";
 import { DZ_SEND_EVENT } from "../DzCreateStudio.jsx";
@@ -13,7 +13,8 @@ import { useDzElements } from "../DzElements.jsx";
 import { dzOpenUpscale, dzOpenVideoUpscale } from "../../dzCatalog.js";
 import { DropdownMenuParts, cn } from "../../ui/index.js";
 import { numbered, shotState, frameRefs, addToFrame, newItemId, isVideoUrl, inFrame } from "../../dzFilm.js";
-import { RefPicker, EmptyState, mediaUrl } from "./parts.jsx";
+import { RefPicker, EmptyState, mediaUrl, uploadAll } from "./parts.jsx";
+import { useDzDropTarget } from "../../dzDrop.js";
 import { ApprovedBadge } from "./Board.jsx";
 import PlayBetween from "./PlayBetween.jsx";
 
@@ -51,8 +52,8 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
   const shotIdx = isShot ? flat.findIndex((s) => s.id === target.id) : -1;
   const shot = isShot ? flat[shotIdx] : null;
   const frame = !isShot ? (film.mood?.items || []).find((x) => x.id === target.id && x.type === "frame") : null;
-  const [cmode, setCmode] = useState(initial?.mode || "image");
-  const [seq, setSeq] = useState(0); // a new composer each time it switches (it opens empty)
+  const [seq] = useState(0);
+  const rootRef = useRef(null);
   const [picker, setPicker] = useState(false);
   const [play, setPlay] = useState(null);
   const [readyPicker, setReadyPicker] = useState(false);
@@ -61,6 +62,19 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
   const placeElements = (film.project_id ? els.project : els.library).filter((e) => e.status !== "draft");
   const key = `${film.id}:${target.id}`;
   const liked = useDzHistory({ target: key, project: film.project_id || "none", liked: true }, { limit: 60 });
+  // Files dropped on the working screen (package 06, A2): uploaded, into this shot's or group's
+  // references, and attached to the composer's References.
+  const dropRef = useRef(null);
+  dropRef.current = async (files) => {
+    try {
+      const got = await uploadAll(files);
+      if (!got.length) return;
+      setRefsRef.current?.((cur) => [...cur, ...got.filter((r) => !cur.some((x) => x.url === r.url))]);
+      for (const r of got) window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: `target:${key}`, url: r.url, role: r.kind === "video" ? "video" : "reference" } }));
+    } catch (e) { window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Upload", message: String(e?.message || e) } })); }
+  };
+  const setRefsRef = useRef(null);
+  useDzDropTarget({ el: rootRef, title: "Drop files to use them as references", line: "", onDrop: (files) => dropRef.current(files) });
 
   const refs = isShot ? (shot?.refs || []) : frameRefs(film.mood, target.id);
   const st = isShot && shot ? shotState(film, shot) : null;
@@ -79,8 +93,15 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
   }
 
   const attach = (r) => window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: `target:${key}`, url: r.url, role: r.kind === "video" ? "video" : "reference" } }));
-  const attachElement = (el) => window.dispatchEvent(new CustomEvent("dz:add-element", { detail: { to: `target:${key}`, element: el } }));
-  const switchTo = (kind, init = {}) => { setInitial({ ...init, mode: kind }); setCmode(kind); setSeq((n) => n + 1); };
+  // An element (S2): its @tag in the prompt and the picker inside it — the views picked are the references sent.
+  const attachElement = (el) => window.dispatchEvent(new CustomEvent("dz:open-element-views", { detail: { to: `target:${key}`, element: el } }));
+  // The Studio composer switches Image / Video itself; these hand it a picture to start from.
+  const switchTo = (kind, init = {}) => {
+    const to = `target:${key}`;
+    if (init.start) window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to, url: init.start, role: "first" } }));
+    else if (init.edit) window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to, url: init.edit, role: "edit" } }));
+    else if (init.reuse) window.dispatchEvent(new CustomEvent("dz:reuse", { detail: { to, item: init.reuse } }));
+  };
   const setRefs = (fn) => {
     if (isShot) edit((f) => ({ ...f, shots: f.shots.map((s) => (s.id === target.id ? { ...s, refs: typeof fn === "function" ? fn(s.refs || []) : fn } : s)) }));
     else {
@@ -100,6 +121,8 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
     }
   };
 
+  setRefsRef.current = setRefs;
+
   // A ready picture for the shot, without generating (18): upload, or one from the library.
   const addReady = async (files) => {
     for (const f of files) {
@@ -117,13 +140,6 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
       <h1 className="flex-shrink-0 text-xl font-semibold">{name}</h1>
       <span className="min-w-0 truncate text-sm text-muted-foreground">{where}</span>
       <span className="ml-auto flex flex-shrink-0 items-center gap-2">
-        {/* The composer is the Image tool or the Video tool (one at a time; it opens empty). */}
-        <span className="flex h-8 items-center rounded-md bg-muted p-0.5" role="tablist" aria-label="Composer">
-          {[["image", "Image"], ["video", "Video"]].map(([v, l]) => (
-            <button key={v} type="button" role="tab" aria-selected={cmode === v} onClick={() => cmode !== v && switchTo(v)}
-              className={cn("h-7 rounded-[6px] px-3 text-sm font-medium transition-colors duration-state", cmode === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>{l}</button>
-          ))}
-        </span>
         {!isShot && <GroupActions film={film} groupName={name} liked={liked.items.filter((i) => i.url)} placeElements={placeElements} />}
         {isShot && (
           <>
@@ -210,15 +226,15 @@ export default function Work({ film, edit, media, target, onBack, onNav, studioP
     // The assistant's "Sees:" line (§4.6).
     sees: isShot ? [`Shot ${shot.n}`, shot.note ? "its note" : null, refs.length ? `${refs.length} reference${refs.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")
       : [name, refs.length ? `${refs.length} reference${refs.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · "),
-    seesFull: isShot ? `Film “${film.name}”, scene ${shot.sceneN}${shot.sceneName ? ` “${shot.sceneName}”` : ""}, shot ${shot.n}${shot.note ? ` — note: ${shot.note}` : ""}. ${refs.length} reference picture(s) and ${elementsHere.length} element(s) of this place are offered for it; ${approved.size} approved.`
-      : `Film “${film.name}”, Moodboard group “${name}” with ${refs.length} reference picture(s).`,
+    seesFull: isShot ? `Storyboard “${film.name}”, scene ${shot.sceneN}${shot.sceneName ? ` “${shot.sceneName}”` : ""}, shot ${shot.n}${shot.note ? ` — note: ${shot.note}` : ""}. ${refs.length} reference picture(s) and ${elementsHere.length} element(s) of this place are offered for it; ${approved.size} approved.`
+      : `Storyboard “${film.name}”, Moodboard group “${name}” with ${refs.length} reference picture(s).`,
   };
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={rootRef} className="relative h-full w-full">
       <input ref={(el) => { fileInput.current = el; }} type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => { const files = [...(e.target.files || [])]; e.target.value = ""; if (files.length) addReady(files); }} />
-      <DzStudio key={`${key}:${cmode}:${seq}`} {...studioProps} mode={cmode} target={studioTarget} />
-      <RefPicker open={picker} onClose={() => setPicker(false)} refs={refs} onChange={setRefs} title={isShot ? "References of this shot" : "References of this group"} />
+      <DzStudio key={`${key}:${seq}`} {...studioProps} mode="create" target={studioTarget} />
+      <RefPicker open={picker} onClose={() => setPicker(false)} refs={refs} onChange={setRefs} title={`References for ${name}`} />
       <RefPicker open={readyPicker} onClose={() => setReadyPicker(false)} refs={[]} onChange={() => {}} title="A ready picture for this shot"
         onPickNew={async (list) => { for (const r of list) await media({ target: target.id, op: "add", url: r.url, kind: r.kind }); }} />
       {play && <PlayBetween take={play} {...neighbours()} onClose={() => setPlay(null)} />}

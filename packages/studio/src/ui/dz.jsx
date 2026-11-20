@@ -45,6 +45,19 @@ export function OptionSelect({ value, onValueChange, options, placeholder = "Cho
 }
 
 // One-of-N choice (shadcn ToggleGroup, single). Values may be numbers.
+// The small segmented switch of the Studio composer (Image | Video); also the Storyboard's
+// References | Generated (package 06, S5). options: [[value, label], …]
+export function SegSwitch({ value, onChange, options, className, "aria-label": ariaLabel }) {
+  return (
+    <div className={cn("flex h-8 flex-shrink-0 items-center rounded-md bg-muted p-0.5", className)} role="group" aria-label={ariaLabel}>
+      {options.map(([v, l]) => (
+        <button key={v} type="button" aria-pressed={value === v} onClick={() => onChange(v)}
+          className={cn("h-7 rounded-[6px] px-2.5 text-sm font-medium transition-colors duration-state", value === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
 export function Segmented({ value, onChange, options, className, size = "default", "aria-label": ariaLabel }) {
   const opts = options.map((o) => (typeof o === "object" ? o : { value: o, label: String(o) }));
   return (

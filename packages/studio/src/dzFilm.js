@@ -148,7 +148,7 @@ export function useFilm(id) {
           setFilm(merged);
           dirty.current = Boolean(base.current) && merged !== e.storyboard;
           if (dirty.current && retries.current < 3) { retries.current += 1; timer.current = setTimeout(() => { flush(); }, 200); }
-          notify({ type: "notice", title: "Storyboard", message: "Someone else changed this film meanwhile — both changes are kept." });
+          notify({ type: "notice", title: "Storyboard", message: "Someone else changed this storyboard meanwhile — both changes are kept." });
         } else if ((!e.status || e.status >= 500 || e.status === 429) && retries.current < 5) {
           // A passing failure: try again a little later (the edits stay).
           retries.current += 1;

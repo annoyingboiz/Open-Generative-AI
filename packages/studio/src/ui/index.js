@@ -19,4 +19,4 @@ export * as DialogParts from "./shadcn/dialog.jsx";
 export * as DropdownMenuParts from "./shadcn/dropdown-menu.jsx";
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./shadcn/tooltip.jsx";
 export { Popover, PopoverTrigger, PopoverContent } from "./shadcn/popover.jsx";
-export { OptionSelect, Segmented, ScrollTabs, Tip, InfoTip, SidePanel, SectionLabel, Spinner, Logo } from "./dz.jsx";
+export { OptionSelect, Segmented, SegSwitch, ScrollTabs, Tip, InfoTip, SidePanel, SectionLabel, Spinner, Logo } from "./dz.jsx";

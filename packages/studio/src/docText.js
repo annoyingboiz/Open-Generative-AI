@@ -18,9 +18,23 @@ export const docKind = (file) => {
 const entities = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'")
   .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d))).replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&amp;/g, "&");
 
-async function inflateRaw(bytes) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+const MAX_XML = 30 * 1024 * 1024; // the inflated document.xml (a zip bomb stops here)
+
+async function inflateRaw(bytes, limit) {
+  const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+  const parts = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > limit) { reader.cancel().catch(() => {}); throw new Error("too big"); }
+    parts.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
 }
 
 // One file out of a zip, by its name (stored or deflated).
@@ -37,15 +51,19 @@ async function zipEntry(buf, name) {
     if (p + 46 > buf.byteLength || dv.getUint32(p, true) !== 0x02014b50) return null;
     const method = dv.getUint16(p + 10, true);
     const size = dv.getUint32(p + 20, true);
+    const full = dv.getUint32(p + 24, true);
     const nlen = dv.getUint16(p + 28, true);
     const xlen = dv.getUint16(p + 30, true);
     const clen = dv.getUint16(p + 32, true);
     const off = dv.getUint32(p + 42, true);
+    if (p + 46 + nlen > buf.byteLength) return null;
     if (dec.decode(new Uint8Array(buf, p + 46, nlen)) === name) {
+      if (full > MAX_XML || off + 30 > buf.byteLength || dv.getUint32(off, true) !== 0x04034b50) return null;
       const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true);
+      if (start + size > buf.byteLength) return null;
       const data = new Uint8Array(buf, start, size);
       if (method === 0) return data;
-      if (method === 8) return inflateRaw(data);
+      if (method === 8) return inflateRaw(data, MAX_XML);
       return null;
     }
     p += 46 + nlen + xlen + clen;

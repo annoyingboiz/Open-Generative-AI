@@ -26,7 +26,7 @@ export class StoryboardError extends Error {
 }
 
 const MAX_NAME = 80;
-const MAX_SCENE = 20_000; // the brief or script kept with the film
+const MAX_SCENE = 200_000; // the brief and the original documents kept with the film
 const MAX_NOTE = 2000;
 const MAX_SCENES = 500;
 const MAX_SHOTS = 2000;
@@ -329,7 +329,7 @@ export function createStoryboards({ db, projects, generations, log }) {
   }
   function cleanScene(scene) {
     const s = String(scene ?? '').replace(/\r\n/g, '\n').trim();
-    if (s.length > MAX_SCENE) throw new StoryboardError(`The scene is too long (max ${MAX_SCENE} characters).`);
+    if (s.length > MAX_SCENE) throw new StoryboardError(`The brief is too long (max ${MAX_SCENE.toLocaleString('en')} characters).`);
     return s;
   }
 

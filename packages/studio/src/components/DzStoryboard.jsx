@@ -3,7 +3,7 @@
 // Storyboard (package 05): the list of films (01, empty 13) and one film with its
 // Moodboard and Storyboard tabs, and the working screens of a shot or a group.
 // Any order: every tab and screen is reachable at any time; nothing is required.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, CaretLeft, DotsThree, MagnifyingGlass, FilmSlate } from "@phosphor-icons/react";
 import { dzThumb } from "../api.js";
 import { useDzContext } from "../dzContext.js";
@@ -103,12 +103,15 @@ function FilmList({ onOpen, onNew, readOnly }) {
 // The brief kept with the film (the `scene` text): read and edit it.
 function BriefDialog({ value, onClose, onSave }) {
   const [text, setText] = useState(value || "");
+  // Opened from a menu: the menu gives focus back to its button as it closes, so focus after it.
+  const area = useRef(null);
+  useEffect(() => { const t = setTimeout(() => area.current?.focus(), 60); return () => clearTimeout(t); }, []);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6" onClick={onClose}>
       <div className="flex max-h-[85vh] w-[min(760px,100%)] flex-col rounded-2xl border border-border bg-card p-5 shadow-float" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="The brief">
         <p className="text-lg font-semibold">The brief</p>
-        <p className="mt-1 text-sm text-muted-foreground">Kept with the film as it was given. Edit it freely.</p>
-        <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={20000} placeholder="Paste the client's brief here."
+        <p className="mt-1 text-sm text-muted-foreground">The brief and any original documents, kept with the film as given. Edit freely.</p>
+        <textarea ref={area} value={text} onChange={(e) => setText(e.target.value)} maxLength={20000} placeholder="Paste the client's brief here."
           className="custom-scrollbar mt-3 min-h-[240px] w-full flex-1 resize-none rounded-md border border-input bg-background p-3 text-base outline-none focus:border-ring" />
         <div className="mt-3 flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{text.length ? `${text.length.toLocaleString()} characters` : ""}</span>

@@ -6,7 +6,7 @@
 // texts are notes); a brief is kept with the film; the idea becomes the film note.
 // The sorting is one text-model call with its price on the button; it never generates
 // pictures or video. One kind of result opens its tab; several show what went where (03).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, CaretLeft, X, FileText, Images, TextAlignLeft, Note, ArrowRight, Spinner as SpinIcon, Warning } from "@phosphor-icons/react";
 import { uploadFile } from "../../api.js";
 import { useDzContext } from "../../dzContext.js";
@@ -16,6 +16,7 @@ import { docKind, readDoc, wordsIn } from "../../docText.js";
 import { fmtUsd } from "../DzCreateStudio.jsx";
 import { mediaUrl } from "./parts.jsx";
 
+const KEPT_MAX = 200_000; // the server's limit for what is kept with the film
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 let seq = 0;
@@ -71,11 +72,19 @@ export default function Entry({ onClose, onCreated }) {
   const urls = useRef([]);
   useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), []);
 
+  // Work already done survives a failed upload or save: a retry neither buys the sort again nor re-uploads.
+  const sortCache = useRef({ key: "", value: null });
+  const uploaded = useRef(new Map()); // file item id -> ref
+  const MAX_DOCS = 8;
+
   const add = (list) => {
+    if (busy) return;
+    let docsSoFar = files.filter((f) => f.kind !== "image" && f.kind !== "video").length;
     const made = [...list].map((file) => {
       const kind = docKind(file);
       const it = { id: (seq += 1), file, kind };
       if (kind === "image" || kind === "video") { it.thumb = URL.createObjectURL(file); urls.current.push(it.thumb); }
+      else if ((docsSoFar += 1) > MAX_DOCS) it.doc = { error: `Up to ${MAX_DOCS} documents at a time` };
       return it;
     });
     if (!made.length) return;
@@ -87,12 +96,12 @@ export default function Entry({ onClose, onCreated }) {
         v.preload = "metadata";
         v.onloadedmetadata = () => setFiles((cur) => cur.map((x) => (x.id === it.id ? { ...x, duration: v.duration } : x)));
         v.src = it.thumb;
-      } else if (it.kind !== "image") {
+      } else if (it.kind !== "image" && !it.doc) {
         readDoc(it.file).then((doc) => setFiles((cur) => cur.map((x) => (x.id === it.id ? { ...x, doc } : x))));
       }
     }
   };
-  const remove = (ids) => setFiles((cur) => cur.filter((x) => !ids.includes(x.id)));
+  const remove = (ids) => { if (!busy) setFiles((cur) => cur.filter((x) => !ids.includes(x.id))); };
 
   const pictures = files.filter((f) => f.kind === "image");
   const videos = files.filter((f) => f.kind === "video");
@@ -100,18 +109,25 @@ export default function Entry({ onClose, onCreated }) {
   const readDocs = docs.filter((d) => d.doc?.text);
   const reading = docs.some((d) => !d.doc);
   const toSort = { text, docs: readDocs.map((d) => ({ name: d.file.name, text: d.doc.text })) };
+  const inputKey = JSON.stringify(toSort);
   const needsModel = Boolean(text.trim() || readDocs.length);
   const nothing = !text.trim() && !files.length;
 
   // The price of the sorting call, asked again shortly after the text or documents change.
-  const sortKey = useMemo(() => JSON.stringify([text.length, readDocs.map((d) => d.doc.text.length)]), [text, readDocs]);
+  // Start waits for the price of exactly this input; the call then uses the quoted model.
   useEffect(() => {
-    if (!needsModel) { setQuote(null); return undefined; }
+    setQuote(null);
+    if (!needsModel) return undefined;
     let live = true;
-    const t = setTimeout(() => { dzStoryboards.sortQuote(toSort).then((q) => { if (live) setQuote(q); }).catch(() => { if (live) setQuote(null); }); }, 500);
+    const key = inputKey;
+    const t = setTimeout(() => {
+      dzStoryboards.sortQuote(toSort).then((q) => { if (live) setQuote({ ...q, key }); }).catch((e) => { if (live) setQuote({ key, error: e.message }); });
+    }, 400);
     return () => { live = false; clearTimeout(t); };
-  }, [sortKey, needsModel]); // eslint-disable-line react-hooks/exhaustive-deps
-  const priceLabel = !needsModel || !quote ? "" : quote.free || quote.usd === 0 ? "free" : Number.isFinite(quote.usd) ? `≈ ${fmtUsd(quote.usd)}` : "";
+  }, [inputKey, needsModel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const quoted = !needsModel || (quote && quote.key === inputKey) || sortCache.current.key === inputKey;
+  const priceLabel = !needsModel || !quote || quote.error || quote.key !== inputKey ? "" : quote.free || quote.usd === 0 ? "free" : Number.isFinite(quote.usd) ? (quote.usd < 0.001 ? "< $0.001" : `≈ ${fmtUsd(quote.usd)}`) : "";
+  const tooLong = Boolean(quote?.tooLong && quote.key === inputKey);
 
   // sortIt=false: keep everything as given (typed text = film note, documents = brief), no model call.
   const start = async ({ sortIt = true } = {}) => {
@@ -120,18 +136,25 @@ export default function Entry({ onClose, onCreated }) {
     try {
       let sorted = null;
       if (needsModel && sortIt) {
-        setBusy("Sorting…");
-        try { sorted = await dzStoryboards.sort(toSort); } catch (e) { setFailed(e.message); setBusy(""); return; }
+        if (sortCache.current.key === inputKey) sorted = sortCache.current.value;
+        else {
+          setBusy("Sorting…");
+          try { sorted = await dzStoryboards.sort({ ...toSort, llm: quote?.model || undefined }); } catch (e) { setFailed(e.message); setBusy(""); return; }
+          sortCache.current = { key: inputKey, value: sorted };
+        }
       }
       const media = [...pictures, ...videos];
       const refs = [];
       for (let i = 0; i < media.length; i += 1) {
         setBusy(`Uploading ${i + 1} of ${media.length}…`);
         const it = media[i];
-        const url = mediaUrl(await uploadFile("session", it.file));
-        const kind = it.kind === "video" ? "video" : "image";
-        const { w, h } = await sizeOf(url, kind);
-        refs.push({ url, kind, w, h, name: it.file.name.slice(0, 80) });
+        if (!uploaded.current.has(it.id)) {
+          const url = mediaUrl(await uploadFile("session", it.file));
+          const kind = it.kind === "video" ? "video" : "image";
+          const { w, h } = await sizeOf(url, kind);
+          uploaded.current.set(it.id, { url, kind, w, h, name: it.file.name.slice(0, 80) });
+        }
+        refs.push(uploaded.current.get(it.id));
       }
       setBusy("Saving…");
       let mood = { items: [] };
@@ -146,20 +169,28 @@ export default function Entry({ onClose, onCreated }) {
         scenes.push({ id, name: sc.name, note: sc.note });
         for (const note of sc.shots) shots.push({ id: newShotId(), scene: id, note, refs: [] });
       }
+      // Kept with the film as given (the server keeps whatever the model did not place).
       let note = sorted?.note || "";
-      let brief = sorted?.brief || "";
-      if (!sorted) { note = text.trim().slice(0, 2000); brief = readDocs.map((d) => d.doc.text).join("\n\n").slice(0, 20_000); }
-      // Nothing of the typed text landed anywhere: keep it as the note rather than lose it.
-      else if (text.trim() && !note && !scenes.length && !brief) note = text.trim().slice(0, 2000);
-      const { storyboard } = await dzStoryboards.create({ project: ctx.project?.id || undefined, name: sorted?.title || undefined, note, scene: brief, scenes, shots, mood });
+      let kept = sorted?.kept || [];
+      let keptText = sorted?.keptText || "";
+      if (!sorted) {
+        const typed = text.trim();
+        note = typed.length <= 2000 ? typed : "";
+        kept = [...(typed.length > 2000 ? [{ name: "Typed text", role: "other" }] : []), ...readDocs.map((d) => ({ name: d.file.name, role: "other" }))];
+        const texts = [...(typed.length > 2000 ? [typed] : []), ...readDocs.map((d) => d.doc.text)];
+        keptText = kept.length === 1 ? texts[0] : kept.map((k, i) => `── ${k.name} ──\n${texts[i]}`).join("\n\n");
+      }
+      const cut = keptText.length > KEPT_MAX;
+      if (cut) keptText = keptText.slice(0, KEPT_MAX);
+      const { storyboard } = await dzStoryboards.create({ project: ctx.project?.id || undefined, name: sorted?.title || undefined, note, scene: keptText, scenes, shots, mood });
 
       const unread = docs.filter((d) => d.doc?.error);
       const rows = [];
       if (refs.length) rows.push({ kind: "media", tab: "mood" });
       if (scenes.length) rows.push({ kind: "script", tab: "board" });
-      if (brief) rows.push({ kind: "brief", tab: "board", brief: true });
+      if (keptText) rows.push({ kind: "brief", tab: "board", brief: true });
       if (note) rows.push({ kind: "note", tab: "board" });
-      const r = { film: storyboard, rows, unread, pictures: refs.filter((x) => x.kind === "image").length, videos: refs.filter((x) => x.kind === "video").length, scenes: scenes.length, shots: shots.length, briefFound: sorted?.briefFound || "", llm: sorted?.llm || null };
+      const r = { film: storyboard, rows, unread, pictures: refs.filter((x) => x.kind === "image").length, videos: refs.filter((x) => x.kind === "video").length, scenes: scenes.length, shots: shots.length, kept, cut, briefFound: sorted?.briefFound || "", llm: sorted?.llm || null };
       setBusy("");
       if (rows.length === 1 && !unread.length) { onCreated(storyboard, rows[0].tab, { brief: rows[0].brief }); return; }
       if (!rows.length && !unread.length) { onCreated(storyboard, "mood"); return; }
@@ -207,7 +238,9 @@ export default function Entry({ onClose, onCreated }) {
                   <Row key="s" icon={TextAlignLeft} title={`The script became ${plural(result.scenes, "scene")} and ${plural(result.shots, "shot")}`}
                     sub="Scene and shot texts are notes on the Storyboard. Edit or delete them freely." action="Open Storyboard" onAction={() => go("board")} />
                 ) : r.kind === "brief" ? (
-                  <Row key="b" icon={FileText} title="The brief is kept with the film" sub={result.briefFound ? `Found: ${result.briefFound}` : "Open it any time from the film's menu."}
+                  <Row key="b" icon={FileText}
+                    title={result.kept.some((k) => k.role === "brief") ? "The brief is kept with the film" : `Kept with the film as given: ${result.kept.map((k) => k.name).join(", ")}`}
+                    sub={[result.briefFound ? `Found: ${result.briefFound}.` : "", result.kept.some((k) => k.role === "script") ? "The original script is kept with it." : "", result.kept.some((k) => k.role === "other") && result.kept.some((k) => k.role !== "other") ? `Also kept: ${result.kept.filter((k) => k.role === "other").map((k) => k.name).join(", ")}.` : "", result.cut ? "Longer than 200,000 characters: the end was not kept." : ""].filter(Boolean).join(" ") || "Open it any time from the film's menu."}
                     action="Open the brief" quiet onAction={() => go("board", { brief: true })} />
                 ) : (
                   <Row key="n" icon={Note} title="Your idea is the film note" sub="Shown at the top of the Storyboard." />
@@ -232,7 +265,7 @@ export default function Entry({ onClose, onCreated }) {
   const picExts = [...new Set(pictures.map((p) => ext(p.file.name)).filter(Boolean))].join(", ");
   return (
     <div className="relative flex h-full flex-col"
-      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setOver(true); } }}
+      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); if (busy) e.dataTransfer.dropEffect = "none"; else setOver(true); } }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false); }}
       onDrop={(e) => { setOver(false); if (e.dataTransfer.files?.length) { e.preventDefault(); add(e.dataTransfer.files); } }}>
       {header("New storyboard")}
@@ -241,12 +274,12 @@ export default function Entry({ onClose, onCreated }) {
         <div className="mx-auto mt-20 w-full max-w-[760px]">
           <h2 className="text-center text-3xl font-semibold">What do you have?</h2>
           <p className="mt-3 text-center text-base text-muted-foreground">Write the idea, paste a script, or drop files: pictures, video, documents. Any mix, or nothing at all.</p>
-          <div className={cn("mt-7 rounded-2xl border bg-card p-4 transition-colors duration-state", over ? "border-signal" : "border-border")}>
+          <div className={cn("mt-7 rounded-2xl border bg-card p-4 transition-colors duration-state", over ? "border-signal" : "border-border focus-within:border-ring")}>
             <textarea ref={area} value={text} onChange={(e) => { setText(e.target.value); setFailed(""); }} disabled={Boolean(busy)}
               onPaste={(e) => { if (e.clipboardData?.files?.length) { e.preventDefault(); add(e.clipboardData.files); } }}
-              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !nothing && !reading) { e.preventDefault(); start(); } }}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !nothing && !reading && quoted && !tooLong) { e.preventDefault(); start(); } }}
               placeholder="A 40 second film for… — or paste a script" rows={3}
-              className="block max-h-[40vh] min-h-[72px] w-full resize-none bg-transparent text-prompt outline-none placeholder:text-muted-foreground [field-sizing:content]" />
+              className="block max-h-[40vh] min-h-[72px] w-full resize-none bg-transparent text-prompt outline-none focus-visible:outline-none placeholder:text-muted-foreground [field-sizing:content]" />
             {files.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {pictures.length === 1 && <Chip thumb={pictures[0].thumb} title={pictures[0].file.name} sub={ext(pictures[0].file.name) || "picture"} onRemove={() => remove([pictures[0].id])} />}
@@ -256,6 +289,12 @@ export default function Entry({ onClose, onCreated }) {
                   <Chip key={d.id} icon={FileText} title={d.file.name} warn={Boolean(d.doc?.error)}
                     sub={!d.doc ? "Reading…" : d.doc.error ? d.doc.error : plural(wordsIn(d.doc.text), "word")} onRemove={() => remove([d.id])} />
                 ))}
+              </div>
+            )}
+            {tooLong && !failed && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-muted px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Too much text to sort in one go (over 40,000 characters).</span>
+                <button type="button" onClick={() => start({ sortIt: false })} disabled={Boolean(busy)} className="font-medium underline-offset-2 hover:underline">Keep it unsorted</button>
               </div>
             )}
             {failed && (
@@ -268,7 +307,7 @@ export default function Entry({ onClose, onCreated }) {
               <button type="button" onClick={() => input.current?.click()} disabled={Boolean(busy)} aria-label="Add files" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><Plus size={16} /></button>
               <span className="text-sm text-muted-foreground">{busy ? <span className="flex items-center gap-1.5"><SpinIcon size={14} className="animate-spin" /> {busy}</span> : "Drop files anywhere on this window"}</span>
               <button type="button" onClick={skip} disabled={Boolean(busy)} className="ml-auto h-8 rounded-md px-3 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40">Skip, open empty</button>
-              <button type="button" onClick={() => start()} disabled={nothing || reading || Boolean(busy)}
+              <button type="button" onClick={() => start()} disabled={nothing || reading || !quoted || tooLong || Boolean(busy)}
                 title={needsModel ? "Sorting is one call to your text model. Nothing is generated." : "Pictures and video go to the Moodboard. No model call."}
                 className="flex h-8 items-center gap-2 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-40">
                 Start{priceLabel && <span className="tabular-nums opacity-70">{priceLabel}</span>}

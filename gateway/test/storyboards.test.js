@@ -341,7 +341,7 @@ test('storyboard entry window: sorting is one text-model call; its price is know
   const realEstimate = app.ctx.llm.estimate;
   const calls = [];
   app.ctx.llm.estimate = async (user, b) => ({ model: 'apimart:test', usd: (b.inChars / 3.5 * 0.5 + b.outTokens * 2) / 1e6 });
-  app.ctx.llm.chat = async (user, body) => { calls.push(body); return { text: '```json\n{"note":"A night walk.","scenes":[{"name":"Street","note":"Sunset","shots":["Wide. Empty street.","Mike from behind."]}],"brief_from":["brief.txt"],"brief_found":"16:9, 40 s"}\n```', model: 'apimart:test', costUsd: 0.0004, ms: 3 }; };
+  app.ctx.llm.chat = async (user, body) => { calls.push(body); return { text: '```json\n{"note":"A night walk.","scenes":[{"name":"Street","note":"Sunset","shots":["Wide. Empty street.","Mike from behind."]}],"brief":["D1"],"script":["T"],"brief_found":"16:9, 40 s"}\n```', model: 'apimart:test', costUsd: 0.0004, ms: 3 }; };
   try {
     let res = await as('admin', 'POST', '/dz/api/storyboards/sort/quote', { text: 'EXT. STREET — sunset. Mike walks home.' });
     assert.equal(res.statusCode, 200, res.body);
@@ -352,10 +352,18 @@ test('storyboard entry window: sorting is one text-model call; its price is know
     const r = res.json();
     assert.equal(r.note, 'A night walk.');
     assert.deepEqual(r.scenes, [{ name: 'Street', note: 'Sunset', shots: ['Wide. Empty street.', 'Mike from behind.'] }]);
-    assert.equal(r.brief, 'For the bar.');
+    assert.equal(r.keptText, '── brief.txt ──\nFor the bar.\n\n── Typed text ──\nEXT. STREET — sunset. Mike walks home.');
+    assert.deepEqual(r.kept.map((k) => k.role), ['brief', 'script']);
     assert.equal(r.briefFound, '16:9, 40 s');
     assert.equal(calls.length, 1);
-    assert.match(calls[0].prompt, /\[Document: brief\.txt\]/);
+    const fence = /^Fence code: ([0-9a-f]{12})/.exec(calls[0].prompt)[1];
+    assert.ok(calls[0].prompt.includes(`[${fence} D1: brief.txt]\nFor the bar.\n[${fence} end]`));
+    // A document the model did not place is kept, not lost; more than 8 documents are refused.
+    app.ctx.llm.chat = async () => ({ text: '{"note":"x","scenes":[]}', model: 'apimart:test', costUsd: 0, ms: 1 });
+    res = await as('admin', 'POST', '/dz/api/storyboards/sort', { text: 'idea', docs: [{ name: 'a.txt', text: 'A' }] });
+    assert.equal(res.json().keptText, 'A');
+    res = await as('admin', 'POST', '/dz/api/storyboards/sort', { docs: Array.from({ length: 9 }, (_, i) => ({ name: `${i}.txt`, text: 'x' })) });
+    assert.equal(res.statusCode, 400);
     res = await as('admin', 'POST', '/dz/api/storyboards/sort', { text: '   ' });
     assert.equal(res.statusCode, 400);
   } finally { app.ctx.llm.chat = realChat; app.ctx.llm.estimate = realEstimate; }

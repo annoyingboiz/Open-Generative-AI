@@ -1072,14 +1072,15 @@ export async function buildApp(config, { logger = true } = {}) {
     reply.header('cache-control', 'private, no-store');
     try { return await filmSort.quote(req.user, req.body || {}); } catch (error) { if (error instanceof LlmError) return llmError(reply, error); return reply.code(error.status || 400).send({ error: error.message }); }
   });
+  const sortLoad = new Map(); // userId -> { running, times[] } (its own limit, not the plan's)
   app.post('/dz/api/storyboards/sort', async (req, reply) => {
     reply.header('cache-control', 'private, no-store');
-    const load = planLoad.get(req.user.id) || { running: 0, times: [] };
+    const load = sortLoad.get(req.user.id) || { running: 0, times: [] };
     load.times = load.times.filter((t) => Date.now() - t < 60_000);
     if (load.running >= 1 || load.times.length >= 6) return reply.code(429).send({ error: 'Already sorting — wait a moment.' });
     load.running += 1;
     load.times.push(Date.now());
-    planLoad.set(req.user.id, load);
+    sortLoad.set(req.user.id, load);
     try { return await filmSort.sort(req.user, req.body || {}); } catch (error) {
       if (error instanceof LlmError) return llmError(reply, error);
       if (error instanceof SortError) return reply.code(error.status).send({ error: error.message });

@@ -95,8 +95,8 @@ function MediaNode({ it, tk, zoom }) {
   const r = Math.min(6, it.w / 8);
   return (
     <Group id={it.id} x={it.x} y={it.y}>
-      {img ? <KImage image={img} width={it.w} height={it.h} cornerRadius={r} crop={coverCrop(img, it.w, it.h)} />
-        : <Rect width={it.w} height={it.h} cornerRadius={r} fill={tk.muted} />}
+      {img ? <KImage image={img} width={it.w} height={it.h} cornerRadius={r} crop={coverCrop(img, it.w, it.h)} perfectDrawEnabled={false} />
+        : <Rect width={it.w} height={it.h} cornerRadius={r} fill={tk.muted} perfectDrawEnabled={false} />}
       {video && (
         <Group x={20} y={it.h - 20} listening={false}>
           <Circle radius={12} fill={tk.overlay} />
@@ -111,7 +111,9 @@ function NoteNode({ it, tk, editing }) {
   const empty = !it.text;
   return (
     <Group id={it.id} x={it.x} y={it.y} rotation={-1.5}>
-      <Rect width={it.w} height={it.h} cornerRadius={2} fill={tk.warning} shadowColor={tk.shadow} shadowBlur={12} shadowOffsetY={4} shadowOpacity={0.6} />
+      {/* A flat offset shadow: a blurred canvas shadow costs a lot with many notes. */}
+      <Rect y={3} width={it.w} height={it.h} cornerRadius={2} fill={tk.shadow} listening={false} perfectDrawEnabled={false} />
+      <Rect width={it.w} height={it.h} cornerRadius={2} fill={tk.warning} perfectDrawEnabled={false} />
       {!editing && <KText x={12} y={12} width={it.w - 24} height={it.h - 24} text={it.text || "Double-click to write"} fontSize={14} lineHeight={1.35} fontFamily={tk.font} fill={tk.background} opacity={empty ? 0.5 : 1} wrap="word" ellipsis listening={false} />}
     </Group>
   );
@@ -120,7 +122,7 @@ function NoteNode({ it, tk, editing }) {
 function TextNode({ it, tk, editing }) {
   return (
     <Group id={it.id} x={it.x} y={it.y}>
-      <Rect width={it.w} height={it.h} fill="rgba(0,0,0,0)" />
+      <Rect width={it.w} height={it.h} fill="rgba(0,0,0,0)" perfectDrawEnabled={false} />
       {!editing && <KText width={it.w} height={it.h} text={it.text || "Text"} fontSize={18} fontStyle="600" lineHeight={1.3} fontFamily={tk.font} fill={tk.foreground} opacity={it.text ? 1 : 0.5} wrap="word" ellipsis listening={false} />}
     </Group>
   );
@@ -187,6 +189,8 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
     return () => ro.disconnect();
   }, []);
   useEffect(() => { applyView(viewRef.current); }, [size.w, size.h]); // eslint-disable-line react-hooks/exhaustive-deps
+  // QA: with localStorage dz_debug set, the stage is reachable from the console (draw timing).
+  useEffect(() => { try { if (localStorage.getItem("dz_debug")) window.__dzMoodStage = stageRef.current; } catch { /* optional */ } }, []);
 
   const frames = items.filter((x) => x.type === "frame");
   const others = useMemo(() => items.filter((x) => x.type !== "frame").sort((a, b) => (a.z || 0) - (b.z || 0)), [items]);
@@ -661,7 +665,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
         <Stage ref={stageRef} width={size.w} height={size.h} x={viewRef.current.x} y={viewRef.current.y} scaleX={viewRef.current.z} scaleY={viewRef.current.z}>
           <Layer>
             {frames.filter(visible).map((f) => (
-              <Rect key={f.id} id={f.id} x={f.x} y={f.y} width={f.w} height={f.h} cornerRadius={14} stroke={sel.includes(f.id) ? tk.signal : tk.input} strokeWidth={1} strokeScaleEnabled={false} fill="rgba(0,0,0,0)" />
+              <Rect key={f.id} id={f.id} x={f.x} y={f.y} width={f.w} height={f.h} cornerRadius={14} stroke={sel.includes(f.id) ? tk.signal : tk.input} strokeWidth={1} strokeScaleEnabled={false} fill="rgba(0,0,0,0)" perfectDrawEnabled={false} shadowForStrokeEnabled={false} />
             ))}
             {others.filter(visible).map((it) => (
               isMedia(it) ? <MediaNode key={it.id} it={it} tk={tk} zoom={z} />

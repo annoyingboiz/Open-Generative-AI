@@ -501,6 +501,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
     const p = toWorld(e.clientX, e.clientY);
     if (tool === "frame" || tool === "arrow") { const r = { type: tool, x: p.x, y: p.y, x2: p.x, y2: p.y }; drag.current = { kind: tool, p, r }; setDraft(r); listen(); return; }
     if (tool === "note" || tool === "text") {
+      e.preventDefault(); // keep the focus for the note's text field
       const it = tool === "note"
         ? { id: newItemId("note"), type: "note", x: p.x - 90, y: p.y - 60, w: 180, h: 120, text: "", color: "amber", z: maxZ() + 1 }
         : { id: newItemId("text"), type: "text", x: p.x, y: p.y - 14, w: 260, h: 36, text: "", z: maxZ() + 1 };
@@ -701,7 +702,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
             </div>
           ))}
           {editItem && (editItem.type === "note" || editItem.type === "text") && (
-            <textarea data-overlay-ui autoFocus defaultValue={editItem.text}
+            <textarea data-overlay-ui key={editItem.id} ref={focusOnce} defaultValue={editItem.text}
               onBlur={(e) => { const text = e.target.value; setEditing(null); if (!text.trim() && editItem.type === "text") commit((l) => l.filter((x) => x.id !== editItem.id)); else if (text !== editItem.text) setItem(editItem.id, { text }); }}
               onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") { e.currentTarget.value = editItem.text || ""; e.currentTarget.blur(); } }}
               placeholder={editItem.type === "note" ? "Note…" : "Text"}
@@ -762,6 +763,9 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
     </div>
   );
 }
+
+// Focus a field that appears under the pointer once the click that made it is over.
+const focusOnce = (el) => { if (el && !el.dataset.focused) { el.dataset.focused = "1"; setTimeout(() => { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 0); } };
 
 const Tool = ({ on, label, onClick, disabled, children }) => (
   <button type="button" onClick={onClick} aria-label={label} title={label} aria-pressed={on} disabled={disabled}

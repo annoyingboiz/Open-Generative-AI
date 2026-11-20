@@ -26,6 +26,8 @@ export const dzStoryboards = {
   remove: (id) => call("DELETE", `/dz/api/storyboards/${enc(id)}`),
   media: (id, data) => call("POST", `/dz/api/storyboards/${enc(id)}/media`, data),
   plan: (id, data) => call("POST", `/dz/api/storyboards/${enc(id)}/plan`, data),
+  sortQuote: (data) => call("POST", "/dz/api/storyboards/sort/quote", data),
+  sort: (data) => call("POST", "/dz/api/storyboards/sort", data),
   stitch: (id, data) => call("POST", `/dz/api/storyboards/${enc(id)}/stitch`, data),
   continueShot: (id, shot) => call("POST", `/dz/api/storyboards/${enc(id)}/continue`, { shot }),
   printUrl: (id, aspect) => `/dz/storyboards/${enc(id)}/print${aspect ? `?aspect=${enc(aspect)}` : ""}`,

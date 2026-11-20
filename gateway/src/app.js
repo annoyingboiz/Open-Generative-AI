@@ -38,6 +38,7 @@ import { createStoryboards, StoryboardError } from './storyboards.js';
 import { EditError, sweepTemp, frameOf } from './edit.js';
 import { storyboardPage } from './storyboard-print.js';
 import { createDirector, DirectorError } from './director.js';
+import { createFilmSort, SortError } from './film-sort.js';
 import { createAssistants, AssistantError } from './assistants.js';
 import { createThumbs } from './thumbs.js';
 import { createQuoter } from './quotes.js';
@@ -144,6 +145,7 @@ export async function buildApp(config, { logger = true } = {}) {
   // Adapting costs a text-model call: at most 2 at once and 20 a minute per person.
   const adaptLoad = new Map(); // userId -> { running, times[] }
   const director = createDirector({ llm, adapter, familyName: (key) => familyNames().get(key) || null });
+  const filmSort = createFilmSort({ llm });
   const assistants = createAssistants({ db, projects, generations, llm, adapter, log: app.log });
   // Planning a scene: one text-model call at a time and 6 a minute per person.
   const planLoad = new Map(); // userId -> { running, times[] }
@@ -1065,6 +1067,26 @@ export async function buildApp(config, { logger = true } = {}) {
       throw error;
     }
   });
+  // Storyboard entry window (package 05, §4.2): the price of sorting, and the sorting itself.
+  app.post('/dz/api/storyboards/sort/quote', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    try { return await filmSort.quote(req.user, req.body || {}); } catch (error) { if (error instanceof LlmError) return llmError(reply, error); return reply.code(error.status || 400).send({ error: error.message }); }
+  });
+  app.post('/dz/api/storyboards/sort', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    const load = planLoad.get(req.user.id) || { running: 0, times: [] };
+    load.times = load.times.filter((t) => Date.now() - t < 60_000);
+    if (load.running >= 1 || load.times.length >= 6) return reply.code(429).send({ error: 'Already sorting — wait a moment.' });
+    load.running += 1;
+    load.times.push(Date.now());
+    planLoad.set(req.user.id, load);
+    try { return await filmSort.sort(req.user, req.body || {}); } catch (error) {
+      if (error instanceof LlmError) return llmError(reply, error);
+      if (error instanceof SortError) return reply.code(error.status).send({ error: error.message });
+      return sendGenError(reply, error);
+    } finally { load.running -= 1; }
+  });
+
   // The AI Director plans the shots and saves them into the storyboard.
   app.post('/dz/api/storyboards/:id/plan', async (req, reply) => {
     reply.header('cache-control', 'private, no-store');

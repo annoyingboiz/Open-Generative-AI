@@ -4,11 +4,12 @@
 // References layer — All pictures (06) or One per shot (07); Generated layer (08).
 // Nothing here generates: a click opens the shot's working screen.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, CaretDown, CaretLeft, CaretRight, DotsThree, Check, Sparkle, TextAlignLeft, Images, X, ArrowUpRight, Play, FilmSlate, Spinner as SpinIcon } from "@phosphor-icons/react";
+import { Plus, CaretDown, CaretLeft, CaretRight, DotsThree, Check, Sparkle, TextAlignLeft, Images, X, ArrowUpRight, Play, FilmSlate, FileText, Spinner as SpinIcon } from "@phosphor-icons/react";
 import { dzThumb, uploadFile } from "../../api.js";
 import { DropdownMenuParts, cn } from "../../ui/index.js";
 import { numbered, shotState, newSceneId, newShotId, sizeOf, splitScript, isVideoUrl } from "../../dzFilm.js";
 import { RefPicker, EmptyState, InlineText, mediaUrl } from "./parts.jsx";
+import { setSceneSelection } from "./assistant.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const DRAG = "application/x-dz-ref";
@@ -160,8 +161,55 @@ function Thumb16({ url, dim, className }) {
   );
 }
 
-export default function Board({ film, edit, onOpenShot, layer, setLayer, refView, setRefView }) {
+// The film note (the idea), at the top of the Storyboard: several lines, edits in place.
+function FilmNote({ value, onChange, brief, onOpenBrief }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+  useEffect(() => { if (!editing) setDraft(value || ""); }, [value, editing]);
+  const done = (save) => { setEditing(false); if (save && draft.trim() !== (value || "")) onChange(draft.trim()); };
+  return (
+    <div className="flex items-start gap-3 pt-5">
+      <FileText size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+      {editing ? (
+        <textarea autoFocus value={draft} maxLength={2000} onChange={(e) => setDraft(e.target.value)} onBlur={() => done(true)}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) done(true); if (e.key === "Escape") { e.stopPropagation(); done(false); } }}
+          rows={3} aria-label="Film note" className="min-w-0 flex-1 resize-y rounded-sm bg-transparent text-base outline-none ring-1 ring-ring" />
+      ) : (
+        <button type="button" onClick={() => setEditing(true)} className={cn("line-clamp-3 min-w-0 flex-1 whitespace-pre-wrap rounded-sm text-left text-base hover:bg-accent/60", !value && "text-muted-foreground")}>
+          {value || "Add a film note: the idea in a few lines"}
+        </button>
+      )}
+      {brief && <button type="button" onClick={onOpenBrief} className="flex-shrink-0 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">The brief</button>}
+    </div>
+  );
+}
+
+export default function Board({ film, edit, onOpenShot, layer, setLayer, refView, setRefView, onOpenBrief }) {
   const groups = useMemo(() => numbered(film), [film]);
+  // The assistant sees the scene at the top of the view (§4.6).
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
+  useEffect(() => {
+    const el = document.getElementById("dz-film-scroll");
+    if (!el) return undefined;
+    let raf = 0;
+    let last = "";
+    const look = () => {
+      raf = 0;
+      const top = el.getBoundingClientRect().top + 64;
+      const gs = groupsRef.current;
+      const i = gs.findIndex(({ scene }) => (document.getElementById(`dz-scene-${scene.id}`)?.getBoundingClientRect().bottom || 0) > top);
+      const g = gs.length > 1 && i >= 0 ? gs[i] : null;
+      const key = g ? `${g.scene.id}:${g.scene.name}:${g.shots.length}` : "";
+      if (key === last) return;
+      last = key;
+      setSceneSelection(g ? { n: i + 1, name: g.scene.name, shots: g.shots.length } : null);
+    };
+    const on = () => { if (!raf) raf = requestAnimationFrame(look); };
+    el.addEventListener("scroll", on, { passive: true });
+    look();
+    return () => { el.removeEventListener("scroll", on); if (raf) cancelAnimationFrame(raf); setSceneSelection(null); };
+  }, [groups]);
   const totalShots = film.shots.length;
   const [picker, setPicker] = useState(null); // { shot } | { scene } — the reference picker
   const [busy, setBusy] = useState(0);
@@ -305,6 +353,8 @@ export default function Board({ film, edit, onOpenShot, layer, setLayer, refView
         {busy > 0 && <span className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground"><SpinIcon size={14} className="animate-spin" /> Uploading {busy}…</span>}
         {layer === "references" && !empty && <Seg className="ml-auto" value={refView} onChange={setRefView} options={[["all", "All pictures"], ["one", "One per shot"]]} />}
       </div>
+
+      {(film.note || film.scene || !empty) && <FilmNote value={film.note} onChange={(v) => edit((f) => ({ ...f, note: v }))} brief={Boolean(film.scene)} onOpenBrief={onOpenBrief} />}
 
       {empty ? (
         <div className={cn("rounded-xl transition-colors duration-state", overEmpty && "bg-accent/40")}>

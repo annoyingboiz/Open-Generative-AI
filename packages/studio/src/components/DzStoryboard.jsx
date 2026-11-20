@@ -100,9 +100,30 @@ function FilmList({ onOpen, onNew, readOnly }) {
   );
 }
 
-function FilmView({ id, nav, setNav, studioProps, onBack }) {
+// The brief kept with the film (the `scene` text): read and edit it.
+function BriefDialog({ value, onClose, onSave }) {
+  const [text, setText] = useState(value || "");
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-[min(760px,100%)] flex-col rounded-2xl border border-border bg-card p-5 shadow-float" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="The brief">
+        <p className="text-lg font-semibold">The brief</p>
+        <p className="mt-1 text-sm text-muted-foreground">Kept with the film as it was given. Edit it freely.</p>
+        <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={20000} placeholder="Paste the client's brief here."
+          className="custom-scrollbar mt-3 min-h-[240px] w-full flex-1 resize-none rounded-md border border-input bg-background p-3 text-base outline-none focus:border-ring" />
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">{text.length ? `${text.length.toLocaleString()} characters` : ""}</span>
+          <button type="button" onClick={onClose} className="ml-auto h-8 rounded-md px-3 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Cancel</button>
+          <button type="button" onClick={() => onSave(text.trim())} className="h-8 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground hover:bg-primary-hover">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilmView({ id, nav, setNav, studioProps, onBack, startBrief = false }) {
   const { film, error, edit, media, reload } = useFilm(id);
   const ctx = useDzContext();
+  const [briefOpen, setBriefOpen] = useState(startBrief);
   const [layer, setLayer] = useState("references");
   const [refView, setRefView] = useState("all");
   const [initial, setInitial] = useState(null); // what a working screen starts from (Make a video…)
@@ -143,6 +164,7 @@ function FilmView({ id, nav, setNav, studioProps, onBack }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild><button type="button" aria-label="Storyboard menu" className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><DotsThree size={18} weight="bold" /></button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setBriefOpen(true)}>{film.scene ? "The brief" : "Add a brief"}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => window.open(dzStoryboards.printUrl(film.id), "_blank", "noopener")}>Print or save as PDF</DropdownMenuItem>
             <DropdownMenuItem onSelect={reload}>Reload</DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -160,9 +182,11 @@ function FilmView({ id, nav, setNav, studioProps, onBack }) {
         <div className="relative min-h-0 flex-1"><Mood film={film} edit={edit} onOpenGroup={(group) => setNav({ tab: "mood", group })} /></div>
       ) : (
         <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6" id="dz-film-scroll">
-          <Board film={film} edit={edit} onOpenShot={(shot) => setNav({ tab: "board", shot })} layer={layer} setLayer={setLayer} refView={refView} setRefView={setRefView} />
+          <Board film={film} edit={edit} onOpenShot={(shot) => setNav({ tab: "board", shot })} layer={layer} setLayer={setLayer} refView={refView} setRefView={setRefView}
+            onOpenBrief={() => setBriefOpen(true)} />
         </div>
       )}
+      {briefOpen && <BriefDialog value={film.scene} onClose={() => setBriefOpen(false)} onSave={(v) => { edit((f) => ({ ...f, scene: v })); setBriefOpen(false); }} />}
     </div>
   );
 }
@@ -172,6 +196,7 @@ export default function DzStoryboard(props) {
   const readOnly = Boolean(ctx.project?.archived);
   const [nav, setNavState] = useState(() => readHash());
   const [entry, setEntry] = useState(false);
+  const [briefFor, setBriefFor] = useState(null); // a film opened from the entry window with its brief showing
   // The place changed (another project): back to its list.
   const place = ctx.project?.id || "";
   const [lastPlace, setLastPlace] = useState(place);
@@ -188,16 +213,22 @@ export default function DzStoryboard(props) {
   const open = (film, tab = "board") => setNavState({ film, tab, shot: null, group: null });
 
   // A new film (phase D: the entry window; "Skip, open empty" opens its empty Moodboard).
-  const created = (film, tab) => { setEntry(false); open(film.id, tab || "mood"); };
+  const created = (film, tab, opts = {}) => {
+    setEntry(false);
+    if (opts.list) return;
+    setBriefFor(opts.brief ? film.id : null);
+    open(film.id, tab || "mood");
+  };
 
   return (
     <div className="relative h-full w-full bg-background">
       {nav.film ? (
-        <FilmView key={nav.film} id={nav.film} nav={nav} setNav={setNav} studioProps={props} onBack={() => setNavState({ film: null, tab: "board", shot: null, group: null })} />
+        <FilmView key={nav.film} id={nav.film} nav={nav} setNav={setNav} studioProps={props} startBrief={briefFor === nav.film} onBack={() => { setBriefFor(null); setNavState({ film: null, tab: "board", shot: null, group: null }); }} />
+      ) : entry ? (
+        <Entry onClose={() => setEntry(false)} onCreated={created} />
       ) : (
         <FilmList onOpen={(id) => open(id)} onNew={() => setEntry(true)} readOnly={readOnly} />
       )}
-      {entry && <Entry onClose={() => setEntry(false)} onCreated={created} />}
     </div>
   );
 }

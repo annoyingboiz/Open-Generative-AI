@@ -89,6 +89,7 @@ export function mergeFilm(base, mine, theirs) {
     ...theirs,
     name: pick("name"),
     note: pick("note"),
+    scene: pick("scene"),
     scenes: mergeById(base.scenes, mine.scenes, theirs.scenes),
     shots: mergeById(base.shots, mine.shots, theirs.shots),
     mood: { ...(theirs.mood || {}), items: mergeById(base.mood?.items, mine.mood?.items, theirs.mood?.items) },
@@ -132,7 +133,7 @@ export function useFilm(id) {
     const mine = seq.current;
     const run = (async () => {
       try {
-        const { storyboard } = await dzStoryboards.update(f.id, { rev: f.rev, name: f.name, note: f.note, scenes: f.scenes, shots: f.shots, mood: f.mood });
+        const { storyboard } = await dzStoryboards.update(f.id, { rev: f.rev, name: f.name, note: f.note, scene: f.scene, scenes: f.scenes, shots: f.shots, mood: f.mood });
         base.current = { ...f, rev: storyboard.rev };
         retries.current = 0;
         if (seq.current === mine) { dirty.current = false; base.current = storyboard; setFilm(storyboard); }
@@ -211,7 +212,7 @@ export function useFilm(id) {
     const out = () => {
       const f = filmRef.current;
       if (!dirty.current || !f) return;
-      try { dzStoryboards.update(f.id, { rev: f.rev, name: f.name, note: f.note, scenes: f.scenes, shots: f.shots, mood: f.mood }, { keepalive: true }); } catch { /* best effort */ }
+      try { dzStoryboards.update(f.id, { rev: f.rev, name: f.name, note: f.note, scene: f.scene, scenes: f.scenes, shots: f.shots, mood: f.mood }, { keepalive: true }); } catch { /* best effort */ }
     };
     window.addEventListener("pagehide", out);
     return () => { window.removeEventListener("pagehide", out); out(); };

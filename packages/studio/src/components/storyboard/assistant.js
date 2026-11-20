@@ -13,7 +13,7 @@ const report = () => {
   const sees = lastTab === "mood"
     ? ["Moodboard", moodSelection ? `${moodSelection} selected` : `${(f.mood?.items || []).filter((x) => x.type === "image" || x.type === "video").length} pictures`].join(" · ")
     : sceneSelection ? `Scene ${sceneSelection.n}${sceneSelection.name ? ` · ${sceneSelection.name}` : ""} · ${sceneSelection.shots} shots` : `Storyboard · ${f.scenes.length} scenes · ${f.shots.length} shots`;
-  dzSetStudioState("director", { model: null, prompt: "", writable: false, sees: `${sees}`, seesFull: `Film “${f.name}”. ${sees}.${f.note ? ` Film note: ${f.note}` : ""}` });
+  dzSetStudioState("director", { model: null, prompt: "", writable: false, sees: `${sees}`, seesFull: `Film “${f.name}”. ${sees}.${f.note ? ` Film note: ${f.note}` : ""}${f.scene ? ` The brief (start): ${String(f.scene).slice(0, 1500)}` : ""}` });
 };
 export function setMoodSelection(n) { moodSelection = n; report(); }
 export function setSceneSelection(s) { sceneSelection = s; report(); }

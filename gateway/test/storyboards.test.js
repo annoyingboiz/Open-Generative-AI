@@ -335,3 +335,28 @@ test('storyboards v2 (package 05): scenes, any number of shots, groups, targets,
   assert.equal(res.json().storyboard.media.g_mike, undefined);
   assert.equal(app.ctx.db.prepare('SELECT deleted_at FROM generations WHERE id = ?').get(g1).deleted_at, null);
 });
+
+test('storyboard entry window: sorting is one text-model call; its price is known before', async () => {
+  const realChat = app.ctx.llm.chat;
+  const realEstimate = app.ctx.llm.estimate;
+  const calls = [];
+  app.ctx.llm.estimate = async (user, b) => ({ model: 'apimart:test', usd: (b.inChars / 3.5 * 0.5 + b.outTokens * 2) / 1e6 });
+  app.ctx.llm.chat = async (user, body) => { calls.push(body); return { text: '```json\n{"note":"A night walk.","scenes":[{"name":"Street","note":"Sunset","shots":["Wide. Empty street.","Mike from behind."]}],"brief_from":["brief.txt"],"brief_found":"16:9, 40 s"}\n```', model: 'apimart:test', costUsd: 0.0004, ms: 3 }; };
+  try {
+    let res = await as('admin', 'POST', '/dz/api/storyboards/sort/quote', { text: 'EXT. STREET — sunset. Mike walks home.' });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.ok(res.json().usd > 0);
+    assert.equal(calls.length, 0);
+    res = await as('admin', 'POST', '/dz/api/storyboards/sort', { text: 'EXT. STREET — sunset. Mike walks home.', docs: [{ name: 'brief.txt', text: 'For the bar.' }] });
+    assert.equal(res.statusCode, 200, res.body);
+    const r = res.json();
+    assert.equal(r.note, 'A night walk.');
+    assert.deepEqual(r.scenes, [{ name: 'Street', note: 'Sunset', shots: ['Wide. Empty street.', 'Mike from behind.'] }]);
+    assert.equal(r.brief, 'For the bar.');
+    assert.equal(r.briefFound, '16:9, 40 s');
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].prompt, /\[Document: brief\.txt\]/);
+    res = await as('admin', 'POST', '/dz/api/storyboards/sort', { text: '   ' });
+    assert.equal(res.statusCode, 400);
+  } finally { app.ctx.llm.chat = realChat; app.ctx.llm.estimate = realEstimate; }
+});

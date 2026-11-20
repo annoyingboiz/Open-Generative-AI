@@ -331,6 +331,17 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   };
   const costOf = (price, usage) => (price ? (usage.in * price.in + usage.out * price.out) / 1e6 : null);
 
+  // The price of a call before making it (package 05: the price on a Start button):
+  // input ≈ characters / 3.5 tokens, output as given. Free models (this server, a ChatGPT plan) cost 0.
+  async function estimate(user, { model, inChars = 0, outTokens = 1000 } = {}) {
+    const id = String(model || defaultFor(user, (await list(user)).models) || '');
+    const m = /^(local|apimart|atlas|chatgpt):(.+)$/.exec(id);
+    if (!m) return { model: null, usd: null };
+    const price = await priceOf(m[1], m[2]);
+    const usd = costOf(price, { in: Math.ceil(inChars / 3.5), out: outTokens });
+    return { model: id, usd, free: m[1] === 'local' || m[1] === 'chatgpt' };
+  }
+
   // { model, system?, messages?, prompt?, images?, maxTokens?, temperature?, purpose? } → { text, model, usage, costUsd, ms }
   // Money: before the call the worst case (input + maxTokens) is booked against
   // the monthly limit, so parallel calls can't run past it; after the call the
@@ -397,5 +408,5 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   db.prepare("UPDATE llm_calls SET status = 'failed', cost_usd = 0, error = 'Interrupted (server restart).' WHERE status = 'running'").run();
 
   const defaultId = () => q.getMeta.get('llm_default')?.value || '';
-  return { list, cachedList, quickList, chat, setDefault, setUserDefault, dropUnusableDefaults, defaultId, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
+  return { list, cachedList, quickList, chat, estimate, setDefault, setUserDefault, dropUnusableDefaults, defaultId, recent, spentThisMonth: (userId) => q.spent.get(userId, monthStart()).usd };
 }

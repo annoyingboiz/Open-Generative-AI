@@ -111,7 +111,7 @@ function BriefDialog({ value, onClose, onSave }) {
       <div className="flex max-h-[85vh] w-[min(760px,100%)] flex-col rounded-2xl border border-border bg-card p-5 shadow-float" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="The brief">
         <p className="text-lg font-semibold">The brief</p>
         <p className="mt-1 text-sm text-muted-foreground">The brief and any original documents, kept with the film as given. Edit freely.</p>
-        <textarea ref={area} value={text} onChange={(e) => setText(e.target.value)} maxLength={20000} placeholder="Paste the client's brief here."
+        <textarea ref={area} value={text} onChange={(e) => setText(e.target.value)} maxLength={200000} placeholder="Paste the client's brief here."
           className="custom-scrollbar mt-3 min-h-[240px] w-full flex-1 resize-none rounded-md border border-input bg-background p-3 text-base outline-none focus:border-ring" />
         <div className="mt-3 flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{text.length ? `${text.length.toLocaleString()} characters` : ""}</span>

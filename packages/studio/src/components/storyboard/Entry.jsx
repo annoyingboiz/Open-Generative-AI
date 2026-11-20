@@ -125,7 +125,11 @@ export default function Entry({ onClose, onCreated }) {
     }, 400);
     return () => { live = false; clearTimeout(t); };
   }, [inputKey, needsModel]); // eslint-disable-line react-hooks/exhaustive-deps
-  const quoted = !needsModel || (quote && quote.key === inputKey) || sortCache.current.key === inputKey;
+  // Start needs a known price for exactly this input (or a sort already bought for it).
+  const priced = Boolean(quote && quote.key === inputKey && !quote.error && quote.model && (quote.free || Number.isFinite(quote.usd)));
+  const quoted = !needsModel || priced || sortCache.current.key === inputKey;
+  const noPrice = needsModel && quote && quote.key === inputKey && !priced && sortCache.current.key !== inputKey
+    ? (quote.error || "The price of the text model is unknown.") : "";
   const priceLabel = !needsModel || !quote || quote.error || quote.key !== inputKey ? "" : quote.free || quote.usd === 0 ? "free" : Number.isFinite(quote.usd) ? (quote.usd < 0.001 ? "< $0.001" : `≈ ${fmtUsd(quote.usd)}`) : "";
   const tooLong = Boolean(quote?.tooLong && quote.key === inputKey);
 
@@ -139,7 +143,7 @@ export default function Entry({ onClose, onCreated }) {
         if (sortCache.current.key === inputKey) sorted = sortCache.current.value;
         else {
           setBusy("Sorting…");
-          try { sorted = await dzStoryboards.sort({ ...toSort, llm: quote?.model || undefined }); } catch (e) { setFailed(e.message); setBusy(""); return; }
+          try { sorted = await dzStoryboards.sort({ ...toSort, llm: quote?.model || undefined }); } catch (e) { setFailed(`Sorting failed: ${e.message}`); setBusy(""); return; }
           sortCache.current = { key: inputKey, value: sorted };
         }
       }
@@ -180,8 +184,12 @@ export default function Entry({ onClose, onCreated }) {
         const texts = [...(typed.length > 2000 ? [typed] : []), ...readDocs.map((d) => d.doc.text)];
         keptText = kept.length === 1 ? texts[0] : kept.map((k, i) => `── ${k.name} ──\n${texts[i]}`).join("\n\n");
       }
-      const cut = keptText.length > KEPT_MAX;
-      if (cut) keptText = keptText.slice(0, KEPT_MAX);
+      const cut = false;
+      if (keptText.length > KEPT_MAX) {
+        setBusy("");
+        setFailed(`Too much to keep with the film (${Math.round(keptText.length / 1000)}k characters; up to ${KEPT_MAX / 1000}k). Remove a document or shorten the text.`);
+        return;
+      }
       const { storyboard } = await dzStoryboards.create({ project: ctx.project?.id || undefined, name: sorted?.title || undefined, note, scene: keptText, scenes, shots, mood });
 
       const unread = docs.filter((d) => d.doc?.error);
@@ -291,6 +299,12 @@ export default function Entry({ onClose, onCreated }) {
                 ))}
               </div>
             )}
+            {noPrice && !failed && !tooLong && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-muted px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Can't price the sorting: {noPrice}</span>
+                <button type="button" onClick={() => start({ sortIt: false })} disabled={Boolean(busy)} className="font-medium underline-offset-2 hover:underline">Keep it unsorted</button>
+              </div>
+            )}
             {tooLong && !failed && (
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-muted px-3 py-2 text-sm">
                 <span className="text-muted-foreground">Too much text to sort in one go (over 40,000 characters).</span>
@@ -299,7 +313,7 @@ export default function Entry({ onClose, onCreated }) {
             )}
             {failed && (
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-destructive/10 px-3 py-2 text-sm">
-                <span className="text-destructive">Sorting failed: {failed}</span>
+                <span className="text-destructive">{failed}</span>
                 <button type="button" onClick={() => start({ sortIt: false })} className="font-medium underline-offset-2 hover:underline">Keep it unsorted</button>
               </div>
             )}

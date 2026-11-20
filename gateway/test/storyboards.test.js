@@ -368,3 +368,13 @@ test('storyboard entry window: sorting is one text-model call; its price is know
     assert.equal(res.statusCode, 400);
   } finally { app.ctx.llm.chat = realChat; app.ctx.llm.estimate = realEstimate; }
 });
+
+test('storyboard sorting keeps the typed script when the model names no valid source', async () => {
+  const realChat = app.ctx.llm.chat;
+  app.ctx.llm.chat = async () => ({ text: '{"note":"Idea","scenes":[{"name":"A","note":"","shots":["one"]}],"script":["D9"]}', model: 'apimart:test', costUsd: 0, ms: 1 });
+  try {
+    const res = await as('admin', 'POST', '/dz/api/storyboards/sort', { text: 'EXT. A. One.' });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(res.json().keptText, 'EXT. A. One.');
+  } finally { app.ctx.llm.chat = realChat; }
+});

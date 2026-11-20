@@ -77,7 +77,8 @@ export function createFilmSort({ llm }) {
     // (a document the model left out; typed text that became neither note nor script).
     const kept = [];
     for (const b of blocks) {
-      const role = briefIds.has(b.id) ? 'brief' : scriptIds.has(b.id) ? 'script' : b.id === 'T' && note ? null : 'other';
+      // The typed text is dropped only when it was a pure idea (now the note, and no script came of it).
+      const role = briefIds.has(b.id) ? 'brief' : scriptIds.has(b.id) ? 'script' : b.id === 'T' && note && !scenes.length ? null : 'other';
       if (role) kept.push({ id: b.id, name: b.name, role, text: b.text });
     }
     kept.sort((a, b) => ['brief', 'script', 'other'].indexOf(a.role) - ['brief', 'script', 'other'].indexOf(b.role));

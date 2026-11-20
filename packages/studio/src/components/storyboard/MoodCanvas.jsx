@@ -492,7 +492,8 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
   useEffect(() => () => endDrag.current?.({}), []);
 
   const onDown = (e) => {
-    if (editing) { if (!e.target.closest?.("textarea,input")) setEditing(null); return; }
+    // A click outside the field being edited ends the edit through its blur (which saves it).
+    if (editing) { if (!e.target.closest?.("textarea,input")) { const a = document.activeElement; if (a?.closest?.("[data-overlay-ui]")) a.blur(); else setEditing(null); } return; }
     if (e.target.closest?.("[data-overlay-ui]")) return;
     host.current?.focus({ preventScroll: true });
     const hand = tool === "hand" || space || e.button === 1;

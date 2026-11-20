@@ -52,6 +52,26 @@ export function dzScrollBoxRef(el) {
   if (el && !el.__dzWheel) el.__dzWheel = dzContainWheel(el);
 }
 
+// Scrollers that overflow get data-dz-overflows, so CSS holds the gesture at their end
+// (app/globals.css). Checked when the pointer comes over something (and on each wheel,
+// passively), for the scrollers above it: cheap, and it is set before a gesture starts.
+// Horizontal-only strips are left out: they must pass vertical scrolling on.
+const SCROLLER = '.overflow-y-auto,.overflow-auto,.overflow-y-scroll,.overflow-scroll,textarea,[contenteditable="true"]';
+function markScrollers(e) {
+  for (let el = e.target instanceof Element ? e.target : null; el && el !== document.body; el = el.parentElement) {
+    if (!el.matches(SCROLLER)) continue;
+    const over = el.scrollHeight > el.clientHeight + 1;
+    if (over !== el.hasAttribute("data-dz-overflows")) el.toggleAttribute("data-dz-overflows", over);
+  }
+}
+let watching = false;
+export function dzWatchScrollers() {
+  if (watching || typeof document === "undefined") return;
+  watching = true;
+  document.addEventListener("mouseover", markScrollers, { passive: true });
+  document.addEventListener("wheel", markScrollers, { passive: true });
+}
+
 // A wheel step control (package 08, rule 3). Mouse wheel, Magic Mouse and trackpad
 // all send a stream of wheel events; a trackpad and a Magic Mouse go on sending
 // them after the fingers leave (inertia). One gesture = events with no gap longer

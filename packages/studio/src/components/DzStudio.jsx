@@ -950,7 +950,7 @@ export default function DzStudio(props) {
     let alive = true;
     const img = new window.Image();
     img.onload = () => { if (alive && img.naturalWidth) setFrameShape(img.naturalWidth / img.naturalHeight); };
-    img.src = startUrl;
+    img.src = dzThumb(startUrl, 128); // the shape only: a small copy, not the original
     return () => { alive = false; };
   }, [startUrl]);
   const ratioFallback = !ratioP && kind === "video" && startUrl ? (() => {

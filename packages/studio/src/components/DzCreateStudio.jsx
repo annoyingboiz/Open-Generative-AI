@@ -1026,7 +1026,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
               {tags.filter((t) => !(t.kind === "file" && t.unused)).map((t) => (
                 <button key={t.tag} type="button" onClick={() => insertAtCursor(`@${t.tag}`)} title={`Sent to this model as ${t.to}`}
                   className={cn("flex items-center gap-1.5 rounded-lg bg-signal/15 py-1 pl-1 pr-2.5 font-semibold text-signal transition-colors hover:bg-signal/20", !t.url && "pl-2.5", t.unused && "opacity-60")}>
-                  {t.url && <img src={t.url} alt="" className="h-6 w-6 rounded object-cover" />}
+                  {t.url && <img src={dzThumb(t.url, 64)} alt="" className="h-6 w-6 rounded object-cover" />}
                   {t.kind === "element" && <span className="font-normal text-foreground/80">{t.label}</span>}@{t.tag}
                 </button>
               ))}
@@ -1062,7 +1062,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
                 <button key={`${o.tag}-${o.add}-${o.element?.id || ""}`} type="button" role="option" aria-selected={i === mention.index} aria-disabled={Boolean(o.disabled)}
                   onMouseDown={(e) => { e.preventDefault(); pickMention(o); }} title={o.disabled ? `Can't add: ${o.disabled}` : undefined}
                   className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left", o.disabled ? "cursor-not-allowed opacity-50" : i === mention.index ? "bg-accent" : "hover:bg-accent/60")}>
-                  {o.url ? <img src={o.url} alt="" className="h-8 w-8 rounded-md object-cover" /> : <span className="h-8 w-8 rounded-md bg-muted" />}
+                  {o.url ? <img src={dzThumb(o.url, 64)} alt="" className="h-8 w-8 rounded-md object-cover" /> : <span className="h-8 w-8 rounded-md bg-muted" />}
                   <span className="font-semibold text-primary">@{o.tag}</span>
                   <span className="truncate text-muted-foreground">{o.label}{o.disabled ? ` · ${o.disabled}` : o.add ? " · add element" : ""}</span>
                   {!o.add && o.to && <span className="ml-auto shrink-0 text-muted-foreground">→ {o.to}</span>}

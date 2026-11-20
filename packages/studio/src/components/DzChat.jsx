@@ -475,7 +475,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
       )}
       {viewing && (
         <div ref={dzScrollBoxRef} className="fixed inset-0 z-[150] flex items-center justify-center bg-overlay/90 p-6" onClick={() => setViewing(null)} role="dialog" aria-label="Picture">
-          <img src={viewing} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
+          <img src={dzThumb(viewing, 2048)} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
         </div>
       )}
     </SidePanel>

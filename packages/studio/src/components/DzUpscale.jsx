@@ -8,7 +8,7 @@
 // The controls come from the server (window.__DZ_CATALOG__.tools.upscale), the
 // same spec the gateway uses to check fields and compute the price.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dzUpscale, dzWithMeta, uploadFile } from "../api.js";
+import { dzUpscale, dzWithMeta, uploadFile, dzThumb } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { dzUpscaleSpec, dzIsOwnImage } from "../dzCatalog.js";
 import { DzMediaBrowser } from "./DzMedia.jsx";
@@ -349,7 +349,7 @@ function DzImageUpscaleView({ apiKey, initial, isAdmin = false, onGenerationStar
             result && result.source === source ? (
               <Compare before={source} after={result.url} />
             ) : (
-              <img src={source} alt="To upscale" className="absolute inset-0 h-full w-full object-contain" />
+              <img src={dzThumb(source, 2048)} alt="To upscale" className="absolute inset-0 h-full w-full object-contain" />
             )
           ) : (
             <div className="flex h-full flex-col overflow-hidden p-4">
@@ -389,7 +389,7 @@ function DzImageUpscaleView({ apiKey, initial, isAdmin = false, onGenerationStar
                   onClick={() => { const src = item.params?.image_url; if (src) { setSource(src); setResult({ url: item.url, source: src }); setPicker(false); } }}
                   className="h-[72px] w-[72px] flex-shrink-0 overflow-hidden rounded-xl border border-border transition-colors hover:border-input"
                 >
-                  <img src={item.url} alt="Upscaled" loading="lazy" className="h-full w-full object-cover" />
+                  <img src={dzThumb(item.url, 480)} alt="Upscaled" loading="lazy" className="h-full w-full object-cover" />
                 </button>
               </Tip>
             ))}

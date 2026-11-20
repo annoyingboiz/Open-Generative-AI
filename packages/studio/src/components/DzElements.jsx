@@ -302,7 +302,7 @@ function ElementViewer({ element, onClose, onEdit, onGenerateVideo, onUse }) {
         <div className="grid max-h-[92vh] md:grid-cols-[1fr_340px]">
           <div className="flex min-h-0 flex-col bg-overlay">
             <div className="flex min-h-[320px] flex-1 items-center justify-center p-4">
-              {cur ? (cur.video ? <video key={cur.url} src={dzPlay(cur.url)} controls autoPlay className="max-h-[66vh] max-w-full rounded-lg" /> : <img src={cur.url} alt={cur.label || element.name} className="max-h-[66vh] max-w-full rounded-lg object-contain" />) : null}
+              {cur ? (cur.video ? <video key={cur.url} src={dzPlay(cur.url)} controls autoPlay className="max-h-[66vh] max-w-full rounded-lg" /> : <img src={dzThumb(cur.url, 2048)} alt={cur.label || element.name} className="max-h-[66vh] max-w-full rounded-lg object-contain" />) : null}
             </div>
             {cur?.label && <div className="px-4 pb-2 text-center text-foreground">{cur.label}</div>}
             <div className="flex gap-2 overflow-x-auto custom-scrollbar border-t border-border p-3">

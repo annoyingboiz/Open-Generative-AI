@@ -26,6 +26,16 @@ export function numbered(film) {
 
 // The natural size of a picture or video (for its own aspect ratio).
 export function sizeOf(url, kind) {
+  // Our own files: the size from ?info=1 (a few bytes), never the whole picture or video.
+  if (typeof url === "string" && url.startsWith("/media/")) {
+    return fetch(`${url}${url.includes("?") ? "&" : "?"}info=1`, { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => (j?.width && j?.height ? { w: j.width, h: j.height } : sizeOfLoaded(url, kind)))
+      .catch(() => sizeOfLoaded(url, kind));
+  }
+  return sizeOfLoaded(url, kind);
+}
+function sizeOfLoaded(url, kind) {
   return new Promise((resolve) => {
     if (kind === "video" || isVideoUrl(url)) {
       const v = document.createElement("video");

@@ -132,9 +132,12 @@ export function useFilm(id) {
       const ver = mediaVer.current;
       const { storyboard } = await dzStoryboards.get(id);
       setError(null);
+      // A media change confirmed after this read started: its media is newer than this copy's.
+      // Keep ours and read again, so new pictures in this copy are not lost.
+      const stale = ver !== mediaVer.current;
+      if (stale) setTimeout(() => loadRef.current?.(), 300);
       setFilm((cur) => {
-        // A media change confirmed after this read started: its media is newer than this copy's.
-        const media = cur && ver !== mediaVer.current ? cur.media : withPending(storyboard.media);
+        const media = cur && stale ? cur.media : withPending(storyboard.media);
         // Local edits not saved yet stay; media, jobs and the revision come from the server.
         if (cur && dirty.current) return { ...cur, media, jobs: storyboard.jobs };
         base.current = storyboard;
@@ -143,6 +146,8 @@ export function useFilm(id) {
     } catch (e) { setError(e); }
   }, [id]);
 
+  const loadRef = useRef(null);
+  loadRef.current = load;
   useEffect(() => { setFilm(null); dirty.current = false; load(); }, [id, load]);
 
   const flush = useCallback(async () => {

@@ -320,6 +320,7 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
   const [notes, setNotes] = useState(null);
   const llmAnchor = useRef(null);
   const seq = useRef(0);
+  const lastRun = useRef({}); // format → its newest run
   useEffect(() => { try { if (llmId) localStorage.setItem(LLM_KEY, llmId); } catch { /* optional */ } }, [llmId]);
 
   const currentKey = adaptInputKey({ prompt, model, context, llm: chosen, as });
@@ -329,14 +330,17 @@ export function AdaptPanel({ open, onClose, prompt, model, context, look, reques
     const mine = ++seq.current;
     const key = currentKey;
     const format = as;
+    lastRun.current[format] = mine;
     setSaved(null);
     setState({ busy: true, error: "", result: null, key });
     try {
       const r = await post("/dz/api/prompt/adapt", { prompt, model, context, llm: chosen || undefined, as: format });
+      // Kept for its own input even if the input moved on meanwhile (no second call for it
+      // later), unless a newer run in the same format started after it.
+      if (lastRun.current[format] === mine) adaptRemember(scope, format, { key, result: r, at: Date.now() });
       if (mine !== seq.current) return;
       setState({ busy: false, error: "", result: r, key });
       setText(r.prompt);
-      adaptRemember(scope, format, { key, result: r, at: Date.now() });
     } catch (e) {
       if (mine === seq.current) setState({ busy: false, error: String(e?.message || e), result: null, key });
     }

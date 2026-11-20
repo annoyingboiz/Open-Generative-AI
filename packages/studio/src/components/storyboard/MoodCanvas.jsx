@@ -6,7 +6,8 @@
 // (no React render per pointer move); off-screen items are not drawn; pictures load at the
 // size they are shown. Undo/redo, snapping with guides, multi-select resize, z-order.
 // Pan: hand tool, Space+drag, middle button or two-finger scroll. Zoom: Ctrl/⌘+wheel, pinch, the buttons.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Konva from "konva";
 import { Stage, Layer, Rect, Group, Image as KImage, Text as KText, Arrow as KArrow, Transformer, Line, Circle, RegularPolygon } from "react-konva";
 import { Cursor, Hand, Square, NoteBlank, ArrowUpRight, TextT, ImageSquare, Minus, Plus, CornersOut, UploadSimple, Clipboard, Images, Sparkle, DotsThree, ArrowCounterClockwise, ArrowClockwise } from "@phosphor-icons/react";
 import { dzThumb, uploadFile } from "../../api.js";
@@ -21,6 +22,8 @@ const clampZ = (z) => Math.min(4, Math.max(0.1, z));
 const PIC_H = 220;
 const HISTORY = 100;
 const isMedia = (x) => x.type === "image" || x.type === "video";
+const CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"];
+const ALL_ANCHORS = ["top-left", "top-center", "top-right", "middle-right", "middle-left", "bottom-left", "bottom-center", "bottom-right"];
 
 // ── Theme tokens for the canvas (it cannot read CSS variables itself) ──
 function readTokens() {
@@ -48,33 +51,38 @@ function useTokens() {
 const colorOf = (tk, c) => tk[(COLOR_KEYS.find(([k]) => k === c) || COLOR_KEYS[0])[1].replace("muted-foreground", "mutedFg")];
 
 // ── Pictures: one HTMLImageElement per URL, shared; the bigger size replaces the smaller when ready ──
+// state: loading | ok | failed. Least recently used entries go first past the limit.
 const imgCache = new Map();
+const IMG_LIMIT = 300;
 function loadImg(src, onReady) {
   let e = imgCache.get(src);
-  if (!e) {
+  if (e) { imgCache.delete(src); imgCache.set(src, e); } // mark as recently used
+  else {
     const img = new window.Image();
-    e = { img, ok: false, cbs: new Set() };
-    img.onload = () => { e.ok = true; e.cbs.forEach((f) => f()); e.cbs.clear(); };
-    img.onerror = () => { e.cbs.clear(); };
+    e = { img, state: "loading", cbs: new Set() };
+    const entry = e;
+    img.onload = () => { entry.state = "ok"; entry.cbs.forEach((f) => f()); entry.cbs.clear(); };
+    img.onerror = () => { entry.state = "failed"; entry.cbs.clear(); };
     img.src = src;
     imgCache.set(src, e);
-    if (imgCache.size > 600) imgCache.delete(imgCache.keys().next().value);
+    while (imgCache.size > IMG_LIMIT) { const [k, old] = imgCache.entries().next().value; old.cbs.clear(); imgCache.delete(k); }
   }
-  if (!e.ok && onReady) e.cbs.add(onReady);
-  return e;
+  let off = () => {};
+  if (e.state === "loading" && onReady) { e.cbs.add(onReady); const entry = e; off = () => entry.cbs.delete(onReady); }
+  return { e, off };
 }
 function useImg(src, fallback) {
   const [, force] = useState(0);
   useEffect(() => {
-    let live = true;
-    const e = loadImg(src, () => { if (live) force((n) => n + 1); });
-    if (fallback && fallback !== src) loadImg(fallback, () => { if (live && !e.ok) force((n) => n + 1); });
-    return () => { live = false; };
+    const bump = () => force((n) => n + 1);
+    const a = loadImg(src, bump);
+    const b = fallback && fallback !== src ? loadImg(fallback, bump) : null;
+    return () => { a.off(); b?.off(); };
   }, [src, fallback]);
   const e = imgCache.get(src);
-  if (e?.ok) return e.img;
+  if (e?.state === "ok") return e.img;
   const f = fallback && imgCache.get(fallback);
-  return f?.ok ? f.img : null;
+  return f?.state === "ok" ? f.img : null;
 }
 // object-cover inside w×h
 function coverCrop(img, w, h) {
@@ -86,16 +94,17 @@ function coverCrop(img, w, h) {
   return iw / ih > r ? { x: (iw - ih * r) / 2, y: 0, width: ih * r, height: ih } : { x: 0, y: (ih - iw / r) / 2, width: iw, height: iw / r };
 }
 
-function MediaNode({ it, tk, zoom }) {
+const MediaNode = memo(function MediaNode({ it, tk, zoom }) {
   const video = it.type === "video" || isVideoUrl(it.url);
   const shownPx = it.w * zoom * (window.devicePixelRatio || 1);
   const small = dzThumb(it.url, 640);
   const src = shownPx > 700 ? dzThumb(it.url, 1280) : small;
   const img = useImg(src, small);
   const r = Math.min(6, it.w / 8);
+  const crop = useMemo(() => coverCrop(img, it.w, it.h), [img, it.w, it.h]);
   return (
     <Group id={it.id} x={it.x} y={it.y}>
-      {img ? <KImage image={img} width={it.w} height={it.h} cornerRadius={r} crop={coverCrop(img, it.w, it.h)} perfectDrawEnabled={false} />
+      {img ? <KImage image={img} width={it.w} height={it.h} cornerRadius={r} crop={crop} perfectDrawEnabled={false} />
         : <Rect width={it.w} height={it.h} cornerRadius={r} fill={tk.muted} perfectDrawEnabled={false} />}
       {video && (
         <Group x={20} y={it.h - 20} listening={false}>
@@ -105,9 +114,9 @@ function MediaNode({ it, tk, zoom }) {
       )}
     </Group>
   );
-}
+});
 
-function NoteNode({ it, tk, editing }) {
+const NoteNode = memo(function NoteNode({ it, tk, editing }) {
   const empty = !it.text;
   return (
     <Group id={it.id} x={it.x} y={it.y} rotation={-1.5}>
@@ -117,23 +126,26 @@ function NoteNode({ it, tk, editing }) {
       {!editing && <KText x={12} y={12} width={it.w - 24} height={it.h - 24} text={it.text || "Double-click to write"} fontSize={14} lineHeight={1.35} fontFamily={tk.font} fill={tk.background} opacity={empty ? 0.5 : 1} wrap="word" ellipsis listening={false} />}
     </Group>
   );
-}
+});
 
-function TextNode({ it, tk, editing }) {
+const TextNode = memo(function TextNode({ it, tk, editing }) {
   return (
     <Group id={it.id} x={it.x} y={it.y}>
       <Rect width={it.w} height={it.h} fill="rgba(0,0,0,0)" perfectDrawEnabled={false} />
       {!editing && <KText width={it.w} height={it.h} text={it.text || "Text"} fontSize={18} fontStyle="600" lineHeight={1.3} fontFamily={tk.font} fill={tk.foreground} opacity={it.text ? 1 : 0.5} wrap="word" ellipsis listening={false} />}
     </Group>
   );
-}
+});
 
-function ArrowNode({ it, tk, selected, zoom }) {
+// Points are memoised: a new array on every render would make react-konva re-apply them
+// and undo an arrow being dragged imperatively.
+const ArrowNode = memo(function ArrowNode({ it, tk, selected, zoom }) {
+  const points = useMemo(() => [it.x, it.y, it.x2, it.y2], [it.x, it.y, it.x2, it.y2]);
   return (
-    <KArrow id={it.id} points={[it.x, it.y, it.x2, it.y2]} stroke={selected ? tk.signal : tk.foreground} fill={selected ? tk.signal : tk.foreground}
+    <KArrow id={it.id} points={points} stroke={selected ? tk.signal : tk.foreground} fill={selected ? tk.signal : tk.foreground}
       strokeWidth={2 / Math.max(0.5, zoom)} pointerLength={12 / Math.max(0.5, zoom)} pointerWidth={10 / Math.max(0.5, zoom)} hitStrokeWidth={16 / Math.max(0.5, zoom)} lineCap="round" lineJoin="round" />
   );
-}
+});
 
 export default function MoodCanvas({ film, edit, onOpenGroup }) {
   const items = film.mood?.items || [];
@@ -166,7 +178,17 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
   const [sel, setSel] = useState([]);
   const [marquee, setMarquee] = useState(null);
   const [draft, setDraft] = useState(null);
-  const [guides, setGuides] = useState([]);
+  const guidesRef = useRef(null); // a Konva group; guide lines are drawn into it directly, no React render
+  const tkRef = useRef(null);
+  const setGuides = (lines) => {
+    const g = guidesRef.current;
+    if (!g) return;
+    if (!lines.length && !g.hasChildren()) return;
+    g.destroyChildren();
+    for (const l of lines) g.add(new Konva.Line({ points: l.v ? [l.at, l.from, l.at, l.to] : [l.from, l.at, l.to, l.at], stroke: tkRef.current.signal, strokeWidth: 1, strokeScaleEnabled: false, dash: [4, 4], listening: false }));
+    g.getLayer()?.batchDraw();
+  };
+  tkRef.current = tk;
   const [editing, setEditing] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [picker, setPicker] = useState(false);
@@ -347,6 +369,19 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Selection helpers ──
+  // A frame takes what is inside it (centre inside; an arrow by its middle).
+  const withMembers = (ids) => {
+    const list = itemsRef.current;
+    const out = new Set(ids);
+    for (const f of list.filter((x) => out.has(x.id) && x.type === "frame")) {
+      for (const x of list) {
+        if (x.type === "frame") continue;
+        const inside = x.type === "arrow" ? inFrame(f, { x: (x.x + x.x2) / 2, y: (x.y + x.y2) / 2, w: 0, h: 0 }) : inFrame(f, x);
+        if (inside) out.add(x.id);
+      }
+    }
+    return out;
+  };
   const removeSel = (withPictures) => {
     const ids = new Set(selRef.current);
     const cur = itemsRef.current;
@@ -370,7 +405,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
     commit((list) => list.map((x) => (ids.has(x.id) ? { ...x, z: front ? (z += 1) : (z -= 1) } : x)));
   };
   const nudge = (dx, dy) => {
-    const ids = new Set(selRef.current);
+    const ids = withMembers(selRef.current);
     if (!ids.size) return;
     commit((list) => list.map((x) => (ids.has(x.id) ? { ...x, x: x.x + dx, y: x.y + dy, ...(x.type === "arrow" ? { x2: x.x2 + dx, y2: x.y2 + dy } : {}) } : x)));
   };
@@ -414,7 +449,8 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
   // ── Transformer: resize one or many (pictures keep their ratio) ──
   const selItems = items.filter((x) => sel.includes(x.id));
   const resizable = selItems.filter((x) => x.type !== "arrow");
-  const keepRatio = resizable.length > 0 && resizable.every(isMedia);
+  // Pictures never stretch: any picture in the selection locks the ratio for all.
+  const keepRatio = resizable.some(isMedia);
   useEffect(() => {
     const tr = trRef.current;
     const st = stageRef.current;
@@ -435,7 +471,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
       const sx = n.scaleX();
       const sy = n.scaleY();
       const w = Math.max(30, it.w * sx);
-      const h = Math.max(24, keepRatio ? w * (it.h / it.w) : it.h * sy);
+      const h = Math.max(24, keepRatio || isMedia(it) ? w * (it.h / it.w) : it.h * sy);
       changes[it.id] = { x: n.x(), y: n.y(), w, h };
       n.scale({ x: 1, y: 1 });
     }
@@ -498,7 +534,8 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
   const onDown = (e) => {
     // A click outside the field being edited ends the edit through its blur (which saves it).
     if (editing) { if (!e.target.closest?.("textarea,input")) { const a = document.activeElement; if (a?.closest?.("[data-overlay-ui]")) a.blur(); else setEditing(null); } return; }
-    if (e.target.closest?.("[data-overlay-ui]")) return;
+    // Menus open in a portal; their events still bubble here through React — not canvas clicks.
+    if (!host.current?.contains(e.target) || e.target.closest?.("[data-overlay-ui]")) return;
     host.current?.focus({ preventScroll: true });
     const hand = tool === "hand" || space || e.button === 1;
     if (hand) { drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, v: viewRef.current }; setDragging(true); listen(); return; }
@@ -530,10 +567,8 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
       const ids = cur.includes(hit.id) ? (e.shiftKey ? cur.filter((x) => x !== hit.id) : cur) : e.shiftKey ? [...cur, hit.id] : [hit.id];
       setSel(ids);
       if (!ids.includes(hit.id)) return;
-      // A frame takes what is inside it.
       const list = itemsRef.current;
-      const moving = new Set(ids);
-      for (const f of list.filter((x) => moving.has(x.id) && x.type === "frame")) list.filter((x) => x.type !== "frame" && (x.type === "arrow" ? inFrame(f, { x: x.x, y: x.y, w: 0, h: 0 }) : inFrame(f, x))).forEach((x) => moving.add(x.id));
+      const moving = withMembers(ids);
       const ms = list.filter((x) => moving.has(x.id));
       const boxes = ms.filter((x) => x.type !== "arrow");
       const box = boxes.length ? { x: Math.min(...boxes.map((b) => b.x)), y: Math.min(...boxes.map((b) => b.y)), w: Math.max(...boxes.map((b) => b.x + b.w)) - Math.min(...boxes.map((b) => b.x)), h: Math.max(...boxes.map((b) => b.y + b.h)) - Math.min(...boxes.map((b) => b.y)) } : null;
@@ -639,6 +674,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
   };
 
   const onDouble = (e) => {
+    if (!host.current?.contains(e.target) || e.target.closest?.("[data-overlay-ui]")) return;
     const hit = hitAt(e.nativeEvent);
     const it = hit.id && itemsRef.current.find((x) => x.id === hit.id);
     if (it && (it.type === "note" || it.type === "text" || it.type === "frame")) { setSel([it.id]); setEditing(it.id); }
@@ -678,13 +714,13 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
             {draft?.type === "frame" && <Rect x={Math.min(draft.x, draft.x2)} y={Math.min(draft.y, draft.y2)} width={Math.abs(draft.x2 - draft.x)} height={Math.abs(draft.y2 - draft.y)} cornerRadius={14} stroke={tk.signal} dash={[6, 4]} strokeWidth={1} strokeScaleEnabled={false} listening={false} />}
             {draft?.type === "arrow" && <KArrow points={[draft.x, draft.y, draft.x2, draft.y2]} stroke={tk.foreground} fill={tk.foreground} strokeWidth={2 / Math.max(0.5, z)} pointerLength={12 / Math.max(0.5, z)} pointerWidth={10 / Math.max(0.5, z)} listening={false} />}
             {marquee && <Rect x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} stroke={tk.signal} fill={tk.signalSoft} strokeWidth={1} strokeScaleEnabled={false} listening={false} />}
-            {guides.map((g, i) => <Line key={i} points={g.v ? [g.at, g.from, g.at, g.to] : [g.from, g.at, g.to, g.at]} stroke={tk.signal} strokeWidth={1} strokeScaleEnabled={false} dash={[4, 4]} listening={false} />)}
+            <Group ref={guidesRef} listening={false} />
             {selArrow && !dragging && [["a", selArrow.x, selArrow.y], ["b", selArrow.x2, selArrow.y2]].map(([end, x, y]) => (
               <Circle key={end} id={`end-${end}`} name="arrow-end" end={end} arrow={selArrow.id} x={x} y={y} radius={5 / z} fill={tk.background} stroke={tk.signal} strokeWidth={1.5} strokeScaleEnabled={false} />
             ))}
             {selArrow && dragging && drag.current?.kind === "end" && <Circle id={`end-${drag.current.end}`} x={drag.current.end === "a" ? selArrow.x : selArrow.x2} y={drag.current.end === "a" ? selArrow.y : selArrow.y2} radius={5 / z} fill={tk.background} stroke={tk.signal} strokeWidth={1.5} strokeScaleEnabled={false} listening={false} />}
             <Transformer ref={trRef} rotateEnabled={false} keepRatio={keepRatio} flipEnabled={false} ignoreStroke
-              enabledAnchors={keepRatio ? ["top-left", "top-right", "bottom-left", "bottom-right"] : undefined}
+              enabledAnchors={keepRatio ? CORNERS : ALL_ANCHORS}
               anchorSize={8} anchorCornerRadius={2} anchorStroke={tk.signal} anchorFill={tk.background} borderStroke={tk.signal} borderStrokeWidth={1}
               boundBoxFunc={(oldBox, box) => (Math.abs(box.width) < 30 || Math.abs(box.height) < 24 ? oldBox : box)}
               onTransformStart={() => setDragging(true)} onTransformEnd={() => { setDragging(false); onTransformEnd(); }} />
@@ -721,7 +757,11 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild><button type="button" aria-label="Group menu" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><DotsThree size={16} weight="bold" /></button></DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  <div className="flex gap-1.5 px-2 py-1.5">{COLOR_KEYS.map(([k]) => <button key={k} type="button" aria-label={k} onClick={() => setItem(selFrame.id, { color: k })} className={cn("h-5 w-5 rounded-full", selFrame.color === k && "ring-2 ring-foreground ring-offset-2 ring-offset-popover")} style={{ background: colorOf(tk, k) }} />)}</div>
+                  <div className="flex gap-1 px-1 py-1">{COLOR_KEYS.map(([k]) => (
+                    <DropdownMenuItem key={k} aria-label={`Colour: ${k}`} onSelect={() => setItem(selFrame.id, { color: k })} className="h-7 w-7 justify-center p-0">
+                      <span className={cn("h-5 w-5 rounded-full", selFrame.color === k && "ring-2 ring-foreground ring-offset-2 ring-offset-popover")} style={{ background: colorOf(tk, k) }} />
+                    </DropdownMenuItem>
+                  ))}</div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => removeSel(false)}>Delete the group (keep pictures)</DropdownMenuItem>
                   <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => removeSel(true)}>Delete with its pictures</DropdownMenuItem>

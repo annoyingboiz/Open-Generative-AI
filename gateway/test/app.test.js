@@ -191,3 +191,28 @@ test('the studio API lives at /api/v1; legacy /api/api/v1 is refused', async () 
   res = await app.inject({ url: '/api/api/v1/history', headers: { cookie: adminCookie } });
   assert.equal(res.statusCode, 410);
 });
+
+test('product icons are public (package 11): favicon, apple touch icon, manifest', async () => {
+  let res = await app.inject({ url: '/favicon.ico' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['content-type'], 'image/x-icon');
+  assert.equal(res.headers['cache-control'], 'public, max-age=86400');
+  res = await app.inject({ url: '/dz/brand/favicon.svg?v=1' });
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /<svg/);
+  assert.match(res.headers['cache-control'], /immutable/);
+  res = await app.inject({ url: '/apple-touch-icon.png' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['content-type'], 'image/png');
+  res = await app.inject({ url: '/manifest.webmanifest?v=1' });
+  assert.equal(res.statusCode, 200);
+  const m = res.json();
+  assert.equal(m.name, 'Director');
+  assert.deepEqual(m.icons.map((i) => i.sizes), ['192x192', '512x512']);
+  res = await app.inject({ url: '/dz/brand/../app.js' });
+  assert.notEqual(res.statusCode, 200);
+  res = await app.inject({ url: '/dz/brand/secret.txt' });
+  assert.notEqual(res.statusCode, 200);
+  res = await app.inject({ url: '/login' });
+  assert.match(res.body, /rel="icon" href="\/dz\/brand\/favicon\.svg\?v=1"/);
+});

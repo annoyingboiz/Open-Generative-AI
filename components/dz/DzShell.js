@@ -13,6 +13,7 @@ import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, Square
   SidebarSimple, MagnifyingGlass, ChatCircle, CaretUpDown, GearSix, Sun, Moon, SignOut, List, X, ArrowRight } from '@phosphor-icons/react';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import { useTheme } from '../ThemeToggle';
+import DirectorMark from './DirectorMark';
 
 // Phosphor icons (redesign package 01, section 3.4). The active sidebar item uses weight Fill.
 const ICONS = {
@@ -444,7 +445,7 @@ export default function DzShell() {
   if (!user || (switching && !project && parsePath(typeof window !== 'undefined' ? window.location.pathname : '').slug)) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background">
-        <span className="h-10 w-10 rounded-xl bg-foreground" aria-hidden="true" />
+        <DirectorMark size={40} className="text-foreground" />
         <span className="text-lg font-semibold text-muted-foreground">Director</span>
       </div>
     );
@@ -509,8 +510,9 @@ export default function DzShell() {
           <button type="button" onClick={toggleSidebar} className="hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground md:flex" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
             <SidebarSimple size={18} />
           </button>
-          <a href={pathFor(project, DEFAULT_TAB)} onClick={go(DEFAULT_TAB)} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-base font-semibold text-foreground">
-            <span className="h-[18px] w-[18px] rounded-[5px] bg-foreground" aria-hidden="true" />
+          <a href={pathFor(project, DEFAULT_TAB)} onClick={go(DEFAULT_TAB)} aria-label="Director" className="flex items-center gap-2 rounded-md px-1.5 py-1 text-base font-semibold text-foreground">
+            {/* The mark (package 11): 22 px, the header's text colour; the link keeps its name when the word is hidden. */}
+            <DirectorMark size={22} className="shrink-0" />
             <span className="hidden sm:inline">Director</span>
           </a>
           {/* Workspace: Library or a project */}

@@ -6,6 +6,7 @@ RUN apk add --no-cache ffmpeg
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY src ./src
+COPY assets ./assets
 RUN mkdir -p /data && chown node:node /data
 USER node
 ENV DATA_DIR=/data HOST=0.0.0.0 PORT=3300

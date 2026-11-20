@@ -35,7 +35,7 @@ details summary{cursor:pointer;color:var(--accent)}
 
 function layout(title, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>${esc(title)}</title><style>${CSS}</style></head><body>${body}</body></html>`;
+<meta name="robots" content="noindex"><title>${esc(title)}</title><link rel="icon" href="/favicon.ico?v=1" sizes="32x32"><link rel="icon" href="/dz/brand/favicon.svg?v=1" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1"><link rel="manifest" href="/manifest.webmanifest?v=1"><meta name="theme-color" content="#0C0C0D"><style>${CSS}</style></head><body>${body}</body></html>`;
 }
 
 const flash = (error, notice) => `${error ? `<div class="msg err">${esc(error)}</div>` : ''}${notice ? `<div class="msg ok">${esc(notice)}</div>` : ''}`;

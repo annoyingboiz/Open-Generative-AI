@@ -9,6 +9,7 @@ import httpProxy from '@fastify/http-proxy';
 import multipart from '@fastify/multipart';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import net from 'node:net';
 import { createRequire } from 'node:module';
@@ -49,7 +50,9 @@ import { VIDEO_UPSCALE, isVideoUpscaleEndpoint, videoUpscaleBody, providerPayloa
 import { imageSize } from './imagesize.js';
 import sharp from 'sharp';
 
-const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico', '/dz/fonts/inter-latin.woff2', '/dz/fonts/inter-cyrillic.woff2']);
+const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png', '/manifest.webmanifest', '/dz/fonts/inter-latin.woff2', '/dz/fonts/inter-cyrillic.woff2']);
+// The product's icons (package 11): needed on the sign-in page too.
+const BRAND_FILES = { 'favicon.svg': 'image/svg+xml', 'favicon.ico': 'image/x-icon', 'favicon-16.png': 'image/png', 'favicon-32.png': 'image/png', 'favicon-48.png': 'image/png', 'apple-touch-icon.png': 'image/png', 'icon-192.png': 'image/png', 'icon-512.png': 'image/png', 'director-mark.svg': 'image/svg+xml', 'app-icon.svg': 'image/svg+xml' };
 
 export async function buildApp(config, { logger = true } = {}) {
   process.umask(0o077); // database, keys and files readable by this user only
@@ -201,7 +204,7 @@ export async function buildApp(config, { logger = true } = {}) {
     // CSRF guard for every state-changing request, sign-in and setup included.
     if (crossSite(req)) return reply.code(403).send({ error: 'Cross-origin request blocked' });
     req.user = auth.userFromToken(req.cookies?.[SESSION_COOKIE]);
-    if (PUBLIC_PATHS.has(urlPath)) return;
+    if (PUBLIC_PATHS.has(urlPath) || (urlPath.startsWith('/dz/brand/') && Object.hasOwn(BRAND_FILES, urlPath.slice(10)))) return;
     if (!auth.hasUsers()) return reply.redirect('/setup');
     if (req.user) return;
     if (urlPath.startsWith('/api/') || urlPath.startsWith('/dz/api/') || req.method !== 'GET') {
@@ -273,6 +276,30 @@ export async function buildApp(config, { logger = true } = {}) {
   for (const subset of ['latin', 'cyrillic']) {
     app.get(`/dz/fonts/inter-${subset}.woff2`, (req, reply) => sendFile(req, reply, path.join(fontDir, `inter-${subset}-wght-normal.woff2`), 'font/woff2', { cacheControl: 'public, max-age=31536000, immutable' }));
   }
+
+  // ── Icons (package 11) ──────────────────────────────────────────────────
+  // /dz/brand/<file>?v=N is linked from every page; the ?v= changes with the files, so they
+  // are kept for a year. The fixed addresses browsers ask for by themselves (/favicon.ico,
+  // /apple-touch-icon.png) are kept for a day, so a new icon arrives without a hard reload.
+  const brandDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'brand');
+  app.get('/dz/brand/:file', (req, reply) => {
+    const mime = Object.hasOwn(BRAND_FILES, req.params.file) ? BRAND_FILES[req.params.file] : null;
+    if (!mime) return reply.code(404).send({ error: 'Not found' });
+    return sendFile(req, reply, path.join(brandDir, req.params.file), mime, { cacheControl: 'public, max-age=31536000, immutable' });
+  });
+  const DAY = 'public, max-age=86400';
+  app.get('/favicon.ico', (req, reply) => sendFile(req, reply, path.join(brandDir, 'favicon.ico'), 'image/x-icon', { cacheControl: DAY }));
+  for (const p of ['/apple-touch-icon.png', '/apple-touch-icon-precomposed.png']) {
+    app.get(p, (req, reply) => sendFile(req, reply, path.join(brandDir, 'apple-touch-icon.png'), 'image/png', { cacheControl: DAY }));
+  }
+  app.get('/manifest.webmanifest', (req, reply) => reply.header('content-type', 'application/manifest+json').header('cache-control', DAY).send(JSON.stringify({
+    name: 'Director', short_name: 'Director', start_url: '/library/studio', display: 'standalone',
+    background_color: '#0C0C0D', theme_color: '#0C0C0D',
+    icons: [
+      { src: '/dz/brand/icon-192.png?v=1', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/dz/brand/icon-512.png?v=1', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    ],
+  })));
 
   // ── First start ─────────────────────────────────────────────────────────
   // Creating the admin needs a one-time code printed in the server log and

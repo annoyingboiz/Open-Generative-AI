@@ -29,6 +29,7 @@ export function storyboardPage(sb, { aspect = '16:9' } = {}) {
   }).join('\n');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${esc(sb.name || 'Storyboard')}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/favicon.ico?v=1" sizes="32x32"><link rel="icon" href="/dz/brand/favicon.svg?v=1" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1"><link rel="manifest" href="/manifest.webmanifest?v=1"><meta name="theme-color" content="#0C0C0D">
 <style>
   *{box-sizing:border-box} body{margin:0;font:15px/1.45 Inter,system-ui,sans-serif;color:#111;background:#fff}
   header{padding:28px 32px 8px} h1{margin:0 0 6px;font-size:26px} .dim{color:#666} .facts{color:#444;margin:2px 0}

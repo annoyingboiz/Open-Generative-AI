@@ -30,8 +30,8 @@ export function sizeOf(url, kind) {
   if (typeof url === "string" && url.startsWith("/media/")) {
     return fetch(`${url}${url.includes("?") ? "&" : "?"}info=1`, { credentials: "same-origin" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => (j?.width && j?.height ? { w: j.width, h: j.height } : sizeOfLoaded(url, kind)))
-      .catch(() => sizeOfLoaded(url, kind));
+      .then((j) => (j?.width && j?.height ? { w: j.width, h: j.height } : (kind === "video" || isVideoUrl(url) ? { w: 16, h: 9 } : { w: 4, h: 3 })))
+      .catch(() => (kind === "video" || isVideoUrl(url) ? { w: 16, h: 9 } : { w: 4, h: 3 }));
   }
   return sizeOfLoaded(url, kind);
 }

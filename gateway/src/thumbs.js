@@ -20,12 +20,15 @@ export function createThumbs({ dataDir, log, ffmpegPath = 'ffmpeg' }) {
   sharp.concurrency(1);
   const inflight = new Map();
   let running = 0;
-  const queue = [];
-  // The picture someone opened (a large size) goes before the grid's small previews.
+  // Two first-in-first-out lines: large sizes (a picture someone opened) before the grid's
+  // small previews.
+  const high = [];
+  const low = [];
+  const queue = { get length() { return high.length + low.length; } };
   const slot = (first = false) => new Promise((resolve) => {
-    if (running < MAX_PARALLEL) { running += 1; resolve(); } else if (first) queue.unshift(resolve); else queue.push(resolve);
+    if (running < MAX_PARALLEL) { running += 1; resolve(); } else (first ? high : low).push(resolve);
   });
-  const release = () => { const next = queue.shift(); if (next) next(); else running -= 1; };
+  const release = () => { const next = high.shift() || low.shift(); if (next) next(); else running -= 1; };
 
   // One frame of a video as PNG, already scaled down inside ffmpeg (one thread).
   const frameAt = (file, seek) => new Promise((resolve, reject) => {

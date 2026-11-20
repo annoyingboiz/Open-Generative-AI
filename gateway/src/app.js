@@ -47,6 +47,7 @@ import { toProviderBody } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
 import { VIDEO_UPSCALE, isVideoUpscaleEndpoint, videoUpscaleBody, providerPayload, videoUpscalePrice, videoInfo, outputSize, restoreAudio, extractAudio, VideoUpscaleError } from './video-upscale.js';
 import { imageSize } from './imagesize.js';
+import sharp from 'sharp';
 
 const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico', '/dz/fonts/inter-latin.woff2', '/dz/fonts/inter-cyrillic.woff2']);
 
@@ -106,7 +107,7 @@ export async function buildApp(config, { logger = true } = {}) {
   // background, so opening it never waits for one (package 10).
   const prepareVideo = media.prepare;
   media.prepare = async (file) => {
-    if (/\.(jpe?g|png|webp)$/i.test(file)) { const mime = /\.png$/i.test(file) ? 'image/png' : /\.webp$/i.test(file) ? 'image/webp' : 'image/jpeg'; for (const w of [2048, 2880]) thumbs.thumbFor(file, mime, w).catch(() => {}); return false; }
+    if (/\.(jpe?g|png|webp|gif|avif)$/i.test(file)) { const ext = file.split('.').pop().toLowerCase(); const mime = `image/${ext === 'jpg' ? 'jpeg' : ext}`; for (const w of [2048, 2880]) thumbs.thumbFor(file, mime, w).catch(() => {}); return false; }
     return prepareVideo(file);
   };
   const generations = createGenerations({ db, storage, providers, catalog, log: app.log, media, projects, maxActiveJobsPerUser: config.maxActiveJobsPerUser, uploadQuotaBytes: config.userUploadQuotaBytes ?? Infinity, maxUploadBytes: config.maxUploadBytes ?? Infinity, onProviderRejected: (r) => changes.providerRejected(r), ...(config.testSettleDelaysMs ? { settleDelaysMs: config.testSettleDelaysMs } : {}) });
@@ -1174,7 +1175,13 @@ export async function buildApp(config, { logger = true } = {}) {
     // copy, a composer chip shows a video's length without loading the video.
     if (req.query.info === '1') {
       let dims = null;
-      try { dims = String(f.mime).startsWith('image/') ? imageSize(f.path) : String(f.mime).startsWith('video/') ? await media.videoInfo(f.path) : null; } catch { dims = null; }
+      try {
+        if (String(f.mime).startsWith('image/')) {
+          // As shown: a JPEG turned by its EXIF orientation (5–8) swaps width and height.
+          const m = await sharp(f.path, { limitInputPixels: false }).metadata().catch(() => null);
+          dims = m?.width ? (m.orientation >= 5 ? { width: m.height, height: m.width } : { width: m.width, height: m.height }) : imageSize(f.path);
+        } else if (String(f.mime).startsWith('video/')) dims = await media.videoInfo(f.path);
+      } catch { dims = null; }
       let bytes = 0;
       try { bytes = fs.statSync(f.path).size; } catch { /* gone */ }
       return reply.header('cache-control', MEDIA_CACHE).send({ width: dims?.width || null, height: dims?.height || null, duration: dims?.duration || null, bytes });
@@ -1189,11 +1196,16 @@ export async function buildApp(config, { logger = true } = {}) {
       if (t === 'busy') return reply.code(503).header('retry-after', '5').header('cache-control', 'no-store').send({ error: 'Previews are busy, try again.' });
       if (t) { thumbs.touch(t); return sendFile(req, reply, t, 'image/webp', { cacheControl: MEDIA_CACHE }); }
       if (String(f.mime).startsWith('video/')) return reply.code(404).header('cache-control', 'no-store').send({ error: 'No preview' });
-      // No preview could be made: the original, but not kept under this URL (a preview may come later).
-      return sendFile(req, reply, f.path, f.mime, { cacheControl: 'private, no-cache' });
+      // No preview could be made (e.g. a picture over the preview pixel limit): never the original
+      // in its place — the large view loads the original only on purpose.
+      return reply.code(404).header('cache-control', 'no-store').send({ error: 'No preview' });
     }
     // ?play=1 only points somewhere (each URL keeps one set of bytes, so ranges never mix):
     // to ?play=<key> once the lighter copy exists, else to the original itself.
+    if (req.query.playinfo === '1' && String(f.mime).startsWith('video/')) {
+      const key = await media.playbackKey(f.path);
+      return reply.header('cache-control', 'no-store').send({ copy: Boolean(key) });
+    }
     if (req.query.play && !download && String(f.mime).startsWith('video/')) {
       const base = req.raw.url.split('?')[0];
       if (req.query.play === '1') {

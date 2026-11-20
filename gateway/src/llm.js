@@ -25,6 +25,7 @@ const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const SEND_AS_IS_BYTES = 4 * 1024 * 1024; // bigger pictures go as a 2048 px JPEG
 const SEND_MAX_SIDE = 2048;
+const SEND_MAX_PIXELS = 50_000_000;
 const MAX_INPUT_CHARS = 60_000;
 const DEFAULT_MAX_TOKENS = 4000;
 const MAX_MESSAGES = 100;
@@ -225,25 +226,30 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
   async function imagesOf(user, urls) {
     const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && u).slice(0, MAX_IMAGES + 1);
     if (list.length > MAX_IMAGES) throw new LlmError(`At most ${MAX_IMAGES} pictures per message.`);
-    return Promise.all(list.map(async (url) => {
+    const out = [];
+    // One at a time: a large picture takes a lot of memory while it is decoded.
+    for (const url of list) {
       const f = generations.mediaFileForUrl(user, url);
       if (!f || !String(f.mime || '').startsWith('image/')) throw new LlmError('A picture is not available (or is not a picture).', 404);
       const st = fs.statSync(f.path);
       let meta = null;
-      try { meta = await sharp(f.path, { limitInputPixels: 100_000_000 }).metadata(); } catch { meta = null; }
-      const big = st.size > SEND_AS_IS_BYTES || !meta || Math.max(meta.width || 0, meta.height || 0) > SEND_MAX_SIDE;
-      const plain = ['image/jpeg', 'image/png', 'image/webp'].includes(f.mime);
-      if (!big && plain) return { mime: f.mime, b64: fs.readFileSync(f.path).toString('base64') };
+      try { meta = await sharp(f.path, { limitInputPixels: SEND_MAX_PIXELS }).metadata(); } catch { meta = null; }
+      if (!meta) throw new LlmError('This picture could not be read (or it is larger than 50 megapixels).');
+      const big = st.size > SEND_AS_IS_BYTES || Math.max(meta.width || 0, meta.height || 0) > SEND_MAX_SIDE;
+      // A small still picture goes as it is; an animated one (GIF, WebP) goes as its first frame.
+      const plain = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(f.mime) && (meta.pages || 1) <= 1;
+      if (!big && plain) { out.push({ mime: f.mime, b64: fs.readFileSync(f.path).toString('base64') }); continue; }
       try {
-        const buf = await sharp(f.path, { limitInputPixels: 100_000_000, animated: false }).rotate()
+        const buf = await sharp(f.path, { limitInputPixels: SEND_MAX_PIXELS, animated: false }).rotate()
           .resize({ width: SEND_MAX_SIDE, height: SEND_MAX_SIDE, fit: 'inside', withoutEnlargement: true })
           .flatten({ background: '#ffffff' }).jpeg({ quality: 85 }).toBuffer();
         if (buf.length > MAX_IMAGE_BYTES) throw new Error('still too big');
-        return { mime: 'image/jpeg', b64: buf.toString('base64') };
+        out.push({ mime: 'image/jpeg', b64: buf.toString('base64') });
       } catch {
         throw new LlmError('This picture could not be prepared for a text model.');
       }
-    }));
+    }
+    return out;
   }
 
   function cleanMessages(body) {

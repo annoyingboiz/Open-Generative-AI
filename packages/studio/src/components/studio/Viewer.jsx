@@ -109,6 +109,15 @@ function VideoPlayer({ item, act }) {
   const [isCopy, setIsCopy] = useState(false);
   const [res, setRes] = useState(null);
   const resume = useRef(null);
+  // Is a lighter copy playing? Asked once (not cached: the copy may be made later).
+  useEffect(() => {
+    let alive = true;
+    if (item.url?.startsWith("/media/")) {
+      fetch(`${item.url}${item.url.includes("?") ? "&" : "?"}playinfo=1`, { credentials: "same-origin", cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setIsCopy(Boolean(j?.copy)); }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [item.url]);
   const frames = useFrameStrip(item.url);
   const v = () => ref.current;
   // Loading state from the first moment; no first frame after a few seconds → Retry (package 10, M6).
@@ -126,9 +135,9 @@ function VideoPlayer({ item, act }) {
       <div ref={box} className="flex min-h-0 flex-1 items-center justify-center bg-overlay">
         <div className="relative flex max-h-full max-w-full items-center justify-center">
           <video ref={ref} src={original ? item.url : dzPlay(item.url)} autoPlay muted={muted} loop={loop} playsInline preload="auto" poster={dzThumb(item.url, 1600)} className="max-h-full max-w-full rounded-md"
-            onTimeUpdate={(e) => setT(e.currentTarget.currentTime)} onLoadedMetadata={(e) => { const el = e.currentTarget; setDur(el.duration); setRes({ w: el.videoWidth, h: el.videoHeight }); if (!original) { const vw = el.videoWidth; const vh = el.videoHeight; dzMediaInfo(item.url).then((j) => setIsCopy(Boolean(j?.width && (j.width !== vw || j.height !== vh)))); } if (resume.current) { el.currentTime = resume.current.t; if (resume.current.playing) el.play().catch(() => {}); resume.current = null; } }}
+            onTimeUpdate={(e) => setT(e.currentTarget.currentTime)} onLoadedMetadata={(e) => { const el = e.currentTarget; setDur(el.duration); setRes({ w: el.videoWidth, h: el.videoHeight });  if (resume.current) { el.currentTime = resume.current.t; if (resume.current.playing) el.play().catch(() => {}); else el.pause(); resume.current = null; } }}
             onLoadedData={() => setLoad("ready")} onPlaying={() => setLoad("ready")} onWaiting={() => setLoad((s) => (s === "ready" ? "loading" : s))}
-            onError={() => setLoad("error")}
+            onError={() => { if (original) { setOriginal(false); return; } setLoad("error"); }}
             onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onClick={() => { const el = v(); if (el.paused) el.play(); else el.pause(); }} />
           {load !== "ready" && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-md bg-overlay/40 text-overlay-foreground">
@@ -201,7 +210,6 @@ function ScreenImage({ url, alt }) {
   const [copyFailed, setCopyFailed] = useState(false);
   const [orig, setOrig] = useState({ src: null, progress: 0, state: "idle" }); // idle | loading | ready | error
   const [wantOrig, setWantOrig] = useState(false); // set at the first zoom; kept until another picture
-  const copyW = useMemo(() => screenWidth(), []);
 
   useEffect(() => {
     setScale(null); setCenter(null); setCopyReady(false); setCopyFailed(false); setNat(null);
@@ -273,6 +281,13 @@ function ScreenImage({ url, alt }) {
     setScale(sc);
     setCenter(keep(ix - (px - view.w / 2) / sc, iy - (py - view.h / 2) / sc, sc));
   };
+  // The view changed size: keep a zoomed picture covering it (fit follows by itself).
+  useEffect(() => {
+    if (scale === null || !center || !nat) return;
+    const k = keep(center.x, center.y, Math.max(scale, fit));
+    if (scale < fit) setScale(null);
+    else if (k.x !== center.x || k.y !== center.y) setCenter(k);
+  }, [view.w, view.h, nat]); // eslint-disable-line react-hooks/exhaustive-deps
   const STEPS = [0.25, 0.5, 1, 2, 4, 8];
   const stepUp = () => zoomTo(STEPS.find((x) => x > s + 1e-6) ?? ZOOM_MAX);
   const stepDown = () => zoomTo([...STEPS].reverse().find((x) => x < s - 1e-6) ?? fit);
@@ -296,7 +311,8 @@ function ScreenImage({ url, alt }) {
   // Keys: + / − / 0 / 1.
   useEffect(() => {
     const on = (e) => {
-      if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName) || e.target?.isContentEditable || e.metaKey || e.ctrlKey) return;
+      if (!nat || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName) || e.target?.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target?.closest?.('[role="menu"],[role="menuitem"]') || document.querySelector("[data-radix-popper-content-wrapper]")) return;
       if (e.key === "+" || e.key === "=") { e.preventDefault(); stepUp(); }
       else if (e.key === "-" || e.key === "_") { e.preventDefault(); stepDown(); }
       else if (e.key === "0") { e.preventDefault(); zoomTo(fit); }
@@ -305,21 +321,42 @@ function ScreenImage({ url, alt }) {
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
   });
-  // Drag to move around a zoomed picture.
+  // Drag to move around a zoomed picture; two fingers on a touch screen pinch to zoom.
   const drag = useRef(null);
+  const pointers = useRef(new Map());
+  const pinch = useRef(null);
   const onPointerDown = (e) => {
-    if (scale === null || e.button !== 0) return;
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 2) {
+      const [p1, p2] = [...pointers.current.values()];
+      const r = box.current.getBoundingClientRect();
+      pinch.current = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, s, mx: (p1.x + p2.x) / 2 - r.left, my: (p1.y + p2.y) / 2 - r.top };
+      drag.current = null;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (scale === null) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { x: e.clientX, y: e.clientY, c, moved: false };
+    drag.current = { x: e.clientX, y: e.clientY, c };
   };
   const onPointerMove = (e) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.current && pointers.current.size === 2) {
+      const [p1, p2] = [...pointers.current.values()];
+      const d = Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1;
+      zoomTo(pinch.current.s * (d / pinch.current.d), pinch.current.mx, pinch.current.my);
+      return;
+    }
     const d = drag.current;
     if (!d) return;
-    const dx = e.clientX - d.x; const dy = e.clientY - d.y;
-    if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
-    setCenter(keep(d.c.x - dx / s, d.c.y - dy / s, s));
+    setCenter(keep(d.c.x - (e.clientX - d.x) / s, d.c.y - (e.clientY - d.y) / s, s));
   };
-  const onPointerUp = () => { drag.current = null; };
+  const onPointerUp = (e) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+    drag.current = null;
+  };
   const onDoubleClick = (e) => {
     const r = box.current.getBoundingClientRect();
     if (scale === null) zoomTo(1, e.clientX - r.left, e.clientY - r.top);
@@ -327,10 +364,11 @@ function ScreenImage({ url, alt }) {
   };
 
   if (!local) return <img src={url} alt={alt} className="max-h-full max-w-full rounded-md object-contain" />;
-  const copySrc = copyFailed ? url : dzThumb(url, copyW);
+  // No copy could be made (a picture over the preview limit): the original, loaded on purpose with its progress.
+  const copySrc = dzThumb(url, view.w * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1) > 2048 ? 2880 : 2048);
   const w = nat ? nat.w * s : 0; const h = nat ? nat.h * s : 0;
   const left = view.w / 2 - c.x * s; const top = view.h / 2 - c.y * s;
-  const showOrig = scale !== null && orig.state === "ready";
+  const showOrig = (scale !== null || copyFailed) && orig.state === "ready";
   const label = showOrig ? `Original · ${nat.w} × ${nat.h}` : orig.state === "loading" ? `Loading original… ${Math.round(orig.progress * 100)}%` : orig.state === "error" ? "The original did not load" : "Screen copy";
   return (
     <div ref={box} className={cn("relative h-full w-full touch-none select-none overflow-hidden", scale !== null && (drag.current ? "cursor-grabbing" : "cursor-grab"))}
@@ -339,18 +377,19 @@ function ScreenImage({ url, alt }) {
         // The size is not known yet: the copy, fitted as before.
         <>
           {!copyReady && <img src={dzThumb(url, 480)} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-contain blur-[2px]" />}
-          <img key={url} src={copySrc} alt={alt} draggable={false} onLoad={() => setCopyReady(true)} onError={() => setCopyFailed(true)}
+          <img key={url} src={copySrc} alt={alt} draggable={false} onLoad={() => setCopyReady(true)} onError={() => { setCopyFailed(true); setWantOrig(true); }}
             className={cn("absolute inset-0 h-full w-full object-contain transition-opacity duration-state", copyReady ? "opacity-100" : "opacity-0")} />
+          {showOrig && <img src={orig.src} alt="" aria-hidden="true" draggable={false} className="absolute inset-0 h-full w-full object-contain" />}
         </>
       ) : (
         <div className="absolute" style={{ left, top, width: w, height: h }}>
           {!copyReady && <img src={dzThumb(url, 480)} alt="" aria-hidden="true" draggable={false} className="absolute inset-0 h-full w-full blur-[2px]" />}
-          <img key={url} src={copySrc} alt={alt} draggable={false} onLoad={() => setCopyReady(true)} onError={() => setCopyFailed(true)}
+          <img key={url} src={copySrc} alt={alt} draggable={false} onLoad={() => setCopyReady(true)} onError={() => { setCopyFailed(true); setWantOrig(true); }}
             className={cn("absolute inset-0 h-full w-full transition-opacity duration-state", copyReady ? "opacity-100" : "opacity-0")} />
           {showOrig && <img src={orig.src} alt="" aria-hidden="true" draggable={false} className="absolute inset-0 h-full w-full" style={{ imageRendering: s >= 2 ? "pixelated" : "auto" }} />}
         </div>
       )}
-      {!copyReady && <Spinner className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 border-overlay-foreground/30 border-t-overlay-foreground" />}
+      {!copyReady && !showOrig && <Spinner className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 border-overlay-foreground/30 border-t-overlay-foreground" />}
       {nat && (
         <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-md bg-overlay/70 px-1.5 py-1 text-sm text-overlay-foreground" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
           <Btn label="Zoom out (−)" onClick={stepDown}><Minus size={16} /></Btn>
@@ -466,7 +505,7 @@ export default function StudioViewer({ item, items = [], onClose, onMove, act })
         <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center pt-3">
           {isVideo ? <VideoPlayer key={item.id} item={item} act={act} /> : (
             <div className="flex min-h-0 w-full flex-1 items-center justify-center">
-              <ScreenImage url={item.url} alt={prompt.slice(0, 80) || "Picture"} />
+              <ScreenImage key={item.url} url={item.url} alt={prompt.slice(0, 80) || "Picture"} />
             </div>
           )}
           {!isVideo && list.length > 1 && (

@@ -55,6 +55,10 @@ const colorOf = (tk, c) => tk[(COLOR_KEYS.find(([k]) => k === c) || COLOR_KEYS[0
 // state: loading | ok | failed. Least recently used entries go first past the limit.
 const imgCache = new Map();
 const IMG_LIMIT = 300;
+// Evict the least recently used pictures that no tile on screen holds, down to the limit.
+function trimImgCache(keep = null) {
+  for (const [k, old] of imgCache) { if (imgCache.size <= IMG_LIMIT) break; if (!old.users && k !== keep) imgCache.delete(k); }
+}
 function loadImg(src, onReady) {
   let e = imgCache.get(src);
   if (e) { imgCache.delete(src); imgCache.set(src, e); } // mark as recently used
@@ -66,13 +70,12 @@ function loadImg(src, onReady) {
     img.onerror = () => { entry.state = "failed"; entry.cbs.clear(); };
     img.src = src;
     imgCache.set(src, e);
-    // Evict the least recently used pictures that no tile on screen holds.
-    for (const [k, old] of imgCache) { if (imgCache.size <= IMG_LIMIT) break; if (!old.users && k !== src) imgCache.delete(k); }
+    trimImgCache(src);
   }
   e.users += 1;
   const entry = e;
   if (e.state === "loading" && onReady) e.cbs.add(onReady);
-  const off = () => { entry.users = Math.max(0, entry.users - 1); if (onReady) entry.cbs.delete(onReady); };
+  const off = () => { entry.users = Math.max(0, entry.users - 1); if (onReady) entry.cbs.delete(onReady); if (!entry.users) trimImgCache(); };
   return { e, off };
 }
 function useImg(src, fallback) {

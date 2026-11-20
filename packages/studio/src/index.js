@@ -12,7 +12,7 @@ export { default as DzStudio } from './components/DzStudio'; // DZ: redesign 01
 export { default as DzDirector } from './components/DzDirector'; // DZ (before package 05)
 export { default as DzStoryboard } from './components/DzStoryboard'; // DZ: package 05
 export { default as DropOverlay } from './components/DropOverlay'; // DZ: package 06, A2
-export { dzInstallScrollContainment } from './dzScroll'; // DZ: package 08
+export { dzScrollBoxRef, dzContainWheel } from './dzScroll'; // DZ: package 08
 export { dzActiveDropTarget, useDzDropTarget, dzDropHit } from './dzDrop'; // DZ: package 06, A2
 export { default as DzTools } from './components/DzTools'; // DZ
 export { dzUpscaleSpec, dzOpenUpscale, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from './dzCatalog'; // DZ

@@ -13,6 +13,7 @@ import DzLikeButton, { DzPendingTile, DzAudioTile } from "./DzLikeButton.jsx";
 import { dzModelLabel, dzOpenUpscale, dzUpscaleSpec, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
 import { Segmented, Button, Input, cn, SelectParts } from "../ui/index.js";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
+import { dzScrollBoxRef } from "../dzScroll.js";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 const TYPES = [
@@ -77,7 +78,7 @@ export function Viewer({ item, onClose }) {
   if (!item) return null;
   const isVideo = item.kind === "video" || /\.(mp4|mov|webm)$/i.test(item.url || "");
   return (
-    <div className="fixed inset-0 z-[150] flex flex-col bg-overlay/90 backdrop-blur-sm" onClick={onClose} role="dialog" aria-label="Preview">
+    <div ref={dzScrollBoxRef} className="fixed inset-0 z-[150] flex flex-col bg-overlay/90 backdrop-blur-sm" onClick={onClose} role="dialog" aria-label="Preview">
       <div className="flex items-center justify-between gap-4 px-5 py-3 text-base text-overlay-foreground/90" onClick={(e) => e.stopPropagation()}>
         <span className="min-w-0 truncate">{item.prompt || item.name || ""}</span>
         {isVideo && dzVideoUpscaleSpec() && /\/media\/[ug]\//.test(item.url || "") && (

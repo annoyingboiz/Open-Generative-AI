@@ -3,14 +3,12 @@
 //
 // CSS does most of it (app/globals.css): the page has no vertical elastic overscroll,
 // and every scroller holds the vertical gesture at its end (overscroll-behavior-y:
-// contain). Two things CSS can't do are done here:
+// contain). Fixed overlays chain to the page, which does not scroll. Two things CSS
+// can't do are done here:
 //   1. An open drawer, dialog, picker or menu: scrolling over a part of it that has
 //      nothing to scroll must do nothing (not scroll the gallery it floats over).
 //   2. Controls that step on the wheel (the Camera / Lens / Aperture columns) must
 //      consume the gesture, and a trackpad flick must not spin through the list.
-
-// Overlays: Radix poppers and dialogs, our panels, menus and pickers.
-const BOX = '[data-dz-scroll-box],[role="dialog"],[role="menu"],[data-radix-popper-content-wrapper]';
 
 const scrollable = (v) => v === "auto" || v === "scroll" || v === "overlay";
 function canScroll(el, vertical, delta) {
@@ -23,30 +21,35 @@ function canScroll(el, vertical, delta) {
   return delta > 0 ? el.scrollLeft + el.clientWidth < el.scrollWidth - 1 : el.scrollLeft > 0;
 }
 
-// Inside an overlay: the nearest scroller under the pointer takes the gesture while it
-// can move; at its end, or over a part with nothing to scroll, the gesture stops there.
-function onWheel(e) {
-  if (e.defaultPrevented || e.ctrlKey) return; // handled by a control; pinch zoom is the browser's (except on the canvas)
-  const t = e.target instanceof Element ? e.target : e.target?.parentElement;
-  const box = t?.closest?.(BOX);
-  if (!box) return;
-  const vertical = Math.abs(e.deltaY) >= Math.abs(e.deltaX);
-  const delta = vertical ? e.deltaY : e.deltaX;
-  if (!delta) return;
-  for (let el = t; el; el = el.parentElement) {
-    const can = canScroll(el, vertical, delta);
-    if (can) return; // it scrolls; CSS keeps it from passing on at its end
-    if (can === false) break; // a scroller at its end: hold
-    if (el === box) break;
-  }
-  e.preventDefault();
+// An overlay (drawer, dialog, picker, menu, popover; Radix ones already lock scroll
+// themselves): the nearest scroller under the pointer takes the gesture while it can
+// move; at its end, or over a part with nothing to scroll, the gesture stops there.
+// The listener sits on the overlay itself, so the rest of the app scrolls without a
+// blocking wheel listener.
+export function dzContainWheel(box) {
+  if (!box) return () => {};
+  const on = (e) => {
+    if (e.defaultPrevented || e.ctrlKey) return; // handled by a control; pinch zoom stays the browser's
+    const t = e.target instanceof Element ? e.target : e.target?.parentElement;
+    if (!t) return;
+    // A focused number or range field keeps what the browser does with the wheel.
+    if (t === document.activeElement && t.matches?.('input[type="number"],input[type="range"]')) return;
+    const vertical = Math.abs(e.deltaY) >= Math.abs(e.deltaX);
+    const delta = vertical ? e.deltaY : e.deltaX;
+    if (!delta) return;
+    for (let el = t; el; el = el.parentElement) {
+      const can = canScroll(el, vertical, delta);
+      if (can) return; // it scrolls; CSS keeps it from passing on at its end
+      if (can === false || el === box) break; // a scroller at its end, or the overlay's edge: hold
+    }
+    e.preventDefault();
+  };
+  box.addEventListener("wheel", on, { passive: false });
+  return () => box.removeEventListener("wheel", on);
 }
-
-let installed = false;
-export function dzInstallScrollContainment() {
-  if (installed || typeof document === "undefined") return;
-  installed = true;
-  document.addEventListener("wheel", onWheel, { passive: false });
+// As a ref: ref={dzScrollBoxRef}, or call it from a ref the component already has.
+export function dzScrollBoxRef(el) {
+  if (el && !el.__dzWheel) el.__dzWheel = dzContainWheel(el);
 }
 
 // A wheel step control (package 08, rule 3). Mouse wheel, Magic Mouse and trackpad

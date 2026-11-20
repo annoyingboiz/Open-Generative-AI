@@ -10,6 +10,7 @@ import { useDzContext } from "../dzContext.js";
 import { useDzTextModelOptions } from "../dzLlm.js";
 import { DzMediaPicker } from "./DzMedia.jsx";
 import { Button, Textarea, Input, Spinner, Switch, OptionSelect, Tip, cn, SelectParts, SidePanel } from "../ui/index.js";
+import { dzScrollBoxRef } from "../dzScroll.js";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } = SelectParts;
 const LAST_KEY = "dz_chat_assistant";
@@ -473,7 +474,7 @@ export default function DzChatPanel({ open, onOpenChange, activeTab, canInsert, 
         </div>
       )}
       {viewing && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-overlay/90 p-6" onClick={() => setViewing(null)} role="dialog" aria-label="Picture">
+        <div ref={dzScrollBoxRef} className="fixed inset-0 z-[150] flex items-center justify-center bg-overlay/90 p-6" onClick={() => setViewing(null)} role="dialog" aria-label="Picture">
           <img src={viewing} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
         </div>
       )}

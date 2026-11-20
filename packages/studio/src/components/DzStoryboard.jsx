@@ -17,6 +17,7 @@ import Entry from "./storyboard/Entry.jsx";
 import { EmptyState, InlineText } from "./storyboard/parts.jsx";
 import { useStoryboardContext } from "./storyboard/assistant.js";
 import { dzSetStudioState } from "../dzStudioState.js";
+import { dzScrollBoxRef } from "../dzScroll.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
@@ -108,7 +109,7 @@ function BriefDialog({ value, onClose, onSave }) {
   const area = useRef(null);
   useEffect(() => { const t = setTimeout(() => area.current?.focus(), 60); return () => clearTimeout(t); }, []);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6" onClick={onClose}>
+    <div ref={dzScrollBoxRef} className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6" onClick={onClose}>
       <div className="flex max-h-[85vh] w-[min(760px,100%)] flex-col rounded-2xl border border-border bg-card p-5 shadow-float" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="The brief">
         <p className="text-lg font-semibold">The brief</p>
         <p className="mt-1 text-sm text-muted-foreground">The brief and any original documents, kept with the storyboard as given. Edit freely.</p>

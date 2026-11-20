@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DzCreateStudio, DzStudio, DzStoryboard, DropOverlay, dzActiveDropTarget, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
-  DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT, dzInstallScrollContainment,
+  DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT, dzScrollBoxRef,
   DzProjectsPage, DzElementsPage, ToElementDialog, VideoElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
   DropdownMenuParts, DialogParts, cn } from 'studio';
 import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, SquaresFour, Images, Shapes, Layout, Trash, FolderSimple, Plus,
@@ -104,8 +104,6 @@ export default function DzShell() {
   const navSeq = useRef(0);
   const [switching, setSwitching] = useState(true);
 
-  // Scroll containment for overlays (package 08): installed once for the whole app.
-  useEffect(() => { dzInstallScrollContainment(); }, []);
   // Session check (the gateway already required sign-in) and initial tab.
   useEffect(() => {
     setActiveTab(tabFromPath(window.location.pathname));
@@ -700,7 +698,7 @@ export default function DzShell() {
         </SidePanel>
 
         {imageMenu && (
-          <div role="menu" className="glass fixed z-[210] w-52 overflow-hidden rounded-xl border border-border p-1 text-base shadow-popover" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
+          <div role="menu" ref={dzScrollBoxRef} className="glass fixed z-[210] w-52 overflow-hidden rounded-xl border border-border p-1 text-base shadow-popover" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(e) => e.stopPropagation()}>
             {dzUpscaleSpec() && (
               <button type="button" role="menuitem" className="block h-8 w-full rounded-md px-2.5 text-left font-medium text-foreground hover:bg-accent" onClick={() => { setUpscaleDrawer({ url: imageMenu.url, result: null }); setImageMenu(null); }}>Upscale…</button>
             )}

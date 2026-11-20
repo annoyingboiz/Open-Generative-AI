@@ -8,6 +8,7 @@ import { X } from "@phosphor-icons/react";
 import { dzThumb } from "../../api.js";
 import { isVideoUrl } from "../../dzFilm.js";
 import { useEscLayer } from "../studio/ui.jsx";
+import { dzScrollBoxRef } from "../../dzScroll.js";
 
 const EDGE = 2; // seconds of each neighbour
 
@@ -40,7 +41,7 @@ export default function PlayBetween({ film, take, prev, next, onClose }) {
   };
   const onTime = (e) => { if (part.side === "start" && e.currentTarget.currentTime >= EDGE) advance(); };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-8" onClick={onClose} role="dialog" aria-label="Play between shots">
+    <div ref={dzScrollBoxRef} className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-8" onClick={onClose} role="dialog" aria-label="Play between shots">
       <div className="relative w-[min(1100px,100%)]" onClick={(e) => e.stopPropagation()}>
         <div className="aspect-video w-full overflow-hidden rounded-xl bg-background">
           {part?.kind === "video" ? (

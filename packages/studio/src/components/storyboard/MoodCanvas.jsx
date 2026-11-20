@@ -276,26 +276,37 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
 
   // Wheel: Ctrl/⌘ (and pinch) zoom; otherwise pan. Every gesture over the canvas is
   // the canvas's (package 08, rule 5): no page bounce, no browser zoom, no Back / Forward.
-  // A note being edited scrolls its own text first while it can.
+  // A note being edited scrolls its own text and holds the gesture at its end: a
+  // gesture that starts in a field never pans the canvas.
+  // Listeners are installed once; they call the latest zoomAt / applyView through a ref,
+  // so a re-render during a pinch does not lose it.
+  const wheelFns = useRef(null);
+  wheelFns.current = { zoomAt, applyView };
   useEffect(() => {
     const el = host.current;
     if (!el) return undefined;
     let pinch = null; // Safari: pinch comes as gesture events, not as Ctrl + wheel
     const on = (e) => {
+      const { zoomAt: zoom, applyView: apply } = wheelFns.current;
       const field = e.target.closest?.("textarea,input");
-      if (field && !e.ctrlKey && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        const can = e.deltaY > 0 ? field.scrollTop + field.clientHeight < field.scrollHeight - 1 : field.scrollTop > 0;
-        if (can) return;
+      if (field && !e.ctrlKey && !e.metaKey) {
+        const vertical = Math.abs(e.deltaY) >= Math.abs(e.deltaX);
+        const d = vertical ? e.deltaY : e.deltaX;
+        const can = vertical
+          ? (d > 0 ? field.scrollTop + field.clientHeight < field.scrollHeight - 1 : field.scrollTop > 0)
+          : (d > 0 ? field.scrollLeft + field.clientWidth < field.scrollWidth - 1 : field.scrollLeft > 0);
+        if (!can) e.preventDefault();
+        return;
       }
       e.preventDefault();
-      if (e.ctrlKey || e.metaKey) { if (!pinch) zoomAt(Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY); }
-      else { const v = viewRef.current; applyView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }); }
+      if (e.ctrlKey || e.metaKey) { if (!pinch) zoom(Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY); }
+      else { const v = viewRef.current; apply({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }); }
     };
     const start = (e) => { e.preventDefault(); pinch = { s: 1 }; };
     const change = (e) => {
       e.preventDefault();
       if (!pinch || !e.scale) return;
-      zoomAt(e.scale / pinch.s, e.clientX, e.clientY);
+      wheelFns.current.zoomAt(e.scale / pinch.s, e.clientX, e.clientY);
       pinch.s = e.scale;
     };
     const end = (e) => { e.preventDefault(); pinch = null; };
@@ -309,7 +320,7 @@ export default function MoodCanvas({ film, edit, onOpenGroup }) {
       el.removeEventListener("gesturechange", change);
       el.removeEventListener("gestureend", end);
     };
-  }); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Saving, with undo/redo ──
   const undo = useRef([]);

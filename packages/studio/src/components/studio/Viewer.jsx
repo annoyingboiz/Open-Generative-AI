@@ -15,6 +15,7 @@ import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenV
 import { promptTags, TAG_RE } from "../../dzCreate.js";
 import { Overline, useEscLayer, fmtDur } from "./ui.jsx";
 import { download } from "../DzCreateStudio.jsx";
+import { dzScrollBoxRef } from "../../dzScroll.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
@@ -181,7 +182,7 @@ export default function StudioViewer({ item, items = [], onClose, onMove, act })
   );
   const real = !String(item.id).startsWith("att-");
   return (
-    <div className="fixed inset-0 z-[150] flex bg-scrim backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={isVideo ? "Video" : "Picture"}>
+    <div ref={dzScrollBoxRef} className="fixed inset-0 z-[150] flex bg-scrim backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={isVideo ? "Video" : "Picture"}>
       <div className="relative flex min-w-0 flex-1 flex-col bg-overlay/95 px-6 pb-5 pt-3 text-overlay-foreground">
         <div className="flex h-10 flex-shrink-0 items-center gap-2">
           <IconBtn label="Close" onClick={onClose}><X size={18} /></IconBtn>

@@ -13,6 +13,7 @@ import { useDzElements } from "../DzElements.jsx";
 import { Spinner, cn } from "../../ui/index.js";
 import { StudioPanel, Overline, ChipMenu, MenuRow, usePresence, useEscLayer, useDialogFocus } from "./ui.jsx";
 import { groupItems, addToGroup, removeFromGroup, clearGroup, reorderGroup, GROUPS } from "./attachments.js";
+import { dzScrollBoxRef } from "../../dzScroll.js";
 
 const SOURCES = [["uploads", "Uploads"], ["generations", "Generations"], ["liked", "Liked"], ["elements", "Elements"]];
 
@@ -226,7 +227,7 @@ export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sen
   const maxOf = (g, n) => (st ? st.maxOf(g, n) : g.max);
   const full = chosen.length >= maxOf(group, chosen.length);
   return (
-    <div ref={box} tabIndex={-1} className={cn("glass absolute inset-x-0 bottom-[calc(100%+12px)] z-20 flex outline-none h-[min(640px,calc(100vh-260px))] flex-col rounded-2xl border border-border p-4 shadow-float transition-[opacity,transform] duration-[240ms] ease-soft",
+    <div ref={(el) => { box.current = el; dzScrollBoxRef(el); }} tabIndex={-1} className={cn("glass absolute inset-x-0 bottom-[calc(100%+12px)] z-20 flex outline-none h-[min(640px,calc(100vh-260px))] flex-col rounded-2xl border border-border p-4 shadow-float transition-[opacity,transform] duration-[240ms] ease-soft",
       shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-4 scale-[.985] opacity-0")} role="dialog" aria-label="Library">
       <div className="mb-3 flex h-8 flex-shrink-0 items-center gap-5">
         {/* A titled picker (package 06, S3: "References for Shot N · 2 chosen"); its groups stay as small switches. */}

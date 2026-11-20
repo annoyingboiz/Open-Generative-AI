@@ -26,6 +26,7 @@ import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList } from "./studio/Library.jsx";
 import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
+import { dzScrollBoxRef } from "../dzScroll.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const RATIO_KEYS = ["aspect_ratio", "ratio", "size", "image_size"];
@@ -589,7 +590,7 @@ function PromptField({ engine, onFocusChange, mentionGroups, onPasteFiles, place
         // (package 02 §3 "Prompt field", corrected 19 Nov: the build as it was is right).
         className={cn("rounded-[10px] px-3 py-2.5 text-foreground caret-signal transition-colors duration-state", focused && "bg-muted shadow-[inset_0_0_0_1px_hsl(var(--input))]")} />
       {mention && (
-        <div id="dz-mention-list" className="glass absolute bottom-[calc(100%+8px)] left-0 z-30 w-[420px] rounded-xl border border-border p-1.5 shadow-popover" role="listbox" aria-label="Tags">
+        <div id="dz-mention-list" ref={dzScrollBoxRef} className="glass absolute bottom-[calc(100%+8px)] left-0 z-30 w-[420px] rounded-xl border border-border p-1.5 shadow-popover" role="listbox" aria-label="Tags">
           {mentionGroups.length === 0 && <p className="px-2.5 py-2 text-sm text-muted-foreground">{mention.query ? `Nothing called “${mention.query}”.` : "Nothing to tag yet."} Attach files with + or make elements.</p>}
           {mentionGroups.map(([title, list]) => (
             <div key={title} className="py-0.5">

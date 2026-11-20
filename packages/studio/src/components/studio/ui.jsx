@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "@phosphor-icons/react";
 import { cn } from "../../ui/index.js";
+import { dzScrollBoxRef } from "../../dzScroll.js";
 
 // 11 px caps title (group titles in the strip, panels, menus).
 export const Overline = ({ className, children }) => <span className={cn("text-overline uppercase text-muted-foreground", className)}>{children}</span>;
@@ -83,7 +84,7 @@ export function StudioPanel({ open, onClose, title, aside, width = 640, onReset,
   const onKeyDown = useDialogFocus(open && mounted, box);
   if (!mounted || typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-[150]">
+    <div ref={dzScrollBoxRef} className="fixed inset-0 z-[150]">
       <div className={cn("absolute inset-0 bg-scrim transition-opacity duration-200 ease-out", shown ? "opacity-100" : "opacity-0")} onClick={onClose} aria-hidden="true" />
       <aside ref={box} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onKeyDown={onKeyDown} style={{ width: `min(${width}px, 100vw)` }}
         className={cn("glass absolute inset-y-0 right-0 flex flex-col border-l border-border shadow-float outline-none transition-transform duration-sheet ease-soft", shown ? "translate-x-0" : "translate-x-full")}>
@@ -135,7 +136,7 @@ export function ChipMenu({ open, onClose, anchor, className, align = "start", ch
   }, [open, onClose, anchor]);
   if (!mounted) return null;
   return (
-    <div ref={ref} role="dialog"
+    <div ref={(el) => { ref.current = el; dzScrollBoxRef(el); }} role="dialog"
       className={cn("glass absolute bottom-[calc(100%+8px)] z-30 rounded-xl border border-border shadow-popover transition-[opacity,transform] duration-popover ease-soft",
         align === "end" ? "right-0 origin-bottom-right" : "left-0 origin-bottom-left",
         shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-[.98] opacity-0", className)}>

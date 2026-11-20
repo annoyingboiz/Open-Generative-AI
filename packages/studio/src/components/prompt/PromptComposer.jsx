@@ -1,5 +1,6 @@
 "use client";
 
+import { dzScrollBoxRef } from "../../dzScroll.js";
 import {
   forwardRef,
   useCallback,
@@ -212,7 +213,7 @@ export const PromptPopover = forwardRef(function PromptPopover(
   return (
     <div
       {...props}
-      ref={popoverRef}
+      ref={(el) => { popoverRef.current = el; dzScrollBoxRef(el); }}
       className={joinClasses(
         positionClassName,
         DEFAULT_POPOVER_CLASS,

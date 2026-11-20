@@ -29,6 +29,7 @@ import {
   Button, Segmented, ScrollTabs, Switch, Slider, Textarea, Input, Logo, Spinner, InfoTip, Tip, cn,
   Popover, PopoverTrigger, PopoverContent, SelectParts,
 } from "../ui/index.js";
+import { dzScrollBoxRef } from "../dzScroll.js";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 
@@ -1055,7 +1056,7 @@ export default function DzCreateStudio({ apiKey, onGenerationStart, onGeneration
             </div>
           )}
           {mention && mentionOptions.length > 0 && (
-            <div role="listbox" aria-label="Tags" className="max-h-72 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl">
+            <div role="listbox" aria-label="Tags" ref={dzScrollBoxRef} className="max-h-72 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl">
               {mentionOptions.map((o, i) => (
                 <button key={`${o.tag}-${o.add}-${o.element?.id || ""}`} type="button" role="option" aria-selected={i === mention.index} aria-disabled={Boolean(o.disabled)}
                   onMouseDown={(e) => { e.preventDefault(); pickMention(o); }} title={o.disabled ? `Can't add: ${o.disabled}` : undefined}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { uploadFile, dzGenerate, dzWithMeta } from "../api.js";
 import { createEntries, chooseVariant, buildBody } from "../dzCreate.js"; // DZ: edit models from our catalog
 import { Logo } from "../ui/index.js";
+import { dzScrollBoxRef } from "../dzScroll.js";
 
 export default function DrawModal({
   isOpen,
@@ -1114,7 +1115,7 @@ export default function DrawModal({
   const bbox = getObjectBoundingBox(selectedObj);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay/85 backdrop-blur-md p-4">
+    <div ref={dzScrollBoxRef} className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay/85 backdrop-blur-md p-4">
       {/* Modal Box */}
       <div className="relative w-full max-w-5xl bg-card border border-border rounded-2xl flex flex-col shadow-dialog overflow-hidden h-[90vh]">
         {/* Header Tab Selector */}

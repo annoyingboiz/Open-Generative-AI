@@ -11,6 +11,7 @@ import { numbered, shotState, newSceneId, newShotId, splitScript, isVideoUrl } f
 import { RefPicker, EmptyState, InlineText, uploadAll } from "./parts.jsx";
 import { setSceneSelection } from "./assistant.js";
 import { useDzDropTarget, dzDropHit } from "../../dzDrop.js";
+import { dzScrollBoxRef } from "../../dzScroll.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const DRAG = "application/x-dz-ref";
@@ -451,7 +452,7 @@ function PasteScript({ onClose, onDone }) {
   const parsed = splitScript(text);
   const shots = parsed.reduce((n, s) => n + s.shots.length, 0);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6" onClick={onClose}>
+    <div ref={dzScrollBoxRef} className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6" onClick={onClose}>
       <div className="w-[min(720px,100%)] rounded-2xl border border-border bg-card p-5 shadow-float" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Paste a script">
         <p className="text-lg font-semibold">Paste a script</p>
         <p className="mt-1 text-sm text-muted-foreground">Headings (INT. / EXT., “Scene …”, lines in capitals) start scenes; every other paragraph becomes a shot with that text as its note. Everything stays editable.</p>

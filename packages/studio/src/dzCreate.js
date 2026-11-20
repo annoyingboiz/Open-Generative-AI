@@ -780,7 +780,8 @@ export function resolveInsertTags(text, { refs = [], tags = [], refCount = 0, ac
   const out = String(text).replace(TAG_RE, (all, pre, name) => {
     const key = canonicalTag(name);
     // An element tag adds the element (its pictures go with it), like a typed @ mention.
-    const el = IMAGE_TAG.test(key) ? null : byElementTag.get(key) || elementOfUrl(meant.get(key) || []);
+    // The pictures the answer meant say which element it is; the tag only when they don't.
+    const el = IMAGE_TAG.test(key) ? null : elementOfUrl(meant.get(key) || []) || byElementTag.get(key);
     if (el) {
       const chosen = [...active, ...addElements];
       if (!chosen.some((x) => x.id === el.id)) {

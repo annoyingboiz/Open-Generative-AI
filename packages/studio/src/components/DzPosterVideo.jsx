@@ -16,3 +16,14 @@ export function DzPosterVideo({ url, w = 480, className, play = false, alt = "" 
   }
   return <img src={dzThumb(url, w)} alt={alt} draggable={false} loading="lazy" decoding="async" className={className} onMouseEnter={play ? () => setOn(true) : undefined} />;
 }
+
+// A stored file's size and length (?info=1, kept by the browser), without loading the file.
+const infoCache = new Map();
+export function dzMediaInfo(url) {
+  if (typeof url !== "string" || !url.startsWith("/media/")) return Promise.resolve(null);
+  if (!infoCache.has(url)) {
+    infoCache.set(url, fetch(`${url}${url.includes("?") ? "&" : "?"}info=1`, { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  }
+  return infoCache.get(url);
+}

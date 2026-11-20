@@ -8,7 +8,7 @@
 // (pick the best) → the picked frame animated by the video model.
 // Storyboards are saved on the server, in the Library or in a project.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dzGenerate, dzWithMeta, dzThumb } from "../api.js";
+import { dzGenerate, dzWithMeta, dzThumb, dzPlay } from "../api.js";
 import { useDzQuote } from "./DzPrice.jsx";
 import { useDzContext } from "../dzContext.js";
 import { useDzTextModelOptions } from "../dzLlm.js";
@@ -27,6 +27,7 @@ import {
 import {
   Button, Segmented, Textarea, Input, Spinner, Tip, cn, Popover, PopoverTrigger, PopoverContent, SelectParts, OptionSelect,
 } from "../ui/index.js";
+import { DzPosterVideo } from "./DzPosterVideo.jsx";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 const fmtUsd = (usd) => `$${usd === 0 ? "0" : usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
@@ -64,7 +65,7 @@ function Strip({ items, picked, running, kind, onPick, onRemove, onOpen }) {
             <span className="flex h-full w-full items-center justify-center bg-muted px-1 text-center text-[11px] leading-tight text-muted-foreground" title="Sent to Trash or moved out of here">Not here</span>
           ) : (
             <button type="button" className="h-full w-full" onClick={() => (x.url === picked ? onOpen(x.url) : onPick(x.url))} title={x.url === picked ? "Picked — click to view" : "Use this one"}>
-              {kind === "video" ? <video src={x.url} className="h-full w-full object-cover" muted preload="metadata" /> : <img src={dzThumb(x.url, 160)} alt="" className="h-full w-full object-cover" />}
+              {kind === "video" ? <DzPosterVideo url={x.url} w={160} className="h-full w-full object-cover" /> : <img src={dzThumb(x.url, 160)} alt="" className="h-full w-full object-cover" />}
             </button>
           )}
           <button type="button" onClick={() => onRemove(x.url)} aria-label="Remove from this shot" title="Remove from this shot (stays in All work)"
@@ -177,7 +178,7 @@ function ShotCard({
             {m.videos.length > 0 && <span className="text-muted-foreground">{m.videos.length} made</span>}
           </div>
           <div className="relative w-full overflow-hidden rounded-xl border border-border bg-muted/40" style={{ aspectRatio: aspect }}>
-            {m.video ? <video key={m.video} src={m.video} controls playsInline preload="metadata" className="h-full w-full object-cover" />
+            {m.video ? <video key={m.video} src={dzPlay(m.video)} poster={dzThumb(m.video, 960)} controls playsInline preload="none" className="h-full w-full object-cover" />
               : running("video") ? <span className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Spinner className="h-4 w-4" /> Making the video…</span>
                 : <span className="flex h-full items-center justify-center px-4 text-center text-muted-foreground">{m.frame ? "Ready to animate the picked frame" : "Pick a start frame first"}</span>}
           </div>
@@ -220,7 +221,7 @@ function FinalCut({ boardId, onOpen }) {
         {history.items.map((item) => (
           <div key={item.id} className="w-64 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/40">
             {item.url ? (
-              <video src={item.url} controls playsInline preload="metadata" className="aspect-video w-full bg-overlay object-contain" />
+              <video src={dzPlay(item.url)} poster={dzThumb(item.url, 960)} controls playsInline preload="none" className="aspect-video w-full bg-overlay object-contain" />
             ) : <DzPendingTile status={item.status} error={item.error} label="Stitching" className="aspect-video w-full" />}
             <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-muted-foreground">
               <span className="truncate">{(item.meta?.stitch?.shots || []).length} shots · {new Date(item.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>

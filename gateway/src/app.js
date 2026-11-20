@@ -1163,13 +1163,14 @@ export async function buildApp(config, { logger = true } = {}) {
   const MEDIA_CACHE = 'private, max-age=31536000, immutable';
   const sendMedia = async (req, reply, f) => {
     const download = req.query.download === '1';
-    // ?info=1 → the original picture's size, for the large view (it shows a screen-size copy).
+    // ?info=1 → the original's size (and a video's length): the large view shows a screen-size
+    // copy, a composer chip shows a video's length without loading the video.
     if (req.query.info === '1') {
       let dims = null;
-      try { dims = String(f.mime).startsWith('image/') ? imageSize(f.path) : null; } catch { dims = null; }
+      try { dims = String(f.mime).startsWith('image/') ? imageSize(f.path) : String(f.mime).startsWith('video/') ? await media.videoInfo(f.path) : null; } catch { dims = null; }
       let bytes = 0;
       try { bytes = fs.statSync(f.path).size; } catch { /* gone */ }
-      return reply.header('cache-control', MEDIA_CACHE).send({ width: dims?.width || null, height: dims?.height || null, bytes });
+      return reply.header('cache-control', MEDIA_CACHE).send({ width: dims?.width || null, height: dims?.height || null, duration: dims?.duration || null, bytes });
     }
     if (req.query.strip && !download && String(f.mime).startsWith('video/')) {
       const strip = await media.stripFor(f.path);

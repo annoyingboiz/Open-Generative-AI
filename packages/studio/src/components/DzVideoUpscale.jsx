@@ -323,7 +323,7 @@ export function DzVideoUpscaleView({ apiKey, initialPick, isAdmin = false, onGen
             result && result.source === source ? (
               <VideoCompare before={source} after={result.url} />
             ) : (
-              <video src={source} controls playsInline className="absolute inset-0 h-full w-full object-contain" />
+              <video src={source} poster={dzThumb(source, 1600)} controls playsInline preload="none" className="absolute inset-0 h-full w-full object-contain" />
             )
           ) : (
             <div className="flex h-full flex-col overflow-hidden p-4">

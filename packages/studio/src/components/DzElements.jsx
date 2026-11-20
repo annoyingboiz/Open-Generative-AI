@@ -238,7 +238,7 @@ export function ElementEditor({ element, open, onOpenChange, onSaved, onError, o
           <p className="text-muted-foreground">Clips of the element (turnaround, walk…). Kling uses a person's clip directly; other models take it as a video reference.</p>
           {form.videos.map((v, i) => (
             <div key={v.url} className="flex items-center gap-3">
-              <video src={v.url} className="h-20 w-32 shrink-0 rounded-lg border border-border object-cover" muted controls preload="metadata" />
+              <video src={v.url} poster={dzThumb(v.url, 256)} className="h-20 w-32 shrink-0 rounded-lg border border-border object-cover" muted controls preload="none" />
               <Input value={v.label || ""} onChange={(e) => setForm((f) => ({ ...f, videos: f.videos.map((x, j) => (j === i ? { ...x, label: e.target.value.slice(0, 40) } : x)) }))} placeholder="Label, e.g. Turnaround" aria-label="Video label" />
               <Button variant="ghost" size="icon" aria-label="Remove video" onClick={() => setForm((f) => ({ ...f, videos: f.videos.filter((_, j) => j !== i) }))}>✕</Button>
             </div>

@@ -14,6 +14,7 @@ import { Spinner, cn } from "../../ui/index.js";
 import { StudioPanel, Overline, ChipMenu, MenuRow, usePresence, useEscLayer, useDialogFocus } from "./ui.jsx";
 import { groupItems, addToGroup, removeFromGroup, clearGroup, reorderGroup, GROUPS } from "./attachments.js";
 import { dzScrollBoxRef } from "../../dzScroll.js";
+import { DzPosterVideo } from "../DzPosterVideo.jsx";
 
 const SOURCES = [["uploads", "Uploads"], ["generations", "Generations"], ["liked", "Liked"], ["elements", "Elements"]];
 
@@ -126,7 +127,7 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
       <button key={item.key || item.url} type="button" onClick={() => toggle(item)} disabled={blocked} title={why || item.name || item.prompt || undefined} style={style}
         className={cn("relative overflow-hidden rounded-md bg-muted transition-[opacity,box-shadow] duration-state", !h && "aspect-square", on && "ring-2 ring-signal", dim && "ring-2 ring-input", blocked && "opacity-20")}>
         {item.kind === "video"
-          ? <video src={item.url} poster={dzThumb(item.url, 256)} className="h-full w-full object-cover" muted playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} />
+          ? <DzPosterVideo url={item.url} w={256} play className="h-full w-full object-cover" />
           : item.kind === "audio" ? <span className="flex h-full items-center justify-center px-2 text-center text-sm text-muted-foreground">♪ {item.name}</span>
             : <img src={dzThumb(item.url, 256)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
         {on && !full && <span className="absolute inset-0 bg-overlay/[.38]" />}
@@ -208,7 +209,7 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
               return (
                 <button key={e.id} type="button" onClick={() => setInElement(e.id)} className="group text-left">
                   <span className="relative block aspect-square overflow-hidden rounded-md bg-muted">
-                    {files[0] && (accept === "video" ? <video src={files[0].url} poster={dzThumb(files[0].url, 256)} muted playsInline preload="none" className="h-full w-full object-cover" /> : <img src={dzThumb(files[0].url, 256)} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-state group-hover:scale-[1.03]" />)}
+                    {files[0] && (accept === "video" ? <DzPosterVideo url={files[0].url} w={256} className="h-full w-full object-cover" /> : <img src={dzThumb(files[0].url, 256)} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-state group-hover:scale-[1.03]" />)}
                     {picked > 0 && <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-signal px-1 text-xs font-semibold text-primary-foreground">{picked}</span>}
                   </span>
                   <span className="mt-1.5 block truncate text-sm font-medium">{e.name}</span>
@@ -347,7 +348,7 @@ export function FullList({ open, onClose, groups, groupId, setGroupId, attached,
                     className={cn("flex min-h-14 items-center gap-2.5 rounded-md px-1 py-1 hover:bg-accent/60", over === item.url && drag.current?.url !== item.url && "bg-accent ring-1 ring-signal/60")}>
                     <DotsSixVertical size={16} className="flex-shrink-0 cursor-grab text-muted-foreground" />
                     <span className={cn("flex-shrink-0", item.off && "dz-off")}>
-                      {g.kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} draggable={false} className="pointer-events-none h-[42px] w-14 rounded-xs object-cover" muted preload="metadata" />
+                      {g.kind === "video" ? <DzPosterVideo url={item.url} w={128} className="pointer-events-none h-[42px] w-14 rounded-xs object-cover" />
                         : g.kind === "audio" ? <span className="flex h-[42px] w-14 items-center justify-center rounded-xs bg-muted">♪</span>
                           : <img src={dzThumb(item.url, 128)} alt="" draggable={false} className="h-[42px] w-14 rounded-xs object-cover" />}
                     </span>

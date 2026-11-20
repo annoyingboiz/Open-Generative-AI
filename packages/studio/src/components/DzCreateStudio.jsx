@@ -30,6 +30,7 @@ import {
   Popover, PopoverTrigger, PopoverContent, SelectParts,
 } from "../ui/index.js";
 import { dzScrollBoxRef } from "../dzScroll.js";
+import { DzPosterVideo } from "./DzPosterVideo.jsx";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 
@@ -248,7 +249,7 @@ export function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKe
         {files.map((f, i) => (
           <div key={`${f.url}-${i}`} className="group relative h-16 w-16 overflow-hidden rounded-xl border border-border bg-muted">
             {info.kind === "image" ? <img src={dzThumb(f.url, 256)} alt="" className="h-full w-full object-cover" />
-              : info.kind === "video" ? <video src={f.url} className="h-full w-full object-cover" muted />
+              : info.kind === "video" ? <DzPosterVideo url={f.url} w={256} className="h-full w-full object-cover" />
                 : <span className="flex h-full items-center justify-center text-muted-foreground">♪</span>}
             <button type="button" onClick={() => onRemove(i)} aria-label="Remove" className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-overlay/75 text-overlay-foreground opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -365,7 +366,7 @@ export function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel 
         note={item.note} onCancel={item.cancellable ? () => dzLibrary.cancel(item.id).catch((e) => window.dispatchEvent(new CustomEvent("dz:notify", { detail: { type: "error", title: "Cancel", message: String(e?.message || e) } }))) : undefined} />
         : (
           isAudio ? <DzAudioTile url={item.url} title={item.meta?.toolTitle || "Audio"} className="aspect-square w-full" /> : <button type="button" className="block w-full cursor-zoom-in" onClick={() => onOpen?.(item)} aria-label="Open">
-            {isVideo ? <video src={item.url} poster={dzThumb(item.url)} className="aspect-square w-full bg-overlay object-cover" muted loop playsInline preload="none" onMouseOver={(e) => e.currentTarget.play().catch(() => {})} onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }} controls={false} />
+            {isVideo ? <DzPosterVideo url={item.url} w={480} play className="aspect-square w-full bg-overlay object-cover" />
               : <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 60) || "Result"} loading="lazy" decoding="async" className="aspect-square w-full bg-overlay/40 object-cover" />}
           </button>
         )}

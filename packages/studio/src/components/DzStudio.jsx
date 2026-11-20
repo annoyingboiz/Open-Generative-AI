@@ -28,6 +28,7 @@ import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory } f
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
 import { dzPictureDragStart, dzPictureDragEnd, useDzPictureDrag } from "../dzDrop.js";
+import { DzPosterVideo, dzMediaInfo } from "./DzPosterVideo.jsx";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const RATIO_KEYS = ["aspect_ratio", "ratio", "size", "image_size"];
@@ -358,6 +359,8 @@ function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS
 // "+N". The only text is a tooltip on what is dimmed (package 04, §2.4).
 function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off = false, onActivate, tip }) {
   const [dur, setDur] = useState(null);
+  // A video's length from ?info=1 (the chip shows the poster only, package 10).
+  useEffect(() => { let alive = true; if (kind === "video") dzMediaInfo(item.url).then((j) => { if (alive && j?.duration) setDur(j.duration); }); return () => { alive = false; }; }, [kind, item.url]);
   const [open, setOpen] = useState(false);
   const anchor = useRef(null);
   const click = off ? (onActivate ? (e) => { e?.stopPropagation(); onActivate(); } : undefined) : menu ? () => setOpen((v) => !v) : undefined;
@@ -372,7 +375,7 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off
         </ChipMenu>
       )}
       <div className={cn("h-12 w-12 overflow-hidden rounded-slot bg-muted ring-signal transition-[box-shadow,opacity,filter] duration-state", !off && "group-hover/t:ring-2 group-focus-visible/t:ring-2", off && "dz-off", off && onActivate && "cursor-pointer group-hover/t:ring-2 group-hover/t:ring-input group-focus-visible/t:ring-2 group-focus-visible/t:ring-input", fault && "ring-2 ring-destructive")}>
-        {kind === "video" ? <video src={item.url} poster={dzThumb(item.url, 128)} muted preload="metadata" className="h-full w-full object-cover" onLoadedMetadata={(e) => setDur(e.currentTarget.duration)} />
+        {kind === "video" ? <DzPosterVideo url={item.url} w={128} className="h-full w-full object-cover" />
           : kind === "audio" ? <span className="flex h-full items-center justify-center text-muted-foreground">♪</span>
             : <img src={dzThumb(item.url, 128)} alt="" className="h-full w-full object-cover" />}
         {(label || dur) && <span className="absolute inset-x-0 bottom-0 truncate rounded-b-slot bg-overlay/70 px-0.5 text-center text-[11px] font-semibold leading-4 text-overlay-foreground">{label || fmtDur(dur)}</span>}

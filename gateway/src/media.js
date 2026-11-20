@@ -105,22 +105,26 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
   const outFor = (file, tag, ext) => { const k = keyOf(file, tag); return path.join(dir, k.slice(0, 2), `${k}.${ext}`); };
 
   // ── Playback copies: one at a time, at low priority; never the GPU ──
-  const heavyCache = new Map(); // file|size|mtime → boolean
+  const heavyCache = new Map(); // file|size|mtime → probe result
   const failedAt = new Map(); // playback path → { at, tries }: a failing copy is retried later, not on every request
   const retryAfter = (tries) => Math.min(24 * 3600_000, 10 * 60_000 * 2 ** (tries - 1));
   const queue = [];
   const queued = new Set();
   let busy = false;
-  async function isHeavy(file) {
+  // A video's size, length and bit rate (probed once per file version).
+  async function videoInfo(file) {
     let st;
-    try { st = fs.statSync(file); } catch { return false; }
+    try { st = fs.statSync(file); } catch { return null; }
     const k = `${file}|${st.size}|${st.mtimeMs}`;
     if (heavyCache.has(k)) return heavyCache.get(k);
     const p = await probe(file, ffprobePath);
-    const heavy = Boolean(p && (Math.max(p.width, p.height) > PLAYBACK.MAX_W || Math.min(p.width, p.height) > PLAYBACK.MAX_H || p.bps > PLAYBACK.HEAVY_BPS));
-    heavyCache.set(k, heavy);
+    if (p) heavyCache.set(k, p);
     if (heavyCache.size > 2000) heavyCache.delete(heavyCache.keys().next().value);
-    return heavy;
+    return p;
+  }
+  async function isHeavy(file) {
+    const p = await videoInfo(file);
+    return Boolean(p && (Math.max(p.width, p.height) > PLAYBACK.MAX_W || Math.min(p.width, p.height) > PLAYBACK.MAX_H || p.bps > PLAYBACK.HEAVY_BPS));
   }
   const playbackPath = (file) => { try { return outFor(file, 'play-v1', 'mp4'); } catch { return null; } };
   // → the playback copy if it is ready, else null (and it is queued when the video is heavy).
@@ -231,5 +235,5 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
     const out = playbackPath(file);
     return out && /^[0-9a-f]{16}$/.test(String(key)) && path.basename(out).startsWith(key) && fs.existsSync(out) ? out : null;
   }
-  return { prepare, playbackFor, playbackKey, playbackByKey, stripFor, isHeavy };
+  return { prepare, playbackFor, playbackKey, playbackByKey, stripFor, isHeavy, videoInfo };
 }

@@ -369,7 +369,7 @@ function ScreenImage({ url, alt }) {
   const w = nat ? nat.w * s : 0; const h = nat ? nat.h * s : 0;
   const left = view.w / 2 - c.x * s; const top = view.h / 2 - c.y * s;
   const showOrig = (scale !== null || copyFailed) && orig.state === "ready";
-  const label = showOrig ? `Original · ${nat.w} × ${nat.h}` : orig.state === "loading" ? `Loading original… ${Math.round(orig.progress * 100)}%` : orig.state === "error" ? "The original did not load" : "Screen copy";
+  const label = showOrig ? (nat ? `Original · ${nat.w} × ${nat.h}` : "Original") : orig.state === "loading" ? `Loading original… ${Math.round(orig.progress * 100)}%` : orig.state === "error" ? "The original did not load" : "Screen copy";
   return (
     <div ref={box} className={cn("relative h-full w-full touch-none select-none overflow-hidden", scale !== null && (drag.current ? "cursor-grabbing" : "cursor-grab"))}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onDoubleClick={onDoubleClick}>

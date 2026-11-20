@@ -254,8 +254,8 @@ function Compare({ before, after }) {
       onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); move(e.clientX); }}
       onPointerMove={(e) => { if (e.buttons) move(e.clientX); }}
     >
-      <img src={dzThumb(after, 2880)} alt="Upscaled" className="absolute inset-0 h-full w-full object-contain" draggable={false} />
-      <img src={dzThumb(before, 2880)} alt="Original" className="absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} draggable={false} />
+      <img key={after} src={dzThumb(after, 2880)} onError={(e) => { if (!e.currentTarget.dataset.orig) { e.currentTarget.dataset.orig = "1"; e.currentTarget.src = after; } }} alt="Upscaled" className="absolute inset-0 h-full w-full object-contain" draggable={false} />
+      <img key={before} src={dzThumb(before, 2880)} onError={(e) => { if (!e.currentTarget.dataset.orig) { e.currentTarget.dataset.orig = "1"; e.currentTarget.src = before; } }} alt="Original" className="absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} draggable={false} />
       <div className="absolute inset-y-0 w-0.5 bg-overlay-foreground/80 shadow" style={{ left: `${pos}%` }}>
         <div className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-overlay-foreground text-base font-bold text-overlay shadow-lg">⇆</div>
       </div>

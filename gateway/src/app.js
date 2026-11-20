@@ -1191,7 +1191,8 @@ export async function buildApp(config, { logger = true } = {}) {
       if (strip) return sendFile(req, reply, strip, 'image/webp', { cacheControl: MEDIA_CACHE });
       return reply.code(404).header('cache-control', 'no-store').send({ error: 'No frames' });
     }
-    if (req.query.w && !download) {
+    if (Object.hasOwn(req.query, 'w') && !download) {
+      if (!(Number(req.query.w) > 0)) return reply.code(400).header('cache-control', 'no-store').send({ error: 'Bad preview width' });
       const t = await thumbs.thumbFor(f.path, f.mime, req.query.w);
       if (t === 'busy') return reply.code(503).header('retry-after', '5').header('cache-control', 'no-store').send({ error: 'Previews are busy, try again.' });
       if (t) { thumbs.touch(t); return sendFile(req, reply, t, 'image/webp', { cacheControl: MEDIA_CACHE }); }

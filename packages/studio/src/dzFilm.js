@@ -124,17 +124,21 @@ export function useFilm(id) {
   };
   const fromServer = (sb) => (sb ? { ...sb, media: withPending(sb.media) } : sb);
   const queue = useRef(Promise.resolve()); // media changes go to the server one after another, in click order
+  const mediaVer = useRef(0); // bumped by every media change the server confirmed: an older read keeps the newer media
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
+      const ver = mediaVer.current;
       const { storyboard } = await dzStoryboards.get(id);
       setError(null);
       setFilm((cur) => {
+        // A media change confirmed after this read started: its media is newer than this copy's.
+        const media = cur && ver !== mediaVer.current ? cur.media : withPending(storyboard.media);
         // Local edits not saved yet stay; media, jobs and the revision come from the server.
-        if (cur && dirty.current) return { ...cur, media: withPending(storyboard.media), jobs: storyboard.jobs };
+        if (cur && dirty.current) return { ...cur, media, jobs: storyboard.jobs };
         base.current = storyboard;
-        return fromServer(storyboard);
+        return { ...storyboard, media };
       });
     } catch (e) { setError(e); }
   }, [id]);
@@ -207,17 +211,18 @@ export function useFilm(id) {
     }
     const done = () => { if (k && pending.current.get(k)?.n === n) pending.current.delete(k); };
     const run = async () => {
-      if (!(await flush())) { done(); load(); return null; }
+      if (!(await flush())) { done(); await load(); return null; }
       const f = filmRef.current;
       try {
         const { storyboard } = await dzStoryboards.media(f.id, body);
         done();
+        mediaVer.current += 1;
         setFilm((cur) => (cur ? { ...cur, media: withPending(storyboard.media), jobs: storyboard.jobs } : fromServer(storyboard)));
         return storyboard;
       } catch (e) {
         done();
         notify({ type: "error", title: "Storyboard", message: e.message });
-        load();
+        await load();
         return null;
       }
     };

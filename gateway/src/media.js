@@ -194,12 +194,12 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
   const stripDone = () => { const nextUp = stripWaiting.shift(); if (nextUp) nextUp(); else stripRunning -= 1; };
   async function stripFor(file) {
     if (!VIDEO_EXT.test(file) && !/\.webm$/i.test(file)) return null;
-    if (stripWaiting.length > 20) return null;
     const count = STRIP_N;
     let out;
     try { out = outFor(file, `strip-${count}`, 'webp'); } catch { return null; }
     if (fs.existsSync(out)) return out;
     if (stripInflight.has(out)) return stripInflight.get(out);
+    if (stripWaiting.length >= 20) return null;
     const job = (async () => {
       const tmp = `${out}.${process.pid}.tmp.webp`;
       await stripSlot();

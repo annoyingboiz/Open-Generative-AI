@@ -103,21 +103,22 @@ export function createStorage(dataDir, { allowLocalDownloads = false } = {}) {
 // Sends a file with HTTP Range support (needed for video seeking).
 export function sendFile(req, reply, file, mime, { download = false, name, cacheControl = 'private, no-store' } = {}) {
   let stat;
-  try { stat = fs.statSync(file); } catch { return reply.code(404).send({ error: 'File not found' }); }
+  try { stat = fs.statSync(file); } catch { return reply.code(404).header('cache-control', 'no-store').send({ error: 'File not found' }); }
   reply.header('content-type', mime);
   reply.header('accept-ranges', 'bytes');
   // Private files: the browser must ask us (and we check the owner) every time.
   reply.header('cache-control', cacheControl);
   // An unchanged file is answered with a tiny 304 — the access check above
   // has already run for this request.
-  const etag = `W/"${stat.size.toString(36)}-${Math.trunc(stat.mtimeMs).toString(36)}"`;
+  // Strong: the bytes behind a file's URL never change after it is published (package 10).
+  const etag = `"${stat.size.toString(36)}-${Math.trunc(stat.mtimeMs).toString(36)}"`;
   reply.header('etag', etag);
   reply.header('last-modified', new Date(Math.trunc(stat.mtimeMs / 1000) * 1000).toUTCString());
   if (!download && !req.headers.range && req.headers['if-none-match'] === etag) return reply.code(304).send();
   if (download) reply.header('content-disposition', `attachment; filename="${(name || path.basename(file)).replace(/"/g, '')}"`);
   // If-Range: a range only for the same bytes; otherwise the whole file (RFC 9110 §13.1.5).
   const ifRange = req.headers['if-range'];
-  const sameBytes = !ifRange || ifRange === etag || ifRange.replace(/^W\//, '') === etag.replace(/^W\//, '')
+  const sameBytes = !ifRange || ifRange === etag
     || (!ifRange.startsWith('"') && !ifRange.startsWith('W/') && Date.parse(ifRange) >= Math.trunc(stat.mtimeMs / 1000) * 1000);
   const range = sameBytes && req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
   if (range) {
@@ -126,7 +127,7 @@ export function sendFile(req, reply, file, mime, { download = false, name, cache
     if (start === undefined) { start = Math.max(0, stat.size - end); end = stat.size - 1; }
     if (end === undefined || end >= stat.size) end = stat.size - 1;
     if (start > end || start >= stat.size) {
-      return reply.code(416).header('content-range', `bytes */${stat.size}`).send();
+      return reply.code(416).header('cache-control', 'no-store').header('content-range', `bytes */${stat.size}`).send();
     }
     reply.code(206).header('content-range', `bytes ${start}-${end}/${stat.size}`).header('content-length', end - start + 1);
     return reply.send(fs.createReadStream(file, { start, end }));

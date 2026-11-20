@@ -328,6 +328,8 @@ export async function buildApp(config, { logger = true } = {}) {
   });
   app.post('/logout', async (req, reply) => {
     auth.logout(req.cookies?.[SESSION_COOKIE]);
+    // Files are kept by the browser for a long time (package 10, M2): signing out clears them.
+    reply.header('clear-site-data', '"cache"');
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return reply.redirect('/login');
   });
@@ -1199,12 +1201,12 @@ export async function buildApp(config, { logger = true } = {}) {
   };
   app.get('/media/u/:file', async (req, reply) => {
     const f = generations.mediaFile(req.user, 'u', req.params.file.split('.')[0]);
-    if (!f) return reply.code(404).send({ error: 'Not found' });
+    if (!f) return reply.code(404).header('cache-control', 'no-store').send({ error: 'Not found' });
     return sendMedia(req, reply, f);
   });
   app.get('/media/g/:id/:file', async (req, reply) => {
     const f = generations.mediaFile(req.user, 'g', req.params.id, req.params.file.split('.')[0]);
-    if (!f) return reply.code(404).send({ error: 'Not found' });
+    if (!f) return reply.code(404).header('cache-control', 'no-store').send({ error: 'Not found' });
     return sendMedia(req, reply, f);
   });
 

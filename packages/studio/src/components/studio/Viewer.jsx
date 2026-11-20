@@ -79,6 +79,20 @@ function useFrameStrip(url, n = 12) {
   return frames;
 }
 
+// Controls live outside the components that use them: a component made inside another one is a
+// new type on every render, so React rebuilds its button. The player re-renders several times a
+// second (time updates), and a click whose press and release land on two different buttons is lost.
+const Btn = ({ label, children, onClick, on }) => (
+  <button type="button" aria-label={label} title={label} onClick={onClick}
+    className={cn("flex h-8 min-w-8 items-center justify-center rounded-md px-1.5 text-overlay-foreground/80 transition-colors duration-state hover:bg-overlay-foreground/10 hover:text-overlay-foreground", on && "text-overlay-foreground")}>{children}</button>
+);
+const Action = ({ icon: Icon, children, onClick }) => (
+  <button type="button" onClick={onClick} className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent"><Icon size={16} />{children}</button>
+);
+const IconBtn = ({ label, children, onClick }) => (
+  <button type="button" aria-label={label} title={label} onClick={onClick} className="flex h-8 w-8 items-center justify-center rounded-md text-overlay-foreground/80 hover:bg-overlay-foreground/10 hover:text-overlay-foreground">{children}</button>
+);
+
 function VideoPlayer({ item, act }) {
   const ref = useRef(null);
   const box = useRef(null);
@@ -100,10 +114,6 @@ function VideoPlayer({ item, act }) {
   }, [load, attempt]);
   const retry = () => { setLoad("loading"); setAttempt((n) => n + 1); const el = v(); if (el) { el.load(); el.play().catch(() => {}); } };
   const step = (n) => { const el = v(); if (!el) return; el.pause(); setPlaying(false); el.currentTime = Math.max(0, Math.min(el.duration || 0, el.currentTime + n / FPS)); };
-  const Btn = ({ label, children, onClick, on }) => (
-    <button type="button" aria-label={label} title={label} onClick={onClick}
-      className={cn("flex h-8 min-w-8 items-center justify-center rounded-md px-1.5 text-overlay-foreground/80 transition-colors duration-state hover:bg-overlay-foreground/10 hover:text-overlay-foreground", on && "text-overlay-foreground")}>{children}</button>
-  );
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
       <div ref={box} className="flex min-h-0 flex-1 items-center justify-center bg-overlay">
@@ -141,7 +151,7 @@ function VideoPlayer({ item, act }) {
           className="ml-1 flex h-8 items-center gap-1.5 rounded-md border border-overlay-foreground/20 px-2.5 font-medium hover:bg-overlay-foreground/10"><FrameCorners size={16} />Save frame</button>
         <Btn label="Speed" onClick={() => { const next = { 0.5: 1, 1: 1.5, 1.5: 2, 2: 0.5 }[rate]; setRate(next); if (v()) v().playbackRate = next; }}><span className="rounded-md border border-overlay-foreground/20 px-1.5 text-xs tabular-nums">{rate}×</span></Btn>
         <Btn label={loop ? "Loop on" : "Loop off"} on={loop} onClick={() => setLoop((x) => !x)}><Repeat size={16} className={loop ? "" : "opacity-50"} /></Btn>
-        <Btn label={muted ? "Sound off" : "Sound on"} onClick={() => setMuted((x) => !x)}>{muted ? <SpeakerSlash size={16} /> : <SpeakerHigh size={16} />}</Btn>
+        <Btn label={muted ? "Sound off" : "Sound on"} onClick={() => { const next = !muted; const el = v(); if (el) { el.muted = next; if (!next && el.paused) el.play().catch(() => {}); } setMuted(next); }}>{muted ? <SpeakerSlash size={16} /> : <SpeakerHigh size={16} />}</Btn>
         <Btn label="Full screen" onClick={() => (box.current?.requestFullscreen?.() || v()?.webkitEnterFullscreen?.())}><CornersOut size={16} /></Btn>
       </div>
     </div>
@@ -222,16 +232,10 @@ export default function StudioViewer({ item, items = [], onClose, onMove, act })
     ["Cost", fmtUsd(item.cost_usd)],
   ].filter(([, v]) => v);
   const canUp = isVideo ? dzVideoUpscaleSpec() && dzIsOwnImage(item.url) : dzUpscaleSpec() && dzIsOwnImage(item.url);
-  const Action = ({ icon: Icon, children, onClick }) => (
-    <button type="button" onClick={onClick} className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent"><Icon size={16} />{children}</button>
-  );
   const openAttached = (f) => {
     const found = items.find((i) => i.url === f.url);
     onMove(found || { id: `att-${f.url}`, url: f.url, kind: /\.(mp4|mov|webm)$/i.test(f.url) ? "video" : "image", prompt: f.name || "", meta: {} });
   };
-  const IconBtn = ({ label, children, onClick }) => (
-    <button type="button" aria-label={label} title={label} onClick={onClick} className="flex h-8 w-8 items-center justify-center rounded-md text-overlay-foreground/80 hover:bg-overlay-foreground/10 hover:text-overlay-foreground">{children}</button>
-  );
   const real = !String(item.id).startsWith("att-");
   return (
     <div ref={dzScrollBoxRef} className="fixed inset-0 z-[150] flex bg-scrim backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={isVideo ? "Video" : "Picture"}>

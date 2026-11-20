@@ -138,13 +138,15 @@ function PendingTile({ item, items, act }) {
   );
 }
 
+// Outside TileMenu so its rows are not rebuilt on every render (a lost click otherwise).
+const Row = ({ icon: Icon, children, onSelect, danger }) => (
+  <DropdownMenuItem onSelect={onSelect} className={cn("h-8 gap-2.5 px-2.5", danger && "text-destructive focus:text-destructive")}><Icon size={16} />{children}</DropdownMenuItem>
+);
+
 // Tile menus (package 03, §5): pictures and videos have their own lists; the same in every tab.
 function TileMenu({ item, act, open, setOpen, timeOf }) {
   const isVideo = item.kind === "video";
   const canUp = isVideo ? dzVideoUpscaleSpec() && dzIsOwnImage(item.url) : dzUpscaleSpec() && dzIsOwnImage(item.url);
-  const Row = ({ icon: Icon, children, onSelect, danger }) => (
-    <DropdownMenuItem onSelect={onSelect} className={cn("h-8 gap-2.5 px-2.5", danger && "text-destructive focus:text-destructive")}><Icon size={16} />{children}</DropdownMenuItem>
-  );
   const prompt = item.meta?.prompt || item.prompt || "";
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -309,6 +311,12 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
 }
 
 // The tabs row, or in its place (same height) the selection actions (§5.2).
+// Outside the selection bar so its buttons are not rebuilt on every render.
+const SelAction = ({ icon: Icon, children, onClick, danger, disabled }) => (
+  <button type="button" disabled={disabled} onClick={onClick}
+    className={cn("flex h-8 items-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors duration-state hover:bg-accent disabled:opacity-40", danger ? "text-destructive" : "text-foreground")}><Icon size={16} />{children}</button>
+);
+
 function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS, extraActions = null }) {
   const [busy, setBusy] = useState(false);
   const n = sel.count;
@@ -322,10 +330,6 @@ function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS
     } catch (e) { notify({ type: "error", title: verb, message: String(e?.message || e) }); }
     setBusy(false);
   };
-  const Action = ({ icon: Icon, children, onClick, danger }) => (
-    <button type="button" disabled={!n || busy} onClick={onClick}
-      className={cn("flex h-8 items-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors duration-state hover:bg-accent disabled:opacity-40", danger ? "text-destructive" : "text-foreground")}><Icon size={16} />{children}</button>
-  );
   if (sel.selecting) {
     return (
       <div className="dz-sel-in flex h-11 items-center gap-1 border-b border-border">
@@ -333,11 +337,11 @@ function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS
         <button type="button" onClick={sel.selectAll} className="h-8 rounded-md px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Select all</button>
         <span className="mx-2 h-5 w-px bg-border" />
         {extraActions && <>{extraActions(sel.chosen, sel.clear)}<span className="mx-2 h-5 w-px bg-border" /></>}
-        <Action icon={FolderSimple} onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: { items: sel.chosen, mode: "move" } }))}>Move to</Action>
-        <Action icon={Copy} onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: { items: sel.chosen, mode: "copy" } }))}>Copy to</Action>
-        <Action icon={DownloadSimple} onClick={async () => { for (const i of sel.chosen) { await download(i.url); await new Promise((r) => setTimeout(r, 250)); } }}>Download</Action>
-        <Action icon={Shapes} onClick={() => window.dispatchEvent(new CustomEvent("dz:to-element", { detail: { items: sel.chosen } }))}>Make element</Action>
-        <Action icon={Trash} danger onClick={() => run("trash", "Moved to Trash")}>Trash</Action>
+        <SelAction disabled={!n || busy} icon={FolderSimple} onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: { items: sel.chosen, mode: "move" } }))}>Move to</SelAction>
+        <SelAction disabled={!n || busy} icon={Copy} onClick={() => window.dispatchEvent(new CustomEvent("dz:move", { detail: { items: sel.chosen, mode: "copy" } }))}>Copy to</SelAction>
+        <SelAction disabled={!n || busy} icon={DownloadSimple} onClick={async () => { for (const i of sel.chosen) { await download(i.url); await new Promise((r) => setTimeout(r, 250)); } }}>Download</SelAction>
+        <SelAction disabled={!n || busy} icon={Shapes} onClick={() => window.dispatchEvent(new CustomEvent("dz:to-element", { detail: { items: sel.chosen } }))}>Make element</SelAction>
+        <SelAction disabled={!n || busy} icon={Trash} danger onClick={() => run("trash", "Moved to Trash")}>Trash</SelAction>
         <button type="button" onClick={sel.clear} className="ml-auto h-8 rounded-md px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Cancel</button>
       </div>
     );

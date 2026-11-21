@@ -12,6 +12,16 @@ import { cn } from "../../ui/index.js";
 
 const CHIP = "mx-px inline-flex select-none items-center gap-1 rounded-xs border border-signal/40 bg-signal/[.14] py-px pl-0.5 pr-1.5 align-[-3px] text-[15px] font-medium leading-5 text-signal";
 
+// The same chip as a React element (package 12: a note's @obj chip in the picture editor,
+// its bar and its composer). One look for every reference chip.
+export function RefChip({ tag, url, title, className }) {
+  return (
+    <span className={cn(CHIP, className)} title={title || `@${tag}`} data-tag={tag}>
+      {url && <img src={dzThumb(url, 64)} alt="" className="h-[18px] w-[18px] rounded-[3px] object-cover" />}@{tag}
+    </span>
+  );
+}
+
 // The prompt string of the field's DOM (chips → "@tag", line breaks → "\n").
 function serialize(root) {
   let out = "";

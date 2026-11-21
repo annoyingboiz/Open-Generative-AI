@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, Minus, At, X, Check, Cube, Rectangle, Monitor, Clock, VideoCamera, Images, MagicWand, Camera, ArrowsOutCardinal, Palette, SlidersHorizontal,
-  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, CaretUp, Info, Warning, WarningCircle, ArrowsClockwise, ArrowElbowDownRight, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
+  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, CaretUp, Info, Warning, WarningCircle, ArrowsClockwise, ArrowElbowDownRight, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, PencilLine, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
 } from "@phosphor-icons/react";
 import { dzThumb, dzPlay } from "../api.js";
 import { dzLibrary } from "../dzLibrary.js";
@@ -16,7 +16,7 @@ import { useDzCreateEngine, fmtUsd, download, DZ_SEND_EVENT } from "./DzCreateSt
 import { useDzSelection } from "./DzSelection.jsx";
 import StudioViewer from "./studio/Viewer.jsx";
 import DzSentPanel from "./DzSentPanel.jsx";
-import DrawModal from "./DrawModal.jsx";
+import PictureEditor from "./editor/PictureEditor.jsx";
 import { lookData, autoLook, elementTags, elementFits, TAG_RE, buildBody, paramsOf, splitEdit } from "../dzCreate.js";
 import { DropdownMenuParts, Spinner, SegSwitch, Tip, cn } from "../ui/index.js";
 import { Overline, Chip, ChipMenu, MenuRow, useEscLayer, fmtDur } from "./studio/ui.jsx";
@@ -156,6 +156,8 @@ function TileMenu({ item, act, open, setOpen, timeOf }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6} className="w-[236px] p-1.5" onClick={(e) => e.stopPropagation()}>
         <Row icon={ArrowsOut} onSelect={() => act.open(item)}>Open</Row>
+        {/* Package 12, E1: the picture editor replaces Draw to edit. */}
+        {!isVideo && <Row icon={PencilLine} onSelect={() => act.openEditor(item.url)}>Open in editor</Row>}
         {/* Storyboard working screen (package 09, P1): approve one picture or take without Select. */}
         {act.approve && <Row icon={Check} onSelect={() => act.approve(item)}>{act.isApproved(item) ? "Remove approval" : "Approve"}</Row>}
         {isVideo ? (
@@ -361,7 +363,7 @@ function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS
 // Every attached file is on (sent) or off (dimmed, kept, never sent). Nothing is
 // hidden: off files stay where they are; files over a limit fold into one dimmed
 // "+N". The only text is a tooltip on what is dimmed (package 04, §2.4).
-function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off = false, onActivate, tip }) {
+export function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off = false, onActivate, tip }) {
   const [dur, setDur] = useState(null);
   // A video's length from ?info=1 (the chip shows the poster only, package 10).
   useEffect(() => { let alive = true; if (kind === "video") dzMediaInfo(item.url).then((j) => { if (alive && j?.duration) setDur(j.duration); }); return () => { alive = false; }; }, [kind, item.url]);
@@ -372,7 +374,7 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off
     <div ref={anchor} className="dz-pop group/t relative h-12 w-12 flex-shrink-0" draggable onDragStart={onDragStart} tabIndex={0} data-dz-role={item.role}
       onClick={click} onKeyDown={(e) => { if (click && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); click(e); } }}
       role={click ? "button" : undefined} aria-haspopup={!off && menu ? "menu" : undefined} {...(off ? tip : {})}>
-      {/* "Image to edit" has a small menu: Draw to edit (package 03, §8), Replace, Remove. */}
+      {/* "Image to edit" has a small menu: Open in editor (package 12), Replace, Remove. */}
       {menu && !off && (
         <ChipMenu open={open} onClose={() => setOpen(false)} anchor={anchor} className="w-[200px] p-1.5">
           {menu.map(([Icon, text, run]) => <MenuRow key={text} className="h-8 text-sm" onClick={(e) => { e.stopPropagation(); setOpen(false); run(); }}><Icon size={16} />{text}</MenuRow>)}
@@ -392,7 +394,7 @@ function Thumb({ item, kind, label, tag, onRemove, onDragStart, fault, menu, off
   );
 }
 // hot: a picture is being dragged that this slot can take (package 09, P4); over: it is under the pointer.
-const EmptySlot = ({ label, onClick, fault, small, role, hot = false, over = false }) => (
+export const EmptySlot = ({ label, onClick, fault, small, role, hot = false, over = false }) => (
   <button type="button" onClick={onClick} aria-label={label ? `Add ${label}` : "Add"} data-dz-role={role}
     className={cn("flex h-12 w-12 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-slot border border-dashed text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground",
       over ? "border-solid border-signal bg-signal/20 text-foreground" : hot ? "border-signal text-signal" : fault ? "border-destructive" : "border-input")}>
@@ -538,7 +540,7 @@ function Strip({ entry, groups, attached, setAttached, activeGroup, openLibrary,
     return (
       <Thumb key={`${item.role}-${item.url}`} item={item} kind={g.kind} label={label || item.label} tag={tagText(item, label || item.label || g.label)} fault={fault === g.id && !off}
         off={Boolean(off)} onActivate={canOn ? () => st.turnOn([item.role]) : undefined} tip={tipFor(off?.reason)}
-        menu={g.id === "edit" ? [[PencilSimple, "Draw to edit…", () => onDraw?.(item.url)], [ArrowsClockwise, "Replace…", () => openLibrary("edit")], [Trash, "Remove", () => setAttached((a) => removeFromGroup(a, g, item.url, item.role))]] : null}
+        menu={g.id === "edit" ? [[PencilLine, "Open in editor", () => onDraw?.(item.url)], [ArrowsClockwise, "Replace…", () => openLibrary("edit")], [Trash, "Remove", () => setAttached((a) => removeFromGroup(a, g, item.url, item.role))]] : null}
         onDragStart={(e) => { dragging.current = { group: g.id, item: { url: item.url, name: item.name, label: item.label, role: item.role } }; try { e.dataTransfer.setData("text/plain", item.url); } catch { /* optional */ } }}
         onRemove={() => setAttached((a) => removeFromGroup(a, g, item.url, item.role))} />
     );
@@ -817,6 +819,162 @@ const RatioIcon = ({ v }) => {
   return <span className="flex h-[18px] w-[18px] items-center justify-center"><span className="rounded-[2px] border-[1.5px] border-current" style={{ width: w, height: h }} /></span>;
 };
 
+// ── The composer's settings and bottom row (shared with the picture editor, package 12) ──
+// One implementation of the model chip, ratio, resolution, length, count, Settings, Adapt,
+// price and Generate: the Studio / Image / Video composer and the editor's composer use it.
+export function useComposerParams(engine) {
+  const { kind, params, values, entries, entry, plan } = engine;
+  // Parameters: ratio, resolution and length are chips; everything else is in Settings.
+  const allParams = [...params.main, ...params.advanced];
+  const ratioP = allParams.find((p) => RATIO_KEYS.includes(p.key) && Array.isArray(p.enum));
+  const resP = allParams.find((p) => RES_KEYS.includes(p.key) && Array.isArray(p.enum));
+  const durP = kind === "video" ? allParams.find((p) => p.key === "duration") : null;
+  const settingsParams = allParams.filter((p) => p !== ratioP && p !== resP && p !== durP && !["num_images", "n", "batch_size"].includes(p.key));
+  const settingsChanged = settingsParams.some((p) => values[p.key] != null && values[p.key] !== p.default);
+  // Values this model has at other providers: listed dimmed with the reason (package 03, §3.2).
+  const ratioOthers = useMemo(() => familyValues(entries, entry, RATIO_KEYS), [entries, entry]);
+  const resOthers = useMemo(() => familyValues(entries, entry, RES_KEYS), [entries, entry]);
+  // Ratio with a start frame (§4): when the endpoint that gets the frame takes no
+  // ratio, the video follows the frame — the chip shows its ratio with a lock. An
+  // endpoint that does take a ratio with a frame can re-frame, so nothing locks.
+  const startUrl = useMemo(() => splitEdit(plan.sent), [plan.sent]).first?.[0]?.url || null;
+  const [frameShape, setFrameShape] = useState(null);
+  useEffect(() => {
+    if (!startUrl) { setFrameShape(null); return undefined; }
+    let alive = true;
+    const img = new window.Image();
+    img.onload = () => { if (alive && img.naturalWidth) setFrameShape(img.naturalWidth / img.naturalHeight); };
+    img.src = dzThumb(startUrl, 128); // the shape only: a small copy, not the original
+    return () => { alive = false; };
+  }, [startUrl]);
+  const ratioFallback = !ratioP && kind === "video" && startUrl ? (() => {
+    for (const v of entry?.variants || []) { const ps = paramsOf(v.model); const p = [...ps.main, ...ps.advanced].find((x) => RATIO_KEYS.includes(x.key) && Array.isArray(x.enum)); if (p) return p; }
+    return null;
+  })() : null;
+  const ratioLock = ratioFallback ? {
+    value: (() => {
+      const list = ratioFallback.enum.filter((o) => ratioNum(o));
+      if (!frameShape || !list.length) return "Frame";
+      return list.reduce((best, o) => (Math.abs(Math.log(ratioNum(o) / frameShape)) < Math.abs(Math.log(ratioNum(best) / frameShape)) ? o : best), list[0]);
+    })(),
+    note: "Follows the start frame. Remove the frame to choose.",
+  } : null;
+  return { ratioP, resP, durP, settingsParams, settingsChanged, ratioOthers, resOthers, ratioLock, ratioFallback, startUrl };
+}
+
+export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop, panel, setPanel, onPlus, plusDisabled = false, plusLabel = "Add from the library", elements = true, onGenerate, canGo, adaptText = engine.prompt }) {
+  const { entry, entries, kind, setKind, values, setValue, count, setCount, price, priceLoading, variant, setSentOpen, busy, adaptModel, pickModel } = engine;
+  const { ratioP, resP, durP, settingsChanged, ratioOthers, resOthers, ratioLock, ratioFallback } = cp;
+  // The bottom row (§2.3): first the model chip drops the provider, then Adapt its word, then it wraps.
+  const rowRef = useRef(null);
+  const [squeeze, setSqueeze] = useState(0);
+  const [rowWidth, setRowWidth] = useState(0);
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => setRowWidth(Math.round(el.clientWidth)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const rowKey = `${rowWidth}|${entry?.key}|${kind}|${count}|${values[RES_KEYS.find((k) => values[k] != null)] ?? ""}|${priceLoading}`;
+  useLayoutEffect(() => { setSqueeze(0); }, [rowKey]);
+  useLayoutEffect(() => {
+    const el = rowRef.current;
+    if (el && squeeze < 3 && el.scrollWidth > el.clientWidth + 1) setSqueeze(squeeze + 1);
+  });
+  const modelAnchor = useRef(null);
+  const atAnchor = useRef(null);
+  // Model change: nothing is removed; what the new model can't send is dimmed in place (package 04, §2.6).
+  const choose = (key, { close } = {}) => {
+    if (key !== entry?.key) pickModel(key);
+    if (close) setPop(null);
+  };
+  const priceText = price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}` : entry?.priceLabel || "";
+  return (
+                    <div ref={rowRef} className={cn("mt-3 flex items-center gap-1.5 whitespace-nowrap", squeeze >= 3 && "flex-wrap gap-y-2")}>
+      <button type="button" onClick={onPlus} aria-label={plusLabel} disabled={plusDisabled}
+        className="-ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={18} /></button>
+      {elements && <div className="relative" ref={atAnchor}>
+        <button type="button" onClick={() => setPop(pop === "els" ? null : "els")} aria-label="Elements" aria-expanded={pop === "els"}
+          className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground", pop === "els" && "bg-accent text-foreground")}><At size={18} /></button>
+        <ElementsWindow open={pop === "els"} onClose={() => setPop(null)} engine={engine} anchor={atAnchor} />
+      </div>}
+      {kindSwitch && <SegSwitch value={kind} onChange={setKind} aria-label="Image or video" options={[["image", "Image"], ["video", "Video"]]} />}
+      <div className="relative" ref={modelAnchor}>
+        <Chip icon={Cube} active={pop === "model"} onClick={() => setPop(pop === "model" ? null : "model")} aria-expanded={pop === "model"} className="max-w-[240px]">
+          <span className="truncate" title={entry ? `${entry.familyName} · ${entry.providerName}` : undefined}>{entry ? (squeeze >= 1 ? entry.familyName : `${entry.familyName} · ${entry.providerName}`) : "Choose a model"}</span><CaretDown size={12} className="flex-shrink-0 text-muted-foreground" />
+        </Chip>
+        <ChipMenu open={pop === "model"} onClose={() => setPop(null)} anchor={modelAnchor}>
+          <ModelMenu entries={entries} entry={entry} onPick={choose} onClose={() => setPop(null)} kind={kind} />
+        </ChipMenu>
+      </div>
+      <ParamMenu p={ratioP || ratioFallback} value={values[ratioP?.key]} onChange={(v) => setValue(ratioP.key, v)} title="Aspect ratio" icon={Rectangle} modelName={entry?.familyName}
+        others={ratioOthers} locked={ratioLock}
+        render={(v, row) => (row ? <><RatioIcon v={v} /><span className="w-12 tabular-nums">{String(v)}</span><span className="text-muted-foreground">{shapeWord(v)}</span></> : String(v))} />
+      <ParamMenu p={resP} value={values[resP?.key]} onChange={(v) => setValue(resP.key, v)} title="Resolution" icon={Monitor} modelName={entry?.familyName}
+        others={resOthers} right={(v) => PX[String(v).toLowerCase()] || ""}
+        render={(v, row, first) => (row ? <><span className="flex-1">{resName(v)}</span>{first && <span className="text-xs text-muted-foreground">Sharper detail</span>}</> : resShort(v))}
+        note={(v) => resParts(v).kind === "esr"}
+        caption={resP?.enum?.some(isEnhanced) ? "Enhanced is upscaled by the provider and takes longer. The price updates next to Generate." : null} />
+      <ParamMenu p={durP} value={values[durP?.key]} onChange={(v) => setValue(durP.key, v)} title="Length" icon={Clock} modelName={entry?.familyName}
+        render={(v) => (Number(v) === -1 ? "Auto" : `${v}s`)} caption="The price updates next to Generate." />
+      <div className="flex h-8 flex-shrink-0 items-center gap-0.5 rounded-md border border-border px-1 text-sm font-medium" aria-label="How many results">
+        <button type="button" onClick={() => setCount(Math.max(1, count - 1))} disabled={count <= 1} aria-label="Fewer" className="flex h-6 w-6 items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Minus size={12} /></button>
+        <span className="flex items-center gap-1 px-1 tabular-nums">{kind === "video" ? <VideoCamera size={14} className="text-muted-foreground" /> : <Images size={14} className="text-muted-foreground" />}{count} / 4</span>
+        <button type="button" onClick={() => setCount(Math.min(4, count + 1))} disabled={count >= 4} aria-label="More" className="flex h-6 w-6 items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={12} /></button>
+      </div>
+      <span className="min-w-0 flex-1" />
+      {light && (
+        <Chip icon={SlidersHorizontal} onClick={() => setPanel("settings")} active={panel === "settings"} aria-label="Settings" title={settingsChanged ? "Settings · changed from the model's defaults" : "Settings"}>
+          {squeeze >= 2 ? null : "Settings"}{settingsChanged && <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-label="Changed" />}
+        </Chip>
+      )}
+      <Chip icon={MagicWand} onClick={() => setPanel("adapt")} disabled={!adaptModel || !adaptText.trim()} aria-label="Adapt"
+        title={squeeze >= 2 ? "Adapt" : adaptText.trim() ? "Rewrite the prompt for this model" : "Write a prompt first"}>{squeeze >= 2 ? null : "Adapt"}</Chip>
+      {/* The price opens what goes to the model (the bare "Sent" label is gone, B10). */}
+      <button type="button" onClick={() => variant && setSentOpen(true)} disabled={!variant}
+        className={cn("h-8 flex-shrink-0 rounded-md px-1.5 text-sm tabular-nums hover:bg-accent hover:text-foreground disabled:hover:bg-transparent", priceLoading ? "text-subtle" : "text-muted-foreground")}
+        title={`What goes to the model${price ? (price.exact ? " · exact price for your account" : " · estimate") : ""}`}>{priceText}</button>
+      <button type="button" onClick={onGenerate} disabled={!canGo}
+        className="ml-2 flex h-10 flex-shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground transition-[background-color,transform] duration-state hover:bg-primary-hover active:scale-[.98] disabled:opacity-50">
+        {busy > 0 && <Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" />}Generate
+      </button>
+    </div>
+  );
+}
+
+// Settings, Adapt and "what goes to the model" for that row.
+export function ComposerPanels({ engine, cp, panel, setPanel, onAdaptUse, adaptText = engine.prompt, sentRequests = null }) {
+  const { entry, kind, values, setValue, setValuesByKind, adaptModel, adaptContext, look, adaptScope, variant, quoteBody, finalPrompt, merged, elementSpec, activeElements, missing, sentOpen, setSentOpen } = engine;
+  const { settingsParams } = cp;
+  return (
+    <>
+      <SettingsPanel open={panel === "settings"} onClose={() => setPanel(null)} modelName={entry?.familyName} params={settingsParams} values={values} setValue={setValue}
+        onReset={() => setValuesByKind((prev) => { const next = { ...(prev[kind] || {}) }; for (const p of settingsParams) delete next[p.key]; return { ...prev, [kind]: next }; })} />
+      <AdaptPanel open={panel === "adapt"} onClose={() => setPanel(null)} prompt={adaptText} model={adaptModel} context={adaptContext} look={look} scope={adaptScope}
+        request={variant ? { endpoint: variant.model.endpoint, body: quoteBody ? { ...quoteBody } : null } : null}
+        onUse={onAdaptUse} />
+      <DzSentPanel open={sentOpen} onOpenChange={setSentOpen}
+        requests={sentRequests || (variant ? [{ endpoint: variant.model.endpoint, body: quoteBody || buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }), look, problem: missing || null }] : [])} />
+    </>
+  );
+}
+
+// The composer folded into one bar (package 01 §5.3, folded by hand in package 09 P3):
+// the text, a short summary, Generate and the caret that opens it again.
+export function ComposerBar({ text, placeholder, summary, onOpen, onGenerate, canGo, className, children }) {
+  return (
+    <button type="button" onClick={onOpen}
+      className={cn("pointer-events-auto flex h-14 w-[min(640px,100%)] items-center gap-3 rounded-xl border border-border bg-card pl-4 pr-2 text-left shadow-float transition-[width] duration-[260ms] ease-soft", className)}>
+      {children || <span className={cn("min-w-0 flex-1 truncate text-base", !text && "text-muted-foreground")}>{text || placeholder}</span>}
+      <span className="flex-shrink-0 text-sm text-muted-foreground">{summary}</span>
+      <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); onGenerate(); }} aria-disabled={!canGo}
+        className={cn("flex h-10 items-center rounded-md bg-primary px-4 text-base font-medium text-primary-foreground", !canGo && "opacity-50")}>Generate</span>
+      <span aria-hidden="true" className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground"><CaretUp size={16} /></span>
+    </button>
+  );
+}
+
 // ── Studio ──────────────────────────────────────────────────────────────────
 export default function DzStudio(props) {
   // One component for three tabs (package 03): Studio, and the light Image and Video tabs.
@@ -845,26 +1003,7 @@ export default function DzStudio(props) {
   const [listGroup, setListGroup] = useState(null);
   const [focus, setFocus] = useState(false);
   const [mini, setMini] = useState(false);
-  // The bottom row (§2.3): first the model chip drops the provider, then Adapt its word, then it wraps.
-  const rowRef = useRef(null);
-  const [squeeze, setSqueeze] = useState(0);
-  const [rowWidth, setRowWidth] = useState(0);
-  useEffect(() => {
-    const el = rowRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(() => setRowWidth(Math.round(el.clientWidth)));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [mini]);
-  const rowKey = `${rowWidth}|${entry?.key}|${kind}|${count}|${values[RES_KEYS.find((k) => values[k] != null)] ?? ""}|${priceLoading}`;
-  useLayoutEffect(() => { setSqueeze(0); }, [rowKey]);
-  useLayoutEffect(() => {
-    const el = rowRef.current;
-    if (el && squeeze < 3 && el.scrollWidth > el.clientWidth + 1) setSqueeze(squeeze + 1);
-  });
   const [aspects, measure] = useAspects();
-  const modelAnchor = useRef(null);
-  const atAnchor = useRef(null);
   const scroller = useRef(null);
   const [gridEl, gridRef] = useState(null);
   const gridWidth = useWidth(gridEl);
@@ -924,47 +1063,9 @@ export default function DzStudio(props) {
 
   // A picture sent here from another tab (Make video, Continue, Edit): the prompt takes focus.
   useEffect(() => { if (focusSeq) { setMini(false); requestAnimationFrame(() => engine.promptRef.current?.focus()); } }, [focusSeq]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Model change: nothing is removed; what the new model can't send is dimmed in place (package 04, §2.6).
-  const choose = (key, { close } = {}) => {
-    if (key !== entry?.key) pickModel(key);
-    if (close) setPop(null);
-  };
-
-  // Parameters: ratio, resolution and length are chips; everything else is in Settings.
-  const allParams = [...params.main, ...params.advanced];
-  const ratioP = allParams.find((p) => RATIO_KEYS.includes(p.key) && Array.isArray(p.enum));
-  const resP = allParams.find((p) => RES_KEYS.includes(p.key) && Array.isArray(p.enum));
-  const durP = kind === "video" ? allParams.find((p) => p.key === "duration") : null;
-  const settingsParams = allParams.filter((p) => p !== ratioP && p !== resP && p !== durP && !["num_images", "n", "batch_size"].includes(p.key));
-  const settingsChanged = settingsParams.some((p) => values[p.key] != null && values[p.key] !== p.default);
-  // Values this model has at other providers: listed dimmed with the reason (package 03, §3.2).
-  const ratioOthers = useMemo(() => familyValues(entries, entry, RATIO_KEYS), [entries, entry]);
-  const resOthers = useMemo(() => familyValues(entries, entry, RES_KEYS), [entries, entry]);
-  // Ratio with a start frame (§4): when the endpoint that gets the frame takes no
-  // ratio, the video follows the frame — the chip shows its ratio with a lock. An
-  // endpoint that does take a ratio with a frame can re-frame, so nothing locks.
-  const startUrl = sent.first?.[0]?.url || null;
-  const [frameShape, setFrameShape] = useState(null);
-  useEffect(() => {
-    if (!startUrl) { setFrameShape(null); return undefined; }
-    let alive = true;
-    const img = new window.Image();
-    img.onload = () => { if (alive && img.naturalWidth) setFrameShape(img.naturalWidth / img.naturalHeight); };
-    img.src = dzThumb(startUrl, 128); // the shape only: a small copy, not the original
-    return () => { alive = false; };
-  }, [startUrl]);
-  const ratioFallback = !ratioP && kind === "video" && startUrl ? (() => {
-    for (const v of entry?.variants || []) { const ps = paramsOf(v.model); const p = [...ps.main, ...ps.advanced].find((x) => RATIO_KEYS.includes(x.key) && Array.isArray(x.enum)); if (p) return p; }
-    return null;
-  })() : null;
-  const ratioLock = ratioFallback ? {
-    value: (() => {
-      const list = ratioFallback.enum.filter((o) => ratioNum(o));
-      if (!frameShape || !list.length) return "Frame";
-      return list.reduce((best, o) => (Math.abs(Math.log(ratioNum(o) / frameShape)) < Math.abs(Math.log(ratioNum(best) / frameShape)) ? o : best), list[0]);
-    })(),
-    note: "Follows the start frame. Remove the frame to choose.",
-  } : null;
+  const cp = useComposerParams(engine);
+  const startUrl = cp.startUrl;
+  const settingsChanged = cp.settingsChanged;
   const placeholder = mode === "image"
     ? (sent.edit?.length ? "Say what to change." : "Describe the picture. Type @ to use an element or a reference.")
     : mode === "video" && startUrl ? "Say what happens in this picture."
@@ -1068,7 +1169,8 @@ export default function DzStudio(props) {
       window.dispatchEvent(new CustomEvent("dz:open-tab", { detail: { tab: "image" } }));
       setTimeout(() => window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "image", url: it.url, role: "edit" } })), 0);
     },
-    draw: (url) => { setDrawImage(url); setDrawOpen(true); },
+    // Package 12: the picture editor, over everything; it knows the picture's place in the gallery.
+    openEditor: (url) => setEditing(url),
     continueFrom: (it) => frameInto(it, "last"),
     firstAsStart: (it) => frameInto(it, "first"),
     saveFrame: async (it, t) => {
@@ -1089,7 +1191,21 @@ export default function DzStudio(props) {
       } catch (e) { fail("Retry")(e); }
     },
   };
-  const [drawImage, setDrawImage] = useState(null);
+  const [editing, setEditing] = useState(null); // the picture open in the editor
+  // "Send to composer" (E7): base → Image to edit, marked copy and objects → References, the prompt.
+  // On Studio's Video kind the composer switches to Image first, then takes it (next render).
+  const [incoming, setIncoming] = useState(null);
+  useEffect(() => {
+    if (!incoming || !entries.length) return;
+    if (mode === "create" && kind !== "image") { setKind("image"); return; }
+    if (mode === "create" ? !entries.some((e) => e.canEdit) : false) return;
+    const { edit, references, prompt: text } = incoming;
+    setIncoming(null);
+    openForEdit(edit);
+    setAttached((prev) => ({ ...prev, reference: references.map((r) => ({ url: r.url, name: r.name || "", ...(r.label ? { label: r.label } : {}) })) }));
+    setPrompt(text);
+    focusPrompt();
+  }, [incoming, kind, entries]); // eslint-disable-line react-hooks/exhaustive-deps
   // ⌘/Ctrl+Enter in the prompt runs it (the engine handles the key; route it here for the toast).
   const engineForPrompt = { ...engine, onPromptKey: (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !mention) { e.preventDefault(); generateNow(); return; } engine.onPromptKey(e); } };
 
@@ -1148,7 +1264,6 @@ export default function DzStudio(props) {
   const sel = target ? targetSel : engineSel;
   const rows = useMemo(() => justify(items, aspects, gridWidth), [items, aspects, gridWidth]);
   const total = groups.reduce((n, g) => n + groupItems(sent, g).length, 0);
-  const priceText = price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}` : entry?.priceLabel || "";
   const where = ctx.project ? [ctx.project.name, ...(ctx.folderPath || [])].join(" / ") : "Library";
   const libraryOpen = Boolean(libGroup);
 
@@ -1227,14 +1342,8 @@ export default function DzStudio(props) {
       {/* Composer (§5.3) */}
       <div className="pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center px-6">
         {mini ? (
-          <button type="button" onClick={() => { setMini(false); requestAnimationFrame(() => engine.promptRef.current?.focus()); }}
-            className="pointer-events-auto flex h-14 w-[min(640px,100%)] items-center gap-3 rounded-xl border border-border bg-card pl-4 pr-2 text-left shadow-float transition-[width] duration-[260ms] ease-soft">
-            <span className={cn("min-w-0 flex-1 truncate text-base", !prompt && "text-muted-foreground")}>{prompt || "Describe the shot"}</span>
-            <span className="flex-shrink-0 text-sm text-muted-foreground">{entry?.familyName}{total ? ` · ${total} attached` : ""}</span>
-            <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); generateNow(); }} aria-disabled={!canGo}
-              className={cn("flex h-10 items-center rounded-md bg-primary px-4 text-base font-medium text-primary-foreground", !canGo && "opacity-50")}>Generate</span>
-            <span aria-hidden="true" className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground"><CaretUp size={16} /></span>
-          </button>
+          <ComposerBar text={prompt} placeholder="Describe the shot" summary={`${entry?.familyName || ""}${total ? ` · ${total} attached` : ""}`}
+            onOpen={() => { setMini(false); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} onGenerate={generateNow} canGo={canGo} />
         ) : (
           <div className={cn("pointer-events-auto relative max-w-full rounded-xl border border-border bg-card p-4 shadow-float", COMPOSER_W[mode])}
             onPointerDownCapture={(e) => { if (err && !e.target.closest?.("[data-dz-err]")) setErr(null); }}
@@ -1255,7 +1364,7 @@ export default function DzStudio(props) {
             {/* 1. Attachments strip — always visible. Files the model can't send stay here, dimmed (package 04). */}
             {stripGroups.length > 0 ? (
               <Strip entry={entry} groups={stripGroups} attached={attached} setAttached={setAttached} activeGroup={libGroup || (panel === "list" ? listGroup : null)}
-                openLibrary={openLibrary} openList={openList} tagOf={tagOf} fault={err?.add || null} onDraw={act.draw} st={st} />
+                openLibrary={openLibrary} openList={openList} tagOf={tagOf} fault={err?.add || null} onDraw={act.openEditor} st={st} />
             ) : (
               <p className="flex h-[66px] items-center text-sm text-muted-foreground">{entry ? `${entry.familyName} takes text only.` : "Loading models…"}</p>
             )}
@@ -1285,56 +1394,9 @@ export default function DzStudio(props) {
                   </div>
                 )}
 
-                {/* 4. Bottom row — never wraps */}
-                <div ref={rowRef} className={cn("mt-3 flex items-center gap-1.5 whitespace-nowrap", squeeze >= 3 && "flex-wrap gap-y-2")}>
-                  <button type="button" onClick={() => openLibrary()} aria-label="Add from the library" disabled={!groups.length}
-                    className="-ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={18} /></button>
-                  <div className="relative" ref={atAnchor}>
-                    <button type="button" onClick={() => setPop(pop === "els" ? null : "els")} aria-label="Elements" aria-expanded={pop === "els"}
-                      className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground", pop === "els" && "bg-accent text-foreground")}><At size={18} /></button>
-                    <ElementsWindow open={pop === "els"} onClose={() => setPop(null)} engine={engine} anchor={atAnchor} />
-                  </div>
-                  {!light && <SegSwitch value={kind} onChange={setKind} aria-label="Image or video" options={[["image", "Image"], ["video", "Video"]]} />}
-                  <div className="relative" ref={modelAnchor}>
-                    <Chip icon={Cube} active={pop === "model"} onClick={() => setPop(pop === "model" ? null : "model")} aria-expanded={pop === "model"} className="max-w-[240px]">
-                      <span className="truncate" title={entry ? `${entry.familyName} · ${entry.providerName}` : undefined}>{entry ? (squeeze >= 1 ? entry.familyName : `${entry.familyName} · ${entry.providerName}`) : "Choose a model"}</span><CaretDown size={12} className="flex-shrink-0 text-muted-foreground" />
-                    </Chip>
-                    <ChipMenu open={pop === "model"} onClose={() => setPop(null)} anchor={modelAnchor}>
-                      <ModelMenu entries={entries} entry={entry} onPick={choose} onClose={() => setPop(null)} kind={kind} />
-                    </ChipMenu>
-                  </div>
-                  <ParamMenu p={ratioP || ratioFallback} value={values[ratioP?.key]} onChange={(v) => setValue(ratioP.key, v)} title="Aspect ratio" icon={Rectangle} modelName={entry?.familyName}
-                    others={ratioOthers} locked={ratioLock}
-                    render={(v, row) => (row ? <><RatioIcon v={v} /><span className="w-12 tabular-nums">{String(v)}</span><span className="text-muted-foreground">{shapeWord(v)}</span></> : String(v))} />
-                  <ParamMenu p={resP} value={values[resP?.key]} onChange={(v) => setValue(resP.key, v)} title="Resolution" icon={Monitor} modelName={entry?.familyName}
-                    others={resOthers} right={(v) => PX[String(v).toLowerCase()] || ""}
-                    render={(v, row, first) => (row ? <><span className="flex-1">{resName(v)}</span>{first && <span className="text-xs text-muted-foreground">Sharper detail</span>}</> : resShort(v))}
-                    note={(v) => resParts(v).kind === "esr"}
-                    caption={resP?.enum?.some(isEnhanced) ? "Enhanced is upscaled by the provider and takes longer. The price updates next to Generate." : null} />
-                  <ParamMenu p={durP} value={values[durP?.key]} onChange={(v) => setValue(durP.key, v)} title="Length" icon={Clock} modelName={entry?.familyName}
-                    render={(v) => (Number(v) === -1 ? "Auto" : `${v}s`)} caption="The price updates next to Generate." />
-                  <div className="flex h-8 flex-shrink-0 items-center gap-0.5 rounded-md border border-border px-1 text-sm font-medium" aria-label="How many results">
-                    <button type="button" onClick={() => setCount(Math.max(1, count - 1))} disabled={count <= 1} aria-label="Fewer" className="flex h-6 w-6 items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Minus size={12} /></button>
-                    <span className="flex items-center gap-1 px-1 tabular-nums">{kind === "video" ? <VideoCamera size={14} className="text-muted-foreground" /> : <Images size={14} className="text-muted-foreground" />}{count} / 4</span>
-                    <button type="button" onClick={() => setCount(Math.min(4, count + 1))} disabled={count >= 4} aria-label="More" className="flex h-6 w-6 items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={12} /></button>
-                  </div>
-                  <span className="min-w-0 flex-1" />
-                  {light && (
-                    <Chip icon={SlidersHorizontal} onClick={() => setPanel("settings")} active={panel === "settings"} aria-label="Settings" title={settingsChanged ? "Settings · changed from the model's defaults" : "Settings"}>
-                      {squeeze >= 2 ? null : "Settings"}{settingsChanged && <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-label="Changed" />}
-                    </Chip>
-                  )}
-                  <Chip icon={MagicWand} onClick={() => setPanel("adapt")} disabled={!adaptModel || !prompt.trim()} aria-label="Adapt"
-                    title={squeeze >= 2 ? "Adapt" : prompt.trim() ? "Rewrite the prompt for this model" : "Write a prompt first"}>{squeeze >= 2 ? null : "Adapt"}</Chip>
-                  {/* The price opens what goes to the model (the bare "Sent" label is gone, B10). */}
-                  <button type="button" onClick={() => variant && setSentOpen(true)} disabled={!variant}
-                    className={cn("h-8 flex-shrink-0 rounded-md px-1.5 text-sm tabular-nums hover:bg-accent hover:text-foreground disabled:hover:bg-transparent", priceLoading ? "text-subtle" : "text-muted-foreground")}
-                    title={`What goes to the model${price ? (price.exact ? " · exact price for your account" : " · estimate") : ""}`}>{priceText}</button>
-                  <button type="button" onClick={generateNow} disabled={!canGo}
-                    className="ml-2 flex h-10 flex-shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground transition-[background-color,transform] duration-state hover:bg-primary-hover active:scale-[.98] disabled:opacity-50">
-                    {busy > 0 && <Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" />}Generate
-                  </button>
-                </div>
+                {/* 4. Bottom row — never wraps (shared with the picture editor, package 12). */}
+                <ComposerRow engine={engine} cp={cp} light={light} kindSwitch={!light} pop={pop} setPop={setPop} panel={panel} setPanel={setPanel}
+                  onPlus={() => openLibrary()} plusDisabled={!groups.length} onGenerate={generateNow} canGo={canGo} elements />
               </div>
             </div>
           </div>
@@ -1346,18 +1408,21 @@ export default function DzStudio(props) {
       <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")} />
       <MovePanel open={panel === "move"} onClose={() => setPanel(null)} move={move} setMove={setMove} hints={adviceFor("move")} />
       <LookPanel open={panel === "look"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} />
-      <SettingsPanel open={panel === "settings"} onClose={() => setPanel(null)} modelName={entry?.familyName} params={settingsParams} values={values} setValue={setValue}
-        onReset={() => setValuesByKind((prev) => { const next = { ...(prev[kind] || {}) }; for (const p of settingsParams) delete next[p.key]; return { ...prev, [kind]: next }; })} />
-      <AdaptPanel open={panel === "adapt"} onClose={() => setPanel(null)} prompt={prompt} model={adaptModel} context={adaptContext} look={look} scope={adaptScope}
-        request={variant ? { endpoint: variant.model.endpoint, body: quoteBody ? { ...quoteBody } : null } : null}
-        onUse={(t) => { setPrompt(t); setPanel(null); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} />
+      <ComposerPanels engine={engine} cp={cp} panel={panel} setPanel={setPanel} onAdaptUse={(t) => { setPrompt(t); setPanel(null); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} />
       <FullList open={panel === "list"} onClose={() => setPanel(null)} groups={stripGroups} groupId={listGroup} setGroupId={setListGroup} attached={attached} sent={sent} setAttached={setAttached} st={st}
         tagOf={tagOf} modelName={entry?.familyName || ""} onError={(m) => setErr({ head: "Not uploaded.", text: plainSentence(m) })} onUploading={(on) => engine.setUploads((n) => Math.max(0, n + (on ? 1 : -1)))} />
       <StudioViewer item={viewing} items={items} onClose={() => setViewing(null)} onMove={(it) => { markSeen(it); setViewing(it); }} act={{ ...act, hasMore: history.hasMore }} />
-      <DrawModal isOpen={drawOpen} onClose={() => { setDrawOpen(false); setDrawImage(null); }} apiKey={props.apiKey} batchSize={1} studio={mode} initialImage={drawImage}
-        onError={(m) => notify({ type: "error", title: "Draw to Edit", message: m })} onDone={() => refreshHistory(mode)} />
-      <DzSentPanel open={sentOpen} onOpenChange={setSentOpen}
-        requests={variant ? [{ endpoint: variant.model.endpoint, body: quoteBody || buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }), look, problem: missing || null }] : []} />
+      {editing && (() => {
+        const pics = items.filter((i) => i.kind !== "video" && i.url);
+        const at = pics.findIndex((i) => i.url === editing);
+        return (
+          <PictureEditor key={editing} url={editing} apiKey={props.apiKey} target={target}
+            place={{ title: target?.name || "", i: at + 1, n: at >= 0 ? pics.length : 0 }}
+            approve={act.approve} isApproved={(u) => Boolean(target?.approved?.has(u))}
+            onSendToComposer={mode === "video" ? null : (payload) => setIncoming(payload)}
+            onClose={() => { setEditing(null); refreshHistory(mode); }} />
+        );
+      })()}
     </div>
   );
 }

@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   X, CaretLeft, CaretRight, Heart, DownloadSimple, DotsThree, Copy, ArrowCounterClockwise, ImageSquare, PencilSimple, VideoCamera,
-  ArrowsOutSimple, ArrowLineRight, Flag, Play, Pause, Repeat, SpeakerHigh, SpeakerSlash, CornersOut, FrameCorners, Trash, Shapes, PaintBrush, Check, Plus, Minus,
+  ArrowsOutSimple, ArrowLineRight, Flag, Play, Pause, Repeat, SpeakerHigh, SpeakerSlash, CornersOut, FrameCorners, Trash, Shapes, PencilLine, Check, Plus, Minus,
 } from "@phosphor-icons/react";
 import { DropdownMenuParts, Spinner, cn } from "../../ui/index.js";
 import { dzThumb, dzPlay, dzStrip } from "../../api.js";
@@ -489,7 +489,7 @@ export default function StudioViewer({ item, items = [], onClose, onMove, act })
             <DropdownMenu>
               <DropdownMenuTrigger asChild><button type="button" aria-label="More" className="flex h-8 w-8 items-center justify-center rounded-md text-overlay-foreground/80 hover:bg-overlay-foreground/10 hover:text-overlay-foreground"><DotsThree size={18} weight="bold" /></button></DropdownMenuTrigger>
               <DropdownMenuContent align="end" sideOffset={6} className="z-[160] w-[220px] p-1.5">
-                {!isVideo && <DropdownMenuItem className="h-8 gap-2.5" onSelect={() => { onClose(); act.draw(item.url); }}><PaintBrush size={16} />Draw to edit…</DropdownMenuItem>}
+                {!isVideo && act.openEditor && <DropdownMenuItem className="h-8 gap-2.5" onSelect={() => { onClose(); act.openEditor(item.url); }}><PencilLine size={16} />Open in editor</DropdownMenuItem>}
                 {!isVideo && <DropdownMenuItem className="h-8 gap-2.5" onSelect={() => window.dispatchEvent(new CustomEvent("dz:to-element", { detail: { items: [item] } }))}><Shapes size={16} />Make element</DropdownMenuItem>}
                 {prompt && <DropdownMenuItem className="h-8 gap-2.5" onSelect={() => navigator.clipboard?.writeText(prompt).then(() => notify({ type: "notice", title: "Copied", message: "The prompt is on the clipboard." }), () => {})}><Copy size={16} />Copy prompt</DropdownMenuItem>}
                 <DropdownMenuSeparator />

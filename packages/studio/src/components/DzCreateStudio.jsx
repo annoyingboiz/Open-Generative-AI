@@ -401,17 +401,20 @@ export function ResultCard({ item, onUse, onReuse, onLike, onTrash, onOpen, sel 
 
 // ── Studio ─────────────────────────────────────────────────────────────────
 
-export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create", target = null }) {
+export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create", target = null, scope = null }) {
+  // The picture editor (package 12) runs its own composer on this engine: its model and
+  // settings are remembered apart from the tabs, its prompt and files are the editor's.
+  const editor = scope === "editor";
   // A working screen of a storyboard (package 05): the composer is for one shot or group.
   // It opens empty (no prompt, no files); only the model choice and its settings are remembered.
-  const cfg = target ? { ...(MODES[mode] || MODES.create), store: `dz_work_${mode}_v1` } : (MODES[mode] || MODES.create);
+  const cfg = editor ? { ...(MODES[mode] || MODES.create), store: "dz_editor_v1" } : target ? { ...(MODES[mode] || MODES.create), store: `dz_work_${mode}_v1` } : (MODES[mode] || MODES.create);
   const fixedKind = mode === "image" || mode === "video" ? mode : null;
   const saved = useMemo(() => {
     const all = load(cfg.store);
-    return target ? { kind: all.kind, modelByKind: all.modelByKind, valuesByKind: all.valuesByKind, count: all.count } : all;
+    return target || editor ? { kind: all.kind, modelByKind: all.modelByKind, valuesByKind: all.valuesByKind, count: all.count } : all;
   }, [cfg.store]); // eslint-disable-line react-hooks/exhaustive-deps
   // Events between tabs are addressed by mode; a working screen has its own address.
-  const addr = target ? `target:${target.key}` : mode;
+  const addr = editor ? "editor" : target ? `target:${target.key}` : mode;
   // A working screen (package 06, S1) opens in Image mode unless it was opened for a video.
   const [kindState, setKind] = useState(target ? (target.initial?.mode === "video" ? "video" : "image") : saved.kind === "video" ? "video" : "image");
   const kind = fixedKind || kindState;
@@ -506,7 +509,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const storedValues = valuesByKind[kind] || {};
 
   useEffect(() => {
-    try { localStorage.setItem(cfg.store, JSON.stringify(target ? { kind, modelByKind, valuesByKind, count } : { kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched })); } catch { /* optional */ }
+    try { localStorage.setItem(cfg.store, JSON.stringify(target || editor ? { kind, modelByKind, valuesByKind, count } : { kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched })); } catch { /* optional */ }
   }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Only the slots this model has; other attached files are kept but not sent.
@@ -583,7 +586,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   }, [merged.attached, kind, values, camera, move, tags, elementsUsed]); // eslint-disable-line react-hooks/exhaustive-deps
   // Adapt keeps its results per composer (package 07, F2): a tool tab, or one shot / group.
   // A composer that is emptied starts with no result.
-  const adaptScope = target ? `board:${target.board || ""}:${target.kind || ""}:${target.id || ""}` : `tab:${mode}`;
+  const adaptScope = editor ? `editor:${target?.key || mode}` : target ? `board:${target.board || ""}:${target.kind || ""}:${target.id || ""}` : `tab:${mode}`;
   const hadPrompt = useRef(Boolean(prompt.trim()));
   useEffect(() => {
     const has = Boolean(prompt.trim());
@@ -609,6 +612,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     : [[t.tag, `${t.label}${t.unused ? " (attached, not sent to this model)" : ""}`, t.url || ""]])));
   const chatRefs = useMemo(() => JSON.parse(refsKey).map(([tag, label, url]) => ({ tag, label, ...(url ? { url } : {}) })), [refsKey]);
   useEffect(() => {
+    if (editor) return; // the editor does not speak for its tab to the side chat
     // A storyboard's working screen reports as the Storyboard tab, with what it is for (package 05, §4.6).
     dzSetStudioState(target ? "director" : mode, { model: entry ? { family: entry.family, name: entry.familyName, kind } : null, prompt, refs: chatRefs, ...(target ? { sees: [target.sees, ...activeElements.map((e) => (e.tag ? `@${e.tag}` : e.name)), prompt.trim() ? "your prompt" : null].filter(Boolean).join(" · "), seesFull: target.seesFull || target.sees, writable: true } : {}) });
   }, [mode, entry, kind, prompt, target?.sees, activeElements, chatRefs]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -621,7 +625,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   useEffect(() => {
     const on = (e) => {
       const { tab, text, how, refs } = e.detail || {};
-      if (tab !== (target ? "director" : mode) || typeof text !== "string" || !text.trim()) return;
+      if (editor || tab !== (target ? "director" : mode) || typeof text !== "string" || !text.trim()) return;
       const c = insertCtx.current;
       const own = attachedRef.current?.reference || [];
       const candidates = [...(c.elementLists.project || []), ...(c.elementLists.library || []), ...(c.elementLists.others || [])].filter((x) => x.status !== "draft");

@@ -998,6 +998,39 @@ export async function buildApp(config, { logger = true } = {}) {
     }
   });
 
+  // The picture editor's "Save a copy" (package 12, E7): the flattened picture (an upload the
+  // editor just made) becomes a new picture next to the original — same project and folder,
+  // the same shot when it came from one. The original is not touched.
+  //   { url: upload, from: original url, prompt, project?, folder?, target?: { board, id, kind } }
+  app.post('/dz/api/editor/copy', async (req, reply) => {
+    try {
+      const b = req.body || {};
+      const file = generations.mediaFileForUrl(req.user, String(b.url || ''));
+      if (!file?.path) return reply.code(404).send({ detail: 'The picture to save is gone. Try again.' });
+      if (!/^image\//.test(file.mime || '')) return reply.code(400).send({ detail: 'Only a picture can be saved here.' });
+      // Next to the original when it is one of the user's generations, else where the user works now.
+      let origin = null;
+      const m = /\/media\/g\/([A-Za-z0-9_-]+)/.exec(String(b.from || ''));
+      if (m) { try { origin = generations.visibleRow(req.user, m[1]); } catch { origin = null; } }
+      const { projectId, folderId } = origin ? contextOf(req.user, origin.project_id, origin.folder_id) : contextOf(req.user, b.project, b.folder);
+      const t = b.target && typeof b.target === 'object' ? b.target : null;
+      const target = t && typeof t.board === 'string' && typeof t.id === 'string' ? { board: t.board.slice(0, 80), id: t.id.slice(0, 80), kind: typeof t.kind === 'string' ? t.kind.slice(0, 20) : 'shot', step: 'frame' } : null;
+      const ext = /png/.test(file.mime) ? 'png' : /webp/.test(file.mime) ? 'webp' : 'jpg';
+      const { id } = generations.addLocalEdit(req.user, {
+        kind: 'image',
+        prompt: String(b.prompt || '').slice(0, 8000),
+        studio: origin?.studio || 'image',
+        meta: { editorCopyOf: origin?.id || null, from: String(b.from || '').slice(0, 300), modelName: 'Editor · saved copy', ...(target ? { target } : {}) },
+        projectId,
+        folderId,
+        make: async () => ({ path: file.path, ext, mime: file.mime }),
+      });
+      return { id };
+    } catch (error) {
+      return sendGenError(reply, error);
+    }
+  });
+
   // Try a failed job again (package 03, §3.3 "Retry"): the same provider body,
   // model, studio, settings and place; priced and limited like a new request.
   app.post('/dz/api/generations/:id/retry', async (req, reply) => {

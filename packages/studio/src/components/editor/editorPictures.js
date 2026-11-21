@@ -4,7 +4,7 @@
 // and the one flattened picture. Both at the base picture's own size (no 800 px canvas), drawn
 // with the 2D canvas from the items, not from the screen. The base itself is never redrawn:
 // the model gets the original file.
-import { numbered, isObject, markHex, NUMBER_FILL, NUMBER_TEXT } from "./editorModel.mjs";
+import { numbered, isObject, markHex, DEFAULT_MARK_COLOR, NUMBER_FILL, NUMBER_TEXT } from "./editorModel.mjs";
 
 // What the edit models take (provider docs, 2026-11; see package 11 notes): Nano Banana /
 // Gemini image — 7 MB per inline picture; Seedream — about 6000 px a side; GPT Image — 50 MB.
@@ -171,7 +171,7 @@ function drawMarks(ctx, list, k, { lineW, badgeR, objectOutlines }) {
       ctx.save();
       ctx.translate(it.cx * k, it.cy * k);
       ctx.rotate(((it.rotation || 0) * Math.PI) / 180);
-      ctx.strokeStyle = markHex("red");
+      ctx.strokeStyle = markHex(DEFAULT_MARK_COLOR);
       ctx.lineWidth = lineW;
       ctx.setLineDash([lineW * 3, lineW * 2]);
       ctx.strokeRect((-it.w / 2) * k, (-it.h / 2) * k, it.w * k, it.h * k);

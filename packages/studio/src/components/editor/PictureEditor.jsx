@@ -831,7 +831,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
                 {TOOLS.map((t, i) => (t ? (
                   <Tool key={t[0]} on={tool === t[0] || (t[0] === "picture" && picker)} label={t[2]} onClick={() => pickTool(t[0])} disabled={!viewingBase && t[0] !== "select" && t[0] !== "hand"}>{(() => { const I = t[1]; return <I size={17} />; })()}</Tool>
                 ) : <span key={i} className="mx-1 h-5 w-px bg-border" />))}
-                {(tool === "rect" || tool === "arrow") && (
+                {(tool === "rect" || tool === "arrow" || tool === "brush") && (
                   <><span className="mx-1 h-5 w-px bg-border" />{MARK_COLORS.map((c) => (
                     <button key={c.id} type="button" aria-label={`Colour: ${c.label}`} aria-pressed={color === c.id} onClick={() => { if (c.id !== color) breakBrush(); setColor(c.id); }} className="flex h-8 w-7 items-center justify-center rounded-md hover:bg-accent">
                       <span className={cn("h-5 w-5 rounded-full border border-border", color === c.id && "ring-2 ring-foreground ring-offset-2 ring-offset-card")} style={{ background: c.hex }} />

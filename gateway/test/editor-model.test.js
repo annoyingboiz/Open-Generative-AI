@@ -2,7 +2,7 @@
 // studio, tested here because the gateway has the test runner.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { numbered, editorPrompt, composerPrompt, requestPictures, summary, barText, sentence } from '../../packages/studio/src/components/editor/editorModel.mjs';
+import { numbered, editorPrompt, requestPrompt, composerPrompt, requestPictures, summary, barText, sentence } from '../../packages/studio/src/components/editor/editorModel.mjs';
 
 const car = { id: 'o1', kind: 'object', url: '/media/u/car.jpg', name: 'Vintage car', note: 'take only the car, park it here' };
 const bike = { id: 'b1', kind: 'brush', note: 'remove the bicycle' };
@@ -59,4 +59,17 @@ test('a note is one sentence with a full stop', () => {
   assert.equal(sentence('  warm glow  '), 'warm glow.');
   assert.equal(sentence('Done!'), 'Done!');
   assert.equal(sentence(''), '');
+});
+
+test('the request uses the engine tags: @edit is the base, @img1 the marked copy, @img2… the pictures', () => {
+  assert.equal(requestPrompt({ items: [car, bike, lights] }), [
+    'Edit @edit (the base). @img1 is the same picture with numbered marks: it only shows where each change goes.',
+    '1. @img2: take only the car, park it here.',
+    '2. remove the bicycle.',
+    '3. turn the string lights on, warm glow.',
+    'Do not draw the marks or numbers. Keep everything else unchanged.',
+  ].join('\n'));
+  // No marks: the pictures start at @img1.
+  assert.equal(requestPrompt({ items: [car] }), 'Edit @edit (the base).\n1. @img1: take only the car, park it here.\nKeep everything else unchanged.');
+  assert.equal(requestPrompt({ items: [bike], flat: true }).split('\n')[0], 'Edit @edit. The numbers on it only show which note applies where.');
 });

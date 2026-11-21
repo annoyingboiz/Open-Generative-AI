@@ -28,7 +28,7 @@ import { useDzDropTarget } from "../../dzDrop.js";
 import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
 import EditorCanvas from "./EditorCanvas.jsx";
-import { MARK_COLORS, MAX_OBJECTS, KIND_NAME, numbered, isObject, isMark, summary, requestPictures, editorPrompt, composerPrompt, hasWork, workWords } from "./editorModel.mjs";
+import { MARK_COLORS, MAX_OBJECTS, KIND_NAME, numbered, isObject, isMark, summary, requestPictures, editorPrompt, requestPrompt, composerPrompt, hasWork, workWords } from "./editorModel.mjs";
 import { anchorOf, boundsOf, renderPicture, toJpeg, forgetImages } from "./editorPictures.js";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } = DialogParts;
@@ -166,10 +166,11 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   const counts = summary(items, { flat });
   const objects = list.filter((x) => isObject(x) && x.n);
   const marks = list.filter((x) => isMark(x) && x.n);
-  const prompt = adapted || editorPrompt({ items, general, flat });
+  // What the engine gets: engine tags (@edit, @img1…), written per model by the engine (E5).
+  const prompt = adapted || requestPrompt({ items, general, flat });
   const notesWritten = counts.notes > 0 || Boolean(general.trim()) || objects.length > 0;
   // Notes changed: an Adapt result no longer fits them.
-  const promptKey = editorPrompt({ items, general, flat });
+  const promptKey = requestPrompt({ items, general, flat });
   const adaptedFor = useRef(null);
   useEffect(() => { if (adapted && adaptedFor.current !== promptKey) setAdapted(null); }, [promptKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -664,7 +665,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
           <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
             {tab === "layers" && <LayersTab list={list} base={base} target={target} selected={selected} onSelect={(id) => { setSelected(id); setTool("select"); }} onToggle={(id, hidden) => setItem(id, { hidden })} />}
             {tab === "versions" && <VersionsTab versions={versions} base={base} shown={shown} onShow={(id) => (id === "base" ? showBase() : setShown(id))} onUseAsBase={useAsBase} approve={approve} isApproved={isApproved} />}
-            {tab === "model" && <ModelTab base={base} items={items} erasers={doc.erasers} flat={flat} setFlat={setFlat} prompt={prompt} adapted={adapted} clearAdapted={() => setAdapted(null)} />}
+            {tab === "model" && <ModelTab base={base} items={items} erasers={doc.erasers} flat={flat} setFlat={setFlat} prompt={engine.finalPrompt || prompt} adapted={adapted} clearAdapted={() => setAdapted(null)} />}
           </div>
           <p className="flex-shrink-0 border-t border-border p-4 text-sm leading-5 text-muted-foreground">
             {tab === "layers" ? (items.length ? "Click a number on the picture to change its note. The eye hides a layer and its note: hidden ones are not sent." : "Nothing added yet. Mark a place, paint over an area or add a picture — a note field opens next to it. The base picture is never changed.")

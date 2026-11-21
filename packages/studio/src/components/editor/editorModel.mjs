@@ -109,6 +109,25 @@ export function editorPrompt({ items, general = "", flat = false }) {
   return lines.join("\n");
 }
 
+// The prompt as it is handed to the engine: the editor's own names (@obj1) become the
+// engine's tags for the same files — the base is @edit (sent first), the marked copy @img1,
+// pasted pictures @img2… — and the engine writes each tag the way the chosen model refers to
+// its input pictures ("image 3", "<image_3>", …). The chips in the editor keep @obj1.
+export function requestPrompt({ items, general = "", flat = false }) {
+  const list = numbered(items).filter((it) => it.n);
+  const marks = list.filter(isMark).length;
+  const offset = marks ? 1 : 0;
+  const objIndex = new Map(list.filter(isObject).map((o, i) => [o.id, i + 1 + offset]));
+  const lines = [];
+  if (flat) lines.push(list.length ? "Edit @edit. The numbers on it only show which note applies where." : "Edit @edit.");
+  else lines.push(`Edit @edit (the base).${marks ? " @img1 is the same picture with numbered marks: it only shows where each change goes." : ""}`);
+  lines.push(...noteLines(items, { flat, tagOf: (it) => `@img${objIndex.get(it.id)}` }));
+  const g = sentence(general);
+  if (g) lines.push(g);
+  lines.push(marks || (flat && list.length) ? "Do not draw the marks or numbers. Keep everything else unchanged." : "Keep everything else unchanged.");
+  return lines.join("\n");
+}
+
 // "Send to composer" (E7): the shot composer gets the base in Image to edit and the marked
 // copy plus the objects in References, so its own tags are @img1 (marked copy), @img2…
 // The first and the last line are written out: no editor will add them there.

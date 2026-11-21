@@ -107,7 +107,7 @@ function render(root, value, tagMap, modelName = "this model") {
     chip.dataset.tag = m[2];
     chip.contentEditable = "false";
     chip.className = CHIP;
-    chip.title = t.label ? `@${m[2]} · ${t.label}` : `@${m[2]}`;
+    chip.title = t.label ? `${t.text || `@${m[2]}`} · ${t.label}` : t.text || `@${m[2]}`;
     // A file this model does not get: kept in the prompt, dimmed, left out when sent.
     if (t.kind === "file" && t.unused) { chip.style.opacity = "0.45"; chip.title = `Not sent to ${modelName}`; chip.dataset.unused = "1"; }
     if (t.url) {
@@ -117,7 +117,8 @@ function render(root, value, tagMap, modelName = "this model") {
       img.className = "h-[18px] w-[18px] rounded-[3px] object-cover";
       chip.appendChild(img);
     }
-    chip.appendChild(document.createTextNode(`@${m[2]}`));
+    // The chip's words may differ from its tag (the editor's references: "@ref_x2k9" shows "@ref1").
+    chip.appendChild(document.createTextNode(t.text || `@${m[2]}`));
     root.appendChild(chip);
     last = at + 1 + m[2].length;
   }
@@ -144,7 +145,7 @@ export default function PromptEditor({ value, onChange, tags, modelName, inputRe
   const root = useRef(null);
   const emitted = useRef(null);
   const tagMap = useMemo(() => new Map(tags.map((t) => [t.tag.toLowerCase(), t])), [tags]);
-  const chipKey = useMemo(() => `${modelName}#${tags.map((t) => `${t.tag}:${t.url || ""}:${t.unused ? 1 : 0}`).join("|")}`, [tags, modelName]);
+  const chipKey = useMemo(() => `${modelName}#${tags.map((t) => `${t.tag}:${t.url || ""}:${t.unused ? 1 : 0}:${t.text || ""}`).join("|")}`, [tags, modelName]);
 
   // The textarea-like face the engine uses.
   useEffect(() => {

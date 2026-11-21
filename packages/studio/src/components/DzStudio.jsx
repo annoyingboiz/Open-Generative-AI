@@ -862,7 +862,7 @@ export function useComposerParams(engine) {
   return { ratioP, resP, durP, settingsParams, settingsChanged, ratioOthers, resOthers, ratioLock, ratioFallback, startUrl };
 }
 
-export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop, panel, setPanel, onPlus, plusDisabled = false, plusLabel = "Add from the library", elements = true, onGenerate, canGo, adaptText = engine.prompt }) {
+export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop, panel, setPanel, onPlus, plusDisabled = false, plusLabel = "Add from the library", elements = true, onGenerate, canGo, adaptText = engine.prompt, ratioFixed = null }) {
   const { entry, entries, kind, setKind, values, setValue, count, setCount, price, priceLoading, variant, setSentOpen, busy, adaptModel, pickModel } = engine;
   const { ratioP, resP, durP, settingsChanged, ratioOthers, resOthers, ratioLock, ratioFallback } = cp;
   // The bottom row (§2.3): first the model chip drops the provider, then Adapt its word, then it wraps.
@@ -908,9 +908,14 @@ export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop
           <ModelMenu entries={entries} entry={entry} onPick={choose} onClose={() => setPop(null)} kind={kind} />
         </ChipMenu>
       </div>
-      <ParamMenu p={ratioP || ratioFallback} value={values[ratioP?.key]} onChange={(v) => setValue(ratioP.key, v)} title="Aspect ratio" icon={Rectangle} modelName={entry?.familyName}
-        others={ratioOthers} locked={ratioLock}
-        render={(v, row) => (row ? <><RatioIcon v={v} /><span className="w-12 tabular-nums">{String(v)}</span><span className="text-muted-foreground">{shapeWord(v)}</span></> : String(v))} />
+      {/* The picture editor (package 13, C3): the ratio is the base picture's own, shown, not chosen. */}
+      {ratioFixed ? (
+        <span className="flex h-8 flex-shrink-0 items-center gap-1.5 rounded-md px-1.5 text-sm text-muted-foreground" title="The result keeps the base picture's ratio"><Rectangle size={14} className="shrink-0" />{ratioFixed}</span>
+      ) : (
+        <ParamMenu p={ratioP || ratioFallback} value={values[ratioP?.key]} onChange={(v) => setValue(ratioP.key, v)} title="Aspect ratio" icon={Rectangle} modelName={entry?.familyName}
+          others={ratioOthers} locked={ratioLock}
+          render={(v, row) => (row ? <><RatioIcon v={v} /><span className="w-12 tabular-nums">{String(v)}</span><span className="text-muted-foreground">{shapeWord(v)}</span></> : String(v))} />
+      )}
       <ParamMenu p={resP} value={values[resP?.key]} onChange={(v) => setValue(resP.key, v)} title="Resolution" icon={Monitor} modelName={entry?.familyName}
         others={resOthers} right={(v) => PX[String(v).toLowerCase()] || ""}
         render={(v, row, first) => (row ? <><span className="flex-1">{resName(v)}</span>{first && <span className="text-xs text-muted-foreground">Sharper detail</span>}</> : resShort(v))}
@@ -1206,6 +1211,13 @@ export default function DzStudio(props) {
     setPrompt(text);
     focusPrompt();
   }, [incoming, kind, entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The Video tab's editor hands its request to the Image tab (package 13, C9 2.8).
+  useEffect(() => {
+    if (mode !== "image" || target) return undefined;
+    const on = (e) => { if (e.detail?.payload) setIncoming(e.detail.payload); };
+    window.addEventListener("dz:editor-send", on);
+    return () => window.removeEventListener("dz:editor-send", on);
+  }, [mode, target]);
   // ⌘/Ctrl+Enter in the prompt runs it (the engine handles the key; route it here for the toast).
   const engineForPrompt = { ...engine, onPromptKey: (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !mention) { e.preventDefault(); generateNow(); return; } engine.onPromptKey(e); } };
 
@@ -1420,7 +1432,11 @@ export default function DzStudio(props) {
           <PictureEditor key={editing} url={editing} apiKey={props.apiKey} target={target}
             place={placeOf(editing)} placeOf={placeOf}
             approve={act.approve} isApproved={(u) => Boolean(target?.approved?.has(u))}
-            onSendToComposer={mode === "video" ? null : (payload) => setIncoming(payload)}
+            onSendToComposer={mode === "video" && !target ? (payload) => {
+              // Send to composer from the Video tab: the Image tab takes it (an edit is a picture request).
+              window.dispatchEvent(new CustomEvent("dz:open-tab", { detail: { tab: "image" } }));
+              window.dispatchEvent(new CustomEvent("dz:editor-send", { detail: { payload } }));
+            } : (payload) => setIncoming(payload)}
             onClose={() => { setEditing(null); refreshHistory(mode); }} />
         );
       })()}

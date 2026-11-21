@@ -1,4 +1,4 @@
-// The picture editor's model (package 12): numbering, what goes to the model and the prompt.
+// The picture editor's model (packages 12 and 13): numbering, what goes to the model and the prompt.
 // Pure functions, no React: the editor, its composer and the tests use the same ones.
 //
 // Items, in the order they were made (the order is their number):
@@ -20,22 +20,57 @@ export const NUMBER_FILL = "#FFFFFF";
 export const NUMBER_TEXT = "#111113";
 
 export const MAX_OBJECTS = 9;
-export const KIND_NAME = { rect: "Rectangle", arrow: "Arrow", brush: "Painted area", point: "Note", object: "Picture" };
+// References (package 13, C1): pictures a note points at, sent as their own files, never
+// placed on the canvas. Up to 3 per note, 9 in one request.
+export const MAX_REFS_PER_NOTE = 3;
+export const MAX_REFS = 9;
+export const KIND_NAME = { rect: "Rectangle", arrow: "Arrow", brush: "Painted area", point: "Note", object: "Object" };
 
 export const isObject = (it) => it?.kind === "object";
 export const isMark = (it) => Boolean(it) && it.kind !== "object";
 
-// Numbers and object tags for the visible items: 1, 2, 3… in order; objects also get
-// @obj1, @obj2… in their own order. A hidden item has no number and is not sent.
+// A reference lives in its note as a token "@ref_<id>" (a chip in the field); the chip shows
+// "@ref1", "@ref2"… by the reference's place in the whole request. Removing the chip from the
+// text removes the reference.
+const TOKEN_RE = /(^|[^\p{L}\p{N}_@])@(ref_[a-z0-9]+)(?![\p{L}\p{N}_])/giu;
+export const newRefId = () => `ref_${Math.random().toString(36).slice(2, 8)}`;
+export const refToken = (ref) => `@${ref.id}`;
+// The references a note still carries, in the order of their chips in the text.
+export function liveRefs(it) {
+  const refs = it?.refs || [];
+  if (!refs.length) return [];
+  const byId = new Map(refs.map((r) => [r.id.toLowerCase(), r]));
+  const out = [];
+  for (const m of String(it.note || "").matchAll(TOKEN_RE)) {
+    const r = byId.get(m[2].toLowerCase());
+    if (r && !out.includes(r)) out.push(r);
+  }
+  return out;
+}
+// The note with each reference token written as nameOf(ref).
+export function withRefNames(text, refs, nameOf) {
+  const byId = new Map((refs || []).map((r) => [r.id.toLowerCase(), r]));
+  return String(text || "").replace(TOKEN_RE, (all, pre, id) => { const r = byId.get(id.toLowerCase()); return r ? `${pre}${nameOf(r)}` : all; });
+}
+
+// Numbers, object tags and reference tags for the visible items: 1, 2, 3… in order; objects
+// also get @obj1, @obj2… ("Object 1"…) in their own order; references @ref1, @ref2… in note
+// order. A hidden item has no number, and it and its references are not sent.
 export function numbered(items) {
   let n = 0;
   let k = 0;
+  let r = 0;
   return (items || []).map((it) => {
-    if (it.hidden) return { ...it, n: null, tag: null };
+    if (it.hidden) return { ...it, n: null, tag: null, label: isObject(it) ? "Object" : KIND_NAME[it.kind], refs: liveRefs(it).map((x) => ({ ...x, tag: null })) };
     n += 1;
-    if (isObject(it)) { k += 1; return { ...it, n, tag: `obj${k}` }; }
-    return { ...it, n, tag: null };
+    const refs = liveRefs(it).map((x) => { r += 1; return { ...x, tag: `ref${r}`, n: r }; });
+    if (isObject(it)) { k += 1; return { ...it, n, tag: `obj${k}`, label: `Object ${k}`, refs }; }
+    return { ...it, n, tag: null, label: KIND_NAME[it.kind], refs };
   });
+}
+// The references of the request, in order: [{ id, url, name, tag, n, item }].
+export function requestRefs(items) {
+  return numbered(items).filter((it) => it.n).flatMap((it) => it.refs.map((x) => ({ ...x, item: it.n, itemId: it.id })));
 }
 
 // A note as one sentence: trimmed, one line, with a full stop when it has no ending mark.
@@ -44,40 +79,43 @@ export function sentence(text) {
   if (!t) return "";
   return /[.!?…:;]$/.test(t) ? t : `${t}.`;
 }
+const hasText = (it) => Boolean(withRefNames(it.note, it.refs, () => "x").trim());
 
 // Counts for the bar: notes written, pictures sent.
 export function summary(items, { flat = false } = {}) {
   const list = numbered(items).filter((it) => it.n);
   const marks = list.filter(isMark).length;
   const objects = list.filter(isObject).length;
-  const notes = list.filter((it) => String(it.note || "").trim()).length;
-  const pictures = flat ? 1 : 1 + (marks ? 1 : 0) + objects;
-  return { notes, marks, objects, pictures };
+  const refs = list.reduce((a, it) => a + it.refs.length, 0);
+  const notes = list.filter(hasText).length;
+  const pictures = flat ? 1 + refs : 1 + (marks ? 1 : 0) + objects + refs;
+  return { notes, marks, objects, refs, pictures };
 }
 
-// The pictures of the next request, in order (E5). Marked copy only with at least one mark.
-// base: { url, w, h }; objects carry their own url. markedUrl may be null in a preview.
+// The pictures of the next request, in order (C4): the clean base, the copy with the marks
+// (only with a mark), each object, each reference. markedUrl may be null in a preview.
 export function requestPictures({ base, items, flat = false, markedUrl = null, flatUrl = null }) {
   const list = numbered(items).filter((it) => it.n);
-  if (flat) return [{ role: "flat", url: flatUrl, label: "One flattened picture", detail: "Base, pictures and marks in one file, full size" }];
+  const refs = list.flatMap((it) => it.refs.map((x) => ({ role: "reference", url: x.url, tag: x.tag, label: `Reference for note ${it.n}`, detail: "Its own file · not placed on the picture", item: it.id })));
+  if (flat) return [{ role: "flat", url: flatUrl, label: "One flattened picture", detail: "Base, pictures and marks in one file, full size" }, ...refs];
   const out = [{ role: "base", url: base?.url || null, label: "Base picture", detail: base?.w ? `Clean, full size · ${base.w} × ${base.h}` : "Clean, full size" }];
   const marks = list.filter(isMark);
   if (marks.length) {
-    const nums = list.filter((it) => it.n).map((it) => it.n);
+    const nums = list.map((it) => it.n);
     const range = nums.length > 1 ? `Numbers ${nums[0]}–${nums[nums.length - 1]}` : `Number ${nums[0]}`;
-    out.push({ role: "marks", url: markedUrl, label: "Copy with your marks", detail: `${range} show where each note applies` });
+    out.push({ role: "marks", url: markedUrl, label: "Copy with your marks", detail: marks.some((m) => m.kind === "brush") ? `${range}. Painted areas go as an outline` : `${range} show where each note applies` });
   }
-  for (const it of list.filter(isObject)) out.push({ role: "object", url: it.url, tag: it.tag, label: `Object: ${it.name || "Picture"}`, detail: "Its own file, full size", item: it.id });
-  return out;
+  for (const it of list.filter(isObject)) out.push({ role: "object", url: it.url, tag: it.tag, label: it.label, detail: "Its own file, full size", item: it.id });
+  return [...out, ...refs];
 }
 
-// The numbered note lines. tagOf(item) → the chip text for an object ("@obj1" in the editor,
-// "@img2" in the shot composer); colon: "1. @obj1: …" (editor) or "1. @img2 …" (composer).
-export function noteLines(items, { tagOf = (it) => `@${it.tag}`, colon = true, flat = false } = {}) {
+// The numbered note lines. tagOf(item) → the name of an object's file, refName(ref) → the
+// name of a reference's file; colon: "1. @obj1: …" (editor) or "1. @img2 …" (composer).
+export function noteLines(items, { tagOf = (it) => `@${it.tag}`, refName = (x) => `@${x.tag}`, colon = true, flat = false } = {}) {
   const out = [];
   for (const it of numbered(items)) {
     if (!it.n) continue;
-    const text = sentence(it.note);
+    const text = sentence(withRefNames(it.note, it.refs, refName));
     if (isObject(it)) {
       if (flat) { if (text) out.push(`${it.n}. ${text}`); continue; }
       const chip = tagOf(it);
@@ -87,58 +125,63 @@ export function noteLines(items, { tagOf = (it) => `@${it.tag}`, colon = true, f
   return out;
 }
 
-// The prompt the model gets (E5). The first and the last line are the editor's.
-export function editorPrompt({ items, general = "", flat = false }) {
+// The prompt (C4). names: { base, file(i) } → how picture 1, 2… is written. The opening
+// says what every sent picture is (no sentence for a picture that is not sent), then the
+// notes, the general instruction and the closing line.
+function buildPrompt({ items, general = "", flat = false, file }) {
   const list = numbered(items).filter((it) => it.n);
   const marks = list.filter(isMark).length;
   const objects = list.filter(isObject);
-  const lines = [];
+  const refs = list.flatMap((it) => it.refs.map((x) => ({ ...x, item: it.n })));
+  const index = new Map();
+  let p = 1;
+  const head = [];
   if (flat) {
-    lines.push(list.length ? "Edit picture 1. The numbers on it only show which note applies where." : "Edit picture 1.");
+    head.push(list.length ? `Edit ${file(1)}. The numbers on it only show which note applies where.` : `Edit ${file(1)}.`);
   } else {
-    let first = "Edit picture 1 (the base).";
-    let p = 2;
-    if (marks) { first += " Picture 2 is the same picture with numbered marks: it only shows where each change goes."; p = 3; }
-    for (const o of objects) { first += ` Picture ${p} is @${o.tag}.`; p += 1; }
-    lines.push(first);
+    head.push(`Edit ${file(1)} (the base).`);
+    if (marks) { p += 1; head.push(`${file(p)} is the same picture with numbered marks: it only shows where each change goes.`); }
+    for (const o of objects) { p += 1; index.set(o.id, p); head.push(`${file(p)} is an object to place.`); }
   }
-  lines.push(...noteLines(items, { flat }));
+  for (const x of refs) { p += 1; index.set(x.id, p); head.push(`${file(p)} is a reference for change ${x.item}.`); }
+  const lines = [head.join(" ")];
+  lines.push(...noteLines(items, { flat, tagOf: (it) => file(index.get(it.id)), refName: (x) => file(index.get(x.id)) }));
   const g = sentence(general);
   if (g) lines.push(g);
-  lines.push(marks || (flat && list.length) ? "Do not draw the marks or numbers. Keep everything else unchanged." : "Keep everything else unchanged.");
+  const keep = `Keep the size and proportions of ${file(1)}. Keep everything else unchanged.`;
+  lines.push(marks || (flat && list.length) ? `Do not draw the marks or numbers. ${keep}` : keep);
   return lines.join("\n");
 }
 
-// The prompt as it is handed to the engine: the editor's own names (@obj1) become the
-// engine's tags for the same files — the base is @edit (sent first), the marked copy @img1,
-// pasted pictures @img2… — and the engine writes each tag the way the chosen model refers to
-// its input pictures ("image 3", "<image_3>", …). The chips in the editor keep @obj1.
+// The prompt in words ("image 1", "image 2"…): kept with a saved copy, and the shape of the
+// request as the model reads it with Nano Banana Pro.
+export function editorPrompt({ items, general = "", flat = false }) {
+  return buildPrompt({ items, general, flat, file: (i) => `image ${i}` }).replace(/(^|[^\d][.!?] )image /gm, "$1Image ");
+}
+
+// The prompt as it is handed to the engine: the base is @edit (sent first), then @img1,
+// @img2… in the order of the files (marked copy, objects, references), and the engine writes
+// each tag the way the chosen model refers to its input pictures ("image 3", "<image_3>", …;
+// a sentence that opens with one gets a capital). The chips in the editor keep @obj1, @ref1.
 export function requestPrompt({ items, general = "", flat = false }) {
-  const list = numbered(items).filter((it) => it.n);
-  const marks = list.filter(isMark).length;
-  const offset = marks ? 1 : 0;
-  const objIndex = new Map(list.filter(isObject).map((o, i) => [o.id, i + 1 + offset]));
-  const lines = [];
-  if (flat) lines.push(list.length ? "Edit @edit. The numbers on it only show which note applies where." : "Edit @edit.");
-  else lines.push(`Edit @edit (the base).${marks ? " @img1 is the same picture with numbered marks: it only shows where each change goes." : ""}`);
-  lines.push(...noteLines(items, { flat, tagOf: (it) => `@img${objIndex.get(it.id)}` }));
-  const g = sentence(general);
-  if (g) lines.push(g);
-  lines.push(marks || (flat && list.length) ? "Do not draw the marks or numbers. Keep everything else unchanged." : "Keep everything else unchanged.");
-  return lines.join("\n");
+  return buildPrompt({ items, general, flat, file: (i) => (i === 1 ? "@edit" : `@img${i - 1}`) });
 }
 
 // "Send to composer" (E7): the shot composer gets the base in Image to edit and the marked
-// copy plus the objects in References, so its own tags are @img1 (marked copy), @img2…
-// The first and the last line are written out: no editor will add them there.
+// copy, the objects and the references in References, so its own tags are @img1 (marked
+// copy), @img2… The opening and the closing line are written out: no editor will add them there.
 export function composerPrompt({ items, general = "" }) {
   const list = numbered(items).filter((it) => it.n);
   const marks = list.filter(isMark).length;
-  const offset = marks ? 1 : 0;
-  const objIndex = new Map(list.filter(isObject).map((o, i) => [o.id, i + 1 + offset]));
+  const index = new Map();
+  let p = marks ? 1 : 0;
+  for (const o of list.filter(isObject)) { p += 1; index.set(o.id, p); }
+  const refLines = [];
+  for (const it of list) for (const x of it.refs) { p += 1; index.set(x.id, p); refLines.push(`@img${p} is a reference for change ${it.n}.`); }
   const lines = [];
-  if (marks) lines.push("@img1 is the same picture with numbered marks: it only shows where each change goes.");
-  lines.push(...noteLines(items, { tagOf: (it) => `@img${objIndex.get(it.id)}`, colon: false }));
+  const head = [...(marks ? ["@img1 is the same picture with numbered marks: it only shows where each change goes."] : []), ...refLines];
+  if (head.length) lines.push(head.join(" "));
+  lines.push(...noteLines(items, { tagOf: (it) => `@img${index.get(it.id)}`, refName: (x) => `@img${index.get(x.id)}`, colon: false }));
   const g = sentence(general);
   if (g) lines.push(g);
   lines.push(marks ? "Do not draw the marks or numbers. Keep everything else unchanged." : "Keep everything else unchanged.");
@@ -147,8 +190,8 @@ export function composerPrompt({ items, general = "" }) {
 
 // The one-line text of the collapsed bar: "1. … 2. …".
 export function barText(items) {
-  return numbered(items).filter((it) => it.n && (String(it.note || "").trim() || isObject(it)))
-    .map((it) => `${it.n}. ${isObject(it) ? `@${it.tag} ` : ""}${String(it.note || "").replace(/\s+/g, " ").trim()}`.trim()).join("  ");
+  return numbered(items).filter((it) => it.n && (hasText(it) || isObject(it)))
+    .map((it) => `${it.n}. ${isObject(it) ? `@${it.tag} ` : ""}${withRefNames(it.note, it.refs, (x) => `@${x.tag}`).replace(/\s+/g, " ").trim()}`.trim()).join("  ");
 }
 
 // Something the user would lose by closing (E7): any item, or a general instruction.
@@ -157,9 +200,9 @@ export function hasWork(items, general = "") {
 }
 export function workWords(items) {
   const list = numbered(items);
-  const notes = list.filter((it) => String(it.note || "").trim()).length;
+  const notes = list.filter(hasText).length;
   const objects = list.filter(isObject).length;
-  const marks = list.filter((it) => isMark(it) && !String(it.note || "").trim()).length;
+  const marks = list.filter((it) => isMark(it) && !hasText(it)).length;
   const parts = [];
   if (notes) parts.push(`${notes} note${notes === 1 ? "" : "s"}`);
   if (objects) parts.push(objects === 1 ? "an object" : `${objects} objects`);

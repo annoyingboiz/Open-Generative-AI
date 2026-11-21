@@ -412,7 +412,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   //   project=<id> (that project; folder=<id>|root narrows it) · project=none (personal only)
   //   no project → the user's Library: their own items plus their projects' items.
   //   target=<board>:<shot or group> — what was made for one shot or group of a storyboard (package 05).
-  function history(user, { cursor, limit = 50, studio, kind, tool, board, target, liked, trash: inTrash, status, project, folder, q: search } = {}) {
+  function history(user, { cursor, limit = 50, studio, kind, tool, board, target, source, liked, trash: inTrash, status, project, folder, q: search } = {}) {
     const where = ['purged_at IS NULL'];
     const args = [];
     if (project === 'none') {
@@ -448,6 +448,10 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       where.push("((json_extract(meta_json, '$.target.board') = ? AND json_extract(meta_json, '$.target.id') = ?) OR (json_extract(meta_json, '$.forShot.board') = ? AND json_extract(meta_json, '$.forShot.shot') = ?))");
       args.push(tg[1], tg[2], tg[1], tg[2]);
     }
+    // The picture editor: the versions made from one source picture (package 13, C7).
+    if (typeof source === 'string' && source.length > 0 && source.length <= 600) { where.push("json_extract(meta_json, '$.editor.source') = ?"); args.push(source); }
+    // A version the editor failed to make is not kept in any gallery (only the editor lists it).
+    else where.push("NOT (status = 'failed' AND json_extract(meta_json, '$.editor.source') IS NOT NULL)");
     if (liked === '1' || liked === true) where.push('liked_at IS NOT NULL');
     if (status === 'completed' || status === 'failed') { where.push('status = ?'); args.push(status); }
     if (status === 'processing') where.push("status IN ('submitting','submitted','processing','downloading')");

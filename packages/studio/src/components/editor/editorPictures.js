@@ -77,12 +77,11 @@ function drawObject(ctx, it, img, k) {
   ctx.restore();
 }
 
-// The painted areas: every stroke and eraser stroke in order on its own layer, then laid
-// over the picture half-transparent (the eraser only removes paint).
-function drawPaint(ctx, list, erasers, W, H, k) {
-  const strokes = [];
-  for (const it of list) if (it.kind === "brush") for (const s of it.strokes || []) strokes.push({ ...s, color: markHex(it.color) });
-  if (!strokes.length) return;
+// The painted areas. "fill" (a saved copy): every stroke and eraser stroke in order on its
+// own layer, laid over the picture half-transparent (the eraser only removes paint).
+// "outline" (what the model gets, package 13 C4): each painted area as a line in its mark
+// colour around it, nothing over the area itself — a fill hides the very thing to change.
+function paintLayer(strokes, erasers, W, H, k, color) {
   const all = [...strokes, ...(erasers || []).map((e) => ({ ...e, erase: true }))].sort((a, b) => a.seq - b.seq);
   const layer = document.createElement("canvas");
   layer.width = W;
@@ -92,7 +91,7 @@ function drawPaint(ctx, list, erasers, W, H, k) {
   p.lineJoin = "round";
   for (const s of all) {
     p.globalCompositeOperation = s.erase ? "destination-out" : "source-over";
-    p.strokeStyle = s.erase ? "#000" : s.color;
+    p.strokeStyle = s.erase ? "#000" : (s.color || color);
     p.lineWidth = s.size * k;
     p.beginPath();
     p.moveTo(s.points[0] * k, s.points[1] * k);
@@ -100,11 +99,42 @@ function drawPaint(ctx, list, erasers, W, H, k) {
     for (let i = 2; i < s.points.length; i += 2) p.lineTo(s.points[i] * k, s.points[i + 1] * k);
     p.stroke();
   }
-  ctx.save();
-  ctx.globalAlpha = 0.5;
-  ctx.drawImage(layer, 0, 0);
-  ctx.restore();
-  layer.width = 0; layer.height = 0;
+  return layer;
+}
+function drawPaint(ctx, list, erasers, W, H, k, { mode = "outline", lineW = 4 } = {}) {
+  const brushes = list.filter((it) => it.kind === "brush" && (it.strokes || []).length);
+  if (!brushes.length) return;
+  if (mode === "fill") {
+    const strokes = brushes.flatMap((it) => it.strokes.map((s) => ({ ...s, color: markHex(it.color) })));
+    const layer = paintLayer(strokes, erasers, W, H, k);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
+    layer.width = 0; layer.height = 0;
+    return;
+  }
+  const w = Math.max(2, lineW * 1.25);
+  for (const it of brushes) {
+    const mask = paintLayer(it.strokes, erasers, W, H, k, "#000");
+    // The area grown by the line width all round, less the area itself: a line just outside it.
+    const ring = document.createElement("canvas");
+    ring.width = W;
+    ring.height = H;
+    const r = ring.getContext("2d");
+    const steps = 24;
+    for (let i = 0; i < steps; i += 1) {
+      const a = (i / steps) * Math.PI * 2;
+      r.drawImage(mask, Math.cos(a) * w, Math.sin(a) * w);
+    }
+    r.globalCompositeOperation = "destination-out";
+    r.drawImage(mask, 0, 0);
+    r.globalCompositeOperation = "source-in";
+    r.fillStyle = markHex(it.color);
+    r.fillRect(0, 0, W, H);
+    ctx.drawImage(ring, 0, 0);
+    mask.width = 0; mask.height = 0; ring.width = 0; ring.height = 0;
+  }
 }
 
 // Rectangles, arrows, points; an object's place as a dashed outline (in the marked copy
@@ -170,7 +200,7 @@ function drawMarks(ctx, list, k, { lineW, badgeR, objectOutlines }) {
 
 // Draw the copy with marks (flat = false) or the one flattened picture (flat = true) into a
 // canvas of width × height for a base of base.w × base.h pixels.
-export async function renderPicture({ base, baseSrc, items, erasers, flat = false, width, height, objectSrc = (o) => o.url }) {
+export async function renderPicture({ base, baseSrc, items, erasers, flat = false, width, height, objectSrc = (o) => o.url, paint = "outline" }) {
   const k = width / base.w;
   const list = numbered(items).filter((it) => it.n);
   const [baseImg, ...objImgs] = await Promise.all([
@@ -187,9 +217,10 @@ export async function renderPicture({ base, baseSrc, items, erasers, flat = fals
     const objs = list.filter(isObject).map((o, i) => ({ o, img: objImgs[i] })).sort((a, b) => (a.o.z || 0) - (b.o.z || 0));
     for (const { o, img } of objs) if (img) drawObject(ctx, o, img, k);
   }
-  drawPaint(ctx, list, erasers, width, height, k);
   const side = Math.max(width, height);
-  drawMarks(ctx, list, k, { lineW: Math.max(2, side / 450), badgeR: Math.max(9, side / 75), objectOutlines: !flat });
+  const lineW = Math.max(2, side / 450);
+  drawPaint(ctx, list, erasers, width, height, k, { mode: paint, lineW });
+  drawMarks(ctx, list, k, { lineW, badgeR: Math.max(9, side / 75), objectOutlines: !flat });
   return c;
 }
 

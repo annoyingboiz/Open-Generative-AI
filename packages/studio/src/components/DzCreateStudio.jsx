@@ -755,9 +755,12 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     requestAnimationFrame(() => { el.focus(); const pos = before.length + pad.length + text.length + 1; el.setSelectionRange(pos, pos); });
   };
 
-  const generate = useCallback(async () => {
+  // opts (the picture editor, package 13): meta to add, and per-job callbacks in place of the
+  // studio's own — onRequestId(i, id), onResult(i, res), onError(i, message).
+  const generate = useCallback(async (opts = {}) => {
     if (!canRun || !variant) return;
     const meta = {
+      ...(opts.meta || {}),
       kind,
       entryKey: entry.key,
       modelName: `${entry.familyName} · ${entry.providerName}`,
@@ -780,12 +783,15 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       setBusy((n) => n + 1);
       onGenerationStart?.();
       try {
-        const res = await dzWithMeta({ studio: mode, meta: count > 1 ? { ...meta, batch: { id: batchId, n: count, i } } : meta, look }, () => dzGenerate(apiKey, request));
+        const res = await dzWithMeta({ studio: mode, meta: count > 1 ? { ...meta, batch: { id: batchId, n: count, i } } : meta, look },
+          () => dzGenerate(apiKey, opts.onRequestId ? { ...request, onRequestId: (id) => opts.onRequestId(i, id) } : request));
         onGenerationEnd?.();
-        if (res?.url) onGenerationComplete?.({ url: res.url, type: kind });
+        if (opts.onResult) opts.onResult(i, res);
+        else if (res?.url) onGenerationComplete?.({ url: res.url, type: kind });
       } catch (e) {
         onGenerationEnd?.();
-        onGenerationError?.(String(e?.message || e).replace(/^API Request Failed: \d+ [^-]*- /, ""));
+        const m = String(e?.message || e).replace(/^API Request Failed: \d+ [^-]*- /, "");
+        if (opts.onError) opts.onError(i, m); else onGenerationError?.(m);
       } finally {
         setBusy((n) => n - 1);
       }

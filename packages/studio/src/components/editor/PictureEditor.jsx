@@ -13,14 +13,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import {
   X, ArrowCounterClockwise, ArrowClockwise, FloppyDisk, ArrowElbowDownRight, Cursor, Hand, Square, ArrowUpRight, PaintBrush, Eraser, ChatCircleDots, ImageSquare,
-  Minus, Plus, CornersOut, CaretDown, Eye, EyeSlash, LockSimple, Palette, Copy, Trash, FlipHorizontal, ArrowLineUp, ArrowLineDown, ArrowsClockwise, KeyReturn, Check, ArrowsLeftRight, WarningCircle, ArrowUp,
+  Minus, Plus, CornersOut, CaretDown, Eye, EyeSlash, LockSimple, Palette, Copy, Trash, FlipHorizontal, ArrowLineUp, ArrowLineDown, ArrowsClockwise, KeyReturn, Check, ArrowsLeftRight, WarningCircle, Warning, ArrowUp,
 } from "@phosphor-icons/react";
 import { dzThumb, uploadFile } from "../../api.js";
+import { dzLibrary } from "../../dzLibrary.js";
 import { dzContextParams } from "../../dzContext.js";
 import { useDzCreateEngine } from "../DzCreateStudio.jsx";
 import { useComposerParams, ComposerRow, ComposerPanels, ComposerBar, Thumb, EmptySlot } from "../DzStudio.jsx";
 import { LibraryWindow, PickerHereContext } from "../studio/Library.jsx";
-import { RefChip } from "../studio/PromptEditor.jsx";
+import PromptEditor, { RefChip } from "../studio/PromptEditor.jsx";
 import { Overline } from "../studio/ui.jsx";
 import { Tool } from "../storyboard/canvasKit.jsx";
 import { DialogParts, Spinner, Switch, Tip, cn } from "../../ui/index.js";
@@ -28,7 +29,7 @@ import { useDzDropTarget } from "../../dzDrop.js";
 import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
 import EditorCanvas from "./EditorCanvas.jsx";
-import { MARK_COLORS, MAX_OBJECTS, KIND_NAME, numbered, isObject, isMark, summary, requestPictures, editorPrompt, requestPrompt, composerPrompt, hasWork, workWords } from "./editorModel.mjs";
+import { MARK_COLORS, MAX_OBJECTS, MAX_REFS, MAX_REFS_PER_NOTE, numbered, isObject, isMark, summary, requestPictures, requestRefs, editorPrompt, requestPrompt, composerPrompt, noteLines, hasWork, workWords, newRefId, refToken, liveRefs, withRefNames } from "./editorModel.mjs";
 import { anchorOf, boundsOf, renderPicture, toJpeg, forgetImages } from "./editorPictures.js";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } = DialogParts;
@@ -36,6 +37,8 @@ const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { d
 // A picked picture's name is often its whole prompt: a few words are enough for a layer.
 const shortName = (n) => { const t = String(n || "").replace(/\s+/g, " ").trim(); if (!t) return "Picture"; if (t.length <= 28) return t; const cut = t.slice(0, 28); return `${cut.slice(0, cut.lastIndexOf(" ") > 12 ? cut.lastIndexOf(" ") : 28)}…`; };
 const newId = (p) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
+// A provider's error as one plain sentence (no codes, no JSON).
+const plainReason = (m) => { const t = String(m || "").replace(/^Error:\s*/, "").replace(/\s+/g, " ").trim(); return !t || t.length > 220 || /[{}<>]/.test(t) ? "The provider returned an error." : /[.!?]$/.test(t) ? t : `${t}.`; };
 const HISTORY = 100;
 const TOOLS = [
   ["select", Cursor, "Select (V)", "v"], ["hand", Hand, "Hand (H, or hold Space)", "h"], null,
@@ -43,6 +46,20 @@ const TOOLS = [
   ["note", ChatCircleDots, "Note (N)", "n"], ["picture", ImageSquare, "Add a picture (P)", "p"],
 ];
 const OBJECTS_GROUP = { id: "objects", label: "Add to the picture", roles: ["reference"], kind: "image", max: MAX_OBJECTS, roleMax: { reference: MAX_OBJECTS } };
+const refsGroup = (max) => ({ id: "refs", label: "Reference", roles: ["reference"], kind: "image", max, roleMax: { reference: max } });
+// Resolution values like "1K", "2K", "4K": about 1, 4 and 16 megapixels.
+const resPixels = (v) => { const m = /^(\d+(?:\.\d+)?)\s*k$/i.exec(String(v)); return m ? (Number(m[1]) * 1024) ** 2 : null; };
+const ratioNum = (o) => { const m = /^(\d+(?:\.\d+)?)\s*[:x]\s*(\d+(?:\.\d+)?)$/.exec(String(o)); return m ? Number(m[1]) / Number(m[2]) : null; };
+// The ratio a base picture is, as people write it ("16:9"), for the label when the model takes none.
+const ratioWord = (w, h) => {
+  const known = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "9:21"];
+  const best = known.reduce((a, o) => (Math.abs(Math.log(ratioNum(o) / (w / h))) < Math.abs(Math.log(ratioNum(a) / (w / h))) ? o : a), known[0]);
+  return Math.abs(Math.log(ratioNum(best) / (w / h))) < 0.03 ? best : `${w}:${h}`;
+};
+// What an edit costs with a model (its cheapest picture-editing endpoint) and how many extra pictures it takes.
+const editPrice = (e) => Math.min(...e.variants.filter((v) => v.mode === "i2i").map((v) => { const p = v.model.dzPrice; const vals = p?.byResolution ? Object.values(p.byResolution).filter(Number.isFinite) : []; return vals.length ? Math.min(...vals) : Number.isFinite(p?.usd) ? p.usd : Infinity; }));
+const editRoom = (e) => e.slots.find((s) => s.role === "reference")?.max || 0;
+const USER_MODEL = "dz_editor_user_model";
 
 export default function PictureEditor({ url, apiKey, target = null, place: openedAt = null, placeOf = null, onClose, onSendToComposer, approve = null, isApproved = () => false }) {
   // ── The base picture and its size ──
@@ -104,28 +121,45 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   const canvas = useRef(null);
   const [zoom, setZoom] = useState({ z: 1, fit: 1 });
 
-  // ── Versions (E6) ──
-  const [versions, setVersions] = useState([]); // { id, url, status: pending | done | failed, error }
+  // ── Versions (E6, package 13 C6–C7): kept with the source picture, on the server ──
+  // { id, gid (the generation), url, status: pending | done | failed, error, batch }
+  const [versions, setVersions] = useState([]);
   const [shown, setShown] = useState("base"); // "base" or a version id
   const [comparing, setComparing] = useState(false);
+  const [failCard, setFailCard] = useState(null); // { id, text } — the failed version's card over the base
   const baseWork = useRef(null); // the marks, objects and notes of the last Generate, for "Base"
   const shownVersion = shown === "base" ? null : versions.find((v) => v.id === shown) || null;
   const viewingBase = !shownVersion;
+  // The versions made earlier from this picture (also in other sessions): finished ones and
+  // ones still running. A failed one is not kept.
+  const loadVersions = useCallback(async () => {
+    try {
+      const r = await dzLibrary.list({ source: url, limit: 60 });
+      const got = (r?.items || []).filter((x) => x.status !== "failed" && x.kind !== "video").reverse();
+      setVersions((vs) => {
+        const known = new Map(vs.filter((v) => v.gid).map((v) => [v.gid, v]));
+        const fromServer = got.map((x) => {
+          const was = known.get(x.id);
+          const status = x.status === "completed" ? (x.url ? "done" : "failed") : "pending";
+          return was ? { ...was, url: was.url || x.url, status: was.status === "pending" ? status : was.status } : { id: `g_${x.id}`, gid: x.id, url: x.url, status, error: x.error || null };
+        });
+        const ids = new Set(fromServer.map((v) => v.gid));
+        // This session's versions the server does not list yet (just sent), in their place at the end.
+        return [...fromServer, ...vs.filter((v) => !v.gid || !ids.has(v.gid)).filter((v) => v.status !== "failed" || v.batch)];
+      });
+    } catch { /* the list stays as it is */ }
+  }, [url]);
+  useEffect(() => { loadVersions(); }, [loadVersions]);
+  // Earlier versions still running when the editor opened: looked at again until they end.
+  const waitingOld = versions.some((v) => v.status === "pending" && !v.batch);
+  useEffect(() => {
+    if (!waitingOld) return undefined;
+    const t = setInterval(loadVersions, 5000);
+    return () => clearInterval(t);
+  }, [waitingOld, loadVersions]);
 
   // ── The composer (E4): the shared engine in the editor's own scope ──
-  const pending = useRef([]); // version ids waiting for their result, in order
-  const onDone = useRef(null);
-  const onFail = useRef(null);
-  onDone.current = ({ url: out }) => {
-    const id = pending.current.shift();
-    if (id) setVersions((vs) => vs.map((v) => (v.id === id ? { ...v, url: out, status: "done" } : v)));
-  };
-  onFail.current = (m) => {
-    const id = pending.current.shift();
-    if (id) setVersions((vs) => vs.map((v) => (v.id === id ? { ...v, status: "failed", error: m } : v)));
-    setErr({ head: "Not generated.", text: String(m || "The model gave no result.") });
-  };
-  const engine = useDzCreateEngine({ apiKey, mode: "image", target, scope: "editor", onGenerationComplete: (r) => onDone.current(r), onGenerationError: (m) => onFail.current(m) });
+  const engine = useDzCreateEngine({ apiKey, mode: "image", target, scope: "editor" });
   const cp = useComposerParams(engine);
   const [err, setErr] = useState(null);
   const [expanded, setExpanded] = useState(false);
@@ -133,40 +167,76 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   const [panel, setPanel] = useState(null);
   const [tab, setTab] = useState("layers");
   const [picker, setPicker] = useState(false);
+  const [refFor, setRefFor] = useState(null); // the item whose note gets a reference from the picker
   const [busy, setBusy] = useState(null); // "generate" | "save" | "send"
   const [closing, setClosing] = useState(false);
 
-  // The editor opens on Nano Banana Pro (the model the template was made for) unless the user chose another here.
+  // The model (C3): a fresh editor opens on the cheapest model that can edit with this many
+  // pictures; a model the user chose here stays chosen. An automatic choice that can't take
+  // the pictures any more moves to the cheapest one that can.
+  const autoKey = useRef(null);
+  const userKey = useRef(typeof window !== "undefined" ? (() => { try { return window.localStorage.getItem(USER_MODEL); } catch { return null; } })() : null);
+  const editEntries = engine.entries.filter((e) => e.canEdit);
+  const cheapestFor = (need) => {
+    const fit = editEntries.filter((e) => editRoom(e) >= need);
+    return (fit.length ? fit : editEntries).reduce((a, e) => (!a || editPrice(e) < editPrice(a) ? e : a), null);
+  };
   const chosenOnce = useRef(false);
   useEffect(() => {
-    if (chosenOnce.current || !engine.entries.length) return;
+    if (chosenOnce.current || !editEntries.length) return;
     chosenOnce.current = true;
-    if (engine.saved?.modelByKind?.image) return;
-    const nbp = engine.entries.find((e) => /nano banana pro$/i.test(e.familyName) && e.canEdit) || engine.entries.find((e) => /nano banana pro/i.test(e.familyName) && e.canEdit);
-    if (nbp && nbp.key !== engine.entry?.key) engine.pickModel(nbp.key);
-  }, [engine.entries.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    const saved = engine.saved?.modelByKind?.image;
+    if (saved && saved === userKey.current && editEntries.some((e) => e.key === saved)) return;
+    const best = cheapestFor(0);
+    autoKey.current = best?.key || null;
+    if (best && best.key !== engine.entry?.key) engine.pickModel(best.key);
+  }, [editEntries.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A model picked in the menu (not by the editor) is the user's choice from now on.
+  const lastKey = useRef(null);
+  useEffect(() => {
+    const k = engine.entry?.key;
+    if (!k) return;
+    const was = lastKey.current;
+    lastKey.current = k;
+    if (!was || k === was || k === autoKey.current || k === userKey.current) return;
+    userKey.current = k;
+    try { window.localStorage.setItem(USER_MODEL, k); } catch { /* private mode */ }
+  }, [engine.entry?.key]);
 
-  // The result keeps the base's shape: the ratio chip starts at the base's own ratio (or the
-  // model's "auto"), once per base and model; the user can still change it.
-  const ratioFor = useRef(new Set()); // base|model pairs already set: a later choice of the user stays
+  // The result keeps the base's shape and size (C3): the ratio is always the base's own (never
+  // "auto"), shown, not chosen; the size starts at the base's size, once per base and model.
+  const ratioValue = useMemo(() => {
+    const p = cp.ratioP;
+    if (!p || !base.w) return null;
+    const shape = base.w / base.h;
+    const list = p.enum.filter((o) => ratioNum(o));
+    return list.length ? list.reduce((a, o) => (Math.abs(Math.log(ratioNum(o) / shape)) < Math.abs(Math.log(ratioNum(a) / shape)) ? o : a), list[0]) : null;
+  }, [cp.ratioP, base.w, base.h]);
   useEffect(() => {
     const p = cp.ratioP;
+    if (p && ratioValue != null && engine.values?.[p.key] !== ratioValue) engine.setValue(p.key, ratioValue);
+  }, [cp.ratioP, ratioValue, engine.values?.[cp.ratioP?.key]]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ratioLabel = base.w ? `As the base · ${ratioValue != null ? String(ratioValue) : ratioWord(base.w, base.h)}` : "As the base";
+  const sizeFor = useRef(new Set());
+  useEffect(() => {
+    const p = cp.resP;
     if (!p || !base.w || !engine.entry) return;
     const key = `${base.url}|${engine.entry.key}`;
-    if (ratioFor.current.has(key)) return;
-    ratioFor.current.add(key);
-    const auto = p.enum.find((o) => /^(auto|match_input_image|match input)$/i.test(String(o)));
-    const shape = base.w / base.h;
-    const num = (o) => { const m = /^(\d+(?:\.\d+)?)\s*[:x]\s*(\d+(?:\.\d+)?)$/.exec(String(o)); return m ? Number(m[1]) / Number(m[2]) : null; };
-    const list = p.enum.filter((o) => num(o));
-    const best = auto ?? (list.length ? list.reduce((a, o) => (Math.abs(Math.log(num(o) / shape)) < Math.abs(Math.log(num(a) / shape)) ? o : a), list[0]) : null);
-    if (best != null && engine.values?.[p.key] !== best) engine.setValue(p.key, best);
-  }, [cp.ratioP, base.url, base.w, base.h, engine.entry?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (sizeFor.current.has(key)) return;
+    sizeFor.current.add(key);
+    const sizes = p.enum.filter((o) => resPixels(o)).sort((a, b) => resPixels(a) - resPixels(b));
+    if (!sizes.length) return;
+    const want = base.w * base.h * 0.95;
+    const pick = sizes.find((o) => resPixels(o) >= want) || sizes[sizes.length - 1];
+    if (engine.values?.[p.key] !== pick) engine.setValue(p.key, pick);
+  }, [cp.resP, base.url, base.w, base.h, engine.entry?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const counts = summary(items, { flat });
   const objects = list.filter((x) => isObject(x) && x.n);
   const marks = list.filter((x) => isMark(x) && x.n);
-  // What the engine gets: engine tags (@edit, @img1…), written per model by the engine (E5).
+  const refs = useMemo(() => requestRefs(items), [items]);
+  const changes = noteLines(items, { flat }).length;
+  // What the engine gets: engine tags (@edit, @img1…), written per model by the engine (C4).
   const prompt = adapted || requestPrompt({ items, general, flat });
   const notesWritten = counts.notes > 0 || Boolean(general.trim()) || objects.length > 0;
   // Notes changed: an Adapt result no longer fits them.
@@ -174,31 +244,42 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   const adaptedFor = useRef(null);
   useEffect(() => { if (adapted && adaptedFor.current !== promptKey) setAdapted(null); }, [promptKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // An automatic model that can't take this many pictures moves to the cheapest that can (C3).
+  const need = counts.pictures - 1;
+  useEffect(() => {
+    if (!engine.entry || engine.entry.key !== autoKey.current || editRoom(engine.entry) >= need) return;
+    const best = cheapestFor(need);
+    if (best && best.key !== engine.entry.key) { autoKey.current = best.key; engine.pickModel(best.key); }
+  }, [need, engine.entry?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The engine sees what the next request will send (for the price and the model's limits);
   // the marked copy is made only when Generate is pressed, the base stands in for it here.
+  const refFiles = refs.map((x) => ({ url: x.url, name: x.name || "reference" }));
   const att = useMemo(() => {
     if (!base.url) return {};
-    if (flat) return { edit: [{ url: base.url, name: "picture" }] };
-    const refs = [...(marks.length ? [{ url: base.url, name: "marks" }] : []), ...objects.map((o) => ({ url: o.url, name: o.name || "object" }))];
-    return { edit: [{ url: base.url, name: "base" }], ...(refs.length ? { reference: refs } : {}) };
-  }, [base.url, flat, marks.length, objects.map((o) => o.url).join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (flat) return { edit: [{ url: base.url, name: "picture" }], ...(refFiles.length ? { reference: refFiles } : {}) };
+    const files = [...(marks.length ? [{ url: base.url, name: "marks" }] : []), ...objects.map((o) => ({ url: o.url, name: o.name || "object" })), ...refFiles];
+    return { edit: [{ url: base.url, name: "base" }], ...(files.length ? { reference: files } : {}) };
+  }, [base.url, flat, marks.length, objects.map((o) => o.url).join("|"), refFiles.map((x) => x.url).join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
   const sending = useRef(null);
   useEffect(() => { if (!sending.current) engine.setAttached(att); }, [att]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!sending.current) engine.setPrompt(prompt); }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const editModel = Boolean(engine.entry?.canEdit);
-  const running = versions.some((v) => v.status === "pending");
+  const running = versions.some((v) => v.status === "pending" && v.batch);
   // Every picture of the request must reach the model (E5): a model that takes fewer is refused, not trimmed.
   const tooMany = editModel && engine.unusedCount > 0;
   const canGo = Boolean(engine.variant && editModel && viewingBase && notesWritten && base.w && !busy && !engine.uploads && !tooMany && !running);
-  const whyNot = !engine.entry ? "Loading models…" : !editModel ? `${engine.entry.familyName} can't edit a picture. Choose a model that can.`
-    : !viewingBase ? "Go back to Base to change the picture again."
-      : tooMany ? `${engine.entry.familyName} can't take all ${counts.pictures} pictures of this request: ${engine.unusedCount} would be left out. Remove some pictures or choose another model.`
-        : running ? "Wait for the versions that are still generating." : null;
+  // A request this model can't make (C6): said above the bottom row, Generate off.
+  const blocked = !engine.entry ? null : !editModel ? `${engine.entry.familyName} can't edit a picture. Choose a model that can.`
+    : tooMany ? `${engine.entry.familyName} takes ${1 + editRoom(engine.entry)} pictures; this request has ${counts.pictures}. Remove some pictures or choose another model.` : null;
+  const whyNot = blocked || (!engine.entry ? "Loading models…" : !viewingBase ? "Go back to Base to change the picture again." : running ? "Wait for the version that is still generating." : null);
+  // The composer opens to show why (a folded bar would hide it).
+  useEffect(() => { if (blocked && viewingBase) setExpanded(true); }, [blocked, viewingBase]);
 
   // ── Pictures for the request ──
-  const makePicture = async (asFlat, doc = docRef.current) => {
-    const render = (width, height) => renderPicture({ base, items: doc.items, erasers: doc.erasers, flat: asFlat, width, height });
+  const makePicture = async (asFlat, doc = docRef.current, paint = "outline") => {
+    const render = (width, height) => renderPicture({ base, items: doc.items, erasers: doc.erasers, flat: asFlat, width, height, paint });
     let blob;
     try { ({ blob } = await toJpeg(render, base.w, base.h)); }
     finally { forgetImages([base.url, ...doc.items.filter(isObject).map((o) => o.url)]); }
@@ -206,23 +287,24 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     return uploadFile(apiKey, new File([blob], name, { type: "image/jpeg" }));
   };
 
-  // ── Generate (E5, E6) ──
+  // ── Generate (E5, E6, C6) ──
   const [genTick, setGenTick] = useState(0);
   const generate = async () => {
     if (!canGo) { if (whyNot) setErr({ head: "Not generated.", text: whyNot }); else if (!notesWritten) setErr({ head: "Nothing to change yet.", text: "Mark a place and write next to it what to change." }); return; }
     setErr(null);
+    setFailCard(null);
     setBusy("generate");
     setPanel(null); setPop(null); setNote(null);
     // One snapshot of the request at the click: the canvas is locked meanwhile, and the files,
     // the marked copy and the prompt all come from this same version of the work.
-    const snap = { doc: docRef.current, general, flat, prompt, marks: marks.length, objects: objects.map((o) => ({ url: o.url, name: o.name || "object" })) };
+    const snap = { doc: docRef.current, general, flat, prompt, marks: marks.length, objects: objects.map((o) => ({ url: o.url, name: o.name || "object" })), refs: refFiles };
     try {
       let a;
-      if (snap.flat) a = { edit: [{ url: await makePicture(true, snap.doc), name: "picture" }] };
+      if (snap.flat) a = { edit: [{ url: await makePicture(true, snap.doc), name: "picture" }], ...(snap.refs.length ? { reference: snap.refs } : {}) };
       else {
         const marked = snap.marks ? await makePicture(false, snap.doc) : null;
-        const refs = [...(marked ? [{ url: marked, name: "marks" }] : []), ...snap.objects];
-        a = { edit: [{ url: base.url, name: "base" }], ...(refs.length ? { reference: refs } : {}) };
+        const files = [...(marked ? [{ url: marked, name: "marks" }] : []), ...snap.objects, ...snap.refs];
+        a = { edit: [{ url: base.url, name: "base" }], ...(files.length ? { reference: files } : {}) };
       }
       sending.current = { att: a, prompt: snap.prompt, work: { doc: snap.doc, general: snap.general, flat: snap.flat } };
       engine.setAttached(a);
@@ -234,6 +316,13 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
       setErr({ head: "Not generated.", text: String(e?.message || e) });
     }
   };
+  // A version that failed: Base comes back with its marks and notes, the card says why (C6).
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  const failed = (id, text) => {
+    setVersions((vs) => vs.map((v) => (v.id === id && v.status === "pending" ? { ...v, status: "failed", error: text } : v)));
+    if (shownRef.current === id) { shownRef.current = "base"; showBase(); setFailCard({ id, text }); }
+  };
   // Runs once the engine has the request's files and prompt (one render later).
   useEffect(() => {
     const s = sending.current;
@@ -241,18 +330,20 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     sending.current = null;
     setBusy(null);
     if (!engine.canRun || engine.unusedCount > 0) { setErr({ head: "Not generated.", text: engine.missing || "This model can't take all the pictures of this request." }); engine.setAttached(att); engine.setPrompt(prompt); return; }
+    const batch = newId("batch");
     const ids = Array.from({ length: engine.count }, () => newId("ver"));
-    pending.current.push(...ids);
-    // One batch at a time (Generate waits for it), so its results fill its versions in any order;
-    // a job that ends with neither a result nor an error is marked failed when the batch ends.
-    Promise.resolve().then(() => engine.generate()).catch((e) => onFail.current(String(e?.message || e))).finally(() => {
-      pending.current = pending.current.filter((id) => !ids.includes(id));
-      setVersions((vs) => vs.map((v) => (ids.includes(v.id) && v.status === "pending" ? { ...v, status: "failed", error: "The model gave no result." } : v)));
-    });
+    // Each job fills its own version; the versions belong to the picture the editor was opened on (C7).
+    Promise.resolve().then(() => engine.generate({
+      meta: { editor: { source: url } },
+      onRequestId: (i, gid) => setVersions((vs) => vs.map((v) => (v.id === ids[i] ? { ...v, gid } : v))),
+      onResult: (i, res) => { if (res?.url) setVersions((vs) => vs.map((v) => (v.id === ids[i] && v.status === "pending" ? { ...v, url: res.url, status: "done" } : v))); else failed(ids[i], "The model gave no picture."); },
+      onError: (i, m) => failed(ids[i], plainReason(m)),
+    })).catch((e) => ids.forEach((id) => failed(id, plainReason(String(e?.message || e)))));
     baseWork.current = s.work;
-    setVersions((vs) => [...vs, ...ids.map((id) => ({ id, url: null, status: "pending" }))]);
+    setVersions((vs) => [...vs, ...ids.map((id) => ({ id, url: null, status: "pending", batch }))]);
     setShown(ids[0]);
     setTab("versions");
+    setExpanded(false);
     // The work is kept with Base; the canvas shows the result (E6).
     docRef.current = { items: [], erasers: [] };
     setDocState(docRef.current);
@@ -261,13 +352,30 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     setDirty(false);
   }, [engine.attached, engine.prompt, genTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const showBase = () => {
-    setShown("base");
+  // Cancel (C6): the running versions stop (where the provider can), the work comes back.
+  const cancelRun = async () => {
+    const run = versions.filter((v) => v.status === "pending" && v.batch);
+    setVersions((vs) => vs.filter((v) => !run.some((r) => r.id === v.id)));
+    showBase();
+    const notes = await Promise.all(run.filter((v) => v.gid).map((v) => dzLibrary.cancel(v.gid).then(() => null, (e) => String(e?.message || e))));
+    const left = notes.find(Boolean);
+    if (left) notify({ type: "notice", title: "Editor", message: `${left} If it still finishes, it appears in the gallery.` });
+  };
+
+  const restoreWork = () => {
     // Base brings its marks, objects and notes back, to adjust and run again (E6).
     if (baseWork.current && !docRef.current.items.length) {
       const w = baseWork.current;
       docRef.current = w.doc; setDocState(w.doc); setGeneralRaw(w.general); setFlat(w.flat);
     }
+  };
+  const showBase = () => { setShown("base"); restoreWork(); };
+  const showVersion = (id) => {
+    if (id === "base") { showBase(); setFailCard(null); return; }
+    const v = versions.find((x) => x.id === id);
+    if (v?.status === "failed") { showBase(); setFailCard({ id, text: v.error || "The provider returned an error." }); return; }
+    setFailCard(null);
+    setShown(id);
   };
   const useAsBase = (v) => {
     if (!v?.url) return;
@@ -275,7 +383,8 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     baseWork.current = null;
     docRef.current = { items: [], erasers: [] }; setDocState(docRef.current);
     undo.current = []; redo.current = [];
-    setGeneralRaw(""); setShown("base"); setTab("layers");
+    // The versions stay listed (C7): they all belong to the picture the editor was opened on.
+    setGeneralRaw(""); setShown("base"); setTab("layers"); setFailCard(null);
     notify({ type: "notice", title: "Editor", message: "That version is the base now. Mark it up for the next pass." });
   };
 
@@ -379,10 +488,76 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     if (urls.length) placeObjects(urls, at);
   };
   const replaceRef = useRef(null);
-  // The picker: chosen pictures in, removed ones out (it shows the objects as its "chosen").
-  const pickerAttached = useMemo(() => ({ reference: objects.map((o) => ({ url: o.url, name: o.name })) }), [objects.map((o) => o.url).join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── References in a note (C1): their own files, never on the canvas ──
+  const refRoom = (id) => {
+    const it = docRef.current.items.find((x) => x.id === id);
+    return Math.max(0, Math.min(MAX_REFS_PER_NOTE - liveRefs(it).length, MAX_REFS - requestRefs(docRef.current.items).length));
+  };
+  const addRefs = (id, pics) => {
+    const room = refRoom(id);
+    const take = pics.slice(0, room);
+    if (pics.length > take.length) notify({ type: "notice", title: "Editor", message: `Up to ${MAX_REFS_PER_NOTE} references in a note, ${MAX_REFS} in one request.` });
+    if (!take.length) return false;
+    const made = take.map((u) => ({ id: newRefId(), url: u.url, name: u.name || "" }));
+    // Each one is a chip at the end of the note: the user can move it in the text or delete it.
+    commit((d) => ({ ...d, items: d.items.map((x) => {
+      if (x.id !== id) return x;
+      const t = String(x.note || "").replace(/\s+$/, "");
+      return { ...x, refs: [...liveRefs(x), ...made], note: `${t}${t ? " " : ""}${made.map(refToken).join(" ")} ` };
+    }) }));
+    return true;
+  };
+  const removeRef = (itemId, refId) => commit((d) => ({ ...d, items: d.items.map((x) => (x.id === itemId ? {
+    ...x, refs: (x.refs || []).filter((r) => r.id !== refId), note: String(x.note || "").replace(new RegExp(`\\s?@${refId}(?![\\p{L}\\p{N}_])`, "giu"), ""),
+  } : x)) }));
+  const askRef = (id) => {
+    if (!refRoom(id)) { notify({ type: "notice", title: "Editor", message: `Up to ${MAX_REFS_PER_NOTE} references in a note, ${MAX_REFS} in one request.` }); return; }
+    if (note) closeNote("save");
+    replaceRef.current = null;
+    setRefFor(id);
+    setPicker(true);
+  };
+  const closePicker = () => { setPicker(false); setRefFor(null); replaceRef.current = null; };
+  const uploadRefs = async (files, id) => {
+    const urls = [];
+    setBusy("upload");
+    try { for (const f of files) urls.push({ url: await uploadFile(apiKey, f), name: f.name.replace(/\.[^.]+$/, "") }); }
+    catch (e) { notify({ type: "error", title: "Upload", message: String(e?.message || e) }); }
+    finally { setBusy(null); }
+    if (urls.length && addRefs(id, urls)) { setSelected(id); open(id, false); }
+  };
+  // A drop onto a mark or onto a note: a reference for that note; anywhere else: a picture on the canvas.
+  const noteAt = (world, client) => {
+    const el = client ? document.elementFromPoint(client.x, client.y)?.closest?.("[data-note-for]") : null;
+    if (el) return el.getAttribute("data-note-for");
+    if (!world) return null;
+    const pad = Math.max(12, (base.w || 1000) / 80);
+    const hit = numbered(docRef.current.items).filter((it) => it.n && isMark(it)).reverse().find((it) => {
+      const b = boundsOf(it);
+      return world.x >= b.x - pad && world.x <= b.x + b.w + pad && world.y >= b.y - pad && world.y <= b.y + b.h + pad;
+    });
+    return hit?.id || null;
+  };
+  const dropFiles = (files, world, client) => {
+    const imgs = files.filter((f) => f.type.startsWith("image/"));
+    if (!imgs.length) return;
+    const id = noteAt(world, client);
+    if (id) uploadRefs(imgs, id); else uploadObjects(imgs, world);
+  };
+  // The picker: chosen pictures in, removed ones out (it shows the objects, or the note's references, as its "chosen").
+  const refItem = refFor ? byId.get(refFor) : null;
+  const pickerAttached = useMemo(() => (refFor
+    ? { reference: (refItem?.refs || []).map((x) => ({ url: x.url, name: x.name || "", id: x.id })) }
+    : { reference: objects.map((o) => ({ url: o.url, name: o.name })) }), [refFor, refItem?.refs.map((x) => x.id).join("|"), objects.map((o) => o.url).join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
   const setPickerAttached = (fn) => {
     const next = (typeof fn === "function" ? fn(pickerAttached) : fn).reference || [];
+    if (refFor) {
+      const id = refFor;
+      const added = next.filter((x) => !pickerAttached.reference.some((y) => y.url === x.url));
+      for (const x of pickerAttached.reference.filter((y) => !next.some((z) => z.url === y.url))) removeRef(id, x.id);
+      if (added.length && addRefs(id, added)) { closePicker(); setSelected(id); open(id, false); }
+      return;
+    }
     if (replaceRef.current) {
       const fresh = next.find((x) => !pickerAttached.reference.some((y) => y.url === x.url));
       if (fresh) { setItem(replaceRef.current, { url: fresh.url, name: shortName(fresh.name) }); replaceRef.current = null; setPicker(false); }
@@ -394,13 +569,14 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     if (added.length) placeObjects(added);
   };
   const canvasHost = useRef(null);
-  useDzDropTarget({ el: canvasHost, enabled: viewingBase, title: "Drop pictures here", line: (n) => `${n} picture${n === 1 ? "" : "s"} · pasted onto the picture where you drop`, drop: (files, pt) => {
-    const imgs = files.filter((f) => f.type.startsWith("image/"));
-    if (imgs.length) uploadObjects(imgs, pt && canvas.current ? canvas.current.toWorld(pt.x, pt.y) : null);
+  useDzDropTarget({ el: canvasHost, enabled: viewingBase, title: "Drop pictures here", line: (n) => `${n} picture${n === 1 ? "" : "s"} · on a mark or a note: a reference for it; elsewhere: onto the picture`, drop: (files, pt) => {
+    dropFiles(files, pt && canvas.current ? canvas.current.toWorld(pt.x, pt.y) : null, pt || null);
   } });
 
   // ── Notes (E3) ──
   const typeNote = (id, text) => live((d) => ({ ...d, items: d.items.map((x) => (x.id === id ? { ...x, note: text } : x)) }));
+  // A saved note keeps only the references whose chips are still in it.
+  const pruneRefs = (id) => { const next = { ...docRef.current, items: docRef.current.items.map((x) => (x.id === id && (x.refs || []).length !== liveRefs(x).length ? { ...x, refs: liveRefs(x) } : x)) }; if (next.items.some((x, i) => x !== docRef.current.items[i])) { docRef.current = next; setDocState(next); } };
   const closeNote = (how, keepBrush = false) => {
     if (!note) return;
     const id = note.id;
@@ -409,8 +585,13 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
       // Esc: the note goes back to what it was; nothing changed, nothing to undo.
       if (now !== note.before) { const next = { ...docRef.current, items: docRef.current.items.map((x) => (x.id === id ? { ...x, note: note.before && !note.isNew ? note.before : "" } : x)) }; docRef.current = next; setDocState(next); }
       if (!note.isNew && note.wasDirty === false) setDirty(false);
-    } else if (note.snap && now !== note.before) pushUndo(note.snap);
+    } else {
+      pruneRefs(id);
+      if (note.snap && now !== note.before) pushUndo(note.snap);
+    }
     setNote(null);
+    // Saved: only the number stays on the picture (C2).
+    if (how !== "generate") setSelected((cur) => (cur === id ? null : cur));
     if (!keepBrush || how !== "save") breakBrush();
     if (how === "generate") setTimeout(generate, 0);
     canvas.current?.focus();
@@ -444,7 +625,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   });
   const pickTool = (t) => {
     breakBrush();
-    if (t === "picture") { replaceRef.current = null; setPicker(true); return; }
+    if (t === "picture") { replaceRef.current = null; setRefFor(null); setPicker(true); return; }
     setTool(t);
     if (t !== "select") setSelected(null);
   };
@@ -454,7 +635,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     if (!base.w) return false;
     setBusy("save");
     try {
-      const upload = await makePicture(true);
+      const upload = await makePicture(true, docRef.current, "fill");
       const res = await fetch("/dz/api/editor/copy", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: upload, from: base.url, prompt: editorPrompt({ items, general }), ...dzContextParams(), ...(target ? { target: { board: target.board, id: target.id, kind: target.kind } } : {}) }),
@@ -473,7 +654,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     setBusy("send");
     try {
       const marked = marks.length ? await makePicture(false) : null;
-      onSendToComposer?.({ edit: base.url, references: [...(marked ? [{ url: marked, name: "marks", label: "Marks" }] : []), ...objects.map((o) => ({ url: o.url, name: o.name || "object", label: "Object" }))], prompt: composerPrompt({ items, general }) });
+      onSendToComposer?.({ edit: base.url, references: [...(marked ? [{ url: marked, name: "marks", label: "Marks" }] : []), ...objects.map((o) => ({ url: o.url, name: o.name || "object", label: "Object" })), ...refs.map((x) => ({ url: x.url, name: x.name || "reference", label: "Reference" }))], prompt: composerPrompt({ items, general }) });
       onClose();
     } catch (e) {
       notify({ type: "error", title: "Send to composer", message: String(e?.message || e) });
@@ -481,7 +662,11 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   };
   const requestClose = () => { if (dirty && hasWork(items, general)) setClosing(true); else onClose(); };
 
-  // ── Overlay: notes and pills, the selection's small toolbar ──
+  // ── Overlay: numbers, the open note, the selection's small toolbar (C2) ──
+  // Every item is a number circle; its note shows as a pill only when the item is selected or
+  // its number is hovered. Clicking a number selects the item; clicking the open pill edits it.
+  const [hover, setHover] = useState(null);
+  const pick = (id) => { breakBrush(); setTool("select"); setSelected(id); };
   const overlay = ({ z, dragging, vkey }) => (
     <>
       {viewingBase && list.filter((it) => it.n).map((it) => {
@@ -489,20 +674,24 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
         const editing = note?.id === it.id;
         const text = String(it.note || "").trim();
         const isPoint = it.kind === "point";
+        const openPill = !editing && (selected === it.id || hover === it.id) && !dragging;
         return (
-          <div key={it.id} data-follow={it.id} className="absolute" style={{ left: a.x, top: a.y }}>
+          <div key={it.id} data-follow={it.id} className="absolute" style={{ left: a.x, top: a.y, zIndex: editing || openPill ? 2 : 1 }}>
             <div className={cn("absolute", isPoint ? "left-0 top-0" : "bottom-0 left-0")} style={{ transform: "scale(var(--iz))", transformOrigin: isPoint ? "left center" : "bottom left" }}>
-              <Inside deps={[text, vkey, editing, a.x, a.y]} className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")}>
+              <Inside deps={[text, vkey, editing, openPill, a.x, a.y]} className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")} data-note-for={it.id}
+                onMouseLeave={() => setHover((h) => (h === it.id ? null : h))}>
                 {editing ? (
-                  <NoteField it={it} onType={(t) => typeNote(it.id, t)} onKeyDown={noteKeys} onBlur={() => { if (note?.id === it.id) closeNote("save", tool === "brush"); }}
-                    onRemoveNote={note.isNew ? null : () => { typeNote(it.id, ""); closeNote("save"); }} onEnter={() => closeNote("save")} />
-                ) : text || isObject(it) ? (
-                  <button type="button" data-overlay-ui onPointerDown={(e) => e.stopPropagation()} onClick={() => { setSelected(it.id); open(it.id, false); }}
+                  <NoteField it={it} raw={items.find((x) => x.id === it.id)} onType={(t) => typeNote(it.id, t)} onKeyDown={noteKeys} onBlur={() => { if (note?.id === it.id && !picker) closeNote("save", tool === "brush"); }}
+                    onRemoveNote={note.isNew ? null : () => { typeNote(it.id, ""); closeNote("save"); }} onEnter={() => closeNote("save")} onAddRef={() => askRef(it.id)} />
+                ) : openPill ? (
+                  <button type="button" data-overlay-ui onPointerDown={(e) => e.stopPropagation()} onClick={() => { if (selected !== it.id) pick(it.id); else open(it.id, false); }} title={plainNote(it) || undefined}
                     className="pointer-events-auto flex max-w-[360px] items-center gap-1.5 whitespace-nowrap rounded-full bg-overlay/80 py-1 pl-1 pr-3 text-sm text-overlay-foreground shadow-popover backdrop-blur-sm transition-colors duration-state hover:bg-overlay/90">
-                    <Num n={it.n} />{isObject(it) && <RefChip tag={it.tag} url={it.url} />}<span className="truncate">{text}</span>
+                    <Num n={it.n} />{isObject(it) && <RefChip tag={it.tag} url={it.url} />}
+                    {text ? <NoteText it={it} className="min-w-0 truncate" /> : <span className="text-overlay-foreground/70">{isObject(it) ? "What to do with it" : "Write a note"}</span>}
                   </button>
                 ) : (
-                  <button type="button" data-overlay-ui aria-label={`Write a note for ${it.n}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => { setSelected(it.id); open(it.id, false); }} className="pointer-events-auto rounded-full"><Num n={it.n} /></button>
+                  <button type="button" data-overlay-ui aria-label={`${it.label} ${it.n}${text ? `: ${plainNote(it)}` : ""}`} onPointerDown={(e) => e.stopPropagation()}
+                    onMouseEnter={() => setHover(it.id)} onFocus={() => setHover(it.id)} onClick={() => pick(it.id)} className="pointer-events-auto rounded-full shadow-popover"><Num n={it.n} /></button>
                 )}
               </Inside>
             </div>
@@ -582,7 +771,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
             <EditorCanvas ref={canvas} reserveBottom={150} base={base} shownUrl={shownUrl} showWork={viewingBase && !comparing} items={items} erasers={doc.erasers} tool={tool} color={color} brushSize={brushSize}
               selected={selected} onSelect={(id) => { breakBrush(); setSelected(id); }} onCreate={create} onStroke={onStroke} onErase={onErase}
               onMove={(id, patch) => setItem(id, patch)} onTransform={(id, patch) => setItem(id, patch)} onPoint={(p) => create({ kind: "point", x: p.x, y: p.y })}
-              onPick={() => { replaceRef.current = null; setPicker(true); }} onFiles={(files, at) => uploadObjects(files, at)} overlay={overlay} onView={setZoom}
+              onPick={() => { replaceRef.current = null; setRefFor(null); setPicker(true); }} onFiles={dropFiles} overlay={overlay} onView={setZoom}
               onCanvasDown={() => { if (note) closeNote("save", tool === "brush"); }} disabled={!viewingBase || busy === "generate"} />
           ) : <div className="flex h-full items-center justify-center"><Spinner className="h-6 w-6" /></div>}
 
@@ -593,11 +782,28 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
                 className="pointer-events-auto flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium shadow-float hover:bg-accent"><ArrowsLeftRight size={15} />{comparing ? "Showing the base" : "Hold to compare with the base"}</button>
             </div>
           )}
+          {/* Generating (C6, screen 20): the picture dimmed, a small card; the view still moves. */}
           {shownVersion?.status === "pending" && !comparing && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><span className="flex items-center gap-2 rounded-full bg-overlay/70 px-4 py-2 text-sm text-overlay-foreground"><Spinner className="h-4 w-4 border-overlay-foreground/30 border-t-overlay-foreground" />Generating…</span></div>
+            <>
+              <div className="pointer-events-none absolute inset-0 bg-background/55" />
+              <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-center" style={{ bottom: 150 }}>
+                <div role="status" className="pointer-events-auto flex items-center gap-3 rounded-lg border border-border bg-popover py-1.5 pl-3.5 pr-1.5 text-sm shadow-popover">
+                  <Spinner className="h-4 w-4" />Generating…
+                  <button type="button" onClick={cancelRun} className="h-8 rounded-md px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground">Cancel</button>
+                </div>
+              </div>
+            </>
           )}
-          {shownVersion?.status === "failed" && !comparing && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><span className="flex max-w-md items-center gap-2 rounded-lg bg-overlay/80 px-4 py-2 text-sm text-overlay-foreground"><WarningCircle size={16} />{shownVersion.error || "Not generated."}</span></div>
+          {/* Failed (C6, screen 21): the base with its marks and notes, the reason, Try again. */}
+          {failCard && viewingBase && (
+            <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-center px-6" style={{ bottom: 150 }}>
+              <div role="alert" className="pointer-events-auto flex max-w-[560px] items-center gap-3 rounded-lg border border-border bg-popover py-1.5 pl-3.5 pr-1.5 text-sm shadow-popover">
+                <Warning size={16} className="flex-shrink-0 text-muted-foreground" />
+                <span className="min-w-0 leading-5">This version did not generate. {failCard.text}</span>
+                <button type="button" onClick={() => { setFailCard(null); generate(); }} className="h-8 flex-shrink-0 whitespace-nowrap rounded-md border border-border px-2.5 font-medium hover:bg-accent">Try again</button>
+                <button type="button" aria-label="Close" onClick={() => setFailCard(null)} className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
+              </div>
+            </div>
           )}
 
           {/* Tools, zoom and the composer, bottom centre (E1, E4) */}
@@ -619,10 +825,17 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
                     <input type="range" min={6} max={120} value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="w-24 accent-foreground" aria-label="Brush size" /></label></>
                 )}
               </div>
-              {expanded && <ZoomBox z={zoom} canvas={canvas} className="pointer-events-auto absolute right-0" />}
+              {expanded && !running && <ZoomBox z={zoom} canvas={canvas} className="pointer-events-auto absolute right-0" />}
             </div>
             <div ref={composerBox} className="pointer-events-auto w-full max-w-[1000px]">
-              {!expanded ? (
+              {running ? (
+                // While a version generates the bar is off (C6); the picture can still be looked at.
+                <div className="flex justify-center" inert aria-busy="true">
+                  <ComposerBar onOpen={() => {}} onGenerate={() => {}} canGo={false} summary={engine.entry ? `${engine.entry.familyName} · ${engine.entry.providerName}` : ""} className="w-[min(800px,100%)]">
+                    <span className="min-w-0 flex-1 truncate text-base text-muted-foreground">Generating…</span>
+                  </ComposerBar>
+                </div>
+              ) : !expanded ? (
                 <div className="flex justify-center">
                   <ComposerBar onOpen={() => setExpanded(true)} onGenerate={generate} canGo={canGo && notesWritten} summary={barSummary} className="w-[min(800px,100%)]">
                     <span className="min-w-0 flex-1 truncate text-base">
@@ -631,21 +844,22 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
                   </ComposerBar>
                 </div>
               ) : (
-                <EditorComposer engine={engine} cp={cp} base={base} list={list} marks={marks} objects={objects} general={general} setGeneral={setGeneral}
+                <EditorComposer engine={engine} cp={cp} base={base} list={list} items={items} marks={marks} objects={objects} refs={refs} general={general} setGeneral={setGeneral}
+                  onAddRef={askRef} removeRef={(x) => removeRef(x.itemId, x.id)} blocked={viewingBase ? blocked : null} ratioLabel={ratioLabel}
                   setNoteText={typeNote} onLineFocus={() => { lineSnap.current = docRef.current; }} onLineBlur={() => { if (lineSnap.current && lineSnap.current !== docRef.current) pushUndo(lineSnap.current); lineSnap.current = null; }}
-                  onCollapse={() => setExpanded(false)} onAddPicture={() => { replaceRef.current = null; setPicker(true); }} removeObject={remove}
+                  onCollapse={() => setExpanded(false)} onAddPicture={() => { replaceRef.current = null; setRefFor(null); setPicker(true); }} removeObject={remove}
                   pop={pop} setPop={setPop} panel={panel} setPanel={setPanel} onGenerate={generate} canGo={canGo} err={err} setErr={setErr} busy={busy === "generate"} adapted={adapted} clearAdapted={() => setAdapted(null)} />
               )}
             </div>
-            {!expanded && <ZoomBox z={zoom} canvas={canvas} className="pointer-events-auto absolute bottom-0 right-6" />}
+            {(!expanded || running) && <ZoomBox z={zoom} canvas={canvas} className="pointer-events-auto absolute bottom-0 right-6" />}
           </div>
 
           {/* The picker (E2): the shared picture window, for up to nine pictures. */}
           {picker && (
             <div className="absolute bottom-[96px] left-1/2 z-30 w-[min(640px,calc(100%-48px))] -translate-x-1/2">
               <PickerHereContext.Provider value={hereTabs}>
-                <LibraryWindow open={picker} groups={[OBJECTS_GROUP]} groupId="objects" setGroupId={() => {}} attached={pickerAttached} setAttached={setPickerAttached}
-                  title={replaceRef.current ? "Replace the picture" : "Add to the picture"} onClose={() => { setPicker(false); replaceRef.current = null; }}
+                <LibraryWindow open={picker} groups={[refFor ? refsGroup(Math.max(1, (refItem?.refs.length || 0) + refRoom(refFor))) : OBJECTS_GROUP]} groupId={refFor ? "refs" : "objects"} setGroupId={() => {}} attached={pickerAttached} setAttached={setPickerAttached}
+                  title={refFor ? `Reference for note ${refItem?.n || ""}` : replaceRef.current ? "Replace the picture" : "Add to the picture"} onClose={closePicker}
                   onError={(m) => notify({ type: "error", title: "Upload", message: m })} onUploading={(on) => setBusy(on ? "upload" : null)} />
               </PickerHereContext.Provider>
             </div>
@@ -655,7 +869,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
         {/* Right panel (E1, E3, E5, E6) */}
         <aside ref={dzScrollBoxRef} className="flex w-[300px] flex-shrink-0 flex-col border-l border-border bg-card">
           <div className="-mt-[52px] flex h-[52px] flex-shrink-0 items-end gap-5 border-b border-border px-4" role="tablist">
-            {[["layers", "Layers", items.length + 1], ["versions", "Versions", versions.length + 1], ["model", "To model", pictureCount]].map(([id, label, n]) => (
+            {[["layers", "Layers", items.length + 1], ["versions", "Versions", versions.length], ["model", "To model", pictureCount]].map(([id, label, n]) => (
               <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
                 className={cn("relative h-[52px] whitespace-nowrap pt-1 text-sm font-medium transition-colors duration-state", tab === id ? "text-foreground" : "text-muted-foreground hover:text-foreground")}>
                 {label} <span className="tabular-nums text-muted-foreground">{n}</span>
@@ -665,13 +879,18 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
           </div>
           <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
             {tab === "layers" && <LayersTab list={list} base={base} target={target} selected={selected} onSelect={(id) => { setSelected(id); setTool("select"); }} onToggle={(id, hidden) => setItem(id, { hidden })} />}
-            {tab === "versions" && <VersionsTab versions={versions} base={base} shown={shown} onShow={(id) => (id === "base" ? showBase() : setShown(id))} onUseAsBase={useAsBase} approve={approve} isApproved={isApproved} />}
+            {tab === "versions" && <VersionsTab versions={versions} base={base} shown={failCard && viewingBase ? failCard.id : shown} onShow={showVersion} onUseAsBase={useAsBase} approve={approve} isApproved={isApproved} />}
             {tab === "model" && <ModelTab base={base} items={items} erasers={doc.erasers} flat={flat} setFlat={setFlat} prompt={engine.finalPrompt || prompt} adapted={adapted} clearAdapted={() => setAdapted(null)} />}
           </div>
-          <p className="flex-shrink-0 border-t border-border p-4 text-sm leading-5 text-muted-foreground">
-            {tab === "layers" ? (items.length ? "Click a number on the picture to change its note. The eye hides a layer and its note: hidden ones are not sent." : "Nothing added yet. Mark a place, paint over an area or add a picture — a note field opens next to it. The base picture is never changed.")
-              : tab === "versions" ? "Each Generate adds a version here and to the shot's gallery. One change per pass keeps the rest of the picture stable."
-                : "This is a preview. Nothing is sent until you press Generate."}
+          <p className="flex flex-shrink-0 items-start gap-2 border-t border-border p-4 text-sm leading-5 text-muted-foreground">
+            {failCard && viewingBase ? "A failed version is not kept in the gallery. Your marks and notes are still on the picture."
+              : shownVersion?.status === "pending" ? "The new version appears here when it is ready. You can keep looking at the picture meanwhile."
+                : viewingBase && changes >= 2 ? (
+                  // Several changes in one pass (C5, decision 5.2 a): said once, here; nothing on the picture.
+                  <><Warning size={16} className="mt-0.5 flex-shrink-0 text-foreground" /><span>{changes} changes in one pass. Models often make only one or two. For exact work, send one change at a time.</span></>
+                ) : tab === "layers" ? (items.length ? "Click a number on the picture to see its note, click the note to change it. The eye hides a layer and its note: hidden ones are not sent." : "Nothing added yet. Mark a place, paint over an area or add a picture — a note field opens next to it. The base picture is never changed.")
+                  : tab === "versions" ? (versions.some((v) => v.gid && !v.batch) ? `Versions made from this picture earlier are kept. Each one is also in ${target ? "the shot's" : "the"} gallery.` : `Each Generate adds a version here and to ${target ? "the shot's" : "the"} gallery. One change per pass keeps the rest of the picture stable.`)
+                    : "This is a preview. Nothing is sent until you press Generate."}
           </p>
         </aside>
       </div>
@@ -725,25 +944,54 @@ function useKeepInside(ref, deps) {
 // A number: white circle, dark text (E3.10) — content colours, the same in both themes.
 const Num = ({ n }) => <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums" style={{ background: "#FFFFFF", color: "#111113" }}>{n}</span>;
 
-function NoteField({ it, onType, onKeyDown, onBlur, onRemoveNote, onEnter }) {
+// A note as words: the references as "@ref1"…
+const plainNote = (it) => withRefNames(it.note, it.refs, (x) => `@${x.tag || "ref"}`).replace(/\s+/g, " ").trim();
+// A note as shown: its text with a chip for each reference (it: a numbered item).
+function NoteText({ it, className }) {
+  const byId = new Map((it.refs || []).map((x) => [x.id.toLowerCase(), x]));
+  const parts = [];
+  let last = 0;
+  const text = String(it.note || "");
+  for (const m of text.matchAll(/(^|[^\p{L}\p{N}_@])@(ref_[a-z0-9]+)(?![\p{L}\p{N}_])/giu)) {
+    const r = byId.get(m[2].toLowerCase());
+    if (!r) continue;
+    const at = m.index + m[1].length;
+    if (at > last) parts.push(text.slice(last, at));
+    parts.push(<RefChip key={r.id} tag={r.tag} url={r.url} title={`@${r.tag} · a reference, not placed on the picture`} />);
+    last = at + m[2].length + 1;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <span className={className}>{parts}</span>;
+}
+
+// The tags a note field draws as chips: its references (and an object's own @obj tag is beside it).
+const refTags = (raw, it) => (raw?.refs || []).map((r) => {
+  const live = (it?.refs || []).find((x) => x.id === r.id);
+  return { tag: r.id, url: r.url, text: `@${live?.tag || "ref"}`, label: "a reference, not placed on the picture", kind: "file" };
+});
+
+function NoteField({ it, raw, onType, onKeyDown, onBlur, onRemoveNote, onEnter, onAddRef }) {
   const ref = useRef(null);
-  useEffect(() => { const el = ref.current; if (el) setTimeout(() => { el.focus({ preventScroll: true }); el.setSelectionRange(el.value.length, el.value.length); }, 0); }, [it.id]);
+  useEffect(() => { setTimeout(() => { const el = ref.current; if (!el) return; el.focus(); const n = el.value.length; el.setSelectionRange(n, n); }, 0); }, [it.id]);
+  const tags = useMemo(() => refTags(raw, it), [raw?.refs, it.refs]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto flex w-[400px] items-center gap-1.5 rounded-xl border border-input bg-popover py-1 pl-1 pr-1 shadow-popover">
       <Num n={it.n} />
       {isObject(it) && <RefChip tag={it.tag} url={it.url} />}
-      <input ref={ref} value={it.note || ""} onChange={(e) => onType(e.target.value)} onKeyDown={onKeyDown} onBlur={onBlur} aria-label={`Note ${it.n}`}
+      <PromptEditor value={it.note || ""} onChange={onType} tags={tags} modelName="the model" inputRef={ref} onKeyDown={onKeyDown} onBlur={onBlur}
         placeholder={isObject(it) ? "What to do with this picture" : it.kind === "point" ? "What should change here" : "What to change here"}
-        className="h-7 min-w-0 flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground" />
-      {onRemoveNote && <button type="button" aria-label="Remove the note" onMouseDown={(e) => e.preventDefault()} onClick={onRemoveNote} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><Trash size={14} /></button>}
-      <button type="button" aria-label="Save the note (Enter)" onMouseDown={(e) => e.preventDefault()} onClick={onEnter} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><KeyReturn size={14} /></button>
+        ariaProps={{ "aria-label": `Note ${it.n}`, "aria-multiline": "false" }}
+        className="!max-h-[96px] !min-h-[28px] min-w-0 flex-1 px-1 py-0.5 !text-sm !leading-6" />
+      <Tip text="Attach a reference picture"><button type="button" aria-label="Attach a reference picture" onMouseDown={(e) => e.preventDefault()} onClick={onAddRef} className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><ImageSquare size={15} /></button></Tip>
+      {onRemoveNote && <button type="button" aria-label="Remove the note" onMouseDown={(e) => e.preventDefault()} onClick={onRemoveNote} className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><Trash size={14} /></button>}
+      <button type="button" aria-label="Save the note (Enter)" onMouseDown={(e) => e.preventDefault()} onClick={onEnter} className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><KeyReturn size={14} /></button>
     </div>
   );
 }
 
 function BarNotes({ list }) {
-  return list.filter((it) => it.n && (String(it.note || "").trim() || isObject(it))).map((it) => (
-    <span key={it.id} className="mr-4">{it.n}. {isObject(it) && <RefChip tag={it.tag} url={it.url} />} {String(it.note || "").trim()}</span>
+  return list.filter((it) => it.n && (plainNote(it) || isObject(it))).map((it) => (
+    <span key={it.id} className="mr-4">{it.n}. {isObject(it) && <RefChip tag={it.tag} url={it.url} />} <NoteText it={it} /></span>
   ));
 }
 
@@ -777,48 +1025,67 @@ function ZoomBox({ z, canvas, className }) {
   );
 }
 
-// The expanded composer (E4, screen 13): Base · Marks · Objects, the notes as a numbered list
-// (one source of truth with the picture), one free line, then the shared bottom row.
-function EditorComposer({ engine, cp, base, list, marks, objects, general, setGeneral, setNoteText, onLineFocus, onLineBlur, onCollapse, onAddPicture, removeObject, pop, setPop, panel, setPanel, onGenerate, canGo, err, setErr, busy, adapted, clearAdapted }) {
+// The expanded composer (E4, screen 13; package 13 screen 17): Base · Marks · Objects ·
+// References, the notes as a numbered list (one source of truth with the picture), one free
+// line, then the shared bottom row — the ratio is the base's own and only shown (C3).
+function EditorComposer({ engine, cp, base, list, items, marks, objects, refs, general, setGeneral, setNoteText, onLineFocus, onLineBlur, onCollapse, onAddPicture, onAddRef, removeObject, removeRef, pop, setPop, panel, setPanel, onGenerate, canGo, err, setErr, blocked, busy, adapted, clearAdapted, ratioLabel }) {
   const lines = list.filter((it) => it.n && (isObject(it) || isMark(it)));
+  const shown = blocked ? { head: "Can't generate.", text: blocked, fixed: true } : err;
   return (
     <div className="relative rounded-xl border border-border bg-card p-4 shadow-float">
       <Tip text="Collapse"><button type="button" aria-label="Collapse" onClick={onCollapse} className="absolute right-2.5 top-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><CaretDown size={16} /></button></Tip>
-      <div className="flex items-stretch">
+      <div className="custom-scrollbar flex items-stretch overflow-x-auto pr-8">
         <StripGroup label="Base" n={1} max={1}><span className="contents [&_button[aria-label^='Remove']]:hidden"><Thumb item={{ url: base.url, role: "edit" }} kind="image" tag="Base picture · stays untouched" onRemove={() => {}} /></span></StripGroup>
-        <span className="mx-3.5 w-px self-stretch bg-border" />
+        <span className="mx-3.5 w-px flex-shrink-0 self-stretch bg-border" />
         <StripGroup label="Marks" n={marks.length ? 1 : 0} max={1}>{marks.length ? <span className="contents [&_button[aria-label^='Remove']]:hidden"><Thumb item={{ url: base.url, role: "marks" }} kind="image" label="Marks" tag="The copy with your marks (made when you press Generate)" onRemove={() => {}} /></span> : <span className="flex h-12 items-center text-sm text-muted-foreground">Draw a mark</span>}</StripGroup>
-        <span className="mx-3.5 w-px self-stretch bg-border" />
+        <span className="mx-3.5 w-px flex-shrink-0 self-stretch bg-border" />
         <StripGroup label="Objects" n={objects.length} max={MAX_OBJECTS}>
-          {objects.map((o) => <Thumb key={o.id} item={{ url: o.url, role: "reference" }} kind="image" tag={`@${o.tag} · ${o.name || "Picture"}`} onRemove={() => removeObject(o.id)} />)}
+          {objects.map((o) => <Thumb key={o.id} item={{ url: o.url, role: "reference" }} kind="image" tag={`@${o.tag} · ${o.label}`} onRemove={() => removeObject(o.id)} />)}
           {objects.length < MAX_OBJECTS && <EmptySlot onClick={onAddPicture} />}
+        </StripGroup>
+        <span className="mx-3.5 w-px flex-shrink-0 self-stretch bg-border" />
+        <StripGroup label="References" n={refs.length} max={MAX_REFS}>
+          {refs.length ? refs.map((x) => <Thumb key={x.id} item={{ url: x.url, role: "reference" }} kind="image" tag={`@${x.tag} · a reference for note ${x.item}`} onRemove={() => removeRef(x)} />)
+            : <span className="flex h-12 items-center whitespace-nowrap text-sm text-muted-foreground">In a note: the picture button</span>}
         </StripGroup>
       </div>
       <div className="mt-3 space-y-1.5">
         {lines.map((it) => (
-          <label key={it.id} className="flex min-h-[30px] items-center gap-1.5 text-prompt">
+          <div key={it.id} className="flex min-h-[30px] items-center gap-1.5 text-prompt">
             <span className="w-6 flex-shrink-0 tabular-nums">{it.n}.</span>
             {isObject(it) && <RefChip tag={it.tag} url={it.url} />}
-            <input value={it.note || ""} onFocus={onLineFocus} onBlur={onLineBlur} onChange={(e) => setNoteText(it.id, e.target.value)} placeholder={isObject(it) ? "What to do with this picture" : `What to change at ${it.n}`}
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground" />
-          </label>
+            <NoteLine it={it} raw={items.find((x) => x.id === it.id)} onChange={(t) => setNoteText(it.id, t)} onFocus={onLineFocus} onBlur={onLineBlur} />
+            <Tip text="Attach a reference picture"><button type="button" aria-label={`Attach a reference picture to note ${it.n}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onAddRef(it.id)} className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><ImageSquare size={15} /></button></Tip>
+          </div>
         ))}
         <input value={general} onChange={(e) => setGeneral(e.target.value)} placeholder="Anything for the whole picture… (optional)" aria-label="An instruction for the whole picture"
           className="h-[30px] w-full bg-transparent text-prompt outline-none placeholder:text-muted-foreground" />
         <p className="text-sm text-muted-foreground">{adapted ? <>The prompt was adapted for {engine.entry?.familyName}. <button type="button" onClick={clearAdapted} className="underline decoration-input underline-offset-[3px] hover:text-foreground">Use my notes</button></> : "The editor adds by itself what each picture is for. See the To model tab."}</p>
       </div>
-      {err && (
+      {shown && (
         <div role="alert" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-destructive">
           <WarningCircle size={14} className="mt-[3px] flex-shrink-0" />
-          <span className="min-w-0 text-foreground"><b className="font-semibold text-destructive">{err.head}</b> {err.text}
-            <button type="button" onClick={() => setErr(null)} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Dismiss</button></span>
+          <span className="min-w-0 text-foreground"><b className="font-semibold text-destructive">{shown.head}</b> {shown.text}
+            {!shown.fixed && <button type="button" onClick={() => setErr(null)} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Dismiss</button>}</span>
         </div>
       )}
       <div className="mt-3">
         <ComposerRow engine={{ ...engine, busy: busy ? 1 : engine.busy }} cp={cp} light pop={pop} setPop={setPop} panel={panel} setPanel={setPanel} onPlus={onAddPicture} plusDisabled={objects.length >= MAX_OBJECTS} plusLabel="Add a picture" elements={false}
-          onGenerate={onGenerate} canGo={canGo} />
+          onGenerate={onGenerate} canGo={canGo} ratioFixed={ratioLabel} />
       </div>
     </div>
+  );
+}
+
+// A note line of the composer: the same chips as on the picture.
+function NoteLine({ it, raw, onChange, onFocus, onBlur }) {
+  const ref = useRef(null);
+  const tags = useMemo(() => refTags(raw, it), [raw?.refs, it.refs]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <PromptEditor value={it.note || ""} onChange={onChange} tags={tags} modelName="the model" inputRef={ref} onFocus={onFocus} onBlur={onBlur}
+      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+      placeholder={isObject(it) ? "What to do with this picture" : `What to change at ${it.n}`} ariaProps={{ "aria-label": `Note ${it.n}`, "aria-multiline": "false" }}
+      className="!max-h-[90px] !min-h-[28px] min-w-0 flex-1 py-0.5 !leading-6" />
   );
 }
 
@@ -841,8 +1108,8 @@ function LayersTab({ list, base, target, selected, onSelect, onToggle }) {
             {isObject(it) ? <img src={dzThumb(it.url, 128)} alt="" className="h-9 w-11 flex-shrink-0 rounded-sm object-cover" />
               : <span className="flex h-9 w-11 flex-shrink-0 items-center justify-center rounded-sm bg-muted text-sm font-semibold tabular-nums">{it.n || "–"}</span>}
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">{isObject(it) ? it.name || "Picture" : KIND_NAME[it.kind]}</span>
-              <span className="block truncate text-xs text-muted-foreground">{isObject(it) ? `${it.n ? `${it.n} · ` : ""}${String(it.note || "").trim() || `@${it.tag || "obj"}`}` : String(it.note || "").trim() || "No note"}</span>
+              <span className="block truncate text-sm font-medium">{it.label}</span>
+              <span className="block truncate text-xs text-muted-foreground">{isObject(it) ? `${it.tag ? `@${it.tag} ` : ""}${plainNote(it)}` : plainNote(it) || "No note"}</span>
             </span>
             <button type="button" aria-label={it.hidden ? "Show the layer" : "Hide the layer"} onClick={(e) => { e.stopPropagation(); onToggle(it.id, !it.hidden); }} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground">{it.hidden ? <EyeSlash size={15} /> : <Eye size={15} />}</button>
           </div>
@@ -858,22 +1125,22 @@ function LayersTab({ list, base, target, selected, onSelect, onToggle }) {
 }
 
 function VersionsTab({ versions, base, shown, onShow, onUseAsBase, approve, isApproved }) {
-  const v = versions.find((x) => x.id === shown);
+  const v = versions.find((x) => x.id === shown && x.status === "done");
   if (!versions.length) return <div className="px-6 py-6 text-center"><p className="font-semibold">No versions yet</p><p className="mt-1 text-sm text-muted-foreground">Each Generate adds a version here and to the shot's gallery.</p></div>;
   const tile = (id, url, label, status) => (
     <button key={id} type="button" onClick={() => onShow(id)} aria-pressed={shown === id}
       className={cn("relative aspect-video overflow-hidden rounded-md bg-muted outline-none ring-offset-2 ring-offset-card", shown === id ? "ring-2 ring-foreground" : "hover:ring-2 hover:ring-input")}>
       {url && <img src={dzThumb(url, 480)} alt="" className="h-full w-full object-cover" />}
       {status === "pending" && <span className="absolute inset-0 flex items-center justify-center"><Spinner className="h-5 w-5" /></span>}
-      {status === "failed" && <span className="absolute inset-0 flex items-center justify-center text-destructive"><WarningCircle size={18} /></span>}
-      <span className="absolute left-1.5 top-1.5 rounded-xs bg-overlay/70 px-1.5 text-xs font-semibold text-overlay-foreground">{label}</span>
+      {status === "failed" && <span className="absolute inset-0 flex items-center justify-center text-muted-foreground" aria-label="Did not generate"><Warning size={18} /></span>}
+      {status !== "failed" && status !== "pending" && <span className="absolute left-1.5 top-1.5 rounded-xs bg-overlay/70 px-1.5 text-xs font-semibold text-overlay-foreground">{label}</span>}
     </button>
   );
   return (
     <div className="p-4">
       <div className="grid grid-cols-2 gap-2">
         {tile("base", base.url, "Base", "done")}
-        {versions.map((x, i) => tile(x.id, x.url, String(i + 1), x.status))}
+        {(() => { let n = 0; return versions.map((x) => tile(x.id, x.url, x.status === "done" ? String((n += 1)) : "", x.status)); })()}
       </div>
       {v && (
         <div className="mt-3 flex flex-wrap gap-2">

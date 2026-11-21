@@ -22,8 +22,15 @@ const PictureNode = memo(function PictureNode({ url, w, h, zoom }) {
   const small = dzThumb(url, 1600);
   const src = !url?.startsWith("/media/") ? url : shown > 2600 ? url : shown > 1500 ? dzThumb(url, 2880) : small;
   const img = useImg(src, small);
-  return img ? <KImage image={img} width={w} height={h} listening={false} perfectDrawEnabled={false} />
-    : <Rect width={w} height={h} fill="rgba(127,127,127,0.15)" listening={false} />;
+  if (!img) return <Rect width={w} height={h} fill="rgba(127,127,127,0.15)" listening={false} />;
+  // A version in other proportions is shown in its own, inside the base's frame (package 13, C3).
+  const r = (img.naturalWidth || img.width) / (img.naturalHeight || img.height);
+  if (r && Math.abs(Math.log(r / (w / h))) > 0.01) {
+    const fw = r > w / h ? w : h * r;
+    const fh = r > w / h ? w / r : h;
+    return <KImage image={img} x={(w - fw) / 2} y={(h - fh) / 2} width={fw} height={fh} listening={false} perfectDrawEnabled={false} />;
+  }
+  return <KImage image={img} width={w} height={h} listening={false} perfectDrawEnabled={false} />;
 });
 
 const ObjectNode = memo(function ObjectNode({ it, zoom }) {
@@ -165,8 +172,9 @@ function Canvas({ reserveBottom = 0, base, shownUrl, showWork, items, erasers, t
     onCanvasDown?.();
     host.current?.focus({ preventScroll: true });
     const hand = tool === "hand" || space || e.button === 1;
-    if (hand) { drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, v: viewRef.current }; setDragging(true); listen(); return; }
-    if (e.button !== 0 || disabled) return;
+    // Locked (a version is shown, or one is generating): dragging still moves the view.
+    if (hand || (disabled && e.button === 0)) { drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, v: viewRef.current }; setDragging(true); listen(); return; }
+    if (e.button !== 0) return;
     const p = toWorld(e.clientX, e.clientY);
     if (tool === "rect" || tool === "arrow") { const r = { kind: tool, x: p.x, y: p.y, x2: p.x, y2: p.y }; drag.current = { kind: tool, r }; setDraft(r); listen(); return; }
     if (tool === "brush" || tool === "eraser") {
@@ -278,7 +286,7 @@ function Canvas({ reserveBottom = 0, base, shownUrl, showWork, items, erasers, t
 
   // Files dropped on the canvas: pasted pictures at the drop point (handled by the editor).
   const onDragOver = (e) => { if (Array.from(e.dataTransfer?.types || []).includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } };
-  const onDrop = (e) => { const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith("image/")); if (files.length) { e.preventDefault(); onFiles(files, toWorld(e.clientX, e.clientY)); } };
+  const onDrop = (e) => { const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith("image/")); if (files.length) { e.preventDefault(); onFiles(files, toWorld(e.clientX, e.clientY), { x: e.clientX, y: e.clientY }); } };
 
   // ── Transformer: a rectangle by any handle; a picture by a corner (locked ratio) and the top handle (rotate) ──
   const sel = showWork ? items.find((x) => x.id === selected && !x.hidden) : null;
@@ -313,7 +321,7 @@ function Canvas({ reserveBottom = 0, base, shownUrl, showWork, items, erasers, t
     return out.sort((a, b) => a.seq - b.seq);
   }, [visible, erasers]); // eslint-disable-line react-hooks/exhaustive-deps
   const selArrow = sel?.kind === "arrow" ? sel : null;
-  const cursor = tool === "hand" || space ? (dragging && !draft ? "grabbing" : "grab") : tool === "select" ? "default" : disabled ? "not-allowed" : "crosshair";
+  const cursor = tool === "hand" || space || disabled ? (dragging && !draft ? "grabbing" : "grab") : tool === "select" ? "default" : "crosshair";
   const sw = (px) => px / z; // a line px wide on screen
 
   return (
@@ -351,13 +359,13 @@ function Canvas({ reserveBottom = 0, base, shownUrl, showWork, items, erasers, t
           {draft?.kind === "rect" && <Rect x={Math.min(draft.x, draft.x2)} y={Math.min(draft.y, draft.y2)} width={Math.abs(draft.x2 - draft.x)} height={Math.abs(draft.y2 - draft.y)} stroke={markHex(color)} strokeWidth={2.5} strokeScaleEnabled={false} listening={false} />}
           {draft?.kind === "arrow" && <KArrow points={[draft.x, draft.y, draft.x2, draft.y2]} stroke={markHex(color)} fill={markHex(color)} strokeWidth={sw(3)} pointerLength={sw(14)} pointerWidth={sw(12)} listening={false} />}
           {/* A selected brush stroke group or point: a thin box around it (no handles: they move). */}
-          {sel && (sel.kind === "brush" || sel.kind === "point") && !dragging && (() => { const b = boundsOf(sel); const pad = sw(6); return <Rect x={b.x - pad} y={b.y - pad} width={b.w + pad * 2} height={b.h + pad * 2} stroke={tk.foreground} strokeWidth={1} dash={[4, 3]} strokeScaleEnabled={false} listening={false} />; })()}
+          {sel && (sel.kind === "brush" || sel.kind === "point") && !dragging && (() => { const b = boundsOf(sel); const pad = sw(6); return <Rect x={b.x - pad} y={b.y - pad} width={b.w + pad * 2} height={b.h + pad * 2} stroke={tk.signal} strokeWidth={1.5} dash={[5, 3]} strokeScaleEnabled={false} listening={false} />; })()}
           {selArrow && !dragging && [["a", selArrow.x, selArrow.y], ["b", selArrow.x2, selArrow.y2]].map(([end, x, y]) => (
-            <Circle key={end} id={`end-${end}`} name="arrow-end" end={end} arrow={selArrow.id} x={x} y={y} radius={sw(5)} fill={tk.background} stroke={tk.foreground} strokeWidth={1.5} strokeScaleEnabled={false} />
+            <Circle key={end} id={`end-${end}`} name="arrow-end" end={end} arrow={selArrow.id} x={x} y={y} radius={sw(5)} fill={NUMBER_FILL} stroke={tk.signal} strokeWidth={1.5} strokeScaleEnabled={false} />
           ))}
           <Transformer ref={trRef} flipEnabled={false} ignoreStroke
             rotateEnabled={sel?.kind === "object"} keepRatio={sel?.kind === "object"} enabledAnchors={sel?.kind === "object" ? CORNERS : ALL_ANCHORS} rotateAnchorOffset={22}
-            anchorSize={8} anchorCornerRadius={4} anchorStroke={NUMBER_FILL} anchorFill={NUMBER_FILL} borderStroke={NUMBER_FILL} borderStrokeWidth={1}
+            anchorSize={9} anchorCornerRadius={5} anchorStroke={tk.signal} anchorStrokeWidth={1.5} anchorFill={NUMBER_FILL} borderStroke={tk.signal} borderStrokeWidth={1.5}
             boundBoxFunc={(oldBox, box) => (Math.abs(box.width) < 8 || Math.abs(box.height) < 8 ? oldBox : box)}
             onTransformStart={() => setDragging(true)} onTransformEnd={() => { setDragging(false); onTransformEnd(); }} />
         </Layer>

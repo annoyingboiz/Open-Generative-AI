@@ -386,11 +386,16 @@ export function translateTags(prompt, tags = []) {
   }
   const text = String(prompt || "");
   const json = parseJsonPrompt(text).ok;
-  return text.replace(TAG_RE, (all, pre, name) => {
+  return text.replace(TAG_RE, (all, pre, name, at) => {
     const to = map.get(name.toLowerCase());
     if (to == null) return all;
     if (to === "") return `${pre}\u0000`; // a file this model does not get
-    return `${pre}${json ? JSON.stringify(String(to)).slice(1, -1) : to}`;
+    // A tag that opens a sentence opens it with a capital ("Image 2 is…", package 13 C4).
+    // Not right after a list number ("2. image 3: …").
+    const before = text.slice(0, at + pre.length);
+    const opens = !json && /^[a-z]/.test(to) && /(^|[.!?]\s+|\n\s*)$/.test(before) && !/(^|\n)\s*\d+[.)]\s*$/.test(before);
+    const word = opens ? to[0].toUpperCase() + to.slice(1) : to;
+    return `${pre}${json ? JSON.stringify(String(to)).slice(1, -1) : word}`;
   }).replace(/ ?\u0000 ?/g, (m) => (m.length === 3 ? " " : ""));
 }
 

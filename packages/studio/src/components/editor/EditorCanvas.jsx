@@ -319,7 +319,9 @@ function Canvas({ reserveBottom = 0, base, shownUrl, showWork, items, erasers, t
   return (
     <div ref={host} tabIndex={0} aria-label="Picture to edit" className="absolute inset-0 touch-none overflow-hidden overscroll-none outline-none"
       style={{ cursor, backgroundImage: "radial-gradient(hsl(var(--border)) 1px, transparent 1px)", backgroundSize: `${22 * z}px ${22 * z}px`, backgroundPosition: `${view.x}px ${view.y}px` }}
-      onPointerDown={onDown} onDragOver={onDragOver} onDrop={onDrop}>
+      onPointerDown={onDown} onDragOver={onDragOver} onDrop={onDrop}
+      // The view moves only through applyView: the box itself never scrolls (focusing a note near the edge would scroll it).
+      onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }}>
       <Stage ref={stageRef} width={size.w} height={size.h} x={viewRef.current.x} y={viewRef.current.y} scaleX={viewRef.current.z} scaleY={viewRef.current.z}>
         <Layer listening={false}>
           {base?.w ? <PictureNode url={shownUrl} w={base.w} h={base.h} zoom={z} /> : null}

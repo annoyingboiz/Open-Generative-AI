@@ -9,7 +9,7 @@
 // bar and panels (DzStudio: ComposerRow, ComposerBar, ComposerPanels, Thumb, EmptySlot), the
 // picker window (LibraryWindow) and the reference chip (RefChip). The request (E5) and the
 // prompt are pure functions in editorModel.mjs.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   X, ArrowCounterClockwise, ArrowClockwise, FloppyDisk, ArrowElbowDownRight, Cursor, Hand, Square, ArrowUpRight, PaintBrush, Eraser, ChatCircleDots, ImageSquare,
@@ -489,7 +489,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
             <div className={cn("absolute", isPoint ? "left-0 top-0" : "bottom-0 left-0")} style={{ transform: "scale(var(--iz))", transformOrigin: isPoint ? "left center" : "bottom left" }}>
               <div className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")}>
                 {editing ? (
-                  <NoteField it={it} onType={(t) => typeNote(it.id, t)} onKeyDown={noteKeys} onBlur={() => { if (note?.id === it.id) closeNote("save"); }}
+                  <NoteField it={it} onType={(t) => typeNote(it.id, t)} onKeyDown={noteKeys} onBlur={() => { if (note?.id === it.id) closeNote("save", tool === "brush"); }}
                     onRemoveNote={note.isNew ? null : () => { typeNote(it.id, ""); closeNote("save"); }} onEnter={() => closeNote("save")} />
                 ) : text || isObject(it) ? (
                   <button type="button" data-overlay-ui onPointerDown={(e) => e.stopPropagation()} onClick={() => { setSelected(it.id); open(it.id, false); }}
@@ -691,14 +691,30 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
 }
 
 // ── Small parts ──
+// A note field or pill near the canvas edge slides back inside it (it stays attached to its place).
+function useKeepInside(ref, deps) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const box = el?.closest('[aria-label="Picture to edit"]');
+    if (!el || !box) return;
+    el.style.translate = "";
+    const r = el.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    const dx = r.right > b.right - 8 ? Math.max(b.left + 8 - r.left, b.right - 8 - r.right) : r.left < b.left + 8 ? b.left + 8 - r.left : 0;
+    if (dx) el.style.translate = `${Math.round(dx)}px 0`;
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 // A number: white circle, dark text (E3.10) — content colours, the same in both themes.
 const Num = ({ n }) => <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums" style={{ background: "#FFFFFF", color: "#111113" }}>{n}</span>;
 
 function NoteField({ it, onType, onKeyDown, onBlur, onRemoveNote, onEnter }) {
   const ref = useRef(null);
-  useEffect(() => { const el = ref.current; if (el) setTimeout(() => { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 0); }, [it.id]);
+  const box = useRef(null);
+  useKeepInside(box, [it.id]);
+  useEffect(() => { const el = ref.current; if (el) setTimeout(() => { el.focus({ preventScroll: true }); el.setSelectionRange(el.value.length, el.value.length); }, 0); }, [it.id]);
   return (
-    <div data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto flex w-[400px] items-center gap-1.5 rounded-xl border border-input bg-popover py-1 pl-1 pr-1 shadow-popover">
+    <div ref={box} data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto flex w-[400px] items-center gap-1.5 rounded-xl border border-input bg-popover py-1 pl-1 pr-1 shadow-popover">
       <Num n={it.n} />
       {isObject(it) && <RefChip tag={it.tag} url={it.url} />}
       <input ref={ref} value={it.note || ""} onChange={(e) => onType(e.target.value)} onKeyDown={onKeyDown} onBlur={onBlur} aria-label={`Note ${it.n}`}

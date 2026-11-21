@@ -671,9 +671,9 @@ export default function DrawModal({
             const ratio = origObj.width / origObj.height;
             const wantW = origObj.width + (direction.includes("l") ? -dx : dx);
             const wantH = origObj.height + (direction.includes("t") ? -dy : dy);
-            // Follow the axis the pointer moved more along.
-            let w = Math.abs(dx) >= Math.abs(dy) ? wantW : wantH * ratio;
-            w = Math.max(15, w, 15 * ratio);
+            // The pointer projected on the picture's diagonal: smooth in every direction.
+            const sc = (wantW * origObj.width + wantH * origObj.height) / (origObj.width ** 2 + origObj.height ** 2);
+            const w = Math.max(15, 15 * ratio, origObj.width * sc);
             const h = w / ratio;
             return {
               ...o,
@@ -1001,9 +1001,12 @@ export default function DrawModal({
       }
       const sourceW = bgImg ? bgImg.naturalWidth || canvas.width : canvas.width;
       const sourceH = bgImg ? bgImg.naturalHeight || canvas.height : canvas.height;
+      // One output and one ink canvas, reused across size attempts (up to 36 MP each).
+      const mergeCanvas = document.createElement("canvas");
+      const ink = document.createElement("canvas");
       const render = (outW, outH) => {
-        const k = outW / canvas.width; // canvas coordinates → output pixels
-        const mergeCanvas = document.createElement("canvas");
+        const kx = outW / canvas.width; // canvas coordinates → output pixels, per axis
+        const ky = outH / canvas.height;
         mergeCanvas.width = outW;
         mergeCanvas.height = outH;
         const mCtx = mergeCanvas.getContext("2d");
@@ -1012,17 +1015,17 @@ export default function DrawModal({
         if (bgImg) mCtx.drawImage(bgImg, 0, 0, outW, outH);
         else { mCtx.fillStyle = "#ffffff"; mCtx.fillRect(0, 0, outW, outH); }
         // 2. Inserted pictures, from their own files (below the drawing).
-        canvasObjects.filter((o) => o.type === "image").forEach((o) => mCtx.drawImage(o.img, o.x * k, o.y * k, o.width * k, o.height * k));
+        canvasObjects.filter((o) => o.type === "image").forEach((o) => mCtx.drawImage(o.img, o.x * kx, o.y * ky, o.width * kx, o.height * ky));
         // 3. The drawing, painted again at this size (the eraser only erases the drawing).
-        const ink = document.createElement("canvas");
         ink.width = outW;
         ink.height = outH;
         const iCtx = ink.getContext("2d");
-        iCtx.scale(k, k);
+        iCtx.setTransform(kx, 0, 0, ky, 0, 0);
         paintInk(iCtx, canvasObjects.filter((o) => o.type !== "image" && o.type !== "text"));
         mCtx.drawImage(ink, 0, 0);
+        ink.width = 0; ink.height = 0; // free the ink layer at once
         // 4. Texts, wrapped as on screen.
-        mCtx.scale(k, k);
+        mCtx.setTransform(kx, 0, 0, ky, 0, 0);
         canvasObjects.filter((o) => o.type === "text").forEach((textObj) => {
           mCtx.fillStyle = textObj.color;
           mCtx.font = `bold ${textObj.fontSize}px Inter, sans-serif`;
@@ -1055,6 +1058,7 @@ export default function DrawModal({
         }
         if (!blob) size = { width: Math.round(size.width * 0.85), height: Math.round(size.height * 0.85) };
       }
+      mergeCanvas.width = 0; mergeCanvas.height = 0; // free the output canvas
       if (!blob) throw new Error("The picture is too large to send.");
       if (typeof window !== "undefined") window.__dzLastDrawExport = { width: size.width, height: size.height, bytes: blob.size, source: { width: sourceW, height: sourceH } };
 

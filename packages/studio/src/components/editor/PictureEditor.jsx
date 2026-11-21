@@ -29,7 +29,7 @@ import { useDzDropTarget } from "../../dzDrop.js";
 import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
 import EditorCanvas from "./EditorCanvas.jsx";
-import { MARK_COLORS, MAX_OBJECTS, MAX_REFS, MAX_REFS_PER_NOTE, numbered, isObject, isMark, summary, requestPictures, requestRefs, editorPrompt, requestPrompt, composerPrompt, noteLines, hasWork, workWords, newRefId, refToken, liveRefs, withRefNames } from "./editorModel.mjs";
+import { MARK_COLORS, DEFAULT_MARK_COLOR, MAX_OBJECTS, MAX_REFS, MAX_REFS_PER_NOTE, numbered, isObject, isMark, summary, requestPictures, requestRefs, editorPrompt, requestPrompt, composerPrompt, noteLines, hasWork, workWords, newRefId, refToken, liveRefs, withRefNames } from "./editorModel.mjs";
 import { anchorOf, boundsOf, renderPicture, toJpeg, forgetImages } from "./editorPictures.js";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } = DialogParts;
@@ -117,7 +117,8 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
 
   // ── Tools ──
   const [tool, setTool] = useState("select");
-  const [color, setColor] = useState("red");
+  // New marks take this colour: green until the user picks another in this session (kept until the editor closes).
+  const [color, setColor] = useState(DEFAULT_MARK_COLOR);
   const [brushSize, setBrushSize] = useState(28);
   const [selected, setSelected] = useState(null);
   const [note, setNote] = useState(null); // { id, isNew, before }
@@ -426,7 +427,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
       setNote({ id: g.id, isNew: false, before: g.note || "", snap: docRef.current, wasDirty: true });
       return;
     }
-    const it = { id: newId("brush"), kind: "brush", note: "", hidden: false, color: "red", strokes: [stroke] };
+    const it = { id: newId("brush"), kind: "brush", note: "", hidden: false, color, strokes: [stroke] };
     commit((d) => ({ ...d, items: [...d.items, it] }));
     brushGroup.current = it.id;
     setSelected(null);
@@ -832,7 +833,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
                 ) : <span key={i} className="mx-1 h-5 w-px bg-border" />))}
                 {(tool === "rect" || tool === "arrow") && (
                   <><span className="mx-1 h-5 w-px bg-border" />{MARK_COLORS.map((c) => (
-                    <button key={c.id} type="button" aria-label={`Colour: ${c.label}`} aria-pressed={color === c.id} onClick={() => setColor(c.id)} className="flex h-8 w-7 items-center justify-center rounded-md hover:bg-accent">
+                    <button key={c.id} type="button" aria-label={`Colour: ${c.label}`} aria-pressed={color === c.id} onClick={() => { if (c.id !== color) breakBrush(); setColor(c.id); }} className="flex h-8 w-7 items-center justify-center rounded-md hover:bg-accent">
                       <span className={cn("h-5 w-5 rounded-full border border-border", color === c.id && "ring-2 ring-foreground ring-offset-2 ring-offset-card")} style={{ background: c.hex }} />
                     </button>
                   ))}</>

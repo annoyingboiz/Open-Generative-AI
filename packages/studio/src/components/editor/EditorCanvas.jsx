@@ -343,7 +343,7 @@ function Canvas({ reserveBottom = 0, base, shownUrl, showWork, items, erasers, t
             ? <Line key={`e${s.seq}`} points={s.points.length === 2 ? [...s.points, s.points[0] + 0.01, s.points[1]] : s.points} stroke="#000" strokeWidth={s.size} lineCap="round" lineJoin="round" globalCompositeOperation="destination-out" listening={false} perfectDrawEnabled={false} />
             : <Line key={`s${s.seq}`} name={`stroke-${s.id}`} itemId={s.id} points={s.points.length === 2 ? [...s.points, s.points[0] + 0.01, s.points[1]] : s.points} stroke={s.hex} strokeWidth={s.size} lineCap="round" lineJoin="round" hitStrokeWidth={Math.max(s.size, sw(14))} perfectDrawEnabled={false} />))}
           {draft && (draft.kind === "brush" || draft.kind === "eraser") && (
-            <Line id="draft-paint" points={draft.points} stroke={draft.kind === "eraser" ? "#000" : markHex("red")} strokeWidth={draft.size} lineCap="round" lineJoin="round"
+            <Line id="draft-paint" points={draft.points} stroke={draft.kind === "eraser" ? "#000" : markHex(color)} strokeWidth={draft.size} lineCap="round" lineJoin="round"
               globalCompositeOperation={draft.kind === "eraser" ? "destination-out" : "source-over"} listening={false} />
           )}
         </Layer>

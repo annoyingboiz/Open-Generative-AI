@@ -7,13 +7,15 @@
 
 // Mark colours are part of the picture sent to the model, so they are fixed values, the same
 // in the light and the dark theme (they are content, not interface). Red is the default.
+// Green first and the default for new marks (overrides "Default is red", package 12 E2).
 export const MARK_COLORS = [
+  { id: "green", label: "Green", hex: "#22C55E" },
   { id: "red", label: "Red", hex: "#EF4444" },
   { id: "yellow", label: "Yellow", hex: "#FACC15" },
-  { id: "green", label: "Green", hex: "#22C55E" },
   { id: "blue", label: "Blue", hex: "#3B82F6" },
   { id: "white", label: "White", hex: "#FFFFFF" },
 ];
+export const DEFAULT_MARK_COLOR = "green";
 export const markHex = (id) => (MARK_COLORS.find((c) => c.id === id) || MARK_COLORS[0]).hex;
 // Number circles: white with dark text (never red or orange: that reads as an error).
 export const NUMBER_FILL = "#FFFFFF";

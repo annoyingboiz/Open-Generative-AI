@@ -492,7 +492,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
         return (
           <div key={it.id} data-follow={it.id} className="absolute" style={{ left: a.x, top: a.y }}>
             <div className={cn("absolute", isPoint ? "left-0 top-0" : "bottom-0 left-0")} style={{ transform: "scale(var(--iz))", transformOrigin: isPoint ? "left center" : "bottom left" }}>
-              <Inside deps={[text, vkey, editing]} className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")}>
+              <Inside deps={[text, vkey, editing, a.x, a.y]} className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")}>
                 {editing ? (
                   <NoteField it={it} onType={(t) => typeNote(it.id, t)} onKeyDown={noteKeys} onBlur={() => { if (note?.id === it.id) closeNote("save", tool === "brush"); }}
                     onRemoveNote={note.isNew ? null : () => { typeNote(it.id, ""); closeNote("save"); }} onEnter={() => closeNote("save")} />
@@ -515,7 +515,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
         return (
           <div data-follow={it.id} className="absolute" style={{ left: b.x, top: b.y + b.h }}>
             <div className="absolute left-0 top-0" style={{ transform: "scale(var(--iz))", transformOrigin: "top left" }}>
-              <Inside deps={[it.id, vkey]} data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto mt-3 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-popover">
+              <Inside deps={[it.id, vkey, b.x, b.y, b.w, b.h]} data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto mt-3 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-popover">
                 {isObject(it) ? (
                   <>
                     <Tool label="Flip" onClick={() => setItem(it.id, { flipX: !it.flipX })}><FlipHorizontal size={15} /></Tool>
@@ -715,8 +715,10 @@ function useKeepInside(ref, deps) {
     el.style.translate = "";
     const r = el.getBoundingClientRect();
     const b = box.getBoundingClientRect();
-    const dx = r.right > b.right - 8 ? Math.max(b.left + 8 - r.left, b.right - 8 - r.right) : r.left < b.left + 8 ? b.left + 8 - r.left : 0;
-    if (dx) el.style.translate = `${Math.round(dx)}px 0`;
+    const fit = (lo, hi, min, max) => (hi > max - 8 ? Math.max(min + 8 - lo, max - 8 - hi) : lo < min + 8 ? min + 8 - lo : 0);
+    const dx = fit(r.left, r.right, b.left, b.right);
+    const dy = fit(r.top, r.bottom, b.top, b.bottom);
+    if (dx || dy) el.style.translate = `${Math.round(dx)}px ${Math.round(dy)}px`;
   }, deps); // eslint-disable-line react-hooks/exhaustive-deps
 }
 

@@ -67,6 +67,8 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   const redo = useRef([]);
   const [, bump] = useState(0);
   const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
   const commit = useCallback((fn) => {
     const prev = docRef.current;
     const next = fn(prev);
@@ -146,13 +148,13 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
 
   // The result keeps the base's shape: the ratio chip starts at the base's own ratio (or the
   // model's "auto"), once per base and model; the user can still change it.
-  const ratioFor = useRef(null);
+  const ratioFor = useRef(new Set()); // base|model pairs already set: a later choice of the user stays
   useEffect(() => {
     const p = cp.ratioP;
     if (!p || !base.w || !engine.entry) return;
     const key = `${base.url}|${engine.entry.key}`;
-    if (ratioFor.current === key) return;
-    ratioFor.current = key;
+    if (ratioFor.current.has(key)) return;
+    ratioFor.current.add(key);
     const auto = p.enum.find((o) => /^(auto|match_input_image|match input)$/i.test(String(o)));
     const shape = base.w / base.h;
     const num = (o) => { const m = /^(\d+(?:\.\d+)?)\s*[:x]\s*(\d+(?:\.\d+)?)$/.exec(String(o)); return m ? Number(m[1]) / Number(m[2]) : null; };
@@ -209,6 +211,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     if (!canGo) { if (whyNot) setErr({ head: "Not generated.", text: whyNot }); else if (!notesWritten) setErr({ head: "Nothing to change yet.", text: "Mark a place and write next to it what to change." }); return; }
     setErr(null);
     setBusy("generate");
+    setPanel(null); setPop(null); setNote(null);
     // One snapshot of the request at the click: the canvas is locked meanwhile, and the files,
     // the marked copy and the prompt all come from this same version of the work.
     const snap = { doc: docRef.current, general, flat, prompt, marks: marks.length, objects: objects.map((o) => ({ url: o.url, name: o.name || "object" })) };
@@ -241,7 +244,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     pending.current.push(...ids);
     // One batch at a time (Generate waits for it), so its results fill its versions in any order;
     // a job that ends with neither a result nor an error is marked failed when the batch ends.
-    Promise.resolve(engine.generate()).finally(() => {
+    Promise.resolve().then(() => engine.generate()).catch((e) => onFail.current(String(e?.message || e))).finally(() => {
       pending.current = pending.current.filter((id) => !ids.includes(id));
       setVersions((vs) => vs.map((v) => (ids.includes(v.id) && v.status === "pending" ? { ...v, status: "failed", error: "The model gave no result." } : v)));
     });
@@ -278,7 +281,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   // ── Items ──
   // A note field: a new item's note is part of the step that made the item; changing an existing
   // note becomes one step when it is saved with a different text.
-  const open = (id, isNew) => { const it = docRef.current.items.find((x) => x.id === id); setNote({ id, isNew, before: it?.note || "", snap: isNew ? null : docRef.current }); };
+  const open = (id, isNew) => { const it = docRef.current.items.find((x) => x.id === id); setNote({ id, isNew, before: it?.note || "", snap: isNew ? null : docRef.current, wasDirty: dirtyRef.current }); };
   const create = (shape) => {
     breakBrush();
     const it = { id: newId(shape.kind), note: "", hidden: false, color, ...shape };
@@ -293,7 +296,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     if (g) {
       commit((d) => ({ ...d, items: d.items.map((x) => (x.id === g.id ? { ...x, strokes: [...x.strokes, stroke] } : x)) }));
       // The same area, the same note: its field opens again (E3.7).
-      setNote({ id: g.id, isNew: false, before: g.note || "", snap: null });
+      setNote({ id: g.id, isNew: false, before: g.note || "", snap: docRef.current, wasDirty: true });
       return;
     }
     const it = { id: newId("brush"), kind: "brush", note: "", hidden: false, color: "red", strokes: [stroke] };
@@ -404,6 +407,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     if (how === "cancel") {
       // Esc: the note goes back to what it was; nothing changed, nothing to undo.
       if (now !== note.before) { const next = { ...docRef.current, items: docRef.current.items.map((x) => (x.id === id ? { ...x, note: note.before && !note.isNew ? note.before : "" } : x)) }; docRef.current = next; setDocState(next); }
+      if (!note.isNew && note.wasDirty === false) setDirty(false);
     } else if (note.snap && now !== note.before) pushUndo(note.snap);
     setNote(null);
     if (!keepBrush || how !== "save") breakBrush();
@@ -421,7 +425,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   // ── Keys ──
   useEffect(() => {
     const down = (e) => {
-      if (closing || picker || panel || pop) return;
+      if (closing || picker || panel || pop || busy === "generate") return;
       if (e.target.closest?.("input,textarea,[contenteditable=true]")) return;
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
@@ -550,10 +554,13 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   const pictureCount = counts.pictures;
   const barSummary = counts.notes ? `${counts.notes} note${counts.notes === 1 ? "" : "s"} · sends ${pictureCount} picture${pictureCount === 1 ? "" : "s"}` : `${engine.entry?.familyName || ""} · sends ${pictureCount} picture${pictureCount === 1 ? "" : "s"}`;
 
+  // While the marked copy is made and the request handed over, nothing can change it (E5).
+  const lockWhileSending = busy === "generate" ? { inert: "", "aria-busy": true } : {};
+
   return createPortal(
     <div className="fixed inset-0 z-[60] flex flex-col bg-background text-foreground" role="dialog" aria-modal="true" aria-label="Picture editor">
       {/* Header (E1) */}
-      <header className="flex h-[52px] flex-shrink-0 items-center gap-3 border-b border-border pl-3 pr-[316px]">
+      <header {...lockWhileSending} className="flex h-[52px] flex-shrink-0 items-center gap-3 border-b border-border pl-3 pr-[316px]">
         <button type="button" onClick={requestClose} aria-label="Close the editor" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={18} /></button>
         <span className="text-base font-semibold">Editor</span>
         {title && <span className="truncate text-sm text-muted-foreground">{title}</span>}
@@ -566,7 +573,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
           {busy === "send" ? <Spinner className="h-3.5 w-3.5" /> : <ArrowElbowDownRight size={15} />}Send to composer</button>
       </header>
 
-      <div className="relative flex min-h-0 flex-1">
+      <div {...lockWhileSending} className="relative flex min-h-0 flex-1">
         {/* Stage */}
         <div ref={canvasHost} className="relative min-w-0 flex-1">
           {base.w ? (

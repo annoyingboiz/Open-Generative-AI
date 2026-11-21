@@ -154,7 +154,7 @@ function TileMenu({ item, act, open, setOpen, timeOf }) {
         <button type="button" aria-label="More" onClick={(e) => e.stopPropagation()}
           className="flex h-7 w-7 items-center justify-center rounded-full bg-overlay/55 text-overlay-foreground backdrop-blur-md transition-colors duration-state hover:bg-overlay/75"><DotsThree size={16} weight="bold" /></button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="w-[236px] p-1.5" onClick={(e) => e.stopPropagation()}>
+      <DropdownMenuContent align="end" sideOffset={6} className="w-[256px] p-1.5" onClick={(e) => e.stopPropagation()}>
         <Row icon={ArrowsOut} onSelect={() => act.open(item)}>Open</Row>
         {/* Package 12, E1: the picture editor replaces Draw to edit. */}
         {!isVideo && <Row icon={PencilLine} onSelect={() => act.openEditor(item.url)}>Open in editor</Row>}
@@ -1414,10 +1414,11 @@ export default function DzStudio(props) {
       <StudioViewer item={viewing} items={items} onClose={() => setViewing(null)} onMove={(it) => { markSeen(it); setViewing(it); }} act={{ ...act, hasMore: history.hasMore }} />
       {editing && (() => {
         const pics = items.filter((i) => i.kind !== "video" && i.url);
-        const at = pics.findIndex((i) => i.url === editing);
+        // The picture's place in the gallery, also for a version made the base inside the editor.
+        const placeOf = (u) => { const at = pics.findIndex((i) => i.url === u); return { title: target?.name || "", i: at + 1, n: at >= 0 ? pics.length : 0 }; };
         return (
           <PictureEditor key={editing} url={editing} apiKey={props.apiKey} target={target}
-            place={{ title: target?.name || "", i: at + 1, n: at >= 0 ? pics.length : 0 }}
+            place={placeOf(editing)} placeOf={placeOf}
             approve={act.approve} isApproved={(u) => Boolean(target?.approved?.has(u))}
             onSendToComposer={mode === "video" ? null : (payload) => setIncoming(payload)}
             onClose={() => { setEditing(null); refreshHistory(mode); }} />

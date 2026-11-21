@@ -44,7 +44,7 @@ const TOOLS = [
 ];
 const OBJECTS_GROUP = { id: "objects", label: "Add to the picture", roles: ["reference"], kind: "image", max: MAX_OBJECTS, roleMax: { reference: MAX_OBJECTS } };
 
-export default function PictureEditor({ url, apiKey, target = null, place = null, onClose, onSendToComposer, approve = null, isApproved = () => false }) {
+export default function PictureEditor({ url, apiKey, target = null, place: openedAt = null, placeOf = null, onClose, onSendToComposer, approve = null, isApproved = () => false }) {
   // ── The base picture and its size ──
   const [base, setBase] = useState({ url, w: 0, h: 0 });
   useEffect(() => {
@@ -550,6 +550,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     return () => ro.disconnect();
   }, [expanded]);
   const shownUrl = comparing || viewingBase ? base.url : shownVersion?.url || base.url;
+  const place = (placeOf && base.url !== url ? placeOf(base.url) : null) || openedAt;
   const title = place?.title ? `${place.title}${place.n ? ` · picture ${place.i} of ${place.n}` : ""}` : place?.n ? `Picture ${place.i} of ${place.n}` : "";
   const hereTabs = target?.pickerHere || null;
   const pictureCount = counts.pictures;

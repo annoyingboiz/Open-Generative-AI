@@ -60,6 +60,9 @@ export function plainError(raw) {
   if (/timed? ?out|timeout/i.test(t)) return "The provider took too long and stopped.";
   if (/insufficient|balance|quota|credit/i.test(t)) return "The provider account is out of credit.";
   if (/interrupted/i.test(t)) return t;
+  // "HTTP 400: kling-v4 video-edit requires `prompt`" → a sentence a person can act on.
+  const needs = /requires\s+`?([a-z_]+)`?/i.exec(t);
+  if (needs) return needs[1].toLowerCase() === "prompt" ? "This model needs a prompt for this request. Write one and try again." : `This model needs “${needs[1]}” for this request.`;
   return t.length > 160 ? `${t.slice(0, 157)}…` : t;
 }
 

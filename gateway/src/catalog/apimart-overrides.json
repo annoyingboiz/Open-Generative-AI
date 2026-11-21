@@ -5604,7 +5604,8 @@
             "field": "first_frame_image",
             "max": 1
           }
-        }
+        },
+        "promptRequired": true
       }
     }
   },

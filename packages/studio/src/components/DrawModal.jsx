@@ -4,6 +4,58 @@ import { createEntries, chooseVariant, buildBody } from "../dzCreate.js"; // DZ:
 import { Logo } from "../ui/index.js";
 import { dzScrollBoxRef } from "../dzScroll.js";
 
+// The ink (strokes, eraser, boxes, arrows) in canvas coordinates. The screen draws it at the
+// canvas size; the picture sent to the model draws it again on a context scaled up to the
+// source picture's size, so lines stay sharp there (no upscaled screen pixels).
+function paintInk(ctx, objects) {
+  objects.forEach((obj) => {
+    ctx.lineWidth = obj.brushSize || 5;
+    ctx.strokeStyle = obj.color || "#eab308";
+    ctx.fillStyle = obj.color || "#eab308";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    if (obj.type === "pencil" || obj.type === "eraser") {
+      ctx.globalCompositeOperation = obj.type === "eraser" ? "destination-out" : "source-over";
+      if (obj.type === "eraser") ctx.strokeStyle = "rgba(0,0,0,1)";
+      const p = obj.points;
+      if (p.length > 0) {
+        ctx.beginPath();
+        ctx.moveTo(p[0].x, p[0].y);
+        for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+        ctx.stroke();
+      }
+    } else if (obj.type === "rect") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeRect(obj.x, obj.y, obj.width, obj.height);
+    } else if (obj.type === "arrow") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.beginPath();
+      ctx.moveTo(obj.x1, obj.y1);
+      ctx.lineTo(obj.x2, obj.y2);
+      ctx.stroke();
+      const angle = Math.atan2(obj.y2 - obj.y1, obj.x2 - obj.x1);
+      ctx.beginPath();
+      ctx.moveTo(obj.x2, obj.y2);
+      ctx.lineTo(obj.x2 - 15 * Math.cos(angle - Math.PI / 6), obj.y2 - 15 * Math.sin(angle - Math.PI / 6));
+      ctx.moveTo(obj.x2, obj.y2);
+      ctx.lineTo(obj.x2 - 15 * Math.cos(angle + Math.PI / 6), obj.y2 - 15 * Math.sin(angle + Math.PI / 6));
+      ctx.stroke();
+    }
+  });
+  ctx.globalCompositeOperation = "source-over";
+}
+
+// The picture sent to the model: the source picture's own resolution, within what the edit
+// models take. Limits (provider docs, 2026-11): Nano Banana / Gemini image — 7 MB per inline
+// picture; Seedream — about 6000 px a side; GPT Image — 50 MB; FLUX Kontext — 20 MB.
+// So: at most 6000 px on the long side and 36 MP, and a JPEG of at most 7 MB (quality is
+// lowered first, the size only if that is not enough).
+export const DRAW_EXPORT = { MAX_SIDE: 6000, MAX_PIXELS: 36_000_000, MAX_BYTES: 7 * 1024 * 1024, QUALITIES: [0.92, 0.85, 0.78] };
+export function exportSize(w, h) {
+  const k = Math.min(1, DRAW_EXPORT.MAX_SIDE / Math.max(w, h), Math.sqrt(DRAW_EXPORT.MAX_PIXELS / (w * h)));
+  return { width: Math.max(1, Math.round(w * k)), height: Math.max(1, Math.round(h * k)) };
+}
+
 export default function DrawModal({
   isOpen,
   onClose,
@@ -275,61 +327,7 @@ export default function DrawModal({
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    canvasObjects.forEach((obj) => {
-      ctx.lineWidth = obj.brushSize || 5;
-      ctx.strokeStyle = obj.color || "#eab308";
-      ctx.fillStyle = obj.color || "#eab308";
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-
-      if (obj.type === "pencil") {
-        ctx.globalCompositeOperation = "source-over";
-        const p = obj.points;
-        if (p.length > 0) {
-          ctx.beginPath();
-          ctx.moveTo(p[0].x, p[0].y);
-          for (let i = 1; i < p.length; i++) {
-            ctx.lineTo(p[i].x, p[i].y);
-          }
-          ctx.stroke();
-        }
-      } else if (obj.type === "eraser") {
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.strokeStyle = "rgba(0,0,0,1)";
-        const p = obj.points;
-        if (p.length > 0) {
-          ctx.beginPath();
-          ctx.moveTo(p[0].x, p[0].y);
-          for (let i = 1; i < p.length; i++) {
-            ctx.lineTo(p[i].x, p[i].y);
-          }
-          ctx.stroke();
-        }
-      } else if (obj.type === "rect") {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.strokeRect(obj.x, obj.y, obj.width, obj.height);
-      } else if (obj.type === "arrow") {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.beginPath();
-        ctx.moveTo(obj.x1, obj.y1);
-        ctx.lineTo(obj.x2, obj.y2);
-        ctx.stroke();
-
-        const angle = Math.atan2(obj.y2 - obj.y1, obj.x2 - obj.x1);
-        ctx.beginPath();
-        ctx.moveTo(obj.x2, obj.y2);
-        ctx.lineTo(
-          obj.x2 - 15 * Math.cos(angle - Math.PI / 6),
-          obj.y2 - 15 * Math.sin(angle - Math.PI / 6),
-        );
-        ctx.moveTo(obj.x2, obj.y2);
-        ctx.lineTo(
-          obj.x2 - 15 * Math.cos(angle + Math.PI / 6),
-          obj.y2 - 15 * Math.sin(angle + Math.PI / 6),
-        );
-        ctx.stroke();
-      }
-    });
+    paintInk(ctx, canvasObjects);
 
     // Draw temporary preview stroke if actively drawing
     if (drawingState.current.isDrawing) {
@@ -668,6 +666,23 @@ export default function DrawModal({
         prev.map((o) => {
           if (o.id !== selectedObjectId) return o;
 
+          // An inserted picture keeps its proportions on a corner handle; side handles may stretch.
+          if (o.type === "image" && direction.length === 2) {
+            const ratio = origObj.width / origObj.height;
+            const wantW = origObj.width + (direction.includes("l") ? -dx : dx);
+            const wantH = origObj.height + (direction.includes("t") ? -dy : dy);
+            // Follow the axis the pointer moved more along.
+            let w = Math.abs(dx) >= Math.abs(dy) ? wantW : wantH * ratio;
+            w = Math.max(15, w, 15 * ratio);
+            const h = w / ratio;
+            return {
+              ...o,
+              x: Math.round(direction.includes("l") ? origObj.x + origObj.width - w : origObj.x),
+              y: Math.round(direction.includes("t") ? origObj.y + origObj.height - h : origObj.y),
+              width: Math.round(w),
+              height: Math.round(h),
+            };
+          }
           if (o.type === "rect" || o.type === "text" || o.type === "image") {
             let newX = origObj.x;
             let newY = origObj.y;
@@ -974,72 +989,74 @@ export default function DrawModal({
     let submitted = false;
 
     try {
-      const mergeCanvas = document.createElement("canvas");
-      mergeCanvas.width = canvas.width;
-      mergeCanvas.height = canvas.height;
-      const mCtx = mergeCanvas.getContext("2d");
-
-      // 1. Draw static background layer (preserving asynchronous image loading coordinates)
+      // The source picture at its own size (the canvas on screen is at most 800 px).
+      let bgImg = null;
       if (bgImageUrl) {
-        const bgImg = await new Promise((resolve, reject) => {
+        bgImg = await new Promise((resolve, reject) => {
           const img = new Image();
           img.onload = () => resolve(img);
           img.onerror = reject;
           img.src = bgImageUrl;
         });
-        mCtx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
-      } else {
-        mCtx.drawImage(bgCanvas, 0, 0);
       }
-
-      // 2. Draw overlay image objects (in lower order than drawings)
-      canvasObjects
-        .filter((o) => o.type === "image")
-        .forEach((imgObj) => {
-          mCtx.drawImage(
-            imgObj.img,
-            imgObj.x,
-            imgObj.y,
-            imgObj.width,
-            imgObj.height,
-          );
-        });
-
-      // 3. Draw drawing overlay layer
-      mCtx.drawImage(canvas, 0, 0);
-
-      // 4. Draw texts with wrap formatting
-      canvasObjects
-        .filter((o) => o.type === "text")
-        .forEach((textObj) => {
+      const sourceW = bgImg ? bgImg.naturalWidth || canvas.width : canvas.width;
+      const sourceH = bgImg ? bgImg.naturalHeight || canvas.height : canvas.height;
+      const render = (outW, outH) => {
+        const k = outW / canvas.width; // canvas coordinates → output pixels
+        const mergeCanvas = document.createElement("canvas");
+        mergeCanvas.width = outW;
+        mergeCanvas.height = outH;
+        const mCtx = mergeCanvas.getContext("2d");
+        mCtx.imageSmoothingQuality = "high";
+        // 1. The source picture (white for a blank canvas).
+        if (bgImg) mCtx.drawImage(bgImg, 0, 0, outW, outH);
+        else { mCtx.fillStyle = "#ffffff"; mCtx.fillRect(0, 0, outW, outH); }
+        // 2. Inserted pictures, from their own files (below the drawing).
+        canvasObjects.filter((o) => o.type === "image").forEach((o) => mCtx.drawImage(o.img, o.x * k, o.y * k, o.width * k, o.height * k));
+        // 3. The drawing, painted again at this size (the eraser only erases the drawing).
+        const ink = document.createElement("canvas");
+        ink.width = outW;
+        ink.height = outH;
+        const iCtx = ink.getContext("2d");
+        iCtx.scale(k, k);
+        paintInk(iCtx, canvasObjects.filter((o) => o.type !== "image" && o.type !== "text"));
+        mCtx.drawImage(ink, 0, 0);
+        // 4. Texts, wrapped as on screen.
+        mCtx.scale(k, k);
+        canvasObjects.filter((o) => o.type === "text").forEach((textObj) => {
           mCtx.fillStyle = textObj.color;
           mCtx.font = `bold ${textObj.fontSize}px Inter, sans-serif`;
           mCtx.textBaseline = "top";
-
           const words = textObj.text.split(" ");
           let line = "";
           let testY = textObj.y;
           const lineHeight = textObj.fontSize * 1.25;
-
           for (let n = 0; n < words.length; n++) {
-            let testLine = line + words[n] + " ";
-            let metrics = mCtx.measureText(testLine);
-            let testWidth = metrics.width;
-            if (testWidth > textObj.width && n > 0) {
+            const testLine = line + words[n] + " ";
+            if (mCtx.measureText(testLine).width > textObj.width && n > 0) {
               mCtx.fillText(line, textObj.x, testY);
               line = words[n] + " ";
               testY += lineHeight;
-            } else {
-              line = testLine;
-            }
+            } else line = testLine;
           }
           mCtx.fillText(line, textObj.x, testY);
         });
-
-      const blob = await new Promise((resolve) =>
-        mergeCanvas.toBlob(resolve, "image/jpeg", 0.92),
-      );
-      if (!blob) throw new Error("Canvas serialization failed");
+        return mergeCanvas;
+      };
+      const toJpeg = (c, q) => new Promise((resolve) => c.toBlob(resolve, "image/jpeg", q));
+      let size = exportSize(sourceW, sourceH);
+      let blob = null;
+      for (let tries = 0; tries < 6 && !blob; tries++) {
+        const c = render(size.width, size.height);
+        for (const q of DRAW_EXPORT.QUALITIES) {
+          const b = await toJpeg(c, q);
+          if (!b) throw new Error("Canvas serialization failed");
+          if (b.size <= DRAW_EXPORT.MAX_BYTES) { blob = b; break; }
+        }
+        if (!blob) size = { width: Math.round(size.width * 0.85), height: Math.round(size.height * 0.85) };
+      }
+      if (!blob) throw new Error("The picture is too large to send.");
+      if (typeof window !== "undefined") window.__dzLastDrawExport = { width: size.width, height: size.height, bytes: blob.size, source: { width: sourceW, height: sourceH } };
 
       const uploadedUrl = await uploadFile(apiKey, blob);
 

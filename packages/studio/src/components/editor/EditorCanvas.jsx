@@ -364,7 +364,7 @@ function Canvas({ reserveBottom = 0, base, shownUrl, showWork, items, erasers, t
       </Stage>
       {/* Notes, pills and the selection's small toolbar: HTML in picture coordinates, kept at screen size. */}
       <div ref={overlayRef} className="pointer-events-none absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${viewRef.current.x}px, ${viewRef.current.y}px) scale(${viewRef.current.z})`, "--iz": String(1 / viewRef.current.z) }}>
-        {overlay({ z, dragging })}
+        {overlay({ z, dragging, vkey: `${view.x}|${view.y}|${view.z}|${size.w}x${size.h}` })}
       </div>
     </div>
   );

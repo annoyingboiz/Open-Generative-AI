@@ -481,7 +481,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   const requestClose = () => { if (dirty && hasWork(items, general)) setClosing(true); else onClose(); };
 
   // ── Overlay: notes and pills, the selection's small toolbar ──
-  const overlay = ({ z, dragging }) => (
+  const overlay = ({ z, dragging, vkey }) => (
     <>
       {viewingBase && list.filter((it) => it.n).map((it) => {
         const a = anchorOf(it);
@@ -491,7 +491,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
         return (
           <div key={it.id} data-follow={it.id} className="absolute" style={{ left: a.x, top: a.y }}>
             <div className={cn("absolute", isPoint ? "left-0 top-0" : "bottom-0 left-0")} style={{ transform: "scale(var(--iz))", transformOrigin: isPoint ? "left center" : "bottom left" }}>
-              <div className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")}>
+              <Inside deps={[text, vkey, editing]} className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")}>
                 {editing ? (
                   <NoteField it={it} onType={(t) => typeNote(it.id, t)} onKeyDown={noteKeys} onBlur={() => { if (note?.id === it.id) closeNote("save", tool === "brush"); }}
                     onRemoveNote={note.isNew ? null : () => { typeNote(it.id, ""); closeNote("save"); }} onEnter={() => closeNote("save")} />
@@ -503,7 +503,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
                 ) : (
                   <button type="button" data-overlay-ui aria-label={`Write a note for ${it.n}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => { setSelected(it.id); open(it.id, false); }} className="pointer-events-auto rounded-full"><Num n={it.n} /></button>
                 )}
-              </div>
+              </Inside>
             </div>
           </div>
         );
@@ -514,7 +514,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
         return (
           <div data-follow={it.id} className="absolute" style={{ left: b.x, top: b.y + b.h }}>
             <div className="absolute left-0 top-0" style={{ transform: "scale(var(--iz))", transformOrigin: "top left" }}>
-              <div data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto mt-3 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-popover">
+              <Inside deps={[it.id, vkey]} data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto mt-3 flex items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-popover">
                 {isObject(it) ? (
                   <>
                     <Tool label="Flip" onClick={() => setItem(it.id, { flipX: !it.flipX })}><FlipHorizontal size={15} /></Tool>
@@ -530,7 +530,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
                     <Tool label="Remove (Delete)" onClick={() => remove(it.id)}><Trash size={15} /></Tool>
                   </>
                 )}
-              </div>
+              </Inside>
             </div>
           </div>
         );
@@ -698,6 +698,12 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
 }
 
 // ── Small parts ──
+// A note, its field or the selection toolbar: kept inside the canvas near its edges.
+function Inside({ deps, children, ...rest }) {
+  const ref = useRef(null);
+  useKeepInside(ref, deps);
+  return <div ref={ref} {...rest}>{children}</div>;
+}
 // A note field or pill near the canvas edge slides back inside it (it stays attached to its place).
 function useKeepInside(ref, deps) {
   useLayoutEffect(() => {
@@ -717,11 +723,9 @@ const Num = ({ n }) => <span className="flex h-6 w-6 flex-shrink-0 items-center 
 
 function NoteField({ it, onType, onKeyDown, onBlur, onRemoveNote, onEnter }) {
   const ref = useRef(null);
-  const box = useRef(null);
-  useKeepInside(box, [it.id]);
   useEffect(() => { const el = ref.current; if (el) setTimeout(() => { el.focus({ preventScroll: true }); el.setSelectionRange(el.value.length, el.value.length); }, 0); }, [it.id]);
   return (
-    <div ref={box} data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto flex w-[400px] items-center gap-1.5 rounded-xl border border-input bg-popover py-1 pl-1 pr-1 shadow-popover">
+    <div data-overlay-ui onPointerDown={(e) => e.stopPropagation()} className="pointer-events-auto flex w-[400px] items-center gap-1.5 rounded-xl border border-input bg-popover py-1 pl-1 pr-1 shadow-popover">
       <Num n={it.n} />
       {isObject(it) && <RefChip tag={it.tag} url={it.url} />}
       <input ref={ref} value={it.note || ""} onChange={(e) => onType(e.target.value)} onKeyDown={onKeyDown} onBlur={onBlur} aria-label={`Note ${it.n}`}

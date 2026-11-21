@@ -555,7 +555,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   const barSummary = counts.notes ? `${counts.notes} note${counts.notes === 1 ? "" : "s"} · sends ${pictureCount} picture${pictureCount === 1 ? "" : "s"}` : `${engine.entry?.familyName || ""} · sends ${pictureCount} picture${pictureCount === 1 ? "" : "s"}`;
 
   // While the marked copy is made and the request handed over, nothing can change it (E5).
-  const lockWhileSending = busy === "generate" ? { inert: "", "aria-busy": true } : {};
+  const lockWhileSending = busy === "generate" ? { inert: true, "aria-busy": true } : {};
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex flex-col bg-background text-foreground" role="dialog" aria-modal="true" aria-label="Picture editor">

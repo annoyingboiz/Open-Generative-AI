@@ -15,6 +15,8 @@ export function exportSize(w, h) {
 }
 
 const cache = new Map();
+// Full-size pictures decoded for an export are dropped from the cache right after it.
+export function forgetImages(srcs) { for (const s of srcs) cache.delete(s); }
 export function loadImage(src) {
   if (!src) return Promise.reject(new Error("No picture"));
   if (!cache.has(src)) {
@@ -168,12 +170,12 @@ function drawMarks(ctx, list, k, { lineW, badgeR, objectOutlines }) {
 
 // Draw the copy with marks (flat = false) or the one flattened picture (flat = true) into a
 // canvas of width × height for a base of base.w × base.h pixels.
-export async function renderPicture({ base, baseSrc, items, erasers, flat = false, width, height }) {
+export async function renderPicture({ base, baseSrc, items, erasers, flat = false, width, height, objectSrc = (o) => o.url }) {
   const k = width / base.w;
   const list = numbered(items).filter((it) => it.n);
   const [baseImg, ...objImgs] = await Promise.all([
     loadImage(baseSrc || base.url),
-    ...(flat ? list.filter(isObject).map((o) => loadImage(o.url).catch(() => null)) : []),
+    ...(flat ? list.filter(isObject).map((o) => loadImage(objectSrc(o)).catch(() => null)) : []),
   ]);
   const c = document.createElement("canvas");
   c.width = width;

@@ -38,7 +38,7 @@ const ObjectNode = memo(function ObjectNode({ it, zoom }) {
   );
 });
 
-function Canvas({ base, shownUrl, showWork, items, erasers, tool, color, brushSize, selected, onSelect, onCreate, onStroke, onErase, onMove, onTransform, onPoint, onPick, onFiles, overlay, onView, onCanvasDown, disabled }, ref) {
+function Canvas({ reserveBottom = 0, base, shownUrl, showWork, items, erasers, tool, color, brushSize, selected, onSelect, onCreate, onStroke, onErase, onMove, onTransform, onPoint, onPick, onFiles, overlay, onView, onCanvasDown, disabled }, ref) {
   const tk = useTokens();
   const host = useRef(null);
   const stageRef = useRef(null);
@@ -79,10 +79,11 @@ function Canvas({ base, shownUrl, showWork, items, erasers, tool, color, brushSi
   }, []);
   const fitView = useCallback(() => {
     if (!base?.w || !size.w) return;
-    const z = Math.min((size.w - 48) / base.w, (size.h - 48) / base.h);
+    const room = Math.max(120, size.h - 48 - reserveBottom);
+    const z = Math.min((size.w - 48) / base.w, room / base.h);
     fitRef.current = z;
-    applyView({ z, x: (size.w - base.w * z) / 2, y: Math.max(24, (size.h - base.h * z) / 2) });
-  }, [base?.w, base?.h, size.w, size.h, applyView]);
+    applyView({ z, x: (size.w - base.w * z) / 2, y: Math.max(24, (room + 48 - base.h * z) / 2) });
+  }, [base?.w, base?.h, size.w, size.h, reserveBottom, applyView]);
   const fitted = useRef(null);
   useEffect(() => {
     const key = `${base?.url}|${base?.w}|${size.w}x${size.h}`;
@@ -90,7 +91,7 @@ function Canvas({ base, shownUrl, showWork, items, erasers, tool, color, brushSi
     // A new picture or a new box: fit (a zoomed view keeps its place when only the box changes).
     const keepZoom = fitted.current && fitted.current.startsWith(`${base.url}|`) && Math.abs(viewRef.current.z - fitRef.current) > 1e-6;
     fitted.current = key;
-    if (keepZoom) { fitRef.current = Math.min((size.w - 48) / base.w, (size.h - 48) / base.h); applyView(viewRef.current); return; }
+    if (keepZoom) { fitRef.current = Math.min((size.w - 48) / base.w, Math.max(120, size.h - 48 - reserveBottom) / base.h); applyView(viewRef.current); return; }
     fitView();
   }, [base?.url, base?.w, base?.h, size.w, size.h, fitView, applyView]);
 

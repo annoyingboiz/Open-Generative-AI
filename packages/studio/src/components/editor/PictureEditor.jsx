@@ -29,10 +29,12 @@ import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
 import EditorCanvas from "./EditorCanvas.jsx";
 import { MARK_COLORS, MAX_OBJECTS, KIND_NAME, numbered, isObject, isMark, summary, requestPictures, editorPrompt, composerPrompt, hasWork, workWords } from "./editorModel.mjs";
-import { anchorOf, boundsOf, renderPicture, toJpeg } from "./editorPictures.js";
+import { anchorOf, boundsOf, renderPicture, toJpeg, forgetImages } from "./editorPictures.js";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } = DialogParts;
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
+// A picked picture's name is often its whole prompt: a few words are enough for a layer.
+const shortName = (n) => { const t = String(n || "").replace(/\s+/g, " ").trim(); if (!t) return "Picture"; if (t.length <= 28) return t; const cut = t.slice(0, 28); return `${cut.slice(0, cut.lastIndexOf(" ") > 12 ? cut.lastIndexOf(" ") : 28)}…`; };
 const newId = (p) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 const HISTORY = 100;
 const TOOLS = [
@@ -77,12 +79,14 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     setDirty(true);
     bump((n) => n + 1);
   }, []);
-  // Typing a note: live, without a history step per key (one step when the field opened).
+  const pushUndo = (snap) => { undo.current.push(snap); if (undo.current.length > HISTORY) undo.current.shift(); redo.current = []; bump((n) => n + 1); };
+  // Typing a note: live, without a history step per key (one step when the note is saved).
   const live = useCallback((fn) => { const next = fn(docRef.current); docRef.current = next; setDocState(next); setDirty(true); }, []);
   const items = doc.items;
   const list = useMemo(() => numbered(items), [items]);
   const byId = useMemo(() => new Map(list.map((x) => [x.id, x])), [list]);
-  const [general, setGeneral] = useState("");
+  const [general, setGeneralRaw] = useState("");
+  const setGeneral = (v) => { setGeneralRaw(v); setDirty(true); };
   const [flat, setFlat] = useState(false);
   const [adapted, setAdapted] = useState(null); // the prompt rewritten by Adapt, until the notes change
 
@@ -92,6 +96,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   const [brushSize, setBrushSize] = useState(28);
   const [selected, setSelected] = useState(null);
   const [note, setNote] = useState(null); // { id, isNew, before }
+  const lineSnap = useRef(null); // the work before typing in a composer note line
   const brushGroup = useRef(null); // E3.7: strokes one after another belong to one note
   const breakBrush = () => { brushGroup.current = null; };
   const canvas = useRef(null);
@@ -139,6 +144,23 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     if (nbp && nbp.key !== engine.entry?.key) engine.pickModel(nbp.key);
   }, [engine.entries.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The result keeps the base's shape: the ratio chip starts at the base's own ratio (or the
+  // model's "auto"), once per base and model; the user can still change it.
+  const ratioFor = useRef(null);
+  useEffect(() => {
+    const p = cp.ratioP;
+    if (!p || !base.w || !engine.entry) return;
+    const key = `${base.url}|${engine.entry.key}`;
+    if (ratioFor.current === key) return;
+    ratioFor.current = key;
+    const auto = p.enum.find((o) => /^(auto|match_input_image|match input)$/i.test(String(o)));
+    const shape = base.w / base.h;
+    const num = (o) => { const m = /^(\d+(?:\.\d+)?)\s*[:x]\s*(\d+(?:\.\d+)?)$/.exec(String(o)); return m ? Number(m[1]) / Number(m[2]) : null; };
+    const list = p.enum.filter((o) => num(o));
+    const best = auto ?? (list.length ? list.reduce((a, o) => (Math.abs(Math.log(num(o) / shape)) < Math.abs(Math.log(num(a) / shape)) ? o : a), list[0]) : null);
+    if (best != null && engine.values?.[p.key] !== best) engine.setValue(p.key, best);
+  }, [cp.ratioP, base.url, base.w, base.h, engine.entry?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const counts = summary(items, { flat });
   const objects = list.filter((x) => isObject(x) && x.n);
   const marks = list.filter((x) => isMark(x) && x.n);
@@ -162,13 +184,21 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   useEffect(() => { if (!sending.current) engine.setPrompt(prompt); }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const editModel = Boolean(engine.entry?.canEdit);
-  const canGo = Boolean(engine.variant && editModel && viewingBase && notesWritten && base.w && !busy && !engine.uploads);
-  const whyNot = !engine.entry ? "Loading models…" : !editModel ? `${engine.entry.familyName} can't edit a picture. Choose a model that can.` : !viewingBase ? "Go back to Base to change the picture again." : null;
+  const running = versions.some((v) => v.status === "pending");
+  // Every picture of the request must reach the model (E5): a model that takes fewer is refused, not trimmed.
+  const tooMany = editModel && engine.unusedCount > 0;
+  const canGo = Boolean(engine.variant && editModel && viewingBase && notesWritten && base.w && !busy && !engine.uploads && !tooMany && !running);
+  const whyNot = !engine.entry ? "Loading models…" : !editModel ? `${engine.entry.familyName} can't edit a picture. Choose a model that can.`
+    : !viewingBase ? "Go back to Base to change the picture again."
+      : tooMany ? `${engine.entry.familyName} can't take all ${counts.pictures} pictures of this request: ${engine.unusedCount} would be left out. Remove some pictures or choose another model.`
+        : running ? "Wait for the versions that are still generating." : null;
 
   // ── Pictures for the request ──
-  const makePicture = async (asFlat) => {
-    const render = (width, height) => renderPicture({ base, items: docRef.current.items, erasers: docRef.current.erasers, flat: asFlat, width, height });
-    const { blob } = await toJpeg(render, base.w, base.h);
+  const makePicture = async (asFlat, doc = docRef.current) => {
+    const render = (width, height) => renderPicture({ base, items: doc.items, erasers: doc.erasers, flat: asFlat, width, height });
+    let blob;
+    try { ({ blob } = await toJpeg(render, base.w, base.h)); }
+    finally { forgetImages([base.url, ...doc.items.filter(isObject).map((o) => o.url)]); }
     const name = asFlat ? "picture-flattened.jpg" : "picture-marks.jpg";
     return uploadFile(apiKey, new File([blob], name, { type: "image/jpeg" }));
   };
@@ -179,17 +209,20 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     if (!canGo) { if (whyNot) setErr({ head: "Not generated.", text: whyNot }); else if (!notesWritten) setErr({ head: "Nothing to change yet.", text: "Mark a place and write next to it what to change." }); return; }
     setErr(null);
     setBusy("generate");
+    // One snapshot of the request at the click: the canvas is locked meanwhile, and the files,
+    // the marked copy and the prompt all come from this same version of the work.
+    const snap = { doc: docRef.current, general, flat, prompt, marks: marks.length, objects: objects.map((o) => ({ url: o.url, name: o.name || "object" })) };
     try {
       let a;
-      if (flat) a = { edit: [{ url: await makePicture(true), name: "picture" }] };
+      if (snap.flat) a = { edit: [{ url: await makePicture(true, snap.doc), name: "picture" }] };
       else {
-        const marked = marks.length ? await makePicture(false) : null;
-        const refs = [...(marked ? [{ url: marked, name: "marks" }] : []), ...objects.map((o) => ({ url: o.url, name: o.name || "object" }))];
+        const marked = snap.marks ? await makePicture(false, snap.doc) : null;
+        const refs = [...(marked ? [{ url: marked, name: "marks" }] : []), ...snap.objects];
         a = { edit: [{ url: base.url, name: "base" }], ...(refs.length ? { reference: refs } : {}) };
       }
-      sending.current = { att: a, prompt, work: { doc: docRef.current, general, flat } };
+      sending.current = { att: a, prompt: snap.prompt, work: { doc: snap.doc, general: snap.general, flat: snap.flat } };
       engine.setAttached(a);
-      engine.setPrompt(prompt);
+      engine.setPrompt(snap.prompt);
       setGenTick((n) => n + 1);
     } catch (e) {
       sending.current = null;
@@ -203,10 +236,15 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     if (!s || engine.attached !== s.att || engine.prompt !== s.prompt) return;
     sending.current = null;
     setBusy(null);
-    if (!engine.canRun) { setErr({ head: "Not generated.", text: engine.missing || "This model can't take these pictures." }); engine.setAttached(att); return; }
+    if (!engine.canRun || engine.unusedCount > 0) { setErr({ head: "Not generated.", text: engine.missing || "This model can't take all the pictures of this request." }); engine.setAttached(att); engine.setPrompt(prompt); return; }
     const ids = Array.from({ length: engine.count }, () => newId("ver"));
     pending.current.push(...ids);
-    engine.generate();
+    // One batch at a time (Generate waits for it), so its results fill its versions in any order;
+    // a job that ends with neither a result nor an error is marked failed when the batch ends.
+    Promise.resolve(engine.generate()).finally(() => {
+      pending.current = pending.current.filter((id) => !ids.includes(id));
+      setVersions((vs) => vs.map((v) => (ids.includes(v.id) && v.status === "pending" ? { ...v, status: "failed", error: "The model gave no result." } : v)));
+    });
     baseWork.current = s.work;
     setVersions((vs) => [...vs, ...ids.map((id) => ({ id, url: null, status: "pending" }))]);
     setShown(ids[0]);
@@ -215,7 +253,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     docRef.current = { items: [], erasers: [] };
     setDocState(docRef.current);
     undo.current = []; redo.current = [];
-    setGeneral(""); setAdapted(null); setNote(null); setSelected(null); breakBrush();
+    setGeneralRaw(""); setAdapted(null); setNote(null); setSelected(null); breakBrush();
     setDirty(false);
   }, [engine.attached, engine.prompt, genTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -224,7 +262,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     // Base brings its marks, objects and notes back, to adjust and run again (E6).
     if (baseWork.current && !docRef.current.items.length) {
       const w = baseWork.current;
-      docRef.current = w.doc; setDocState(w.doc); setGeneral(w.general); setFlat(w.flat);
+      docRef.current = w.doc; setDocState(w.doc); setGeneralRaw(w.general); setFlat(w.flat);
     }
   };
   const useAsBase = (v) => {
@@ -233,12 +271,14 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     baseWork.current = null;
     docRef.current = { items: [], erasers: [] }; setDocState(docRef.current);
     undo.current = []; redo.current = [];
-    setGeneral(""); setShown("base"); setTab("layers");
+    setGeneralRaw(""); setShown("base"); setTab("layers");
     notify({ type: "notice", title: "Editor", message: "That version is the base now. Mark it up for the next pass." });
   };
 
   // ── Items ──
-  const open = (id, isNew) => { const it = docRef.current.items.find((x) => x.id === id); setNote({ id, isNew, before: it?.note || "" }); if (!isNew) { undo.current.push(docRef.current); redo.current = []; } };
+  // A note field: a new item's note is part of the step that made the item; changing an existing
+  // note becomes one step when it is saved with a different text.
+  const open = (id, isNew) => { const it = docRef.current.items.find((x) => x.id === id); setNote({ id, isNew, before: it?.note || "", snap: isNew ? null : docRef.current }); };
   const create = (shape) => {
     breakBrush();
     const it = { id: newId(shape.kind), note: "", hidden: false, color, ...shape };
@@ -250,7 +290,12 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
   const onStroke = ({ points, size }) => {
     const stroke = { seq: seq.current++, points, size };
     const g = brushGroup.current && docRef.current.items.find((x) => x.id === brushGroup.current);
-    if (g) { commit((d) => ({ ...d, items: d.items.map((x) => (x.id === g.id ? { ...x, strokes: [...x.strokes, stroke] } : x)) })); return; }
+    if (g) {
+      commit((d) => ({ ...d, items: d.items.map((x) => (x.id === g.id ? { ...x, strokes: [...x.strokes, stroke] } : x)) }));
+      // The same area, the same note: its field opens again (E3.7).
+      setNote({ id: g.id, isNew: false, before: g.note || "", snap: null });
+      return;
+    }
     const it = { id: newId("brush"), kind: "brush", note: "", hidden: false, color: "red", strokes: [stroke] };
     commit((d) => ({ ...d, items: [...d.items, it] }));
     brushGroup.current = it.id;
@@ -311,13 +356,14 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
       const info = await dzMediaInfo(u.url).catch(() => null);
       const ratio = info?.width ? info.width / info.height : 4 / 3;
       const w = Math.round((base.w || 1000) * 0.32);
-      made.push({ id: newId("object"), kind: "object", url: u.url, name: u.name || "Picture", note: "", hidden: false, cx: c.x + i * w * 0.08, cy: c.y + i * w * 0.08, w, h: Math.round(w / ratio), rotation: 0, flipX: false, z: (z += 1) });
+      made.push({ id: newId("object"), kind: "object", url: u.url, name: shortName(u.name), note: "", hidden: false, cx: c.x + i * w * 0.08, cy: c.y + i * w * 0.08, w, h: Math.round(w / ratio), rotation: 0, flipX: false, z: (z += 1) });
     }
     breakBrush();
     commit((d) => ({ ...d, items: [...d.items, ...made] }));
     const last = made[made.length - 1];
     setSelected(last.id);
     setTool("select");
+    setPicker(false); // the note field opens next to the picture (E3.8); the picker would cover it
     open(last.id, true);
   };
   const uploadObjects = async (files, at) => {
@@ -335,7 +381,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
     const next = (typeof fn === "function" ? fn(pickerAttached) : fn).reference || [];
     if (replaceRef.current) {
       const fresh = next.find((x) => !pickerAttached.reference.some((y) => y.url === x.url));
-      if (fresh) { setItem(replaceRef.current, { url: fresh.url, name: fresh.name || "Picture" }); replaceRef.current = null; setPicker(false); }
+      if (fresh) { setItem(replaceRef.current, { url: fresh.url, name: shortName(fresh.name) }); replaceRef.current = null; setPicker(false); }
       return;
     }
     const added = next.filter((x) => !pickerAttached.reference.some((y) => y.url === x.url));
@@ -351,17 +397,22 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
 
   // ── Notes (E3) ──
   const typeNote = (id, text) => live((d) => ({ ...d, items: d.items.map((x) => (x.id === id ? { ...x, note: text } : x)) }));
-  const closeNote = (how) => {
+  const closeNote = (how, keepBrush = false) => {
     if (!note) return;
     const id = note.id;
-    if (how === "cancel") typeNote(id, note.isNew ? "" : note.before);
+    const now = docRef.current.items.find((x) => x.id === id)?.note || "";
+    if (how === "cancel") {
+      // Esc: the note goes back to what it was; nothing changed, nothing to undo.
+      if (now !== note.before) { const next = { ...docRef.current, items: docRef.current.items.map((x) => (x.id === id ? { ...x, note: note.before && !note.isNew ? note.before : "" } : x)) }; docRef.current = next; setDocState(next); }
+    } else if (note.snap && now !== note.before) pushUndo(note.snap);
     setNote(null);
-    breakBrush();
+    if (!keepBrush || how !== "save") breakBrush();
     if (how === "generate") setTimeout(generate, 0);
     canvas.current?.focus();
   };
   const noteKeys = (e) => {
     e.stopPropagation();
+    if (e.nativeEvent?.isComposing || e.keyCode === 229) return; // an input method is composing (Enter picks a word)
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); closeNote("generate"); return; }
     if (e.key === "Enter") { e.preventDefault(); closeNote("save"); return; }
     if (e.key === "Escape") { e.preventDefault(); closeNote("cancel"); }
@@ -439,7 +490,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
               <div className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")}>
                 {editing ? (
                   <NoteField it={it} onType={(t) => typeNote(it.id, t)} onKeyDown={noteKeys} onBlur={() => { if (note?.id === it.id) closeNote("save"); }}
-                    onRemoveNote={note.isNew ? null : () => { typeNote(it.id, ""); setNote(null); }} onEnter={() => closeNote("save")} />
+                    onRemoveNote={note.isNew ? null : () => { typeNote(it.id, ""); closeNote("save"); }} onEnter={() => closeNote("save")} />
                 ) : text || isObject(it) ? (
                   <button type="button" data-overlay-ui onPointerDown={(e) => e.stopPropagation()} onClick={() => { setSelected(it.id); open(it.id, false); }}
                     className="pointer-events-auto flex max-w-[360px] items-center gap-1.5 whitespace-nowrap rounded-full bg-overlay/80 py-1 pl-1 pr-3 text-sm text-overlay-foreground shadow-popover backdrop-blur-sm transition-colors duration-state hover:bg-overlay/90">
@@ -519,11 +570,11 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
         {/* Stage */}
         <div ref={canvasHost} className="relative min-w-0 flex-1">
           {base.w ? (
-            <EditorCanvas ref={canvas} base={base} shownUrl={shownUrl} showWork={viewingBase && !comparing} items={items} erasers={doc.erasers} tool={tool} color={color} brushSize={brushSize}
+            <EditorCanvas ref={canvas} reserveBottom={150} base={base} shownUrl={shownUrl} showWork={viewingBase && !comparing} items={items} erasers={doc.erasers} tool={tool} color={color} brushSize={brushSize}
               selected={selected} onSelect={(id) => { breakBrush(); setSelected(id); }} onCreate={create} onStroke={onStroke} onErase={onErase}
               onMove={(id, patch) => setItem(id, patch)} onTransform={(id, patch) => setItem(id, patch)} onPoint={(p) => create({ kind: "point", x: p.x, y: p.y })}
               onPick={() => { replaceRef.current = null; setPicker(true); }} onFiles={(files, at) => uploadObjects(files, at)} overlay={overlay} onView={setZoom}
-              onCanvasDown={() => { if (note) closeNote("save"); }} disabled={!viewingBase} />
+              onCanvasDown={() => { if (note) closeNote("save", tool === "brush"); }} disabled={!viewingBase || busy === "generate"} />
           ) : <div className="flex h-full items-center justify-center"><Spinner className="h-6 w-6" /></div>}
 
           {!viewingBase && (
@@ -572,7 +623,7 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
                 </div>
               ) : (
                 <EditorComposer engine={engine} cp={cp} base={base} list={list} marks={marks} objects={objects} general={general} setGeneral={setGeneral}
-                  setNoteText={typeNote} onLineFocus={() => { undo.current.push(docRef.current); redo.current = []; }}
+                  setNoteText={typeNote} onLineFocus={() => { lineSnap.current = docRef.current; }} onLineBlur={() => { if (lineSnap.current && lineSnap.current !== docRef.current) pushUndo(lineSnap.current); lineSnap.current = null; }}
                   onCollapse={() => setExpanded(false)} onAddPicture={() => { replaceRef.current = null; setPicker(true); }} removeObject={remove}
                   pop={pop} setPop={setPop} panel={panel} setPanel={setPanel} onGenerate={generate} canGo={canGo} err={err} setErr={setErr} busy={busy === "generate"} adapted={adapted} clearAdapted={() => setAdapted(null)} />
               )}
@@ -621,16 +672,16 @@ export default function PictureEditor({ url, apiKey, target = null, place = null
 
       {/* Close with unsaved work (E7, screen 17) */}
       <Dialog open={closing} onOpenChange={setClosing}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Close the editor?</DialogTitle>
-            <DialogDescription>You have {workWords(items)} on this picture that {items.length === 1 && !list.some((x) => String(x.note || "").trim()) ? "was" : "were"} not saved or generated. They will be lost.</DialogDescription>
+            <DialogDescription>{(() => { const w = workWords(items) || "work"; const one = /^(1|an?) [a-z]+$/i.test(w); return `You have ${w} on this picture that ${one ? "was" : "were"} not saved or generated. ${one ? "It" : "They"} will be lost.`; })()}</DialogDescription>
           </DialogHeader>
           <div className="flex items-center justify-end gap-2">
-            <button type="button" onClick={() => setClosing(false)} className="h-9 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Cancel</button>
-            <button type="button" onClick={() => { setClosing(false); onClose(); }} className="h-9 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Close without saving</button>
+            <button type="button" onClick={() => setClosing(false)} className="h-9 whitespace-nowrap rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Cancel</button>
+            <button type="button" onClick={() => { setClosing(false); onClose(); }} className="h-9 whitespace-nowrap rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Close without saving</button>
             <button type="button" disabled={busy === "save"} onClick={async () => { if (await saveCopy()) { setClosing(false); onClose(); } }}
-              className="flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-60">{busy === "save" && <Spinner className="h-3.5 w-3.5 border-primary-foreground/30 border-t-primary-foreground" />}Save a copy and close</button>
+              className="flex h-9 items-center gap-2 whitespace-nowrap rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-60">{busy === "save" && <Spinner className="h-3.5 w-3.5 border-primary-foreground/30 border-t-primary-foreground" />}Save a copy and close</button>
           </div>
         </DialogContent>
       </Dialog>
@@ -697,7 +748,7 @@ function ZoomBox({ z, canvas, className }) {
 
 // The expanded composer (E4, screen 13): Base · Marks · Objects, the notes as a numbered list
 // (one source of truth with the picture), one free line, then the shared bottom row.
-function EditorComposer({ engine, cp, base, list, marks, objects, general, setGeneral, setNoteText, onLineFocus, onCollapse, onAddPicture, removeObject, pop, setPop, panel, setPanel, onGenerate, canGo, err, setErr, busy, adapted, clearAdapted }) {
+function EditorComposer({ engine, cp, base, list, marks, objects, general, setGeneral, setNoteText, onLineFocus, onLineBlur, onCollapse, onAddPicture, removeObject, pop, setPop, panel, setPanel, onGenerate, canGo, err, setErr, busy, adapted, clearAdapted }) {
   const lines = list.filter((it) => it.n && (isObject(it) || isMark(it)));
   return (
     <div className="relative rounded-xl border border-border bg-card p-4 shadow-float">
@@ -717,7 +768,7 @@ function EditorComposer({ engine, cp, base, list, marks, objects, general, setGe
           <label key={it.id} className="flex min-h-[30px] items-center gap-1.5 text-prompt">
             <span className="w-6 flex-shrink-0 tabular-nums">{it.n}.</span>
             {isObject(it) && <RefChip tag={it.tag} url={it.url} />}
-            <input value={it.note || ""} onFocus={onLineFocus} onChange={(e) => setNoteText(it.id, e.target.value)} placeholder={isObject(it) ? "What to do with this picture" : `What to change at ${it.n}`}
+            <input value={it.note || ""} onFocus={onLineFocus} onBlur={onLineBlur} onChange={(e) => setNoteText(it.id, e.target.value)} placeholder={isObject(it) ? "What to do with this picture" : `What to change at ${it.n}`}
               className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground" />
           </label>
         ))}
@@ -815,7 +866,7 @@ function ModelTab({ base, items, erasers, flat, setFlat, prompt, adapted, clearA
     const t = setTimeout(async () => {
       try {
         const w = 360; const h = Math.round((w * base.h) / base.w);
-        const c = await renderPicture({ base, baseSrc: dzThumb(base.url, 480), items, erasers, flat, width: w, height: h });
+        const c = await renderPicture({ base, baseSrc: dzThumb(base.url, 480), items, erasers, flat, width: w, height: h, objectSrc: (o) => dzThumb(o.url, 480) });
         if (alive) setPreview(c.toDataURL("image/jpeg", 0.8));
       } catch { if (alive) setPreview(null); }
     }, 250);

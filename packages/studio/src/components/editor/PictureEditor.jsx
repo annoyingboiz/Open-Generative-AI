@@ -57,8 +57,14 @@ const ratioWord = (w, h) => {
   return Math.abs(Math.log(ratioNum(best) / (w / h))) < 0.03 ? best : `${w}:${h}`;
 };
 // What an edit costs with a model (its cheapest picture-editing endpoint) and how many extra pictures it takes.
-const editPrice = (e) => Math.min(...e.variants.filter((v) => v.mode === "i2i").map((v) => { const p = v.model.dzPrice; const vals = p?.byResolution ? Object.values(p.byResolution).filter(Number.isFinite) : []; return vals.length ? Math.min(...vals) : Number.isFinite(p?.usd) ? p.usd : Infinity; }));
-const editRoom = (e) => e.slots.find((s) => s.role === "reference")?.max || 0;
+// Per picture-editing endpoint: the base goes in the same list as the other pictures, so the
+// room for more is that list's limit less one. (usd is the base price; byResolution holds the
+// sizes or ratios that cost otherwise.)
+const variantRoom = (v) => Math.max(0, (v.media.reference?.max || 0) - 1);
+const variantPrice = (v) => { const p = v.model.dzPrice; const vals = [p?.usd, ...(p?.byResolution ? Object.values(p.byResolution) : [])].filter(Number.isFinite); return vals.length ? Math.min(...vals) : Infinity; };
+const editVariants = (e) => e.variants.filter((v) => v.mode === "i2i" && v.media.reference);
+const editRoom = (e) => Math.max(0, ...editVariants(e).map(variantRoom));
+const editPrice = (e, need = 0) => Math.min(Infinity, ...editVariants(e).filter((v) => variantRoom(v) >= need).map(variantPrice));
 const USER_MODEL = "dz_editor_user_model";
 
 export default function PictureEditor({ url, apiKey, target = null, place: openedAt = null, placeOf = null, onClose, onSendToComposer, approve = null, isApproved = () => false }) {
@@ -135,17 +141,19 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   const loadVersions = useCallback(async () => {
     try {
       const r = await dzLibrary.list({ source: url, limit: 60 });
-      const got = (r?.items || []).filter((x) => x.status !== "failed" && x.kind !== "video").reverse();
+      const got = (r?.items || []).filter((x) => x.kind !== "video").reverse();
       setVersions((vs) => {
         const known = new Map(vs.filter((v) => v.gid).map((v) => [v.gid, v]));
         const fromServer = got.map((x) => {
           const was = known.get(x.id);
-          const status = x.status === "completed" ? (x.url ? "done" : "failed") : "pending";
-          return was ? { ...was, url: was.url || x.url, status: was.status === "pending" ? status : was.status } : { id: `g_${x.id}`, gid: x.id, url: x.url, status, error: x.error || null };
+          const status = x.status === "completed" ? (x.url ? "done" : "failed") : x.status === "failed" ? "failed" : "pending";
+          // The server's word wins once it has one; a version of this session keeps its own until then.
+          return was ? { ...was, url: x.url || was.url, status: status === "pending" ? was.status : status, error: x.error || was.error } : { id: `g_${x.id}`, gid: x.id, url: x.url, status, error: x.error || null };
         });
         const ids = new Set(fromServer.map((v) => v.gid));
-        // This session's versions the server does not list yet (just sent), in their place at the end.
-        return [...fromServer, ...vs.filter((v) => !v.gid || !ids.has(v.gid)).filter((v) => v.status !== "failed" || v.batch)];
+        // A failed one is not kept (only this session's, until the user moves on). This session's
+        // versions the server does not list yet (just sent) keep their place at the end.
+        return [...fromServer, ...vs.filter((v) => !v.gid || !ids.has(v.gid))].filter((v) => v.status !== "failed" || v.batch);
       });
     } catch { /* the list stays as it is */ }
   }, [url]);
@@ -171,15 +179,18 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   const [busy, setBusy] = useState(null); // "generate" | "save" | "send"
   const [closing, setClosing] = useState(false);
 
-  // The model (C3): a fresh editor opens on the cheapest model that can edit with this many
-  // pictures; a model the user chose here stays chosen. An automatic choice that can't take
-  // the pictures any more moves to the cheapest one that can.
+  // The model (C3): a fresh editor opens on Nano Banana Pro (the model the prompt template is
+  // made for) at its cheapest provider that can edit with this many pictures; a model the user
+  // chose here stays chosen. An automatic choice that can't take the pictures any more moves to
+  // the cheapest provider that can (another model only when none of its providers can).
   const autoKey = useRef(null);
   const userKey = useRef(typeof window !== "undefined" ? (() => { try { return window.localStorage.getItem(USER_MODEL); } catch { return null; } })() : null);
   const editEntries = engine.entries.filter((e) => e.canEdit);
   const cheapestFor = (need) => {
-    const fit = editEntries.filter((e) => editRoom(e) >= need);
-    return (fit.length ? fit : editEntries).reduce((a, e) => (!a || editPrice(e) < editPrice(a) ? e : a), null);
+    const cheapest = (list) => list.reduce((a, e) => (!a || editPrice(e, need) < editPrice(a, need) ? e : a), null);
+    const home = editEntries.filter((e) => /nano banana pro$/i.test(e.familyName));
+    const fit = (list) => list.filter((e) => editRoom(e) >= need);
+    return cheapest(fit(home)) || cheapest(fit(editEntries)) || cheapest(home) || cheapest(editEntries);
   };
   const chosenOnce = useRef(false);
   useEffect(() => {
@@ -216,7 +227,9 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     const p = cp.ratioP;
     if (p && ratioValue != null && engine.values?.[p.key] !== ratioValue) engine.setValue(p.key, ratioValue);
   }, [cp.ratioP, ratioValue, engine.values?.[cp.ratioP?.key]]); // eslint-disable-line react-hooks/exhaustive-deps
-  const ratioLabel = base.w ? `As the base · ${ratioValue != null ? String(ratioValue) : ratioWord(base.w, base.h)}` : "As the base";
+  // The model's nearest ratio: said as it is when the base's own one is not on its list.
+  const exactRatio = ratioValue == null || Math.abs(Math.log(ratioNum(ratioValue) / (base.w / base.h))) < 0.02;
+  const ratioLabel = !base.w ? "As the base" : exactRatio ? `As the base · ${ratioValue != null ? String(ratioValue) : ratioWord(base.w, base.h)}` : `Closest to the base · ${ratioValue}`;
   const sizeFor = useRef(new Set());
   useEffect(() => {
     const p = cp.resP;
@@ -335,7 +348,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     // Each job fills its own version; the versions belong to the picture the editor was opened on (C7).
     Promise.resolve().then(() => engine.generate({
       meta: { editor: { source: url } },
-      onRequestId: (i, gid) => setVersions((vs) => vs.map((v) => (v.id === ids[i] ? { ...v, gid } : v))),
+      onRequestId: (i, gid) => { if (cancelled.current.has(ids[i])) { stopJob(gid); return; } setVersions((vs) => vs.map((v) => (v.id === ids[i] ? { ...v, gid } : v))); },
       onResult: (i, res) => { if (res?.url) setVersions((vs) => vs.map((v) => (v.id === ids[i] && v.status === "pending" ? { ...v, url: res.url, status: "done" } : v))); else failed(ids[i], "The model gave no picture."); },
       onError: (i, m) => failed(ids[i], plainReason(m)),
     })).catch((e) => ids.forEach((id) => failed(id, plainReason(String(e?.message || e)))));
@@ -353,13 +366,17 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   }, [engine.attached, engine.prompt, genTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cancel (C6): the running versions stop (where the provider can), the work comes back.
-  const cancelRun = async () => {
+  // A job whose id has not arrived yet is stopped as soon as it does (cancelled holds it).
+  const cancelled = useRef(new Set());
+  const stopJob = (gid) => dzLibrary.cancel(gid).then(() => null, (e) => String(e?.message || e)).then((left) => {
+    if (left) notify({ type: "notice", title: "Editor", message: `${left} If it still finishes, it appears in the gallery.` });
+  });
+  const cancelRun = () => {
     const run = versions.filter((v) => v.status === "pending" && v.batch);
+    for (const v of run) cancelled.current.add(v.id);
     setVersions((vs) => vs.filter((v) => !run.some((r) => r.id === v.id)));
     showBase();
-    const notes = await Promise.all(run.filter((v) => v.gid).map((v) => dzLibrary.cancel(v.gid).then(() => null, (e) => String(e?.message || e))));
-    const left = notes.find(Boolean);
-    if (left) notify({ type: "notice", title: "Editor", message: `${left} If it still finishes, it appears in the gallery.` });
+    for (const v of run) if (v.gid) stopJob(v.gid);
   };
 
   const restoreWork = () => {
@@ -678,7 +695,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
         return (
           <div key={it.id} data-follow={it.id} className="absolute" style={{ left: a.x, top: a.y, zIndex: editing || openPill ? 2 : 1 }}>
             <div className={cn("absolute", isPoint ? "left-0 top-0" : "bottom-0 left-0")} style={{ transform: "scale(var(--iz))", transformOrigin: isPoint ? "left center" : "bottom left" }}>
-              <Inside deps={[text, vkey, editing, openPill, a.x, a.y]} className={cn(isPoint ? "-translate-y-1/2 pl-4" : "pb-2")} data-note-for={it.id}
+              <Inside deps={[text, vkey, editing, openPill, a.x, a.y]} className={cn("w-max", isPoint ? "-translate-y-1/2 pl-4" : "pb-2")} data-note-for={it.id}
                 onMouseLeave={() => setHover((h) => (h === it.id ? null : h))}>
                 {editing ? (
                   <NoteField it={it} raw={items.find((x) => x.id === it.id)} onType={(t) => typeNote(it.id, t)} onKeyDown={noteKeys} onBlur={() => { if (note?.id === it.id && !picker) closeNote("save", tool === "brush"); }}
@@ -775,7 +792,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
               onCanvasDown={() => { if (note) closeNote("save", tool === "brush"); }} disabled={!viewingBase || busy === "generate"} />
           ) : <div className="flex h-full items-center justify-center"><Spinner className="h-6 w-6" /></div>}
 
-          {!viewingBase && (
+          {!viewingBase && shownVersion?.status === "done" && (
             <div className="pointer-events-none absolute inset-x-0 flex justify-center" style={{ bottom: composerH + 92 }}>
               <button type="button" onPointerDown={() => setComparing(true)} onPointerUp={() => setComparing(false)} onPointerLeave={() => setComparing(false)}
                 onKeyDown={(e) => { if (e.key === " ") setComparing(true); }} onKeyUp={() => setComparing(false)}
@@ -800,7 +817,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
               <div role="alert" className="pointer-events-auto flex max-w-[560px] items-center gap-3 rounded-lg border border-border bg-popover py-1.5 pl-3.5 pr-1.5 text-sm shadow-popover">
                 <Warning size={16} className="flex-shrink-0 text-muted-foreground" />
                 <span className="min-w-0 leading-5">This version did not generate. {failCard.text}</span>
-                <button type="button" onClick={() => { setFailCard(null); generate(); }} className="h-8 flex-shrink-0 whitespace-nowrap rounded-md border border-border px-2.5 font-medium hover:bg-accent">Try again</button>
+                <button type="button" onClick={() => { const id = failCard.id; setFailCard(null); setVersions((vs) => vs.filter((v) => v.id !== id)); generate(); }} className="h-8 flex-shrink-0 whitespace-nowrap rounded-md border border-border px-2.5 font-medium hover:bg-accent">Try again</button>
                 <button type="button" aria-label="Close" onClick={() => setFailCard(null)} className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
               </div>
             </div>
@@ -879,7 +896,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
           </div>
           <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
             {tab === "layers" && <LayersTab list={list} base={base} target={target} selected={selected} onSelect={(id) => { setSelected(id); setTool("select"); }} onToggle={(id, hidden) => setItem(id, { hidden })} />}
-            {tab === "versions" && <VersionsTab versions={versions} base={base} shown={failCard && viewingBase ? failCard.id : shown} onShow={showVersion} onUseAsBase={useAsBase} approve={approve} isApproved={isApproved} />}
+            {tab === "versions" && <VersionsTab versions={versions} base={base} shown={shown} onShow={showVersion} onUseAsBase={useAsBase} approve={approve} isApproved={isApproved} />}
             {tab === "model" && <ModelTab base={base} items={items} erasers={doc.erasers} flat={flat} setFlat={setFlat} prompt={engine.finalPrompt || prompt} adapted={adapted} clearAdapted={() => setAdapted(null)} />}
           </div>
           <p className="flex flex-shrink-0 items-start gap-2 border-t border-border p-4 text-sm leading-5 text-muted-foreground">

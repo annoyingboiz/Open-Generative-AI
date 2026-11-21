@@ -103,7 +103,7 @@ export function requestPictures({ base, items, flat = false, markedUrl = null, f
   if (marks.length) {
     const nums = list.map((it) => it.n);
     const range = nums.length > 1 ? `Numbers ${nums[0]}–${nums[nums.length - 1]}` : `Number ${nums[0]}`;
-    out.push({ role: "marks", url: markedUrl, label: "Copy with your marks", detail: marks.some((m) => m.kind === "brush") ? `${range}. Painted areas go as an outline` : `${range} show where each note applies` });
+    out.push({ role: "marks", url: markedUrl, label: "Copy with your marks", detail: marks.some((m) => m.kind === "brush") ? `${range}. Painted areas go as an outline` : `${range} ${nums.length > 1 ? "show" : "shows"} where each note applies` });
   }
   for (const it of list.filter(isObject)) out.push({ role: "object", url: it.url, tag: it.tag, label: it.label, detail: "Its own file, full size", item: it.id });
   return [...out, ...refs];

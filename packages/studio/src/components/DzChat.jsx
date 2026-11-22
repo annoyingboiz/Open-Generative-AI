@@ -721,6 +721,8 @@ function useVoice({ onText }) {
       form.append("audio", blob, /mp4/.test(blob.type) ? "speech.m4a" : "speech.webm");
       const res = await fetch("/dz/api/speech", { method: "POST", credentials: "same-origin", body: form });
       const data = await res.json().catch(() => ({}));
+      // Not set up (no ElevenLabs key): say so plainly, not "try again".
+      if (res.status === 409) { notify({ type: "error", title: "Dictation", message: data.detail || "Dictation is not set up." }); return; }
       if (!res.ok || typeof data.text !== "string") throw new Error(data.detail || `HTTP ${res.status}`);
       if (mine === gen.current && data.text.trim()) onText(data.text.trim());
     } catch (e) {

@@ -338,9 +338,9 @@ def cancel_prompt(pid):
 def picture_shape(path):
     """Width / height of a picture, or None (unreadable, or no Pillow)."""
     try:
-        from PIL import Image
+        from PIL import Image, ImageOps
         with Image.open(path) as im:
-            w, h = im.size
+            w, h = ImageOps.exif_transpose(im).size   # a phone photo turned by its EXIF tag
         return w / h if w and h else None
     except Exception:
         return None
@@ -350,8 +350,10 @@ def video_size(engine, res, ratio, image):
     """The size for this job: the resolution's pixel count in the job's shape. previz's table
     is landscape only (768p = 1344×768); 9:16 at 768p is 768×1344."""
     bw, bh = PV.RES[engine][res]
-    shape = RATIOS.get(ratio or "auto") or (picture_shape(image) if image else None) or bw / bh
-    shape = min(max(shape, 9 / 21), 21 / 9)
+    if ratio is None:   # a job queued before ratios existed: the size it was made with
+        return bw, bh
+    shape = RATIOS.get(ratio) or (picture_shape(image) if image else None) or bw / bh
+    shape = min(max(shape, 9 / 21), 21 / 9)   # a frame wider than 21:9 (or taller) is cropped to it
     if abs(shape - bw / bh) < 0.01:
         return bw, bh
     px, grid = bw * bh, GRID[engine]
@@ -362,8 +364,10 @@ def video_size(engine, res, ratio, image):
 def fit_start_frame(g, engine, w, h):
     """The start frame goes in at the video's size, cropped in the middle when its shape differs
     (ComfyUI's ImageScale, crop "center"): the model never gets a stretched frame."""
-    load, use, key = ("20", "10", "first_frame") if engine == "h3" else ("12", "13", "start_image")
-    if not (isinstance(g.get(load), dict) and g[load].get("class_type") == "LoadImage" and isinstance(g.get(use), dict)):
+    load, use, key, node = ("20", "10", "first_frame", "MiniMaxH3ImageToVideo") if engine == "h3" else ("12", "13", "start_image", "WanImageToVideo")
+    # Only a start frame: in a reference graph node 20 is the first reference.
+    if not (isinstance(g.get(load), dict) and g[load].get("class_type") == "LoadImage"
+            and isinstance(g.get(use), dict) and g[use].get("class_type") == node and key in g[use].get("inputs", {})):
         return g
     g["90"] = {"class_type": "ImageScale", "inputs": {   # an id previz's graphs do not use
         "image": [load, 0], "upscale_method": "lanczos", "width": w, "height": h, "crop": "center"}}

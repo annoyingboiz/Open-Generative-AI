@@ -71,13 +71,18 @@ function justify(items, aspects, width) {
     sum += a;
     const natural = sum * target + GAP * (row.length - 1);
     if (natural >= width) {
-      const h = (width - GAP * (row.length - 1)) / sum;
-      rows.push({ h, cells: row.map((c) => ({ ...c, w: c.a * h })) });
+      // Whole pixels (Safari drops the top or bottom line of a frame on tiles at fractional
+      // positions): the row height is rounded down and the last tile takes what is left.
+      const h = Math.floor((width - GAP * (row.length - 1)) / sum);
+      const cells = row.map((c) => ({ ...c, w: Math.floor(c.a * h) }));
+      const used = cells.reduce((n, c) => n + c.w, 0) + GAP * (row.length - 1);
+      cells[cells.length - 1].w += Math.max(0, width - used);
+      rows.push({ h, cells });
       row = [];
       sum = 0;
     }
   }
-  if (row.length) rows.push({ h: target, cells: row.map((c) => ({ ...c, w: c.a * target })), last: true });
+  if (row.length) { const h = Math.round(target); rows.push({ h, cells: row.map((c) => ({ ...c, w: Math.round(c.a * h) })), last: true }); }
   return rows;
 }
 function useWidth(el) {
@@ -272,7 +277,7 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
             <img src={dzThumb(item.url)} alt={item.prompt?.slice(0, 80) || "Result"} loading="lazy" decoding="async" className="h-full w-full object-cover"
               onLoad={(e) => onMeasure(item.id, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)} />
           )}
-      {done && <span className={cn("pointer-events-none absolute inset-0 rounded-sm transition-colors duration-state", on ? "bg-overlay/[.28] ring-2 ring-inset ring-signal" : "group-hover:bg-overlay-foreground/[.07] group-hover:ring-1 group-hover:ring-inset group-hover:ring-overlay-foreground/10")} />}
+      {done && <span className={cn("pointer-events-none absolute inset-0 rounded-sm transition-colors duration-state", on ? "bg-overlay/[.28] outline outline-2 -outline-offset-2 outline-signal" : "group-hover:bg-overlay-foreground/[.07] group-hover:outline group-hover:outline-1 group-hover:-outline-offset-1 group-hover:outline-overlay-foreground/10")} />}
       {fresh && !selecting && !badge && <span className="pointer-events-none absolute left-2 top-2 rounded-xs bg-signal px-1.5 text-xs font-semibold leading-5 text-primary-foreground">New</span>}
       {badge && !selecting && <span className="pointer-events-none absolute left-2 top-2">{badge}</span>}
       {done && (item.studio === "upscale" || duration > 0) && (

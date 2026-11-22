@@ -546,10 +546,11 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
           )}
           {!isVideo && list.length > 1 && (
             // Neighbours from the same grid; the current one is marked with --signal.
+            // The frame of the current one is drawn inside the tile: the row clips anything outside.
             <div className="mt-4 flex max-w-full gap-1.5 overflow-hidden">
               {list.slice(Math.max(0, index - 3), Math.max(0, index - 3) + 7).map((n) => (
                 <button key={n.id} type="button" onClick={() => onMove(n)} aria-label="Open"
-                  className={cn("h-12 w-12 flex-shrink-0 overflow-hidden rounded-md", n.id === item.id ? "ring-2 ring-signal" : "opacity-70 hover:opacity-100")}>
+                  className={cn("relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-md", n.id === item.id ? "after:pointer-events-none after:absolute after:inset-0 after:rounded-md after:outline after:outline-2 after:-outline-offset-2 after:outline-signal" : "opacity-70 hover:opacity-100")}>
                   {n.kind === "video" ? <img src={dzThumb(n.url, 128)} alt="" className="h-full w-full object-cover" /> : <img src={dzThumb(n.url, 128)} alt="" className="h-full w-full object-cover" />}
                 </button>
               ))}

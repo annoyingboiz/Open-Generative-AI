@@ -125,7 +125,7 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
     const style = h ? { height: h, width: item.w && item.h ? Math.round((h * item.w) / item.h) : h } : undefined;
     return (
       <button key={item.key || item.url} type="button" onClick={() => toggle(item)} disabled={blocked} title={why || item.name || item.prompt || undefined} style={style}
-        className={cn("relative overflow-hidden rounded-md bg-muted transition-[opacity,box-shadow] duration-state", !h && "aspect-square", on && "ring-2 ring-signal", dim && "ring-2 ring-input", blocked && "opacity-20")}>
+        className={cn("relative overflow-hidden rounded-md bg-muted transition-[opacity,outline-color] duration-state", !h && "aspect-square", on && "outline outline-2 -outline-offset-2 outline-signal", dim && "outline outline-2 -outline-offset-2 outline-input", blocked && "opacity-20")}>
         {item.kind === "video"
           ? <DzPosterVideo url={item.url} w={256} play className="h-full w-full object-cover" />
           : item.kind === "audio" ? <span className="flex h-full items-center justify-center px-2 text-center text-sm text-muted-foreground">♪ {item.name}</span>

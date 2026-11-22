@@ -298,19 +298,31 @@ async function deleteChat(c, after) {
     notify({ type: "notice", title: "Chat deleted", undo: async () => { try { await dzAssistants.restoreChat(c.id); changed(); } catch (e) { notifyError(String(e.message || e)); } } });
   } catch (e) { notifyError(String(e.message || e)); }
 }
+// The text is written in the same click (Safari allows the clipboard only there): a chat that
+// still has to be read goes in as a promise.
 async function copyChat(chatOrId, assistant) {
   try {
-    const chat = typeof chatOrId === "string" ? (await dzAssistants.chat(chatOrId)).chat : chatOrId;
-    await navigator.clipboard.writeText(chatAsText(chat, assistant));
+    if (typeof chatOrId === "string" && typeof window.ClipboardItem === "function" && navigator.clipboard?.write) {
+      const blob = dzAssistants.chat(chatOrId).then((r) => new Blob([chatAsText(r.chat, assistant)], { type: "text/plain" }));
+      await navigator.clipboard.write([new window.ClipboardItem({ "text/plain": blob })]);
+    } else {
+      const chat = typeof chatOrId === "string" ? (await dzAssistants.chat(chatOrId)).chat : chatOrId;
+      await navigator.clipboard.writeText(chatAsText(chat, assistant));
+    }
     notify({ type: "success", title: "Chat copied", message: "The whole chat is on the clipboard." });
-  } catch (e) { notifyError(String(e.message || e)); }
+  } catch (e) {
+    console.warn("copy chat:", e?.message || e);
+    notifyError("The browser did not allow the clipboard. Try again.", "Copy the whole chat");
+  }
 }
 function ChatMenu({ onRename, onCopy, onDelete, className, align = "end" }) {
+  // Rename puts the cursor in the title: the menu must not take the focus back when it closes.
+  const renaming = useRef(false);
   return (
     <DropdownMenu>
       <MoreButton label="Chat menu" className={className} />
-      <DropdownMenuContent align={align} className="w-56 p-1.5">
-        <DropdownMenuItem className="h-9 gap-2.5" onSelect={onRename}><PencilSimple size={16} />Rename</DropdownMenuItem>
+      <DropdownMenuContent align={align} className="w-56 p-1.5" onCloseAutoFocus={(e) => { if (renaming.current) { e.preventDefault(); renaming.current = false; } }}>
+        <DropdownMenuItem className="h-9 gap-2.5" onSelect={() => { renaming.current = true; onRename(); }}><PencilSimple size={16} />Rename</DropdownMenuItem>
         <DropdownMenuItem className="h-9 gap-2.5" onSelect={onCopy}><Copy size={16} />Copy the whole chat</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="h-9 gap-2.5 text-destructive focus:text-destructive" onSelect={onDelete}><Trash size={16} />Delete chat</DropdownMenuItem>
@@ -321,11 +333,12 @@ function ChatMenu({ onRename, onCopy, onDelete, className, align = "end" }) {
 // A title that edits in place (Enter saves, Esc cancels).
 function RenameField({ value, onDone, className }) {
   const [v, setV] = useState(value);
+  const ref = useRef(null);
+  useEffect(() => { const t = setTimeout(() => { ref.current?.focus(); ref.current?.select(); }, 30); return () => clearTimeout(t); }, []);
   const done = (save) => onDone(save && v.trim() && v.trim() !== value ? v.trim() : null);
   return (
-    <input autoFocus value={v} onChange={(e) => setV(e.target.value)} maxLength={120} aria-label="Chat title"
+    <input ref={ref} value={v} onChange={(e) => setV(e.target.value)} maxLength={120} aria-label="Chat title"
       onKeyDown={(e) => { if (e.key === "Enter") done(true); if (e.key === "Escape") { e.stopPropagation(); done(false); } }} onBlur={() => done(true)}
-      onFocus={(e) => e.target.select()}
       className={cn("min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 py-0.5 font-semibold text-foreground outline-none", className)} />
   );
 }
@@ -831,7 +844,7 @@ function ChatView({ assistant, chatId, go, variant, ctx, insert, modelOptions, t
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Paperclip size={16} /></button></Tip>
                   <ContextChip choice={current} setChoice={setChoice} options={ctxOptions} foot={foot} />
                   <OptionSelect value={effectiveModel} onValueChange={setModel} options={modelOptions} placeholder={textModels.loaded ? "Text model" : "Loading…"} aria-label="Text model"
-                    className="h-8 min-h-8 w-auto max-w-[220px] border-0 bg-transparent px-2 py-0 text-sm text-muted-foreground shadow-none hover:bg-accent hover:text-foreground [&>span>span>span+span]:hidden [&_.font-semibold]:font-medium" />
+                    className="h-8 min-h-8 w-auto max-w-[220px] border-0 bg-transparent px-2 py-0 text-sm text-muted-foreground shadow-none hover:bg-accent hover:text-foreground [&>span>span>span+span]:hidden [&>span.ml-2]:hidden [&_.font-semibold]:font-medium" />
                   {effectiveModel && effectiveModel !== (myDefault ?? textModels.def) && (
                     <Tip text="Use this text model everywhere by default (Chat, Adapt, Director) — you can change it in Settings">
                       <button type="button" onClick={makeDefault} className="h-8 shrink-0 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">Make default</button>
@@ -926,14 +939,24 @@ export function DzChatWorkspace({ variant, active, activeTab, getStudio, insert,
   const textModels = useDzTextModelOptions({ all: true });
   const ctx = useContextOptions({ variant, activeTab, projectId, projectName, getStudio, lastComposer: insert.lastTab, active });
 
-  // A place that no longer exists falls back to the first assistant.
+  // A place that no longer exists falls back to the first assistant. One just made (or
+  // duplicated) may not be in the list yet: the list is read again once before falling back.
   const assistant = data.assistants.find((a) => a.id === place.assistantId) || null;
+  const [rechecked, setRechecked] = useState({ id: null, done: false });
+  const missing = Boolean(place.assistantId && !assistant && (place.view === "assistant" || place.view === "chat"));
+  useEffect(() => {
+    if (!data.loaded || !missing || rechecked.id === place.assistantId) return;
+    const id = place.assistantId;
+    setRechecked({ id, done: false });
+    data.reload().finally(() => setRechecked((r) => (r.id === id ? { id, done: true } : r)));
+  }, [data.loaded, missing, place.assistantId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const waiting = missing && !(rechecked.id === place.assistantId && rechecked.done);
   const view = place.view === "new-assistant" ? "new-assistant" : assistant && (place.view === "assistant" || place.view === "chat") ? place.view : "home";
   useEffect(() => {
-    if (!data.loaded || view !== "home") return;
+    if (!data.loaded || view !== "home" || waiting) return;
     const first = [...data.assistants].sort((a, b) => (b.lastChatAt || 0) - (a.lastChatAt || 0))[0];
     if (first) go({ view: "assistant", assistantId: first.id, tab: "chats" });
-  }, [data.loaded, view]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data.loaded, view, waiting, data.assistants]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modelOptions = textModels.options;
   const drawerHead = variant === "drawer" ? ({ path, menu }) => (
@@ -962,7 +985,7 @@ export function DzChatWorkspace({ variant, active, activeTab, getStudio, insert,
     right = (
       <>{simpleHead("Chat")}
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          {data.loaded ? (
+          {data.loaded && !waiting && !data.assistants.length ? (
             <EmptyState icon={ChatCircle} title="No assistants yet" text="An assistant has its own rules, text model and knowledge. Its chats are kept under it.">
               <Button onClick={() => go({ view: "new-assistant" })}><Plus size={14} className="mr-1.5" />New assistant</Button>
             </EmptyState>

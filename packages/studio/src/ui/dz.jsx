@@ -137,6 +137,8 @@ export function SidePanel({ open, onOpenChange, title, actions, children, classN
       <SheetContent
         side="right"
         onInteractOutside={(e) => { if (wide) e.preventDefault(); }}
+        // A bare panel (the chat drawer) keeps the focus where it was: no tooltip pops on open.
+        onOpenAutoFocus={bare ? (e) => e.preventDefault() : undefined}
         onCloseAutoFocus={(e) => {
           const el = opener.current;
           opener.current = null;

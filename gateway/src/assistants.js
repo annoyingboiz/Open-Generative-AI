@@ -83,7 +83,7 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     chatById: db.prepare('SELECT * FROM chats WHERE id = ? AND user_id = ? AND deleted_at IS NULL'),
     chats: db.prepare('SELECT id, assistant_id, title, updated_at, json_array_length(messages_json) AS n FROM chats WHERE user_id = ? AND assistant_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1000'),
     // Every chat of yours (the tree on the Chat page, package 15): title and time only.
-    allChats: db.prepare('SELECT id, assistant_id, title, updated_at, json_array_length(messages_json) AS n FROM chats WHERE user_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 3000'),
+    allChats: db.prepare('SELECT id, assistant_id, title, updated_at, json_array_length(messages_json) AS n FROM chats WHERE user_id = ? AND deleted_at IS NULL AND json_array_length(messages_json) > 0 ORDER BY updated_at DESC LIMIT 3000'),
     chatTitle: db.prepare('UPDATE chats SET title = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'),
     chatContext: db.prepare('UPDATE chats SET context_json = ? WHERE id = ? AND user_id = ?'),
     chatRestore: db.prepare('UPDATE chats SET deleted_at = NULL WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL'),

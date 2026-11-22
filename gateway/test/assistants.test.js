@@ -203,5 +203,20 @@ test('package 15: the tree lists your chats; rename, delete + undo, context kept
   assert.equal((await as('kid', 'GET', `/dz/api/assistants/${copy.id}/files/${copy.files[0].id}`)).json().text, 'Vlad wears a black coat.');
 
   res = await as('kid', 'POST', '/dz/api/speech');
-  assert.equal(res.statusCode, 503, 'no recogniser is called until one is chosen');
+  assert.equal(res.statusCode, 400, 'no recording');
+  const rec = multipart('speech.webm', 'audio/webm', Buffer.alloc(4000, 1));
+  res = await as('kid', 'POST', '/dz/api/speech', rec.payload, rec.headers);
+  assert.equal(res.statusCode, 409, 'ElevenLabs not set up here: said plainly, nothing else called');
+});
+
+test('package 15: the text of a PDF for knowledge', async () => {
+  const pdf = multipart('style.pdf', 'application/pdf', fs.readFileSync(new URL('./fixture-text.pdf', import.meta.url)));
+  let res = await as('kid', 'POST', '/dz/api/pdf-text', pdf.payload, pdf.headers);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(res.json().text, 'Vlad wears a black coat.\nSecond line here.');
+  assert.equal(res.json().pages, 1);
+  const fake = multipart('x.pdf', 'application/pdf', Buffer.from('hello, not a pdf'));
+  res = await as('kid', 'POST', '/dz/api/pdf-text', fake.payload, fake.headers);
+  assert.equal(res.statusCode, 400);
+  assert.equal((await app.inject({ method: 'POST', url: '/dz/api/pdf-text', ...pdf })).statusCode, 401, 'signed in only');
 });

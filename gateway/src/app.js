@@ -41,6 +41,7 @@ import { storyboardPage } from './storyboard-print.js';
 import { createDirector, DirectorError } from './director.js';
 import { createFilmSort, SortError } from './film-sort.js';
 import { createAssistants, AssistantError } from './assistants.js';
+import { pdfText, PdfError } from './pdftext.js';
 import { createThumbs } from './thumbs.js';
 import { createMedia } from './media.js';
 import { createQuoter } from './quotes.js';
@@ -1182,9 +1183,48 @@ export async function buildApp(config, { logger = true } = {}) {
   // Dictation in the chat (package 15, C6): a short recording → its text, which only ever goes
   // into the message field. Which recogniser to use waits for Denis's choice (the connected
   // ChatGPT plan can't do it); nothing paid is called until then.
+  // Recognised with ElevenLabs Scribe on the owner's key (Denis's choice, 22.11); never with the
+  // ChatGPT plan, which can't do it. Up to 25 MB (about 20 minutes of speech).
   app.post('/dz/api/speech', async (req, reply) => {
-    try { const f = await req.file(); if (f?.file) f.file.resume(); } catch { /* nothing sent */ }
-    return reply.code(503).send({ detail: 'Speech recognition is not set up yet.' });
+    const cfg = providers.resolve('elevenlabs');
+    let file;
+    try { file = await req.file({ limits: { fileSize: 25 * 1024 * 1024, files: 1 } }); } catch { file = null; }
+    if (!file?.file) return reply.code(400).send({ detail: 'Send the recording.' });
+    if (!cfg.enabled || !cfg.apiKey) { file.file.resume(); return reply.code(409).send({ detail: 'ElevenLabs is not set up. Add its key in Settings → Providers.' }); }
+    const mime = /^(audio|video)\/[a-z0-9.+-]+/i.exec(file.mimetype || '')?.[0] || 'audio/webm';
+    const dir = path.join(config.dataDir, 'speech');
+    fs.mkdirSync(dir, { recursive: true });
+    const tmp = path.join(dir, `${crypto.randomUUID()}.${/mp4|m4a|aac/.test(mime) ? 'm4a' : /ogg/.test(mime) ? 'ogg' : /wav/.test(mime) ? 'wav' : 'webm'}`);
+    try {
+      const buf = await file.toBuffer();
+      if (file.file.truncated) return reply.code(413).send({ detail: 'The recording is too long.' });
+      if (buf.length < 200) return reply.code(400).send({ detail: 'The recording is empty.' });
+      fs.writeFileSync(tmp, buf);
+      const out = await elevenlabs.transcribe(cfg, { path: tmp, mime, name: path.basename(tmp), model: 'scribe_v2' });
+      return { text: out.text.trim(), language: out.language };
+    } catch (error) {
+      req.log.warn(`speech: ${error.message}`);
+      if (error instanceof ProviderHttpError) return reply.code(424).send({ detail: error.message.slice(0, 300) });
+      return reply.code(error.statusCode === 413 ? 413 : 500).send({ detail: error.statusCode === 413 ? 'The recording is too long.' : 'Could not recognise the speech.' });
+    } finally { fs.rm(tmp, { force: true }, () => {}); }
+  });
+  // Text of a PDF for an assistant's knowledge (package 15, C4): the file is read here and only
+  // its text goes back; the PDF itself is not kept.
+  app.post('/dz/api/pdf-text', async (req, reply) => {
+    let file;
+    try { file = await req.file({ limits: { fileSize: 30 * 1024 * 1024, files: 1 } }); } catch { file = null; }
+    if (!file?.file) return reply.code(400).send({ detail: 'Pick a PDF file.' });
+    try {
+      const buf = await file.toBuffer();
+      if (file.file.truncated) return reply.code(413).send({ detail: 'This PDF is too big (up to 30 MB).' });
+      if (buf.subarray(0, 5).toString('latin1') !== '%PDF-') return reply.code(400).send({ detail: 'This is not a PDF file.' });
+      return await pdfText(buf);
+    } catch (error) {
+      if (error instanceof PdfError) return reply.code(error.status).send({ detail: error.message });
+      if (error.statusCode === 413) return reply.code(413).send({ detail: 'This PDF is too big (up to 30 MB).' });
+      req.log.warn(`pdf-text: ${error.message}`);
+      return reply.code(500).send({ detail: 'This PDF could not be read.' });
+    }
   });
   app.post('/dz/api/chats/:id/restore', projectRoute((req) => assistants.restoreChat(req.user, req.params.id)));
   app.post('/dz/api/assistants/:id/duplicate', projectRoute((req) => assistants.duplicate(req.user, req.params.id)));

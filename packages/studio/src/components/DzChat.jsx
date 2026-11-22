@@ -15,7 +15,7 @@ import { useDzContext } from "../dzContext.js";
 import { useDzTextModelOptions } from "../dzLlm.js";
 import { dzStoryboards } from "../dzDirector.js";
 import { DzMediaPicker } from "./DzMedia.jsx";
-import { Button, Textarea, Input, Spinner, Switch, OptionSelect, Tip, cn, SidePanel, DropdownMenuParts } from "../ui/index.js";
+import { Button, Textarea, Input, Spinner, Switch, OptionSelect, Segmented, Tip, cn, SidePanel, DropdownMenuParts } from "../ui/index.js";
 import { dzScrollBoxRef } from "../dzScroll.js";
 import { Chip, ChipMenu, MenuRow, fmtDur } from "./studio/ui.jsx";
 import { EmptyState } from "./storyboard/parts.jsx";
@@ -337,7 +337,7 @@ function RenameField({ value, onDone, className }) {
   useEffect(() => { const t = setTimeout(() => { ref.current?.focus(); ref.current?.select(); }, 30); return () => clearTimeout(t); }, []);
   const done = (save) => onDone(save && v.trim() && v.trim() !== value ? v.trim() : null);
   return (
-    <input ref={ref} value={v} onChange={(e) => setV(e.target.value)} maxLength={120} aria-label="Chat title"
+    <input ref={ref} data-dz-esc-local="1" value={v} onChange={(e) => setV(e.target.value)} maxLength={120} aria-label="Chat title"
       onKeyDown={(e) => { if (e.key === "Enter") done(true); if (e.key === "Escape") { e.stopPropagation(); done(false); } }} onBlur={() => done(true)}
       className={cn("min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 py-0.5 font-semibold text-foreground outline-none", className)} />
   );
@@ -392,8 +392,13 @@ async function readKnowledgeFile(f) {
   return { name: f.name, text: await f.text() };
 }
 
-function AssistantForm({ assistant, modelOptions, apiKey, onCreated, onSaved, onCancel, go }) {
+function AssistantForm({ assistant, modelOptions, apiKey, onCreated, onSaved, onCancel, go, templates = [], projectId = null, projectName = "", projectReadOnly = false }) {
   const isNew = !assistant;
+  // New assistant: an optional template (its rules are filled in on the server unless you write
+  // your own) and, inside a project, where it lives (Library is yours; a project's is shared).
+  const [template, setTemplate] = useState("");
+  const [scope, setScope] = useState("library");
+  const [reading, setReading] = useState(0); // files still being read: Create waits for them
   const [form, setForm] = useState({ name: assistant?.name || "", description: assistant?.description || "", rules: assistant?.rules || "", model: assistant?.model || "", modelNotes: assistant ? assistant.modelNotes : true });
   const [files, setFiles] = useState(assistant?.files || []);
   const [queued, setQueued] = useState([]); // New assistant: files wait for Create
@@ -406,11 +411,12 @@ function AssistantForm({ assistant, modelOptions, apiKey, onCreated, onSaved, on
   const upload = async (id, item) => (await dzAssistants.addFile(id, item)).assistant;
   const addText = async (list) => {
     for (const f of [...list]) {
+      setReading((n) => n + 1);
       try {
         const item = await readKnowledgeFile(f);
         if (isNew) setQueued((q) => [...q, { ...item, kind: "text", key: `${f.name}-${Date.now()}` }]);
         else { const a = await upload(assistant.id, item); setFiles(a.files); changed(); }
-      } catch (e) { notifyError(String(e.message || e)); }
+      } catch (e) { notifyError(String(e.message || e)); } finally { setReading((n) => n - 1); }
     }
   };
   const addImages = async (list) => {
@@ -429,7 +435,9 @@ function AssistantForm({ assistant, modelOptions, apiKey, onCreated, onSaved, on
     setBusy(true);
     try {
       if (isNew) {
-        const r = await dzAssistants.create({ project: null, ...form });
+        const body = { project: scope === "project" && projectId ? projectId : null, ...form };
+        if (template) { body.template = template; if (!form.rules.trim()) delete body.rules; }
+        const r = await dzAssistants.create(body);
         for (const item of queued) { try { await upload(r.assistant.id, item.kind === "text" ? { name: item.name, text: item.text } : { url: item.url, name: item.name }); } catch (e) { notifyError(String(e.message || e)); } }
         changed();
         onCreated(r.assistant);
@@ -446,14 +454,36 @@ function AssistantForm({ assistant, modelOptions, apiKey, onCreated, onSaved, on
     try { await dzAssistants.remove(assistant.id); changed(); go({ view: "home" }); } catch (e) { notifyError(String(e.message || e)); }
   };
   const shown = isNew ? queued.map((q) => ({ id: q.key, name: q.name, kind: q.kind, url: q.url, chars: q.text?.length })) : files;
+  const tpl = templates.find((t) => t.id === template);
+  const pickTemplate = (id) => {
+    const t = templates.find((x) => x.id === id);
+    setTemplate(id);
+    setForm((f) => ({ ...f, name: t ? t.name : f.name, description: t ? t.description : f.description, modelNotes: t ? id === "prompt-writer" : f.modelNotes }));
+  };
   return (
     <div className="max-w-[640px] space-y-5 px-6 py-6">
+      {isNew && templates.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-muted-foreground">Start from</span>
+          <div className="flex flex-wrap gap-1.5">
+            <Chip active={!template} onClick={() => setTemplate("")}>Blank</Chip>
+            {templates.map((t) => <Chip key={t.id} active={template === t.id} onClick={() => pickTemplate(t.id)} title={t.description}>{t.name}</Chip>)}
+          </div>
+        </div>
+      )}
+      {isNew && projectId && !projectReadOnly && (
+        <div className="space-y-1.5">
+          <span className="text-muted-foreground">Keep it in</span>
+          <Segmented value={scope} onChange={setScope} className="max-w-[360px]" aria-label="Where the assistant lives"
+            options={[{ value: "library", label: "My Library" }, { value: "project", label: projectName || "This project" }]} />
+        </div>
+      )}
       <label className="block space-y-1.5"><span className="text-muted-foreground">Name</span>
         <Input value={form.name} onChange={(e) => set("name", e.target.value)} maxLength={60} placeholder="e.g. Shot planner" /></label>
       <label className="block space-y-1.5"><span className="text-muted-foreground">What it is for</span>
         <Input value={form.description} onChange={(e) => set("description", e.target.value)} maxLength={300} placeholder="One line: when to use it" /></label>
       <label className="block space-y-1.5"><span className="text-muted-foreground">Rules: how it works, what it answers, in what form</span>
-        <Textarea value={form.rules} onChange={(e) => set("rules", e.target.value)} rows={5} className="min-h-[110px] resize-y" placeholder="Write the rules in plain words. They go into every chat with this assistant." /></label>
+        <Textarea value={form.rules} onChange={(e) => set("rules", e.target.value)} rows={5} className="min-h-[110px] resize-y" placeholder={tpl ? `The rules of the “${tpl.name}” template are used. Write your own here to replace them.` : "Write the rules in plain words. They go into every chat with this assistant."} /></label>
       <div className="space-y-1.5">
         <span className="text-muted-foreground">Text model</span>
         <OptionSelect value={form.model || "__default"} onValueChange={(v) => set("model", v === "__default" ? "" : v)} aria-label="Text model"
@@ -491,7 +521,7 @@ function AssistantForm({ assistant, modelOptions, apiKey, onCreated, onSaved, on
         )}
       </div>
       <div className="flex items-center gap-2 pt-1">
-        <Button onClick={save} disabled={busy || !form.name.trim()}>{busy ? (isNew ? "Creating…" : "Saving…") : isNew ? "Create assistant" : "Save"}</Button>
+        <Button onClick={save} disabled={busy || reading > 0 || !form.name.trim()}>{busy ? (isNew ? "Creating…" : "Saving…") : isNew ? "Create assistant" : "Save"}</Button>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
         {!isNew && !assistant.builtin && <Button variant="ghost" className="ml-auto text-destructive hover:text-destructive" onClick={del}>Delete assistant</Button>}
       </div>
@@ -532,7 +562,7 @@ function AssistantPage({ assistant, chats, tab, go, modelOptions, apiKey, compac
   );
 }
 
-function NewAssistantPage({ go, modelOptions, apiKey }) {
+function NewAssistantPage({ go, modelOptions, apiKey, templates, projectId, projectName, projectReadOnly }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-start gap-3 px-6 pt-7">
@@ -540,7 +570,7 @@ function NewAssistantPage({ go, modelOptions, apiKey }) {
         <div className="min-w-0"><h1 className="text-xl font-semibold">New assistant</h1><p className="text-muted-foreground">Give it a name and rules. Its chats will be kept under it.</p></div>
       </div>
       <div ref={dzScrollBoxRef} className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-        <AssistantForm modelOptions={modelOptions} apiKey={apiKey} go={go} onCreated={(a) => go({ view: "assistant", assistantId: a.id, tab: "chats" })} onCancel={() => go({ view: "home" })} />
+        <AssistantForm modelOptions={modelOptions} apiKey={apiKey} go={go} templates={templates} projectId={projectId} projectName={projectName} projectReadOnly={projectReadOnly} onCreated={(a) => go({ view: "assistant", assistantId: a.id, tab: "chats" })} onCancel={() => go({ view: "home" })} />
       </div>
     </div>
   );
@@ -550,18 +580,20 @@ function NewAssistantPage({ go, modelOptions, apiKey }) {
 const COMPOSER_NAME = { image: "Image", video: "Video", create: "Studio", tools: "Tools" };
 // The storyboard of this place: the one changed last.
 function useBoardOfPlace(projectId, enabled) {
-  const [board, setBoard] = useState(null);
+  const [loaded, setBoard] = useState({ place: undefined, board: null });
+  const board = loaded.place === (projectId || null) ? loaded.board : null;
   useEffect(() => {
     if (!enabled) return undefined;
     let alive = true;
+    const place = projectId || null;
     (async () => {
       try {
         const r = await dzStoryboards.list(projectId || undefined);
         const first = (r.storyboards || [])[0];
-        if (!first) { if (alive) setBoard(null); return; }
+        if (!first) { if (alive) setBoard({ place, board: null }); return; }
         const full = (await dzStoryboards.get(first.id)).storyboard;
-        if (alive) setBoard(full);
-      } catch { if (alive) setBoard(null); }
+        if (alive) setBoard({ place, board: full });
+      } catch { if (alive) setBoard({ place, board: null }); }
     })();
     return () => { alive = false; };
   }, [projectId, enabled]);
@@ -609,10 +641,12 @@ function ContextChip({ choice, setChoice, options, foot }) {
 
 // ── Voice input (C6): record, then the text goes into the field — never sent by itself ──
 function useVoice({ onText }) {
-  const [state, setState] = useState("idle"); // idle | recording | working
+  const [state, setState] = useState("idle"); // idle | starting | recording | stopping | working
   const [secs, setSecs] = useState(0);
   const [levels, setLevels] = useState([]);
   const rec = useRef(null);
+  const gen = useRef(0); // a start, a cancel and an unmount each move it on: late streams are stopped
+  const busy = useRef(false);
   const stopAll = () => {
     const r = rec.current;
     rec.current = null;
@@ -622,14 +656,20 @@ function useVoice({ onText }) {
     try { r.stream.getTracks().forEach((t) => t.stop()); } catch { /* gone */ }
     try { r.ctx.close(); } catch { /* gone */ }
   };
-  useEffect(() => () => stopAll(), []);
+  useEffect(() => () => { gen.current += 1; stopAll(); }, []);
   const start = async () => {
-    if (rec.current) return;
+    if (rec.current || busy.current) return;
+    busy.current = true;
+    const mine = ++gen.current;
+    setState("starting");
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch {
-      notify({ type: "error", title: "Microphone", message: "Allow the microphone for this site to dictate." });
+      busy.current = false;
+      if (mine === gen.current) { setState("idle"); notify({ type: "error", title: "Microphone", message: "Allow the microphone for this site to dictate." }); }
       return;
     }
+    busy.current = false;
+    if (mine !== gen.current) { stream.getTracks().forEach((t) => t.stop()); return; } // cancelled or closed meanwhile
     const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((m) => window.MediaRecorder?.isTypeSupported?.(m)) || "";
     const media = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
     const chunks = [];
@@ -661,16 +701,20 @@ function useVoice({ onText }) {
     setState("recording");
   };
   const cancel = () => {
+    gen.current += 1;
     const r = rec.current;
-    if (r) { try { r.media.onstop = null; r.media.stop(); } catch { /* stopped */ } }
-    stopAll();
-    setState("idle");
+    if (r && !r.stopping) { try { r.media.onstop = null; r.media.stop(); } catch { /* stopped */ } }
+    if (!r?.stopping) { stopAll(); setState("idle"); }
   };
   const finish = async () => {
     const r = rec.current;
-    if (!r) return;
+    if (!r || r.stopping) return;
+    // One stop: the buttons are gone the moment it starts, and Cancel can't replace it.
+    r.stopping = true;
+    setState("stopping");
     const blob = await new Promise((resolve) => { r.media.onstop = () => resolve(new Blob(r.chunks, { type: r.media.mimeType || "audio/webm" })); try { r.media.stop(); } catch { resolve(new Blob(r.chunks)); } });
     stopAll();
+    const mine = gen.current;
     setState("working");
     try {
       const form = new FormData();
@@ -678,10 +722,10 @@ function useVoice({ onText }) {
       const res = await fetch("/dz/api/speech", { method: "POST", credentials: "same-origin", body: form });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || typeof data.text !== "string") throw new Error(data.detail || `HTTP ${res.status}`);
-      if (data.text.trim()) onText(data.text.trim());
+      if (mine === gen.current && data.text.trim()) onText(data.text.trim());
     } catch (e) {
       console.warn("speech:", e?.message || e);
-      notify({ type: "error", title: "Dictation", message: "Could not recognise the speech. Try again." });
+      if (mine === gen.current) notify({ type: "error", title: "Dictation", message: "Could not recognise the speech. Try again." });
     } finally { setState("idle"); }
   };
   return { state, secs, levels, start, cancel, finish };
@@ -723,12 +767,18 @@ function ChatView({ assistant, chatId, go, variant, ctx, insert, modelOptions, t
       .finally(() => { if (mine === seq.current) setLoading(false); });
   }, [chatId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [chat?.messages?.length, sending]);
+  // Leaving this chat: an answer that arrives later is saved, but does not take you back.
+  useEffect(() => () => { seq.current += 1; }, []);
 
   // Context: a new chat starts with the default of this form; a saved one keeps its own.
   const { options: ctxOptions, foot, resolve, defaultChoice } = ctx;
   const [choice, setChoiceRaw] = useState(null);
   useEffect(() => { setChoiceRaw(null); }, [chatId]);
-  const saved = chat?.context?.kind ? ctxOptions.find((o) => o.kind === chat.context.kind && (o.scene || null) === (chat.context.scene || null)) || { key: `saved-${chat.context.kind}`, ...chat.context, label: chat.context.label || "No context" } : null;
+  // A saved choice that can't be offered now (that shot or composer is not open, the scene is
+  // gone) keeps its name in the chip, and nothing is sent for it until another one is chosen.
+  const sc = chat?.context;
+  const same = (o) => o.kind === sc.kind && (o.tab || null) === (sc.tab || null) && (o.scene || null) === (sc.scene || null) && (o.board || null) === (sc.board || null) && (o.shot || null) === (sc.shot || null);
+  const saved = sc?.kind ? ctxOptions.find(same) || { key: `saved-${sc.kind}`, ...sc, label: sc.kind === "none" ? "No context" : `${sc.label || "Context"} (not open)`, unavailable: sc.kind !== "none" } : null;
   const current = choice || saved || defaultChoice;
   const setChoice = (o) => setChoiceRaw(o);
 
@@ -747,7 +797,7 @@ function ChatView({ assistant, chatId, go, variant, ctx, insert, modelOptions, t
       setImages([]);
       try {
         const context = await resolve(current);
-        const r = await dzAssistants.send(c.id, { text: sentText, images: sentImages.map((x) => x.url), model: model || undefined, context, choice: { kind: current.kind, board: current.board, scene: current.scene, shot: current.shot, tab: current.tab, label: current.label } });
+        const r = await dzAssistants.send(c.id, { text: sentText, images: sentImages.map((x) => x.url), model: model || undefined, context, choice: current.unavailable ? undefined : { kind: current.kind, board: current.board, scene: current.scene, shot: current.shot, tab: current.tab, label: current.label } });
         changed();
         if (mine !== seq.current) return; // you moved on: the answer is saved in its chat
         setChat(r.chat);
@@ -806,7 +856,7 @@ function ChatView({ assistant, chatId, go, variant, ctx, insert, modelOptions, t
         <div className="w-full max-w-[760px] space-y-2">
           {visionWarn && <p className="text-sm text-warning">This text model may not see pictures — pick one marked for images (GPT, Claude, Gemini, Qwen VL…).</p>}
           <div className="flex flex-col gap-2 rounded-xl border border-input bg-muted px-3 pb-2 pt-2.5">
-            {images.length > 0 && voice.state !== "recording" && (
+            {images.length > 0 && !["starting", "recording", "stopping"].includes(voice.state) && (
               <div className="flex flex-wrap gap-1.5">
                 {images.map((x, i) => (
                   <div key={x.url} className="relative">
@@ -817,7 +867,7 @@ function ChatView({ assistant, chatId, go, variant, ctx, insert, modelOptions, t
                 ))}
               </div>
             )}
-            {voice.state === "recording" ? (
+            {["starting", "recording", "stopping"].includes(voice.state) ? (
               <>
                 <div className="flex h-10 items-center gap-3">
                   <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-destructive" />
@@ -826,8 +876,8 @@ function ChatView({ assistant, chatId, go, variant, ctx, insert, modelOptions, t
                 </div>
                 <div className="flex items-center gap-1">
                   <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">Listening… speak, then press the check mark</p>
-                  <Tip text="Discard"><button type="button" aria-label="Discard the recording" onClick={voice.cancel} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button></Tip>
-                  <Tip text="Turn into text"><button type="button" aria-label="Turn the recording into text" onClick={voice.finish} className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary-hover"><Check size={16} weight="bold" /></button></Tip>
+                  <Tip text="Discard"><button type="button" aria-label="Discard the recording" onClick={voice.cancel} disabled={voice.state === "stopping"} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button></Tip>
+                  <Tip text="Turn into text"><button type="button" aria-label="Turn the recording into text" onClick={voice.finish} disabled={voice.state !== "recording"} className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary-hover"><Check size={16} weight="bold" /></button></Tip>
                 </div>
               </>
             ) : (
@@ -896,7 +946,7 @@ function useContextOptions({ variant, activeTab, projectId, projectName, getStud
   if (variant === "drawer") {
     const st = getStudio(activeTab);
     if (activeTab === "director" && st?.writable && /^Shot \d+/.test(st.sees || "")) {
-      const o = { key: "shot", kind: "shot", tab: "director", label: (st.sees || "").split(" · ")[0], group: 1 };
+      const o = { key: `shot-${st.targetId || ""}`, kind: "shot", tab: "director", board: st.board, shot: st.targetId, label: (st.sees || "").split(" · ")[0], group: 1 };
       options.push(o);
       defaultChoice = o;
     } else if (COMPOSER_NAME[activeTab] && st && st.writable !== false) {
@@ -909,15 +959,16 @@ function useContextOptions({ variant, activeTab, projectId, projectName, getStud
     (board.scenes || []).forEach((sc, i) => options.push({ key: `scene-${sc.id}`, kind: "scene", board: board.id, scene: sc.id, label: `Scene ${i + 1}${sc.name ? ` · ${sc.name}` : ""}`, meta: plural((board.shots || []).filter((s) => s.scene === sc.id).length, "shot"), group: 2 }));
     options.push({ key: "board", kind: "board", board: board.id, label: "Whole storyboard", meta: plural((board.shots || []).length, "shot"), group: 3 });
   }
-  const foot = `${projectName}${board ? ` · ${board.name}` : " · no storyboard yet"}. Open a shot to offer it here too.`;
+  const shotOffered = options.some((o) => o.kind === "shot");
+  const foot = `${projectName}${board ? ` · ${board.name}` : " · no storyboard yet"}.${shotOffered ? "" : " Open a shot to offer it here too."}`;
   // What goes with the message for a choice: exactly what the screens send today.
   const resolve = async (o) => {
     const notesTab = o?.tab || (COMPOSER_NAME[activeTab] || activeTab === "director" ? activeTab : lastComposer());
     const notesModel = notesTab ? getStudio(notesTab)?.model : undefined;
-    if (!o || o.kind === "none") return { tab: variant === "page" ? "chat" : activeTab, ...(notesModel ? { model: notesModel } : {}) };
+    if (!o || o.kind === "none" || o.unavailable) return { tab: variant === "page" ? "chat" : activeTab, ...(notesModel ? { model: notesModel } : {}) };
     if (o.kind === "shot" || o.kind === "composer") {
       const st = getStudio(o.tab);
-      if (!st) return { tab: o.tab };
+      if (!st || (o.kind === "shot" && st.targetId !== o.shot)) return { tab: o.tab, ...(notesModel ? { model: notesModel } : {}) };
       return { tab: o.tab, model: st.model, prompt: st.prompt, sees: st.seesFull || st.sees || undefined, refs: st.refs || undefined };
     }
     let b = board && board.id === o.board ? board : null;
@@ -933,7 +984,10 @@ export function DzChatWorkspace({ variant, active, activeTab, getStudio, insert,
   const projectId = ctxGlobal.project?.id || null;
   const projectName = ctxGlobal.project?.name || "Library";
   const data = useChatData(projectId, active);
-  const [place, go] = useChatPlace(variant);
+  const [place, goPlace] = useChatPlace(variant);
+  // Phones: the page shows the tree or the right side, with a button to switch.
+  const [mobileTree, setMobileTree] = useState(false);
+  const go = useCallback((p, opts) => { setMobileTree(false); goPlace(p, opts); }, [goPlace]);
   // "Open as a page": the page takes the drawer's place.
   useEffect(() => { if (initialPlace) go(initialPlace); }, [placeSeq]); // eslint-disable-line react-hooks/exhaustive-deps
   const textModels = useDzTextModelOptions({ all: true });
@@ -975,7 +1029,7 @@ export function DzChatWorkspace({ variant, active, activeTab, getStudio, insert,
 
   let right;
   if (view === "new-assistant") {
-    right = <>{simpleHead("New assistant")}<div className="min-h-0 flex-1"><NewAssistantPage go={go} modelOptions={modelOptions} apiKey={apiKey} /></div></>;
+    right = <>{simpleHead("New assistant")}<div className="min-h-0 flex-1"><NewAssistantPage go={go} modelOptions={modelOptions} apiKey={apiKey} templates={data.templates || []} projectId={projectId} projectName={projectName} projectReadOnly={Boolean(ctxGlobal.project?.archived)} /></div></>;
   } else if (view === "assistant") {
     right = <>{simpleHead(assistant.name)}<div className="min-h-0 flex-1"><AssistantPage assistant={assistant} chats={data.chatsOf(assistant.id)} tab={place.tab === "settings" ? "settings" : "chats"} go={go} modelOptions={modelOptions} apiKey={apiKey} compact={variant === "drawer"} /></div></>;
   } else if (view === "chat") {
@@ -995,9 +1049,17 @@ export function DzChatWorkspace({ variant, active, activeTab, getStudio, insert,
     );
   }
   return (
-    <div className="flex h-full min-h-0 w-full">
-      {!treeHidden && <Tree data={data} place={view === "home" ? { view: "home" } : place} go={go} newAssistantOpen={view === "new-assistant"} className={variant === "drawer" ? "w-[280px] shrink-0" : "w-[296px] shrink-0 max-md:hidden"} />}
-      <div className="flex min-w-0 flex-1 flex-col">{right}</div>
+    <div className="relative flex h-full min-h-0 w-full">
+      {!treeHidden && <Tree data={data} place={view === "home" ? { view: "home" } : place} go={go} newAssistantOpen={view === "new-assistant"}
+        className={variant === "drawer" ? "w-[280px] shrink-0" : cn("w-[296px] shrink-0", mobileTree ? "max-md:absolute max-md:inset-0 max-md:z-20 max-md:w-full max-md:bg-background" : "max-md:hidden")} />}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {variant === "page" && (
+          <div className="flex h-11 shrink-0 items-center border-b border-border px-3 md:hidden">
+            <Button size="sm" variant="ghost" onClick={() => setMobileTree((v) => !v)}><SidebarSimple size={16} className="mr-1.5" />Assistants and chats</Button>
+          </div>
+        )}
+        {right}
+      </div>
     </div>
   );
 }

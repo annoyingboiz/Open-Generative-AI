@@ -271,7 +271,8 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     visible(user, assistantId);
     return { chats: q.chats.all(user.id, assistantId) };
   }
-  function getChat(user, id) { return { chat: chatView(chatOf(user, id)) }; }
+  // Reading or renaming needs the assistant to be visible still (you may have left its project).
+  function getChat(user, id) { const row = chatOf(user, id); visible(user, row.assistant_id); return { chat: chatView(row) }; }
   function newChat(user, assistantId) {
     visible(user, assistantId);
     const id = newId('ch');
@@ -293,7 +294,7 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     return { chat: chatView(chatOf(user, row.id)) };
   }
   function renameChat(user, id, body = {}) {
-    chatOf(user, id);
+    visible(user, chatOf(user, id).assistant_id);
     const title = line(body.title, 120);
     if (!title) throw new AssistantError('Give the chat a title.');
     q.chatTitle.run(title, String(id), user.id);

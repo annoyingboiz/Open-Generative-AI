@@ -139,6 +139,8 @@ export function SidePanel({ open, onOpenChange, title, actions, children, classN
         onInteractOutside={(e) => { if (wide) e.preventDefault(); }}
         // A bare panel (the chat drawer) keeps the focus where it was: no tooltip pops on open.
         onOpenAutoFocus={bare ? (e) => e.preventDefault() : undefined}
+        // Esc closes what is open inside first (a chip menu, a title being renamed).
+        onEscapeKeyDown={(e) => { if (window.__dzEscDepth?.() > 0 || document.activeElement?.dataset?.dzEscLocal) e.preventDefault(); }}
         onCloseAutoFocus={(e) => {
           const el = opener.current;
           opener.current = null;

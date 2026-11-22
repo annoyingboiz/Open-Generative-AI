@@ -307,7 +307,8 @@ export default function DzShell() {
   const lastComposer = useRef(null);
   useEffect(() => {
     if (!INSERT_TABS.has(activeTab)) return undefined;
-    const t = setTimeout(() => { lastComposer.current = activeTab; }, 400);
+    // Only a composer that can take text (a Storyboard overview or a Tools screen without one does not).
+    const t = setTimeout(() => { if (dzGetStudioState(activeTab)?.writable !== false && dzGetStudioState(activeTab)) lastComposer.current = activeTab; }, 400);
     return () => clearTimeout(t);
   }, [activeTab]);
   const activeTabRef = useRef(activeTab);

@@ -25,6 +25,8 @@ export function useEscLayer(open, onClose) {
 }
 if (typeof window !== "undefined" && !window.__dzEscLayers) {
   window.__dzEscLayers = true;
+  // Drawers ask this before Esc closes them: an open layer inside closes first.
+  window.__dzEscDepth = () => layers.length;
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !layers.length) return;
     // Radix popovers and menus close themselves first.

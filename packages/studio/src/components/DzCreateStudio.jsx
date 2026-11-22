@@ -645,8 +645,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   useEffect(() => {
     if (editor) return; // the editor does not speak for its tab to the side chat
     // A storyboard's working screen reports as the Storyboard tab, with what it is for (package 05, §4.6).
-    dzSetStudioState(target ? "director" : mode, { model: entry ? { family: entry.family, name: entry.familyName, kind } : null, prompt, refs: chatRefs, ...(target ? { sees: [target.sees, ...activeElements.map((e) => (e.tag ? `@${e.tag}` : e.name)), prompt.trim() ? "your prompt" : null].filter(Boolean).join(" · "), seesFull: target.seesFull || target.sees, writable: true } : {}) });
-  }, [mode, entry, kind, prompt, target?.sees, activeElements, chatRefs]); // eslint-disable-line react-hooks/exhaustive-deps
+    dzSetStudioState(target ? "director" : mode, { model: entry ? { family: entry.family, name: entry.familyName, kind } : null, prompt, refs: chatRefs, ...(target ? { sees: [target.sees, ...activeElements.map((e) => (e.tag ? `@${e.tag}` : e.name)), prompt.trim() ? "your prompt" : null].filter(Boolean).join(" · "), seesFull: target.seesFull || target.sees, writable: true, board: target.board, targetId: target.id, targetKind: target.kind } : {}) });
+  }, [mode, entry, kind, prompt, target?.sees, target?.id, activeElements, chatRefs]); // eslint-disable-line react-hooks/exhaustive-deps
   // Insert / Replace from the chat (package 07, F1): every picture the text names becomes
   // a chip bound to its tile. Pictures only in the chat are added to References (the one
   // case where files are attached without a click on them); attached ones are matched by

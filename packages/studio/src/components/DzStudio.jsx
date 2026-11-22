@@ -31,16 +31,19 @@ import { dzPictureDragStart, dzPictureDragEnd, useDzPictureDrag } from "../dzDro
 import { DzPosterVideo, dzMediaInfo } from "./DzPosterVideo.jsx";
 
 // This run costs more than what is left of a monthly limit (A10).
-// A15: every attached file as "role|url"; "3 reference images", "the start frame".
-const groupFiles = (attached = {}) => new Set(Object.entries(attached).flatMap(([role, list]) => (Array.isArray(list) ? list : []).map((f) => `${role}|${f.url}`)));
+// A15: one id per attached file, repeats of the same picture counted apart ("role|url|n").
+const fileId = (x) => (x.role === "edit" ? `edit|${x.url}` : `${x.role}|${x.url}|${x.index ?? 0}`);
+const groupFiles = (attached = {}) => new Set(Object.entries(attached).flatMap(([role, list]) => (Array.isArray(list) ? list : []).map((f, index) => fileId({ role: f.edit ? "edit" : role, url: f.url, index }))));
 const FILE_WORDS = { first: ["start frame", "start frames"], middle: ["middle frame", "middle frames"], last: ["end frame", "end frames"], reference: ["reference image", "reference images"], video: ["reference video", "reference videos"], source: ["video to edit", "videos to edit"], audio: ["audio file", "audio files"], edit: ["picture to edit", "pictures to edit"] };
-const countWords = (items, { bare = false } = {}) => {
+// "the start frame and 3 reference images" (lower case: the sentence capitalizes it).
+const countWords = (items) => {
   const by = new Map();
   for (const x of items) by.set(x.role, (by.get(x.role) || 0) + 1);
-  const words = [...by].map(([role, n]) => { const w = FILE_WORDS[role] || ["file", "files"]; return n === 1 ? (bare ? `the ${w[0]}` : `The ${w[0]}`) : `${n} ${w[1]}`; });
-  const text = words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
-  return bare ? text.replace(/^The /, "the ") : text.charAt(0).toUpperCase() + text.slice(1);
+  const words = [...by].map(([role, n]) => { const w = FILE_WORDS[role] || ["file", "files"]; return n === 1 ? `the ${w[0]}` : `${n} ${w[1]}`; });
+  return words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
 };
+const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+const GROUP_NAME = { first: "frames", middle: "frames", last: "frames", reference: "references", edit: "references", video: "reference videos", source: "the video to edit", audio: "audio" };
 const uniqRoles = (items) => [...new Set(items.map((x) => (x.role === "edit" ? "reference" : x.role)))];
 const overBudget = (price, count = 1) => Boolean(price?.budget && Number.isFinite(price.usd) && price.usd * Math.max(1, count) > price.budget.left + 1e-9);
 
@@ -1105,21 +1108,30 @@ export default function DzStudio(props) {
   }, [offMap, plan.variant, sent, engine.touch, engine.bringOn]); // eslint-disable-line react-hooks/exhaustive-deps
   // A15: a model or provider change turns attached files off or back on. Say so once,
   // in the line above the bottom row (it goes away on the next action like an error does).
-  const [note, setNote] = useState(null); // { text, roles? }
+  const [note, setNote] = useState(null); // { text, roles?, label? }
   const lastPlan = useRef(null);
   useEffect(() => {
-    const now = new Map(plan.off.map((x) => [`${x.role}|${x.url}`, x]));
+    const now = new Map(plan.off.map((x) => [fileId(x), x]));
     const prev = lastPlan.current;
-    lastPlan.current = { key: entry?.key, off: now, all: groupFiles(attached) };
-    if (!prev || !entry || prev.key === entry.key) return;
-    const offNow = plan.off.filter((x) => !prev.off.has(`${x.role}|${x.url}`) && prev.all.has(`${x.role}|${x.url}`));
-    const onNow = [...prev.off.values()].filter((x) => !now.has(`${x.role}|${x.url}`) && groupFiles(attached).has(`${x.role}|${x.url}`));
+    // What the plan was made from (the picture to edit counts among the references there).
+    const all = groupFiles(engine.sendable);
+    lastPlan.current = { key: entry?.key, off: now, all };
+    // The first model known (catalog loaded, saved model) is the starting point, not a change.
+    if (!prev?.key || !entry || prev.key === entry.key) return;
+    const offNow = plan.off.filter((x) => !prev.off.has(fileId(x)) && prev.all.has(fileId(x)));
+    const onNow = [...prev.off.values()].filter((x) => !now.has(fileId(x)) && all.has(fileId(x)));
     if (!offNow.length && !onNow.length) return;
     const parts = [];
-    if (offNow.length) parts.push(`${countWords(offNow)} ${offNow.length === 1 ? "is" : "are"} off. ${offNow[0].reason?.text || ""}`.trim());
-    if (onNow.length) parts.push(`${countWords(onNow)} ${onNow.length === 1 ? "is" : "are"} on again.`);
+    if (offNow.length) {
+      const reasons = [...new Set(offNow.map((x) => x.reason?.text).filter(Boolean))];
+      parts.push(`${capital(countWords(offNow))} ${offNow.length === 1 ? "is" : "are"} off.`, ...reasons);
+    }
+    if (onNow.length) parts.push(`${capital(countWords(onNow))} ${onNow.length === 1 ? "is" : "are"} on again.`);
+    // "Use … instead" names the group, not a count: the other endpoint may take fewer files.
     const together = offNow.filter((x) => x.why === "together");
-    setNote({ text: parts.join(" "), roles: together.length ? uniqRoles(together) : null, label: together.length ? `Use ${countWords(together, { bare: true })} instead` : null });
+    const roles = together.length ? uniqRoles(together) : null;
+    const groupsWord = roles ? [...new Set(roles.map((r) => GROUP_NAME[r] || "these files"))].join(" and ") : "";
+    setNote({ text: parts.join(" "), roles, label: roles ? `Use ${groupsWord} instead` : null });
   }, [entry?.key, plan]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setNote(null); }, [prompt, attached, kind, count]); // eslint-disable-line react-hooks/exhaustive-deps
 

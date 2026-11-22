@@ -176,7 +176,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   function budget(user) {
     if (user?.monthly_limit_usd == null) return null;
     const spent = q.spentThisMonth.get(user.id, monthStart()).usd;
-    return { limit: user.monthly_limit_usd, spent: round(spent), left: round(Math.max(0, user.monthly_limit_usd - spent)) };
+    // `left` unrounded: the studio compares it with the price the server will check.
+    return { limit: user.monthly_limit_usd, spent: round(spent), left: Math.max(0, user.monthly_limit_usd - spent) };
   }
 
   function monthStart() {

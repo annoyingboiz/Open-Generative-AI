@@ -845,8 +845,8 @@ export async function buildApp(config, { logger = true } = {}) {
       try {
         const vr = await videoRequest(req.user, providerId, modelId, body);
         const p = await videoPrice(req.user, providerId, modelId, { ...vr, check: body.check === true });
-        if (p?.needsCheck) { const { needsCheck: _n, ...info } = p; return { price: null, needsCheck: true, info }; }
-        return { price: p };
+        if (p?.needsCheck) { const { needsCheck: _n, ...info } = p; return { price: null, needsCheck: true, info, budget: generations.budget(req.user) }; }
+        return { price: p, budget: generations.budget(req.user) };
       } catch (error) {
         if (error instanceof VideoUpscaleError || error instanceof GenerationError) return { price: null, problem: error.message };
         throw error;

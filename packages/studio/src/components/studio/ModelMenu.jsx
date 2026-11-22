@@ -73,8 +73,11 @@ export default function ModelMenu({ entries, entry, onPick, onClose, kind = entr
     if (!quoteFor || paid.length < 2) return undefined;
     let alive = true;
     setQuotes({});
-    Promise.all(paid.map(async (p) => [p.entry.key, await quoteFor(p.entry)])).then((pairs) => { if (alive) setQuotes(Object.fromEntries(pairs)); });
-    return () => { alive = false; };
+    // A moment's wait: clicking through families asks only for the one left open.
+    const timer = setTimeout(() => {
+      Promise.all(paid.map(async (p) => [p.entry.key, await quoteFor(p.entry)])).then((pairs) => { if (alive) setQuotes(Object.fromEntries(pairs)); });
+    }, 350);
+    return () => { alive = false; clearTimeout(timer); };
   }, [openProviders, quoteFor]);
   const vendors = useMemo(() => {
     const m = new Map();

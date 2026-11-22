@@ -142,7 +142,8 @@ async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 
     if (!response.ok) {
         const errText = await response.text();
         notifyAuthRequired(response.status, errText);
-        throw new Error(dzReadableError(response.status, errText));
+        // The status travels with the message (402 = monthly limit: the studio keeps that error on screen).
+        throw Object.assign(new Error(dzReadableError(response.status, errText)), { status: response.status });
     }
     const submitData = await response.json();
     const requestId = submitData.request_id || submitData.id;

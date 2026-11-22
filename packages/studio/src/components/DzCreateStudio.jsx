@@ -633,24 +633,34 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // The same request at another provider of this family (A11): the model menu compares
   // real prices for these settings, not catalog "from" prices. null when the settings
   // don't carry over (a value that provider doesn't offer) or the price is unknown.
+  const quoteCache = useRef(new Map()); // request → { at, price }: reopening the menu doesn't ask again
   const quoteFor = useCallback(async (other) => {
     if (!other) return null;
     const otherPlan = planAttachments(other, withEditFirst(attached, other), { touched, explain: false });
-    const v = otherPlan.variant || other.variants[0];
-    if (!v || missingFor(v, otherPlan.sent)) return null;
+    // Elements count as files here too (they can change the endpoint, e.g. text → reference).
+    const otherEls = entryTakesElements(other) || other.slots.some((sl) => sl.role === "reference" || sl.role === "video") ? elements : [];
+    const otherMerged = mergeElements(other, otherPlan.sent, otherEls);
+    const v = chooseVariant(other, otherMerged.attached, { native: otherMerged.native }) || otherPlan.variant || other.variants[0];
+    if (!v || missingFor(v, otherMerged.attached)) return null;
     const { main, advanced } = paramsOf(v.model);
     for (const p of [...main, ...advanced]) {
       const val = bodyValues?.[p.key];
       if (val != null && val !== "" && Array.isArray(p.enum) && p.enum.length && !p.enum.map(String).includes(String(val))) return null;
     }
-    const b = buildBody(v, { prompt: finalPrompt || "price check", values: bodyValues, attached: otherPlan.sent });
+    const b = buildBody(v, { prompt: finalPrompt || "price check", values: bodyValues, attached: otherMerged.attached, elements: elementsInputOf(v.model) ? otherEls : [] });
+    // The prompt text doesn't change the price (as in useDzQuote).
+    const cacheKey = JSON.stringify({ e: v.model.endpoint, ...b, prompt: undefined });
+    const hit = quoteCache.current.get(cacheKey);
+    if (hit && Date.now() - hit.at < 60_000) return hit.price;
     try {
       const price = await dzGenerate(apiKey, { endpoint: v.model.endpoint, ...b, onRequestId: DZ_QUOTE });
-      return price && Number.isFinite(price.usd) ? price : null;
+      const ok = price && Number.isFinite(price.usd) ? price : null;
+      quoteCache.current.set(cacheKey, { at: Date.now(), price: ok });
+      return ok;
     } catch {
       return null;
     }
-  }, [attached, touched, bodyValues, finalPrompt, apiKey]);
+  }, [attached, touched, bodyValues, finalPrompt, apiKey, elements]);
   // The server's view (hints on unusual camera combos; the drawer shows the final prompt).
   const [sentOpen, setSentOpen] = useState(false);
   const sentPreview = useDzPromptPreview({ endpoint: variant?.model.endpoint, body: quoteBody ? { ...quoteBody, prompt: "" } : null, look, enabled: Boolean(variant && look && !sentOpen) });
@@ -845,7 +855,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       } catch (e) {
         onGenerationEnd?.();
         const raw = String(e?.message || e);
-        const status = Number(/^API Request Failed: (\d+)/.exec(raw)?.[1]) || null;
+        const status = Number(e?.status) || Number(/^API Request Failed: (\d+)/.exec(raw)?.[1]) || null;
         const m = raw.replace(/^API Request Failed: \d+ [^-]*- /, "");
         if (opts.onError) opts.onError(i, m); else onGenerationError?.(m, { status });
       } finally {

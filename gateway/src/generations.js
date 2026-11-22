@@ -412,7 +412,50 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   //   project=<id> (that project; folder=<id>|root narrows it) · project=none (personal only)
   //   no project → the user's Library: their own items plus their projects' items.
   //   target=<board>:<shot or group> — what was made for one shot or group of a storyboard (package 05).
-  function history(user, { cursor, limit = 50, studio, kind, tool, board, target, source, liked, trash: inTrash, status, project, folder, q: search } = {}) {
+  function history(user, opts = {}) {
+    const { cursor, limit = 50 } = opts;
+    const { where, args } = historyWhere(user, opts);
+    where.push('created_at < ?');
+    args.push(Number(cursor) || Number.MAX_SAFE_INTEGER);
+    const rows = db.prepare(`SELECT * FROM generations WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`)
+      .all(...args, Math.min(Math.max(Math.trunc(Number(limit)) || 50, 1), 200));
+    return { items: rows.map((r) => historyItem(r, user)), next_cursor: rows.length ? String(rows[rows.length - 1].created_at) : null };
+  }
+
+  // How many there are behind each gallery filter (package 14, 3.11): the same place as the
+  // gallery (project, folder, target, kind…), then All, pictures, videos, liked, upscaled.
+  function historyCounts(user, opts = {}) {
+    const base = { ...opts, liked: undefined, status: undefined, cursor: undefined };
+    const n = (extra) => {
+      const { where, args } = historyWhere(user, { ...base, ...extra });
+      return db.prepare(`SELECT COUNT(*) AS n FROM generations WHERE ${where.join(' AND ')}`).get(...args).n;
+    };
+    return { all: n({}), image: n({ kind: base.kind || 'image' }), video: n({ kind: base.kind || 'video' }), liked: n({ liked: '1' }), upscaled: n({ studio: 'upscale' }) };
+  }
+
+  // The Tasks drawer (package 14, A4): this user's jobs that run or wait, and those that ended in
+  // the last hour, with where each was started.
+  function tasks(user) {
+    const since = now() - 60 * 60_000;
+    const rows = db.prepare(`SELECT * FROM generations WHERE user_id = ? AND purged_at IS NULL AND deleted_at IS NULL
+      AND (status IN ('submitting','submitted','processing','downloading') OR (status IN ('completed','failed') AND completed_at >= ?))
+      ORDER BY created_at DESC LIMIT 60`).all(user.id, since);
+    return rows.map((row) => {
+      const item = historyItem(row, user);
+      const active = item.status === 'processing';
+      const waiting = active && /^(Waiting|In line)/.test(String(item.note || ''));
+      return {
+        id: item.id, kind: item.kind, studio: item.studio, url: item.url, outputs: item.outputs.length, note: item.note, error: item.error,
+        state: !active ? item.status : waiting ? 'waiting' : 'running',
+        created_at: item.created_at, completed_at: item.completed_at, project_id: item.project_id,
+        model: item.meta?.modelName || item.provider_model || '', provider: providerById(row.provider)?.name || row.provider || '',
+        target: item.meta?.target && typeof item.meta.target === 'object' ? { board: item.meta.target.board, id: item.meta.target.id, kind: item.meta.target.kind, step: item.meta.target.step } : null,
+        editor: Boolean(item.meta?.editor), upscale: item.studio === 'upscale',
+      };
+    });
+  }
+
+  function historyWhere(user, { studio, kind, tool, board, target, source, liked, trash: inTrash, status, project, folder, q: search } = {}) {
     const where = ['purged_at IS NULL'];
     const args = [];
     if (project === 'none') {
@@ -458,11 +501,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     // Words in the prompt (each one must be there), case-insensitive.
     const words = String(search || '').toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
     for (const w of words) { where.push("dz_fold(prompt) LIKE ? ESCAPE '\\'"); args.push(`%${w.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`)}%`); }
-    where.push('created_at < ?');
-    args.push(Number(cursor) || Number.MAX_SAFE_INTEGER);
-    const rows = db.prepare(`SELECT * FROM generations WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`)
-      .all(...args, Math.min(Math.max(Math.trunc(Number(limit)) || 50, 1), 200));
-    return { items: rows.map((r) => historyItem(r, user)), next_cursor: rows.length ? String(rows[rows.length - 1].created_at) : null };
+    return { where, args };
   }
 
   // Visible: the author or a member of its project.
@@ -726,7 +765,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,
     cachedProviderUrl,
-    saveUpload, addLocalEdit, uploads, deleteUploads, submit, result, history, cancel, retrySource, visibleRow: visible, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
+    saveUpload, addLocalEdit, uploads, deleteUploads, submit, result, history, historyCounts, tasks, cancel, retrySource, visibleRow: visible, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

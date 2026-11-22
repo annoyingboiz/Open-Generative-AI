@@ -187,7 +187,7 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
             return (
               <>
                 {here.approved && section("here-approved", "hsl(var(--success))", "Approved", list(here.approved), false)}
-                {section("here-liked", "hsl(var(--signal))", "Liked", list(here.liked), false)}
+                {list(here.liked).length > 0 && section("here-liked", "hsl(var(--signal))", "Liked", list(here.liked), false)}
                 {section("here-all", "hsl(var(--muted-foreground))", "All", hereAll.filter(match), false)}
               </>
             );
@@ -246,7 +246,17 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
   );
 }
 
-const hintFor = (group, full) => (full ? "Full. Remove one to pick another." : group?.kind === "video" ? "Only videos are shown for this group." : group?.kind === "audio" ? "Only sounds are shown for this group." : "Only pictures are shown for this group.");
+// The hint says where a click puts the picture (package 14, 3.12): the slot, or for Frames the
+// next free one in the order addToGroup fills them.
+const FRAME_WORD = { first: "Start", last: "End", middle: "Middle" };
+const slotOf = (group, sent) => {
+  if (group?.id === "frames") {
+    const free = ["first", "last", "middle"].find((r) => group.roleMax?.[r] && !(sent?.[r] || []).length);
+    return free ? FRAME_WORD[free] : "Start";
+  }
+  return group?.slot || group?.label || "the slot";
+};
+const hintFor = (group, full, sent) => (full ? "Full. Remove one to pick another." : `What you click goes into ${slotOf(group, sent)}.`);
 
 // Above the strip, same width as the composer (the composer folds to the strip meanwhile).
 export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sent = attached, setAttached, onClose, onError, onUploading, st = null, title = null, initial = null }) {
@@ -287,7 +297,7 @@ export function LibraryWindow({ open, groups, groupId, setGroupId, attached, sen
       <div className="mt-3 flex h-9 flex-shrink-0 items-center gap-4">
         <span className="text-sm tabular-nums text-muted-foreground">{chosen.length} of {maxOf(group, chosen.length)} chosen</span>
         <button type="button" onClick={() => setAttached((a) => clearGroup(a, group))} disabled={!chosen.length} className="flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"><Broom size={16} /> Clear</button>
-        <span className="ml-auto text-sm text-muted-foreground">{full ? hintFor(group, full) : initial?.element ? "Each view you pick is sent as one reference picture." : board ? "Drop files here to upload. They also land on the Moodboard." : hintFor(group, full)}</span>
+        <span className="ml-auto text-sm text-muted-foreground">{full ? hintFor(group, full) : initial?.element ? "Each view you pick is sent as one reference picture." : hintFor(group, full, sent)}</span>
         <button type="button" onClick={onClose} className="h-8 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground hover:bg-primary-hover active:scale-[.98]">Done</button>
       </div>
     </div>

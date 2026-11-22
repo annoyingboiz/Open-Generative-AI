@@ -162,6 +162,9 @@ export function targetOf(meta) {
   if (f && typeof f.board === 'string' && SHOT_ID.test(String(f.shot || ''))) return { board: f.board, id: String(f.shot), kind: 'shot', step: f.step === 'video' ? 'video' : 'frame' };
   return null;
 }
+// How long the media of a deleted shot or group is kept for Undo (in memory: a restart starts the clock again).
+const MEDIA_GRACE_MS = 30 * 60_000;
+const goneSince = new Map(); // "storyboard:target" -> when it went
 const groupIds = (mood) => new Set((mood.items || []).filter((x) => x.type === 'frame').map((x) => x.id));
 
 export function createStoryboards({ db, projects, generations, log }) {
@@ -247,7 +250,11 @@ export function createStoryboards({ db, projects, generations, log }) {
     settings: parse(row.settings_json, {}),
     // Shots saved before 18.11 carry camera names: shown with today's ids.
     shots: parse(row.shots_json, []).filter(isObj).map((s) => ({ ...cleanShot(s, { id: s.id }), scene: String(s.scene || ''), note: line(s.note, 200), refs: cleanRefs(s.refs) })),
-    media: withState(row, parse(row.media_json, {})),
+    // Only live shots and groups: a deleted one's media waits for Undo but is not shown.
+    media: withState(row, (() => {
+      const ids = new Set([...parse(row.shots_json, []).map((x) => x?.id), ...groupIds(parse(row.mood_json, {}))]);
+      return Object.fromEntries(Object.entries(parse(row.media_json, {})).filter(([k]) => ids.has(k)));
+    })()),
     rev: row.rev,
     project_id: row.project_id || null,
     mine: row.owner_id === user.id,
@@ -375,12 +382,19 @@ export function createStoryboards({ db, projects, generations, log }) {
       err.storyboard = fresh ? view(fresh, user, { jobs: jobsOf(fresh) }) : null;
       throw err;
     }
-    // Media of shots and groups that are gone is dropped. The generations themselves
-    // stay where they were made (the Library or the project), with likes and all.
+    // Media of shots and groups that are gone is dropped — after a while: a deleted shot or scene
+    // can come back with Undo (package 14, A5) with its pictures, videos and approvals. The
+    // generations themselves stay where they were made (the Library or the project), with likes and all.
     const fresh = q.byId.get(row.id);
     const ids = new Set([...parse(fresh.shots_json, []).map((s) => s.id), ...groupIds(parse(fresh.mood_json, {}))]);
     const media = parse(fresh.media_json, {});
-    const kept = Object.fromEntries(Object.entries(media).filter(([k]) => ids.has(k)));
+    const t = now();
+    const kept = Object.fromEntries(Object.entries(media).filter(([k]) => {
+      const key = `${row.id}:${k}`;
+      if (ids.has(k)) { goneSince.delete(key); return true; }
+      if (!goneSince.has(key)) goneSince.set(key, t);
+      return t - goneSince.get(key) < MEDIA_GRACE_MS;
+    }));
     if (Object.keys(kept).length !== Object.keys(media).length) q.setMedia.run(JSON.stringify(kept), now(), row.id);
     const final = q.byId.get(row.id);
     return { storyboard: view(final, user, { jobs: jobsOf(final) }) };

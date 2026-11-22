@@ -24,15 +24,14 @@ import { LibraryWindow, PickerHereContext } from "../studio/Library.jsx";
 import PromptEditor, { RefChip } from "../studio/PromptEditor.jsx";
 import { Overline } from "../studio/ui.jsx";
 import { Tool } from "../storyboard/canvasKit.jsx";
-import { DialogParts, Spinner, Switch, Tip, cn } from "../../ui/index.js";
+import { Spinner, Switch, Tip, cn } from "../../ui/index.js";
 import { useDzDropTarget } from "../../dzDrop.js";
 import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
 import EditorCanvas from "./EditorCanvas.jsx";
-import { MARK_COLORS, DEFAULT_MARK_COLOR, MAX_OBJECTS, MAX_REFS, MAX_REFS_PER_NOTE, numbered, isObject, isMark, summary, requestPictures, requestRefs, editorPrompt, requestPrompt, composerPrompt, noteLines, hasWork, workWords, newRefId, refToken, liveRefs, withRefNames } from "./editorModel.mjs";
+import { MARK_COLORS, DEFAULT_MARK_COLOR, MAX_OBJECTS, MAX_REFS, MAX_REFS_PER_NOTE, numbered, isObject, isMark, summary, requestPictures, requestRefs, editorPrompt, requestPrompt, composerPrompt, noteLines, newRefId, refToken, liveRefs, withRefNames } from "./editorModel.mjs";
 import { anchorOf, boundsOf, renderPicture, toJpeg, forgetImages } from "./editorPictures.js";
 
-const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } = DialogParts;
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
 // A picked picture's name is often its whole prompt: a few words are enough for a layer.
 const shortName = (n) => { const t = String(n || "").replace(/\s+/g, " ").trim(); if (!t) return "Picture"; if (t.length <= 28) return t; const cut = t.slice(0, 28); return `${cut.slice(0, cut.lastIndexOf(" ") > 12 ? cut.lastIndexOf(" ") : 28)}…`; };
@@ -45,8 +44,8 @@ const TOOLS = [
   ["rect", Square, "Rectangle (R)", "r"], ["arrow", ArrowUpRight, "Arrow (A)", "a"], ["brush", PaintBrush, "Brush (B)", "b"], ["eraser", Eraser, "Eraser (E)", "e"], null,
   ["note", ChatCircleDots, "Note (N)", "n"], ["picture", ImageSquare, "Add a picture (P)", "p"],
 ];
-const OBJECTS_GROUP = { id: "objects", label: "Add to the picture", roles: ["reference"], kind: "image", max: MAX_OBJECTS, roleMax: { reference: MAX_OBJECTS } };
-const refsGroup = (max) => ({ id: "refs", label: "Reference", roles: ["reference"], kind: "image", max, roleMax: { reference: max } });
+const OBJECTS_GROUP = { id: "objects", label: "Add to the picture", slot: "the picture", roles: ["reference"], kind: "image", max: MAX_OBJECTS, roleMax: { reference: MAX_OBJECTS } };
+const refsGroup = (max) => ({ id: "refs", label: "Reference", slot: "the note", roles: ["reference"], kind: "image", max, roleMax: { reference: max } });
 // Resolution values like "1K", "2K", "4K": about 1, 4 and 16 megapixels.
 const resPixels = (v) => { const m = /^(\d+(?:\.\d+)?)\s*k$/i.exec(String(v)); return m ? (Number(m[1]) * 1024) ** 2 : null; };
 const ratioNum = (o) => { const m = /^(\d+(?:\.\d+)?)\s*[:x]\s*(\d+(?:\.\d+)?)$/.exec(String(o)); return m ? Number(m[1]) / Number(m[2]) : null; };
@@ -66,10 +65,39 @@ const editVariants = (e) => e.variants.filter((v) => v.mode === "i2i" && v.media
 const editRoom = (e) => Math.max(0, ...editVariants(e).map(variantRoom));
 const editPrice = (e, need = 0) => Math.min(Infinity, ...editVariants(e).filter((v) => variantRoom(v) >= need).map(variantPrice));
 const USER_MODEL = "dz_editor_user_model";
+// The draft (package 14, A6): marks, notes, objects and references of each picture, kept in this
+// browser until a Generate succeeds or "Clear all". The newest 30 pictures keep theirs.
+const DRAFT_KEY = (url) => `dz_editor_draft:${url}`;
+const DRAFT_LIST = "dz_editor_drafts";
+const DRAFTS_KEPT = 30;
+function readDraft(url) {
+  try {
+    const d = JSON.parse(window.localStorage.getItem(DRAFT_KEY(url)) || "null");
+    return d && Array.isArray(d.doc?.items) && Array.isArray(d.doc?.erasers) ? d : null;
+  } catch { return null; }
+}
+function writeDraft(url, draft) {
+  try {
+    window.localStorage.setItem(DRAFT_KEY(url), JSON.stringify(draft));
+    const list = [url, ...JSON.parse(window.localStorage.getItem(DRAFT_LIST) || "[]").filter((u) => u !== url)];
+    for (const old of list.slice(DRAFTS_KEPT)) window.localStorage.removeItem(DRAFT_KEY(old));
+    window.localStorage.setItem(DRAFT_LIST, JSON.stringify(list.slice(0, DRAFTS_KEPT)));
+  } catch { /* storage full or off: the draft is not kept */ }
+}
+function dropDraft(url) {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY(url));
+    window.localStorage.setItem(DRAFT_LIST, JSON.stringify(JSON.parse(window.localStorage.getItem(DRAFT_LIST) || "[]").filter((u) => u !== url)));
+  } catch { /* nothing to drop */ }
+}
 
 export default function PictureEditor({ url, apiKey, target = null, place: openedAt = null, placeOf = null, onClose, onSendToComposer, approve = null, isApproved = () => false }) {
+  // A draft from last time comes back by itself (A6).
+  const draft0 = useRef(undefined);
+  if (draft0.current === undefined) draft0.current = typeof window !== "undefined" ? readDraft(url) : null;
+  const [restored, setRestored] = useState(Boolean(draft0.current));
   // ── The base picture and its size ──
-  const [base, setBase] = useState({ url, w: 0, h: 0 });
+  const [base, setBase] = useState({ url: draft0.current?.base || url, w: 0, h: 0 });
   useEffect(() => {
     let alive = true;
     dzMediaInfo(base.url).then((j) => {
@@ -83,7 +111,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   }, [base.url]);
 
   // ── The work: items (marks and objects) and eraser strokes, with undo / redo ──
-  const [doc, setDocState] = useState({ items: [], erasers: [] });
+  const [doc, setDocState] = useState(() => draft0.current?.doc || { items: [], erasers: [] });
   const docRef = useRef(doc);
   docRef.current = doc;
   const undo = useRef([]);
@@ -110,9 +138,9 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   const items = doc.items;
   const list = useMemo(() => numbered(items), [items]);
   const byId = useMemo(() => new Map(list.map((x) => [x.id, x])), [list]);
-  const [general, setGeneralRaw] = useState("");
+  const [general, setGeneralRaw] = useState(() => draft0.current?.general || "");
   const setGeneral = (v) => { setGeneralRaw(v); setDirty(true); };
-  const [flat, setFlat] = useState(false);
+  const [flat, setFlat] = useState(() => Boolean(draft0.current?.flat));
   const [adapted, setAdapted] = useState(null); // the prompt rewritten by Adapt, until the notes change
 
   // ── Tools ──
@@ -178,7 +206,6 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   const [picker, setPicker] = useState(false);
   const [refFor, setRefFor] = useState(null); // the item whose note gets a reference from the picker
   const [busy, setBusy] = useState(null); // "generate" | "save" | "send"
-  const [closing, setClosing] = useState(false);
 
   // The model (C3): a fresh editor opens on Nano Banana Pro (the model the prompt template is
   // made for) at its cheapest provider that can edit with this many pictures; a model the user
@@ -281,6 +308,33 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
 
   const editModel = Boolean(engine.entry?.canEdit);
   const running = versions.some((v) => v.status === "pending" && v.batch);
+
+  // ── The draft (A6): saved as the work changes. While a Generate runs, the work it took stays in
+  // the draft; once it succeeds the draft is gone (a failed one brings the work back to the canvas).
+  const draftNow = () => {
+    const d = docRef.current;
+    const w = d.items.length || d.erasers.length || general.trim()
+      ? { doc: d, general, flat }
+      : running && baseWork.current ? { doc: baseWork.current.doc, general: baseWork.current.general, flat: baseWork.current.flat } : null;
+    return w && (w.doc.items.length || w.general.trim()) ? { ...w, base: base.url !== url ? base.url : null, at: Date.now() } : null;
+  };
+  const saveDraftNow = () => { const d = draftNow(); if (d) writeDraft(url, d); else dropDraft(url); };
+  useEffect(() => {
+    const t = setTimeout(saveDraftNow, 400);
+    return () => clearTimeout(t);
+  }, [doc, general, flat, base.url, running]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveRef = useRef(saveDraftNow);
+  saveRef.current = saveDraftNow;
+  useEffect(() => () => saveRef.current(), []);
+  // The message about a draft that came back goes once the work changes, or after a while.
+  const restoredDoc = useRef(doc);
+  useEffect(() => { if (restored && doc !== restoredDoc.current) setRestored(false); }, [doc, restored]);
+  useEffect(() => { if (!restored) return undefined; const t = setTimeout(() => setRestored(false), 15000); return () => clearTimeout(t); }, [restored]);
+  const clearAll = () => {
+    commit(() => ({ items: [], erasers: [] }));
+    setGeneralRaw(""); setFlat(false); setAdapted(null); setSelected(null); setNote(null);
+    setRestored(false);
+  };
   // Every picture of the request must reach the model (E5): a model that takes fewer is refused, not trimmed.
   const tooMany = editModel && engine.unusedCount > 0;
   const canGo = Boolean(engine.variant && editModel && viewingBase && notesWritten && base.w && !busy && !engine.uploads && !tooMany && !running);
@@ -293,7 +347,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
 
   // ── Pictures for the request ──
   const makePicture = async (asFlat, doc = docRef.current, paint = "outline") => {
-    const render = (width, height) => renderPicture({ base, items: doc.items, erasers: doc.erasers, flat: asFlat, width, height, paint });
+    const render = (width, height) => renderPicture({ base, items: doc.items, erasers: doc.erasers, flat: asFlat, width, height, paint: paint === "none" ? "outline" : paint, marks: paint !== "none" });
     let blob;
     try { ({ blob } = await toJpeg(render, base.w, base.h)); }
     finally { forgetImages([base.url, ...doc.items.filter(isObject).map((o) => o.url)]); }
@@ -625,7 +679,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   // ── Keys ──
   useEffect(() => {
     const down = (e) => {
-      if (closing || picker || panel || pop || busy === "generate") return;
+      if (picker || panel || pop || busy === "generate") return;
       if (e.target.closest?.("input,textarea,[contenteditable=true]")) return;
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
@@ -653,7 +707,8 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     if (!base.w) return false;
     setBusy("save");
     try {
-      const upload = await makePicture(true, docRef.current, "fill");
+      // The base with the pasted pictures, without marks and numbers (A6, decision 2.7).
+      const upload = await makePicture(true, docRef.current, "none");
       const res = await fetch("/dz/api/editor/copy", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: upload, from: base.url, prompt: editorPrompt({ items, general }), ...dzContextParams(), ...(target ? { target: { board: target.board, id: target.id, kind: target.kind } } : {}) }),
@@ -678,7 +733,8 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
       notify({ type: "error", title: "Send to composer", message: String(e?.message || e) });
     } finally { setBusy(null); }
   };
-  const requestClose = () => { if (dirty && hasWork(items, general)) setClosing(true); else onClose(); };
+  // Nothing is lost on close (A6): the draft is kept, so there is no question to ask.
+  const requestClose = () => { saveDraftNow(); onClose(); };
 
   // ── Overlay: numbers, the open note, the selection's small toolbar (C2) ──
   // Every item is a number circle; its note shows as a pill only when the item is selected or
@@ -776,7 +832,7 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
         <span className="flex-1" />
         <Tip text="Undo (⌘Z)"><button type="button" onClick={doUndo} disabled={!undo.current.length} aria-label="Undo" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35"><ArrowCounterClockwise size={17} /></button></Tip>
         <Tip text="Redo (⇧⌘Z)"><button type="button" onClick={doRedo} disabled={!redo.current.length} aria-label="Redo" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-35"><ArrowClockwise size={17} /></button></Tip>
-        <button type="button" onClick={saveCopy} disabled={!viewingBase || !items.length || Boolean(busy)} className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-45">
+        <button type="button" onClick={saveCopy} disabled={!viewingBase || !objects.length || Boolean(busy)} title={objects.length ? "The base with the pasted pictures, without marks and numbers" : "Paste a picture first: the copy is the base with the pasted pictures"} className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-45">
           {busy === "save" ? <Spinner className="h-3.5 w-3.5" /> : <FloppyDisk size={15} />}Save a copy</button>
         <button type="button" onClick={sendToComposer} disabled={!viewingBase || !onSendToComposer || Boolean(busy)} className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-45">
           {busy === "send" ? <Spinner className="h-3.5 w-3.5" /> : <ArrowElbowDownRight size={15} />}Send to composer</button>
@@ -798,6 +854,15 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
               <button type="button" onPointerDown={() => setComparing(true)} onPointerUp={() => setComparing(false)} onPointerLeave={() => setComparing(false)}
                 onKeyDown={(e) => { if (e.key === " ") setComparing(true); }} onKeyUp={() => setComparing(false)}
                 className="pointer-events-auto flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium shadow-float hover:bg-accent"><ArrowsLeftRight size={15} />{comparing ? "Showing the base" : "Hold to compare with the base"}</button>
+            </div>
+          )}
+          {/* A draft came back (A6, screen 10). */}
+          {restored && viewingBase && (
+            <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-6">
+              <div role="status" className="pointer-events-auto flex items-center gap-4 rounded-lg border border-border bg-popover py-1.5 pl-3.5 pr-1.5 text-sm shadow-popover">
+                Your marks and notes from last time are back
+                <button type="button" onClick={clearAll} className="h-8 rounded-md px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground">Clear all</button>
+              </div>
             </div>
           )}
           {/* Generating (C6, screen 20): the picture dimmed, a small card; the view still moves. */}
@@ -917,20 +982,6 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
         onAdaptUse={(t) => { adaptedFor.current = promptKey; setAdapted(t); setPanel(null); setTab("model"); }} />
 
       {/* Close with unsaved work (E7, screen 17) */}
-      <Dialog open={closing} onOpenChange={setClosing}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>Close the editor?</DialogTitle>
-            <DialogDescription>{(() => { const w = workWords(items) || "work"; const one = /^(1|an?) [a-z]+$/i.test(w); return `You have ${w} on this picture that ${one ? "was" : "were"} not saved or generated. ${one ? "It" : "They"} will be lost.`; })()}</DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center justify-end gap-2">
-            <button type="button" onClick={() => setClosing(false)} className="h-9 whitespace-nowrap rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">Cancel</button>
-            <button type="button" onClick={() => { setClosing(false); onClose(); }} className="h-9 whitespace-nowrap rounded-md border border-border px-3 text-sm font-medium hover:bg-accent">Close without saving</button>
-            <button type="button" disabled={busy === "save"} onClick={async () => { if (await saveCopy()) { setClosing(false); onClose(); } }}
-              className="flex h-9 items-center gap-2 whitespace-nowrap rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-60">{busy === "save" && <Spinner className="h-3.5 w-3.5 border-primary-foreground/30 border-t-primary-foreground" />}Save a copy and close</button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>,
     document.body,
   );

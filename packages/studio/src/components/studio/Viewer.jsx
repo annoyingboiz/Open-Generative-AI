@@ -120,6 +120,18 @@ function VideoPlayer({ item, act }) {
   }, [item.url]);
   const frames = useFrameStrip(item.url);
   const v = () => ref.current;
+  // The free area between the top row and the controls (package 14, A3): the video is fitted into
+  // it at any shape — a percentage max-height does not hold inside this flex column.
+  const [area, setArea] = useState(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(() => setArea({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    setArea({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
+  const fitStyle = area ? { maxWidth: area.w, maxHeight: area.h } : { maxWidth: "100%", maxHeight: "100%" };
   // Loading state from the first moment; no first frame after a few seconds → Retry (package 10, M6).
   const [load, setLoad] = useState("loading"); // loading | ready | slow | error
   const [attempt, setAttempt] = useState(0);
@@ -132,9 +144,9 @@ function VideoPlayer({ item, act }) {
   const step = (n) => { const el = v(); if (!el) return; el.pause(); setPlaying(false); el.currentTime = Math.max(0, Math.min(el.duration || 0, el.currentTime + n / FPS)); };
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      <div ref={box} className="flex min-h-0 flex-1 items-center justify-center bg-overlay">
-        <div className="relative flex max-h-full max-w-full items-center justify-center">
-          <video ref={ref} src={original ? item.url : dzPlay(item.url)} autoPlay muted={muted} loop={loop} playsInline preload="auto" poster={dzThumb(item.url, 1600)} className="max-h-full max-w-full rounded-md"
+      <div ref={box} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-overlay">
+        <div className="relative flex items-center justify-center" style={fitStyle}>
+          <video ref={ref} src={original ? item.url : dzPlay(item.url)} autoPlay muted={muted} loop={loop} playsInline preload="auto" poster={dzThumb(item.url, 1600)} className="block rounded-md object-contain" style={fitStyle}
             onTimeUpdate={(e) => setT(e.currentTarget.currentTime)} onLoadedMetadata={(e) => { const el = e.currentTarget; setDur(el.duration); setRes({ w: el.videoWidth, h: el.videoHeight });  if (resume.current) { el.currentTime = resume.current.t; if (resume.current.playing) el.play().catch(() => {}); else el.pause(); resume.current = null; } }}
             onLoadedData={() => setLoad("ready")} onPlaying={() => setLoad("ready")} onWaiting={() => setLoad((s) => (s === "ready" ? "loading" : s))}
             onError={() => { if (original) { setOriginal(false); return; } setLoad("error"); }}
@@ -363,7 +375,7 @@ function ScreenImage({ url, alt }) {
     else zoomTo(fit);
   };
 
-  if (!local) return <img src={url} alt={alt} className="max-h-full max-w-full rounded-md object-contain" />;
+  if (!local) return <div className="relative h-full w-full"><img src={url} alt={alt} className="absolute inset-0 h-full w-full object-contain" /></div>;
   // No copy could be made (a picture over the preview limit): the original, loaded on purpose with its progress.
   const copySrc = dzThumb(url, view.w * (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1) > 2048 ? 2880 : 2048);
   const w = nat ? nat.w * s : 0; const h = nat ? nat.h * s : 0;
@@ -405,8 +417,13 @@ function ScreenImage({ url, alt }) {
   );
 }
 
-export default function StudioViewer({ item, items = [], onClose, onMove, act }) {
-  useEscLayer(Boolean(item), onClose);
+export default function StudioViewer({ item: given, items = [], onClose, onMove, act }) {
+  useEscLayer(Boolean(given), onClose);
+  // The item as the gallery has it now (a like changes it there), and a like pressed here shows at
+  // once even when the gallery drops the item (the Liked tab) — package 14, A3.
+  const [likedHere, setLikedHere] = useState({});
+  const fresh = given ? items.find((i) => i.id === given.id) || given : null;
+  const item = fresh && likedHere[fresh.id] !== undefined ? { ...fresh, liked: likedHere[fresh.id] } : fresh;
   const [tab, setTab] = useState("details");
   const [size, setSize] = useState(null);
   useEffect(() => { setTab("details"); setSize(null); }, [item?.id]);
@@ -483,7 +500,7 @@ export default function StudioViewer({ item, items = [], onClose, onMove, act })
               </button>
             );
           })()}
-          {real && <IconBtn label={item.liked ? "Unlike" : "Like"} onClick={() => act.like(item)}><Heart size={18} weight={item.liked ? "fill" : "regular"} className={item.liked ? "text-signal" : ""} /></IconBtn>}
+          {real && <IconBtn label={item.liked ? "Unlike" : "Like"} onClick={() => { setLikedHere((m) => ({ ...m, [item.id]: !item.liked })); Promise.resolve(act.like(item)).catch(() => setLikedHere((m) => ({ ...m, [item.id]: item.liked }))); }}><Heart size={18} weight={item.liked ? "fill" : "regular"} /></IconBtn>}
           <IconBtn label="Download" onClick={() => download(item.url)}><DownloadSimple size={18} /></IconBtn>
           {real && (
             <DropdownMenu>

@@ -250,7 +250,8 @@ test('storyboards: personal or in a project, plan saves shots, stale edits get 4
 test('storyboard print page escapes everything and shows the picked frames', async () => {
   const { storyboardPage } = await import('../src/storyboard-print.js');
   const html = storyboardPage({ name: '<b>x</b>', scene: 's"', look: { camera: 'film-35', focal: 50 }, shots: [{ id: 'a', title: '<script>', action: 'run', camera: 'phone', move: 'orbit' }], media: { a: { frame: '/media/g/gen_1/0.png' } } }, { aspect: '9:16' });
-  assert.ok(!html.includes('<script>') && html.includes('&lt;script&gt;'));
+  assert.ok(html.includes('&lt;script&gt;') && html.split('<script>').length === 2, 'only the page\'s own script');
+  assert.match(html, /Page '\+\(i\+1\)\+' of '/, 'every sheet gets "Page N of M" (package 14, A2)');
   assert.match(html, /aspect-ratio:9\/16/);
   assert.match(html, /\/media\/g\/gen_1\/0\.png\?w=960/);
   assert.match(html, /35mm Film · 50mm/);
@@ -334,6 +335,23 @@ test('storyboards v2 (package 05): scenes, any number of shots, groups, targets,
   res = await as('admin', 'PATCH', `/dz/api/storyboards/${sb.id}`, { rev: sb.rev, mood: { items: [] } });
   assert.equal(res.json().storyboard.media.g_mike, undefined);
   assert.equal(app.ctx.db.prepare('SELECT deleted_at FROM generations WHERE id = ?').get(g1).deleted_at, null);
+  // Undo (package 14, A5): a deleted shot that comes back has its pictures and approvals again.
+  sb = res.json().storyboard;
+  const keepShots = sb.shots;
+  res = await as('admin', 'PATCH', `/dz/api/storyboards/${sb.id}`, { rev: sb.rev, shots: keepShots.filter((x) => x.id !== 's_0') });
+  sb = res.json().storyboard;
+  assert.equal(sb.media.s_0, undefined, 'a deleted shot shows no media');
+  res = await as('admin', 'PATCH', `/dz/api/storyboards/${sb.id}`, { rev: sb.rev, shots: keepShots });
+  assert.equal(res.json().storyboard.media.s_0.approved.length, 2, 'Undo brings its media back');
+  // The Tasks drawer (A4) names the shot; the gallery counters (3.11) count by filter.
+  const tasks = (await as('admin', 'GET', '/dz/api/tasks')).json().items;
+  const t1 = tasks.find((x) => x.id === s1);
+  assert.equal(t1.place.kind, 'shot');
+  assert.match(t1.place.label, /^Shot \d+$/);
+  assert.ok(['completed', 'running', 'waiting', 'failed'].includes(t1.state));
+  const counts = (await as('admin', 'GET', `/api/v1/history/counts?target=${sb.id}:s_0`)).json();
+  assert.equal(counts.all, 2);
+  assert.equal(counts.liked, 0);
 });
 
 test('storyboard entry window: sorting is one text-model call; its price is known before', async () => {

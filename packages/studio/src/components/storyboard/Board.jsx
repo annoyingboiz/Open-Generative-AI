@@ -4,7 +4,7 @@
 // References layer — All pictures or One per shot; Generated layer.
 // Nothing here generates: a click opens the shot's working screen.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, CaretLeft, CaretRight, DotsThree, Check, Sparkle, TextAlignLeft, Images, X, ArrowUpRight, Play, FilmSlate, FileText, Rows, SquaresFour, Spinner as SpinIcon } from "@phosphor-icons/react";
+import { Plus, CaretLeft, CaretRight, DotsThree, Check, Sparkle, TextAlignLeft, Images, X, ArrowUpRight, Play, FilmSlate, Rows, SquaresFour, Spinner as SpinIcon } from "@phosphor-icons/react";
 import { dzThumb } from "../../api.js";
 import { DropdownMenuParts, SegSwitch, Tip, cn } from "../../ui/index.js";
 import { numbered, shotState, newSceneId, newShotId, splitScript, isVideoUrl } from "../../dzFilm.js";
@@ -133,30 +133,8 @@ function Thumb16({ url, dim, className }) {
   );
 }
 
-// The storyboard note (the idea), at the top of the Storyboard: several lines, edits in place.
-function FilmNote({ value, onChange, brief, onOpenBrief }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value || "");
-  useEffect(() => { if (!editing) setDraft(value || ""); }, [value, editing]);
-  const done = (save) => { setEditing(false); if (save && draft.trim() !== (value || "")) onChange(draft.trim()); };
-  return (
-    <div className="flex items-start gap-3 pt-5">
-      <FileText size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
-      {editing ? (
-        <textarea autoFocus value={draft} maxLength={2000} onChange={(e) => setDraft(e.target.value)} onBlur={() => done(true)}
-          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) done(true); if (e.key === "Escape") { e.stopPropagation(); done(false); } }}
-          rows={3} aria-label="Storyboard note" className="min-w-0 flex-1 resize-y rounded-sm bg-transparent text-base outline-none ring-1 ring-input" />
-      ) : (
-        <button type="button" onClick={() => setEditing(true)} className={cn("line-clamp-3 min-w-0 flex-1 whitespace-pre-wrap rounded-sm text-left text-base hover:bg-accent/60", !value && "text-muted-foreground")}>
-          {value || "Add a note: the idea in a few lines"}
-        </button>
-      )}
-      {brief && <button type="button" onClick={onOpenBrief} className="flex-shrink-0 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">The brief</button>}
-    </div>
-  );
-}
 
-export default function Board({ film, edit, onOpenShot, layer, setLayer, refView, setRefView, onOpenBrief }) {
+export default function Board({ film, edit, onOpenShot, layer, setLayer, refView, setRefView }) {
   const groups = useMemo(() => numbered(film), [film]);
   // The assistant sees the scene at the top of the view (§4.6).
   const groupsRef = useRef(groups);
@@ -247,10 +225,21 @@ export default function Board({ film, edit, onOpenShot, layer, setLayer, refView
     const sid = newSceneId();
     edit((f) => ({ ...f, scenes: [...f.scenes, { id: sid, name: "", note: "" }], shots: [...f.shots, ...refs.map((r) => ({ id: newShotId(), scene: sid, note: "", refs: [r] }))] }));
   });
+  // Delete at once, with Undo (package 14, A5): it comes back with everything in it, in its place
+  // (the server keeps the shot's pictures, videos and approvals for a while).
   const deleteScene = (sc) => {
-    const n = film.shots.filter((s) => s.scene === sc.id).length;
-    if (n && !window.confirm(`Delete this scene and its ${n} shot${n === 1 ? "" : "s"}? What was generated stays in your library.`)) return;
+    const at = film.scenes.findIndex((s) => s.id === sc.id);
+    const scene = film.scenes[at];
+    const gone = film.shots.map((s, i) => ({ s, i })).filter((x) => x.s.scene === sc.id);
     edit((f) => ({ ...f, scenes: f.scenes.filter((s) => s.id !== sc.id), shots: f.shots.filter((s) => s.scene !== sc.id) }));
+    notify({ type: "notice", title: `Scene ${at + 1} deleted`, undo: () => edit((f) => {
+      if (f.scenes.some((s) => s.id === sc.id)) return f;
+      const scenes = [...f.scenes];
+      scenes.splice(Math.min(at, scenes.length), 0, scene);
+      const shots = [...f.shots];
+      for (const x of gone) shots.splice(Math.min(x.i, shots.length), 0, x.s);
+      return { ...f, scenes, shots };
+    }) });
   };
   const moveScene = (sc, dir) => edit((f) => {
     const i = f.scenes.findIndex((s) => s.id === sc.id);
@@ -261,9 +250,16 @@ export default function Board({ film, edit, onOpenShot, layer, setLayer, refView
     return { ...f, scenes };
   });
   const deleteShot = (shot) => {
-    const st = shotState(film, shot);
-    if ((st.variants || (shot.refs || []).length) && !window.confirm(`Delete shot ${shot.n}? What was generated for it stays in your library.`)) return;
+    const at = film.shots.findIndex((s) => s.id === shot.id);
+    const raw = film.shots[at];
+    if (!raw) return;
     edit((f) => ({ ...f, shots: f.shots.filter((s) => s.id !== shot.id) }));
+    notify({ type: "notice", title: `Shot ${shot.n} deleted`, undo: () => edit((f) => {
+      if (f.shots.some((s) => s.id === shot.id)) return f;
+      const shots = [...f.shots];
+      shots.splice(Math.min(at, shots.length), 0, raw);
+      return { ...f, shots };
+    }) });
   };
   const pasteScript = (text) => {
     const parsed = splitScript(text);
@@ -332,7 +328,7 @@ export default function Board({ film, edit, onOpenShot, layer, setLayer, refView
         )}
       </div>
 
-      {(film.note || film.scene || !empty) && <FilmNote value={film.note} onChange={(v) => edit((f) => ({ ...f, note: v }))} brief={Boolean(film.scene)} onOpenBrief={onOpenBrief} />}
+      {/* The film note and "The brief" are not on this tab any more (package 14, 3.10): the brief stays in the ⋯ menu; the brief and the film's settings get their own place later. */}
 
       {empty ? (
         <EmptyState icon={FilmSlate} title="No scenes yet" text="Add a scene and put pictures into its shots. Or send a group from the Moodboard, or paste a script.">

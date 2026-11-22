@@ -3,6 +3,7 @@
 // DZ: projects — the context switcher in the header, the folder path, the
 // projects page (list in Library, settings inside a project), Move to….
 import React, { useEffect, useMemo, useState } from "react";
+import { Check } from "@phosphor-icons/react";
 import { Button, Input, Badge, Spinner, cn, DialogParts, DropdownMenuParts } from "../ui/index.js";
 
 const { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } = DialogParts;
@@ -119,7 +120,9 @@ export function NewProjectDialog({ open, onOpenChange, colors = [], onCreated })
 
 export function ProjectSwitcher({ ctx, projects = [], onOpen, onNew, onAll }) {
   const active = projects.filter((p) => !p.archived);
-  const recent = active.filter((p) => p.id !== ctx.project?.id).slice(0, 5);
+  // The current place carries a check mark (package 14, 3.16): it is listed first among the projects.
+  const current = ctx.project ? active.find((p) => p.id === ctx.project.id) || ctx.project : null;
+  const recent = [...(current ? [current] : []), ...active.filter((p) => p.id !== ctx.project?.id).slice(0, 5)];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -137,6 +140,7 @@ export function ProjectSwitcher({ ctx, projects = [], onOpen, onNew, onAll }) {
       <DropdownMenuContent align="start" className="w-72">
         <DropdownMenuItem onSelect={() => onOpen(null)} className="gap-2 text-base">
           <span className="w-3" /> Library <span className="ml-auto text-muted-foreground">personal</span>
+          {!ctx.project && <Check size={16} className="text-foreground" aria-label="Current" />}
         </DropdownMenuItem>
         {recent.length > 0 && <DropdownMenuSeparator />}
         {recent.length > 0 && <DropdownMenuLabel className="text-muted-foreground">Recent projects</DropdownMenuLabel>}
@@ -144,6 +148,7 @@ export function ProjectSwitcher({ ctx, projects = [], onOpen, onNew, onAll }) {
           <DropdownMenuItem key={p.id} onSelect={() => onOpen(p)} className="gap-2 text-base">
             <Dot color={p.color} /> <span className="truncate">{p.name}</span>
             {p.role === "member" && <span className="ml-auto text-muted-foreground">shared</span>}
+            {p.id === ctx.project?.id && <Check size={16} className={cn("text-foreground", p.role !== "member" && "ml-auto")} aria-label="Current" />}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />

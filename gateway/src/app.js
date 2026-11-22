@@ -1087,6 +1087,41 @@ export async function buildApp(config, { logger = true } = {}) {
   app.get('/api/v1/history', async (req, reply) => {
     try { return generations.history(req.user, req.query); } catch (error) { return sendGenError(reply, error); }
   });
+  // The counters on the gallery filters (package 14, 3.11).
+  app.get('/api/v1/history/counts', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    try { return generations.historyCounts(req.user, req.query); } catch (error) { return sendGenError(reply, error); }
+  });
+  // The Tasks drawer (package 14, A4): running, waiting, ended in the last hour — each with the
+  // place it was started (a shot or group by its name, the project).
+  app.get('/dz/api/tasks', async (req, reply) => {
+    reply.header('cache-control', 'private, no-store');
+    const list = generations.tasks(req.user);
+    const boards = new Map();
+    const boardOf = (id) => {
+      if (!boards.has(id)) { try { boards.set(id, storyboards.get(req.user, id).storyboard); } catch { boards.set(id, null); } }
+      return boards.get(id);
+    };
+    const projectRows = new Map(db.prepare('SELECT id, slug, name FROM projects').all().map((p) => [p.id, p]));
+    const items = list.map((t) => {
+      let place = null;
+      if (t.target?.board) {
+        const sb = boardOf(t.target.board);
+        if (sb) {
+          let n = 0;
+          let shot = null;
+          for (const sc of sb.scenes || []) for (const x of (sb.shots || []).filter((y) => y.scene === sc.id)) { n += 1; if (x.id === t.target.id) shot = n; }
+          const group = (sb.mood?.items || []).find((x) => x.type === 'frame' && x.id === t.target.id);
+          place = { board: sb.id, film: sb.name || 'Storyboard', kind: shot ? 'shot' : group ? 'group' : null, id: t.target.id,
+            label: shot ? `Shot ${shot}` : group ? group.name || 'Group' : sb.name || 'Storyboard', project_id: sb.project_id || null };
+        }
+      }
+      const pid = place?.project_id || t.project_id;
+      const project = pid && projectRows.get(pid) ? { id: pid, slug: projectRows.get(pid).slug, name: projectRows.get(pid).name } : null;
+      return { ...t, place, project };
+    });
+    return { items };
+  });
   app.post('/api/v1/predictions/:id/move', async (req, reply) => {
     try { return generations.move(req.user, req.params.id, { project: req.body?.project || null, folder: req.body?.folder || null }); } catch (error) { return sendGenError(reply, error); }
   });

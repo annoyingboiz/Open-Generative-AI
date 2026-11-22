@@ -200,7 +200,9 @@ function drawMarks(ctx, list, k, { lineW, badgeR, objectOutlines }) {
 
 // Draw the copy with marks (flat = false) or the one flattened picture (flat = true) into a
 // canvas of width × height for a base of base.w × base.h pixels.
-export async function renderPicture({ base, baseSrc, items, erasers, flat = false, width, height, objectSrc = (o) => o.url, paint = "outline" }) {
+// marks: false — the base with its pasted pictures only, no marks, paint or numbers ("Save a copy",
+// package 14, A6).
+export async function renderPicture({ base, baseSrc, items, erasers, flat = false, width, height, objectSrc = (o) => o.url, paint = "outline", marks = true }) {
   const k = width / base.w;
   const list = numbered(items).filter((it) => it.n);
   const [baseImg, ...objImgs] = await Promise.all([
@@ -217,6 +219,7 @@ export async function renderPicture({ base, baseSrc, items, erasers, flat = fals
     const objs = list.filter(isObject).map((o, i) => ({ o, img: objImgs[i] })).sort((a, b) => (a.o.z || 0) - (b.o.z || 0));
     for (const { o, img } of objs) if (img) drawObject(ctx, o, img, k);
   }
+  if (!marks) return c;
   const side = Math.max(width, height);
   const lineW = Math.max(2, side / 450);
   drawPaint(ctx, list, erasers, width, height, k, { mode: paint, lineW });

@@ -15,6 +15,17 @@ import { Segmented, Button, Input, cn, SelectParts } from "../ui/index.js";
 import { useDzSelection, SelectBox, GridToolbar, selectedRing } from "./DzSelection.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
 import { DzPosterVideo } from "./DzPosterVideo.jsx";
+import StudioViewer from "./studio/Viewer.jsx";
+import { dzFrame } from "./studio/actions.js";
+const DZ_SEND_EVENT = "dz:send-to"; // DzCreateStudio's (not imported: that file imports this one)
+
+// All work opens items in the Studio's large view (package 14, 3.7). Its "Use it" buttons hand the
+// item to the studio tab that does that (the shell opens the tab).
+const toTab = (tab, detail, event = DZ_SEND_EVENT) => {
+  window.dispatchEvent(new CustomEvent("dz:open-tab", { detail: { tab } }));
+  setTimeout(() => window.dispatchEvent(new CustomEvent(event, { detail })), 0);
+};
+const tell = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 const TYPES = [
@@ -297,6 +308,23 @@ export default function DzLibrary({ section = "all", initialLiked = false, onLik
     );
   };
 
+  const frameTo = async (it, at) => {
+    try { const r = await dzFrame(it.id, { at }); toTab("video", { to: "video", url: r.url }); } catch (e) { report(e); }
+  };
+  const libAct = {
+    like: (it) => lib.like(it.id, !it.liked),
+    trashStrict: (it) => lib.trash(it.id),
+    reuse: (it) => toTab("create", { to: "create", item: it }, "dz:reuse"),
+    useRef: (it) => { toTab("create", { to: "create", url: it.url, role: "reference" }); tell({ type: "notice", title: "Studio", message: "Added to the Studio's references." }); },
+    edit: (it) => toTab("image", { to: "image", url: it.url, role: "edit" }),
+    makeVideo: (it) => toTab("video", { to: "video", url: it.url }),
+    continueFrom: (it) => frameTo(it, "last"),
+    firstAsStart: (it) => frameTo(it, "first"),
+    saveFrame: async (it, t) => {
+      try { await dzFrame(it.id, { at: Number.isFinite(t) && t > 0 ? t : "first", save: true }); lib.refresh(); tell({ type: "notice", title: "Saved", message: "The frame is a picture now, next to the video." }); } catch (e) { report(e); }
+    },
+    hasMore: lib.hasMore,
+  };
   const where = ctx.project ? (ctx.folderPath?.length ? "this folder" : "this project") : "your Library";
   const empty = filtered ? "Nothing matches these filters."
     : section === "liked" ? `Nothing liked in ${where} yet. Tap the heart on any result to keep it here.`
@@ -354,7 +382,8 @@ export default function DzLibrary({ section = "all", initialLiked = false, onLik
           </>
         )}
       </div>
-      <Viewer item={open} onClose={() => setOpen(null)} />
+      <StudioViewer item={open && (uploads || inTrash ? { ...open, id: `att-${open.id}` } : open)} items={uploads || inTrash ? [] : lib.items}
+        onClose={() => setOpen(null)} onMove={(it) => setOpen(it)} act={libAct} />
     </div>
   );
 }

@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DzCreateStudio, DzStudio, DzStoryboard, DropOverlay, dzActiveDropTarget, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
-  DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT, dzScrollBoxRef, dzWatchScrollers,
+  DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT, dzScrollBoxRef, dzWatchScrollers, useDzTasks, DzTasksPanel,
   DzProjectsPage, DzElementsPage, ToElementDialog, VideoElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
   DropdownMenuParts, DialogParts, cn } from 'studio';
 import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, SquaresFour, Images, Shapes, Layout, Trash, FolderSimple, Plus,
@@ -206,7 +206,8 @@ export default function DzShell() {
   }, []);
   // Messages from anywhere (Move / Copy / Trash on many items, …).
   useEffect(() => {
-    const onNotify = (e) => { if (e.detail?.message) push({ type: e.detail.type === 'error' ? 'error' : 'notice', title: e.detail.title, message: e.detail.message, undo: typeof e.detail.undo === 'function' ? e.detail.undo : null }); };
+    // A notice can be its title alone ("Shot 3 deleted · Undo", package 14, A5).
+    const onNotify = (e) => { if (e.detail?.message || (e.detail?.title && e.detail?.undo)) push({ type: e.detail.type === 'error' ? 'error' : 'notice', title: e.detail.title, message: e.detail.message, undo: typeof e.detail.undo === 'function' ? e.detail.undo : null }); };
     // Any screen can open another one (e.g. Studio → Elements).
     const onOpen = (e) => { if (e.detail?.tab) openTabRef.current?.(e.detail.tab); };
     window.addEventListener('dz:notify', onNotify);
@@ -455,6 +456,27 @@ export default function DzShell() {
   const isCollapsed = collapsed && !mobileOpen;
   const runningTabs = Object.keys(running);
   const runningCount = runningTabs.reduce((n, t) => n + running[t], 0);
+  // Tasks (package 14, A4): the header pill "N running · M waiting" opens the drawer.
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const tasks = useDzTasks({ busy: runningCount > 0, open: tasksOpen });
+  // Sent from this window a moment ago: counted here before the server lists it.
+  const pillRunning = Math.max(tasks.running, runningCount - tasks.waiting, 0);
+  const openTask = async (t) => {
+    const studioTab = { create: 'create', cinema: 'create', image: 'image', video: 'video', upscale: 'upscale', tools: 'tools', director: 'director' }[t.studio] || 'library';
+    const tab = t.place?.kind ? 'director' : studioTab;
+    const wanted = t.project?.id || null;
+    if ((project?.id || null) !== wanted) {
+      const p = wanted ? projects.find((x) => x.id === wanted) || { id: wanted, slug: t.project.slug, name: t.project.name } : null;
+      await openProject(p, tab);
+    } else openTab(tab);
+    // A shot or a group: its working screen on the Storyboard (the address says where).
+    if (t.place?.kind) {
+      setTimeout(() => {
+        const h = new URLSearchParams({ film: t.place.board, tab: t.place.kind === 'group' ? 'mood' : 'board', [t.place.kind === 'group' ? 'group' : 'shot']: t.place.id });
+        window.location.hash = h.toString();
+      }, 50);
+    }
+  };
   // Notifications move left of a right-hand panel instead of covering its button.
   const rightPanelOpen = Boolean(upscaleDrawer) || activeTab === 'upscale';
   const go = (tab) => (e) => { if (plainClick(e)) { e.preventDefault(); openTab(tab); } };
@@ -524,14 +546,14 @@ export default function DzShell() {
           <kbd className="rounded-xs border border-border px-1.5 font-sans text-xs text-muted-foreground">⌘K</kbd>
         </button>
         <div className="flex min-w-0 items-center justify-end gap-2">
-          {runningCount > 0 && (
-            <button type="button" onClick={() => openTab(runningTabs.includes(activeTab) ? activeTab : runningTabs[0])} title={runningTabs.map((t) => `${labelOf(t)}: ${running[t]}`).join(' · ')}
-              className="flex h-8 items-center gap-2 rounded-full border border-border px-3 text-sm font-medium text-foreground transition-colors duration-state hover:bg-accent">
+          {(pillRunning > 0 || tasks.waiting > 0) && (
+            <button type="button" onClick={() => { setChatOpen(false); setUpscaleDrawer(null); setTasksOpen((v) => !v); }} aria-pressed={tasksOpen} aria-label="Tasks"
+              className={cn('flex h-8 items-center gap-2 rounded-full border border-border px-3 text-sm font-medium text-foreground transition-colors duration-state hover:bg-accent', tasksOpen && 'bg-muted')}>
               <span className="h-1.5 w-1.5 rounded-full bg-signal" />
-              {runningCount} running
+              {[pillRunning ? `${pillRunning} running` : null, tasks.waiting ? `${tasks.waiting} waiting` : null].filter(Boolean).join(' · ')}
             </button>
           )}
-          <button type="button" onClick={() => { setUpscaleDrawer(null); setChatOpen((v) => !v); }} aria-pressed={chatOpen} aria-label="Assistant" title="Assistant"
+          <button type="button" onClick={() => { setUpscaleDrawer(null); setTasksOpen(false); setChatOpen((v) => !v); }} aria-pressed={chatOpen} aria-label="Assistant" title="Assistant"
             className={cn('flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-state', chatOpen ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}>
             <ChatCircle size={18} weight={chatOpen ? 'fill' : 'regular'} />
           </button>
@@ -661,6 +683,8 @@ export default function DzShell() {
           getStudio={() => dzGetStudioState(activeTab)}
           onInsert={(text, how, refs) => window.dispatchEvent(new CustomEvent(DZ_INSERT_EVENT, { detail: { tab: activeTab, text, how, refs } }))} />
 
+        <DzTasksPanel open={tasksOpen} onOpenChange={setTasksOpen} items={tasks.items} onOpenTask={openTask} />
+
         {/* Upscale drawer: opens next to the work, from an image's button or menu.
             Non-modal: the page behind stays usable. */}
         <SidePanel
@@ -724,10 +748,10 @@ export default function DzShell() {
             </div>
           ))}
           {notifications.map((n) => (
-            <div key={n.id} role={n.type === 'error' ? 'alert' : 'status'} className="dz-toast glass pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-border px-3.5 py-2.5 text-base shadow-popover">
+            <div key={n.id} role={n.type === 'error' ? 'alert' : 'status'} className={cn('dz-toast glass pointer-events-auto flex w-full gap-3 rounded-xl border border-border px-3.5 py-2.5 text-base shadow-popover', n.message ? 'items-start' : 'items-center')}>
               {n.type === 'success' && n.url && /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(n.url)
                 ? <img src={n.url} alt="" className="h-9 w-9 shrink-0 rounded-sm border border-border object-cover" />
-                : <span className={cn('mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full', n.type === 'error' ? 'bg-destructive' : n.type === 'success' ? 'bg-success' : 'bg-muted-foreground')} />}
+                : <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', n.message && 'mt-[7px]', n.type === 'error' ? 'bg-destructive' : n.type === 'success' ? 'bg-success' : 'bg-muted-foreground')} />}
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-foreground">
                   {n.title || labelOf(n.tabId)} {n.type !== 'notice' && !n.title && <span className="font-normal text-muted-foreground">{n.type === 'error' ? '· failed' : '· ready'}</span>}

@@ -595,9 +595,32 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   }, [prompt, adaptScope]);
   const needsPrompt = variant?.model.promptRequired;
   const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
-  const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
+  // "adaptive" with a start picture (Seedance, package 14, 3.17): the video takes the picture's
+  // shape — a landscape picture → the nearest landscape ratio (16:9), a vertical one → the nearest
+  // vertical (9:16), as H3 does. A square one keeps "adaptive" (Denis decides that later).
+  const startUrl = merged.attached.first?.[0]?.url || null;
+  const [startShape, setStartShape] = useState(null);
+  useEffect(() => {
+    if (!startUrl) { setStartShape(null); return undefined; }
+    let alive = true;
+    const img = new window.Image();
+    img.onload = () => { if (alive && img.naturalWidth) setStartShape(img.naturalWidth / img.naturalHeight); };
+    img.src = dzThumb(startUrl, 128);
+    return () => { alive = false; };
+  }, [startUrl]);
+  const bodyValues = useMemo(() => {
+    const key = ["aspect_ratio", "ratio"].find((k) => String(values?.[k] || "").toLowerCase() === "adaptive");
+    if (!key || !startShape || Math.abs(Math.log(startShape)) < Math.log(1.15)) return values;
+    const p = [...(params?.main || []), ...(params?.advanced || [])].find((x) => x.key === key);
+    const num = (o) => { const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(String(o)); return m ? Number(m[1]) / Number(m[2]) : null; };
+    const side = (p?.enum || []).filter((o) => num(o) && (startShape > 1 ? num(o) > 1 : num(o) < 1));
+    if (!side.length) return values;
+    const best = side.reduce((a, o) => (Math.abs(Math.log(num(o) / startShape)) < Math.abs(Math.log(num(a) / startShape)) ? o : a), side[0]);
+    return { ...values, [key]: best };
+  }, [values, startShape, params]);
+  const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values: bodyValues, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
   // The price shows as soon as the model and files are set — not only after the prompt is typed.
-  const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: finalPrompt || "price check", values, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null);
+  const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: finalPrompt || "price check", values: bodyValues, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null);
   const { price, loading: priceLoading } = useDzQuote(apiKey, () => (quoteBody ? [dzGenerate, { endpoint: variant.model.endpoint, ...quoteBody }] : null));
   // The server's view (hints on unusual camera combos; the drawer shows the final prompt).
   const [sentOpen, setSentOpen] = useState(false);

@@ -319,7 +319,27 @@ const SelAction = ({ icon: Icon, children, onClick, danger, disabled }) => (
     className={cn("flex h-8 items-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors duration-state hover:bg-accent disabled:opacity-40", danger ? "text-destructive" : "text-foreground")}><Icon size={16} />{children}</button>
 );
 
-function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS, extraActions = null }) {
+// How many behind each gallery filter (package 14, 3.11): asked from the server for the same
+// place as the gallery, again after any change in the library.
+function useGalleryCounts(base) {
+  const key = JSON.stringify(base);
+  const [counts, setCounts] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    let t = null;
+    const load = () => {
+      const q = new URLSearchParams(Object.entries(JSON.parse(key)).filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => [k, String(v)]));
+      fetch(`/api/v1/history/counts?${q}`, { credentials: "same-origin", cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((c) => { if (alive && c) setCounts(c); }).catch(() => {});
+    };
+    const later = () => { clearTimeout(t); t = setTimeout(load, 500); };
+    load();
+    window.addEventListener("dz:history", later);
+    return () => { alive = false; clearTimeout(t); window.removeEventListener("dz:history", later); };
+  }, [key]);
+  return counts;
+}
+
+function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS, extraActions = null, counts = null }) {
   const [busy, setBusy] = useState(false);
   const n = sel.count;
   const run = async (action, verb) => {
@@ -352,7 +372,7 @@ function TabsRow({ sel, kindFilter, setKindFilter, canSelect, tabs = STUDIO_TABS
     <div className="flex h-11 items-end gap-5 border-b border-border" role="tablist" aria-label="Show">
       {tabs.map(([v, l]) => (
         <button key={v} type="button" role="tab" aria-selected={kindFilter === v} onClick={() => setKindFilter(v)}
-          className={cn("-mb-px h-11 border-b-2 text-base font-medium transition-colors duration-state", kindFilter === v ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{l}</button>
+          className={cn("-mb-px h-11 border-b-2 text-base font-medium transition-colors duration-state", kindFilter === v ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{l}{counts?.[v] != null && <span className="ml-1.5 font-normal tabular-nums text-muted-foreground">{counts[v]}</span>}</button>
       ))}
       {canSelect && <button type="button" onClick={sel.start} className="mb-2.5 ml-auto h-6 text-base font-medium text-muted-foreground transition-colors duration-state hover:text-foreground">Select</button>}
     </div>
@@ -1271,6 +1291,14 @@ export default function DzStudio(props) {
     if (kindFilter === "pictures") list = list.filter((i) => i.kind !== "video");
     return list;
   }, [target, history.items, kindFilter]);
+  const countsRaw = useGalleryCounts(target ? { target: target.key, project: target.project || "none" }
+    : { ...(mode === "image" || mode === "video" ? { kind: mode } : {}), ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
+  const tabCounts = useMemo(() => {
+    if (!countsRaw) return null;
+    const extra = target?.extra?.length || 0;
+    return { all: countsRaw.all + extra, image: countsRaw.image, video: countsRaw.video, videos: countsRaw.video, pictures: countsRaw.image + extra, liked: countsRaw.liked, upscaled: countsRaw.upscaled,
+      ...(target ? { approved: target.approved?.size || 0 } : {}) };
+  }, [countsRaw, target]);
   // A working screen selects among everything it shows (its ready pictures too).
   const targetSel = useDzSelection(items);
   const sel = target ? targetSel : engineSel;
@@ -1281,7 +1309,7 @@ export default function DzStudio(props) {
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-background">
-      <style>{`.dz-off{opacity:.42;filter:saturate(.35)}:root[data-theme="light"] .dz-off{opacity:.32}.dz-off-more{opacity:.55}.dz-goff{opacity:.45}.dz-pop{animation:dzPop 180ms cubic-bezier(.2,.8,.2,1)}@keyframes dzPop{from{transform:scale(.8);opacity:0}}.dz-sel-in{animation:dzSelIn 160ms cubic-bezier(.2,.8,.2,1)}@keyframes dzSelIn{from{transform:translateY(-4px);opacity:0}}`}</style>
+      <style>{`.dz-off{opacity:.42;filter:saturate(.35)}:root[data-theme="light"] .dz-off{opacity:.32}.dz-off-more{opacity:.55}.dz-goff{opacity:.45}.dz-goff .dz-off,.dz-goff .dz-off-more{opacity:1;filter:none}.dz-pop{animation:dzPop 180ms cubic-bezier(.2,.8,.2,1)}@keyframes dzPop{from{transform:scale(.8);opacity:0}}.dz-sel-in{animation:dzSelIn 160ms cubic-bezier(.2,.8,.2,1)}@keyframes dzSelIn{from{transform:translateY(-4px);opacity:0}}`}</style>
       <div ref={scroller} onScroll={onScroll} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 [container-type:inline-size]">
         {target ? (
           <div className="pt-4">{target.header}{target.above}</div>
@@ -1294,7 +1322,7 @@ export default function DzStudio(props) {
         {(items.length > 0 || !history.loaded || kindFilter !== "all") && (
           // Tabs and Select stay at the top while the grid scrolls (Loom 19.11): see-through blur once stuck; the row keeps its own bottom line.
           <div className={cn("sticky top-0 z-[5] -mx-6 px-6 transition-[background-color,box-shadow,backdrop-filter] duration-state", stuck ? "bg-background/80 backdrop-blur-md" : "bg-background")}>
-            <TabsRow sel={sel} kindFilter={kindFilter} setKindFilter={setKindFilter} canSelect={items.some((i) => i.url)} tabs={target?.tabs || (light ? LIGHT_TABS : STUDIO_TABS)} extraActions={target?.selectionActions || null} />
+            <TabsRow sel={sel} kindFilter={kindFilter} setKindFilter={setKindFilter} canSelect={items.some((i) => i.url)} tabs={target?.tabs || (light ? LIGHT_TABS : STUDIO_TABS)} extraActions={target?.selectionActions || null} counts={tabCounts} />
           </div>
         )}
         {target && history.loaded && items.length === 0 && kindFilter === "all" ? (

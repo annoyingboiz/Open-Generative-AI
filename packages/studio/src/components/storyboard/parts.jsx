@@ -64,8 +64,8 @@ export function InlineText({ value, onChange, placeholder, className, maxLength 
 }
 
 const REF_GROUPS = [
-  { id: "reference", label: "Pictures", roles: ["reference"], kind: "image", max: 100, roleMax: { reference: 100 } },
-  { id: "video", label: "Videos", roles: ["video"], kind: "video", max: 100, roleMax: { video: 100 } },
+  { id: "reference", label: "Pictures", slot: "References", roles: ["reference"], kind: "image", max: 100, roleMax: { reference: 100 } },
+  { id: "video", label: "Videos", slot: "References", roles: ["video"], kind: "video", max: 100, roleMax: { video: 100 } },
 ];
 
 // The existing reference picker (library window: Uploads, Generations, Liked, Elements)

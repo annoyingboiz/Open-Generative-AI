@@ -28,6 +28,6 @@ export { useDzSelection, GridToolbar, Breadcrumb, DZ_DRAG_TYPE, dzNotify } from 
 export { dzSetContext, dzGetContext, useDzContext, dzContextScope } from './dzContext'; // DZ
 export { dzLlm, useDzLlmModels } from './dzLlm'; // DZ
 export { DzElementsPage, ElementPicker, ElementEditor, ToElementDialog, VideoElementDialog, dzElementsApi, useDzElements } from './components/DzElements'; // DZ
-export { default as DzChatPanel, dzAssistants } from './components/DzChat'; // DZ
+export { default as DzChatPanel, DzChatPage, dzAssistants } from './components/DzChat'; // DZ
 export { dzGetStudioState, DZ_INSERT_EVENT } from './dzStudioState'; // DZ
 export { useDzTasks, DzTasksPanel } from './components/DzTasks'; // DZ (package 14, A4)

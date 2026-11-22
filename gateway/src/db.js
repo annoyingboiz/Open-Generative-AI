@@ -270,6 +270,11 @@ const MIGRATIONS = [
   `
   UPDATE storyboards SET name = 'Untitled storyboard' WHERE name IN ('Untitled film', 'Untitled scene');
   `,
+  // 17: package 15, C7 — a chat keeps the context it was saved with (none, a scene, the whole
+  // storyboard, a shot or the open composer). Existing chats get none: nothing else changes.
+  `
+  ALTER TABLE chats ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}';
+  `,
 ];
 
 export function openDatabase(dataDir) {

@@ -4,9 +4,9 @@
 // Replaces the upstream StandaloneShell (API-key handling, promo banners and
 // tabs for services we do not use). Studios come from the `studio` package.
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { DzCreateStudio, DzStudio, DzStoryboard, DropOverlay, dzActiveDropTarget, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
-  DzChatPanel, dzGetStudioState, DZ_INSERT_EVENT, dzScrollBoxRef, dzWatchScrollers, useDzTasks, DzTasksPanel,
+  DzChatPanel, DzChatPage, dzGetStudioState, DZ_INSERT_EVENT, dzScrollBoxRef, dzWatchScrollers, useDzTasks, DzTasksPanel,
   DzProjectsPage, DzElementsPage, ToElementDialog, VideoElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
   DropdownMenuParts, DialogParts, cn } from 'studio';
 import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, SquaresFour, Images, Shapes, Layout, Trash, FolderSimple, Plus,
@@ -17,7 +17,7 @@ import DirectorMark from './DirectorMark';
 
 // Phosphor icons (redesign package 01, section 3.4). The active sidebar item uses weight Fill.
 const ICONS = {
-  image: ImageIcon, video: VideoCamera, create: Aperture, director: FilmSlate, upscale: ArrowsOut, tools: SquaresFour,
+  image: ImageIcon, video: VideoCamera, create: Aperture, director: FilmSlate, chat: ChatCircle, upscale: ArrowsOut, tools: SquaresFour,
   library: Images, elements: Shapes, boards: Layout, trash: Trash, projects: FolderSimple,
 };
 
@@ -28,6 +28,7 @@ export const DZ_TABS = [
   { id: 'video', label: 'Video', group: 'create' },
   { id: 'create', label: 'Studio', group: 'create' },
   { id: 'director', label: 'Storyboard', group: 'create' },
+  { id: 'chat', label: 'Chat', group: 'create' },
   { id: 'upscale', label: 'Upscale', group: 'tools' },
   { id: 'tools', label: 'All tools', group: 'tools' },
   { id: 'library', label: 'All work', group: 'library' },
@@ -207,7 +208,12 @@ export default function DzShell() {
   // Messages from anywhere (Move / Copy / Trash on many items, …).
   useEffect(() => {
     // A notice can be its title alone ("Shot 3 deleted · Undo", package 14, A5).
-    const onNotify = (e) => { if (e.detail?.message || (e.detail?.title && e.detail?.undo)) push({ type: e.detail.type === 'error' ? 'error' : 'notice', title: e.detail.title, message: e.detail.message, undo: typeof e.detail.undo === 'function' ? e.detail.undo : null }); };
+    // action: { label, run } — e.g. "Inserted into the prompt of Image · Open" (package 15).
+    const onNotify = (e) => {
+      const d = e.detail || {};
+      const action = d.action && typeof d.action.run === 'function' ? { label: String(d.action.label || 'Open'), run: d.action.run } : null;
+      if (d.message || (d.title && (d.undo || action))) push({ type: d.type === 'error' ? 'error' : 'notice', title: d.title, message: d.message, undo: typeof d.undo === 'function' ? d.undo : null, action });
+    };
     // Any screen can open another one (e.g. Studio → Elements).
     const onOpen = (e) => { if (e.detail?.tab) openTabRef.current?.(e.detail.tab); };
     window.addEventListener('dz:notify', onNotify);
@@ -291,6 +297,37 @@ export default function DzShell() {
   }, [project]);
   const openTabRef = useRef(openTab);
   openTabRef.current = openTab;
+
+  // Chat (package 15): the page is mounted once visited; "Open as a page" hands it a place.
+  const [chatPageSeen, setChatPageSeen] = useState(false);
+  useEffect(() => { if (activeTab === 'chat') setChatPageSeen(true); }, [activeTab]);
+  const [pagePlace, setPagePlace] = useState({ place: null, seq: 0 });
+  // The composer the user had open last in this session (a tab shown for a moment while the
+  // app starts does not count). Insert into prompt from the Chat page writes there.
+  const lastComposer = useRef(null);
+  useEffect(() => {
+    if (!INSERT_TABS.has(activeTab)) return undefined;
+    const t = setTimeout(() => { lastComposer.current = activeTab; }, 400);
+    return () => clearTimeout(t);
+  }, [activeTab]);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const chatInsert = useMemo(() => {
+    const target = () => (INSERT_TABS.has(activeTabRef.current) ? activeTabRef.current : lastComposer.current);
+    const placeName = (tab) => (tab === 'director' ? String(dzGetStudioState('director')?.sees || '').split(' · ')[0] || 'Storyboard' : labelOf(tab));
+    return {
+      can: () => { const t = target(); return Boolean(t) && dzGetStudioState(t)?.writable !== false; },
+      lastTab: () => lastComposer.current,
+      run: (text, how, refs) => {
+        const t = target();
+        if (!t) return;
+        window.dispatchEvent(new CustomEvent(DZ_INSERT_EVENT, { detail: { tab: t, text, how, refs } }));
+        if (t !== activeTabRef.current) {
+          window.dispatchEvent(new CustomEvent('dz:notify', { detail: { type: 'notice', title: `Inserted into the prompt of ${placeName(t)}`, action: { label: 'Open', run: () => { setChatOpen(false); openTabRef.current?.(t); } } } }));
+        }
+      },
+    };
+  }, []);
 
   // Animate in the Image tab → open the Video tab (it picks the picture up itself).
   useEffect(() => {
@@ -636,6 +673,12 @@ export default function DzShell() {
 
         {/* Studios stay mounted, so running generations survive switching tabs */}
         <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-background" onContextMenu={onContextMenu}>
+          {chatPageSeen && (
+            <div className={activeTab === 'chat' ? 'h-full w-full' : 'hidden'}>
+              <DzChatPage active={activeTab === 'chat'} activeTab={activeTab} getStudio={dzGetStudioState} insert={chatInsert} apiKey={DZ_SESSION_PLACEHOLDER}
+                initialPlace={pagePlace.place} placeSeq={pagePlace.seq} />
+            </div>
+          )}
           <div className={activeTab === 'create' ? 'h-full w-full' : 'hidden'}>
             <DzStudio {...studioProps} {...callbacks('create')} droppedFiles={activeTab === 'create' ? droppedFiles : null} onFilesHandled={() => setDroppedFiles(null)} />
           </div>
@@ -681,9 +724,8 @@ export default function DzShell() {
 
         {/* Side chat with assistants: answers go into the prompt of the open studio. */}
         <DzChatPanel open={chatOpen} onOpenChange={setChatOpen} activeTab={activeTab} apiKey={DZ_SESSION_PLACEHOLDER}
-          canInsert={() => INSERT_TABS.has(activeTab) && dzGetStudioState(activeTab)?.writable !== false}
-          getStudio={() => dzGetStudioState(activeTab)}
-          onInsert={(text, how, refs) => window.dispatchEvent(new CustomEvent(DZ_INSERT_EVENT, { detail: { tab: activeTab, text, how, refs } }))} />
+          getStudio={dzGetStudioState} insert={chatInsert}
+          onOpenAsPage={(place) => { setPagePlace((p) => ({ place, seq: p.seq + 1 })); setChatOpen(false); openTab('chat'); }} />
 
         <DzTasksPanel open={tasksOpen} onOpenChange={setTasksOpen} items={tasks.items} onOpenTask={openTask} />
 
@@ -763,6 +805,9 @@ export default function DzShell() {
               </div>
               {n.undo && (
                 <button type="button" onClick={() => { n.undo(); dismiss(n.id); }} className="shrink-0 rounded-md px-1.5 font-semibold text-foreground hover:bg-accent">Undo</button>
+              )}
+              {n.action && (
+                <button type="button" onClick={() => { n.action.run(); dismiss(n.id); }} className="shrink-0 rounded-md px-1.5 font-semibold text-foreground hover:bg-accent">{n.action.label}</button>
               )}
               {n.type === 'success' && n.tabId !== activeTab && (
                 <button type="button" onClick={() => { openTab(n.tabId); dismiss(n.id); }} className="shrink-0 rounded-md px-1.5 font-semibold text-foreground hover:bg-accent">Open</button>

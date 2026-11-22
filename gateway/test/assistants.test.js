@@ -160,3 +160,48 @@ test('package 07 F1: pictures are named with the composer\'s tags; the answer sa
   assert.match(calls.at(-1).messages[0].content, /3 picture\(s\) were attached here: @img2, @img1, @img3\]/);
   assert.deepEqual(res.json().answer.refs.map((r) => r.tag), ['img1', 'img2', 'img1', 'img3']);
 });
+
+test('package 15: the tree lists your chats; rename, delete + undo, context kept, duplicate, delete with chats, built-in Prompt writer', async () => {
+  let res = await as('kid', 'POST', '/dz/api/assistants', { template: 'prompt-writer' });
+  const writer = res.json().assistant;
+  assert.equal(writer.builtin, true, 'the first Prompt writer is the built-in one');
+  res = await as('kid', 'POST', '/dz/api/assistants', { template: 'prompt-writer' });
+  assert.equal(res.json().assistant.builtin, false, 'a second one is an ordinary assistant');
+  assert.equal((await as('kid', 'DELETE', `/dz/api/assistants/${writer.id}`)).statusCode, 409);
+
+  res = await as('kid', 'POST', '/dz/api/assistants', { name: 'Shot planner', rules: 'Plan shots.' });
+  const planner = res.json().assistant;
+  await as('kid', 'POST', `/dz/api/assistants/${planner.id}/files`, { name: 'Bible.md', text: 'Vlad wears a black coat.' });
+  const chat = (await as('kid', 'POST', `/dz/api/assistants/${planner.id}/chats`)).json().chat;
+  res = await as('kid', 'POST', `/dz/api/chats/${chat.id}/messages`, { text: 'Three shots', context: { tab: 'director', sees: 'Storyboard “Bar”. Scene 1 · Street · 4 shots.' }, choice: { kind: 'scene', board: 'sb_1234', scene: 'sc_abcd', label: 'Scene 1 · Street', bad: 'x' } });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.match(calls.at(-1).messages.at(-1).content, /Scene 1 · Street · 4 shots/);
+  assert.deepEqual(res.json().chat.context, { kind: 'scene', board: 'sb_1234', scene: 'sc_abcd', label: 'Scene 1 · Street' });
+
+  res = await as('kid', 'GET', '/dz/api/assistants');
+  assert.deepEqual(res.json().chats.map((c) => c.id), [chat.id], 'only chats with messages of listed assistants');
+  assert.equal((await as('kid', 'PATCH', `/dz/api/chats/${chat.id}`, { title: '  Bar street  ' })).json().chat.title, 'Bar street');
+  assert.equal((await as('wife', 'PATCH', `/dz/api/chats/${chat.id}`, { title: 'x' })).statusCode, 404);
+
+  assert.equal((await as('kid', 'DELETE', `/dz/api/chats/${chat.id}`)).statusCode, 200);
+  assert.equal((await as('kid', 'GET', '/dz/api/assistants')).json().chats.length, 0);
+  assert.equal((await as('wife', 'POST', `/dz/api/chats/${chat.id}/restore`)).statusCode, 404);
+  res = await as('kid', 'POST', `/dz/api/chats/${chat.id}/restore`);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(res.json().chat.messages.length, 2, 'Undo brings the chat back whole');
+
+  res = await as('kid', 'POST', `/dz/api/assistants/${planner.id}/duplicate`);
+  const copy = res.json().assistant;
+  assert.equal(copy.name, 'Shot planner copy');
+  assert.equal(copy.rules, 'Plan shots.');
+  assert.deepEqual(copy.files.map((f) => f.name), ['Bible.md']);
+  assert.equal((await as('kid', 'GET', `/dz/api/assistants/${copy.id}/chats`)).json().chats.length, 0, 'without chats');
+  assert.equal((await as('wife', 'POST', `/dz/api/assistants/${planner.id}/duplicate`)).statusCode, 404);
+
+  assert.equal((await as('kid', 'DELETE', `/dz/api/assistants/${planner.id}`)).statusCode, 200);
+  assert.equal((await as('kid', 'GET', `/dz/api/chats/${chat.id}`)).statusCode, 404, 'its chats go with it');
+  assert.equal((await as('kid', 'GET', `/dz/api/assistants/${copy.id}/files/${copy.files[0].id}`)).json().text, 'Vlad wears a black coat.');
+
+  res = await as('kid', 'POST', '/dz/api/speech');
+  assert.equal(res.statusCode, 503, 'no recogniser is called until one is chosen');
+});

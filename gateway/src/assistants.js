@@ -81,7 +81,14 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     author: db.prepare('SELECT display_name FROM users WHERE id = ?'),
     chatInsert: db.prepare('INSERT INTO chats (id, user_id, assistant_id, title, messages_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     chatById: db.prepare('SELECT * FROM chats WHERE id = ? AND user_id = ? AND deleted_at IS NULL'),
-    chats: db.prepare('SELECT id, assistant_id, title, updated_at, json_array_length(messages_json) AS n FROM chats WHERE user_id = ? AND assistant_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100'),
+    chats: db.prepare('SELECT id, assistant_id, title, updated_at, json_array_length(messages_json) AS n FROM chats WHERE user_id = ? AND assistant_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1000'),
+    // Every chat of yours (the tree on the Chat page, package 15): title and time only.
+    allChats: db.prepare('SELECT id, assistant_id, title, updated_at, json_array_length(messages_json) AS n FROM chats WHERE user_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 3000'),
+    chatTitle: db.prepare('UPDATE chats SET title = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'),
+    chatContext: db.prepare('UPDATE chats SET context_json = ? WHERE id = ? AND user_id = ?'),
+    chatRestore: db.prepare('UPDATE chats SET deleted_at = NULL WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL'),
+    chatsOfRemove: db.prepare('UPDATE chats SET deleted_at = ? WHERE assistant_id = ? AND user_id = ? AND deleted_at IS NULL'),
+    oldestWriter: db.prepare("SELECT id FROM assistants WHERE owner_id = ? AND project_id IS NULL AND template = 'prompt-writer' AND deleted_at IS NULL ORDER BY created_at ASC, id ASC LIMIT 1"),
     chatSave: db.prepare('UPDATE chats SET title = ?, messages_json = ?, updated_at = ? WHERE id = ? AND updated_at = ?'),
     chatRemove: db.prepare('UPDATE chats SET deleted_at = ? WHERE id = ? AND user_id = ?'),
     // Your latest chat per assistant: the side chat reopens where you were.
@@ -111,6 +118,8 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     model: row.model || null,
     modelNotes: Boolean(row.model_notes),
     template: row.template || null,
+    // The Prompt writer that came first is the built-in one (package 15, C5): it can't be deleted.
+    builtin: Boolean(row.template === 'prompt-writer' && !row.project_id && q.oldestWriter.get(row.owner_id)?.id === row.id),
     // Text files: name and size (the text itself stays on the server until opened).
     files: filesOf(row).map((f) => ({ id: f.id, name: f.name, kind: f.kind, url: f.url, chars: f.text ? f.text.length : undefined })),
     project_id: row.project_id || null,
@@ -137,7 +146,10 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     const personal = q.personal.all(user.id).map((r) => withChats(view(r, user)));
     let inProject = [];
     if (project && project !== 'none') inProject = q.inProject.all(projects.get(user, String(project)).project.id).map((r) => withChats(view(r, user)));
-    return { personal, project: inProject, templates: TEMPLATES.map(({ id, name, description }) => ({ id, name, description })) };
+    // Your chats with the assistants listed here (the tree and its search).
+    const listed = new Set([...personal, ...inProject].map((a) => a.id));
+    const chatList = q.allChats.all(user.id).filter((c) => listed.has(c.assistant_id));
+    return { personal, project: inProject, chats: chatList, templates: TEMPLATES.map(({ id, name, description }) => ({ id, name, description })) };
   }
 
   function create(user, body = {}) {
@@ -163,8 +175,26 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     if (row.project_id && row.owner_id !== user.id && projects.roleIn(user.id, row.project_id) !== 'owner') {
       throw new AssistantError('Only the author or the project owner can delete it.', 403);
     }
-    q.remove.run(now(), row.id);
+    if (view(row, user).builtin) throw new AssistantError('The built-in Prompt writer can\'t be deleted.', 409);
+    const t = now();
+    q.remove.run(t, row.id);
+    // "Delete with its N chats" (package 15, C5): your chats with it go too.
+    q.chatsOfRemove.run(t, row.id, user.id);
     return { ok: true };
+  }
+
+  // A copy with its settings and knowledge, without chats (package 15, C5). Pictures are shared,
+  // not copied: removing one from either assistant keeps the file while the other uses it.
+  function duplicate(user, id) {
+    const row = visible(user, id);
+    const projectId = row.project_id || null;
+    if (projectId) editable(user, id);
+    const files = filesOf(row).map((f) => ({ ...f, id: newId('kf'), ...(f.kind === 'image' ? { copied: false } : {}) }));
+    const newIdv = newId('as');
+    const t = now();
+    const name = line(`${row.name} copy`, MAX_NAME);
+    q.insert.run(newIdv, user.id, projectId, name, row.description, row.rules, row.model, row.model_notes, JSON.stringify(files), null, t, t);
+    return { assistant: view(q.byId.get(newIdv), user) };
   }
 
   // Knowledge: { name, text } (a note, an .md/.txt file read in the browser) or
@@ -224,7 +254,14 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
   }
 
   // ── Chats (always the user's own) ────────────────────────────────────────
-  const chatView = (row) => ({ id: row.id, assistant_id: row.assistant_id, title: row.title, messages: parse(row.messages_json, []), updated_at: row.updated_at });
+  const chatView = (row) => ({ id: row.id, assistant_id: row.assistant_id, title: row.title, messages: parse(row.messages_json, []), context: parse(row.context_json, {}), updated_at: row.updated_at });
+  // The context a chat keeps (package 15, C7): which one was chosen, never its text.
+  const CONTEXT_KINDS = new Set(['none', 'scene', 'board', 'shot', 'composer']);
+  function cleanChoice(c) {
+    if (!c || typeof c !== 'object' || !CONTEXT_KINDS.has(c.kind)) return null;
+    const id = (v) => (typeof v === 'string' && /^[a-z0-9_-]{1,60}$/i.test(v) ? v : undefined);
+    return { kind: c.kind, board: id(c.board), scene: id(c.scene), shot: id(c.shot), tab: id(c.tab), label: line(c.label, 80) || undefined };
+  }
   function chatOf(user, id) {
     const row = q.chatById.get(String(id || ''), user.id);
     if (!row) throw new AssistantError('Chat not found.', 404);
@@ -246,6 +283,21 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
     chatOf(user, id);
     q.chatRemove.run(now(), id, user.id);
     return { ok: true };
+  }
+  // Undo of a delete (package 15, C3): only your own chat, and only while its assistant is there.
+  function restoreChat(user, id) {
+    const row = db.prepare('SELECT * FROM chats WHERE id = ? AND user_id = ?').get(String(id || ''), user.id);
+    if (!row) throw new AssistantError('Chat not found.', 404);
+    visible(user, row.assistant_id);
+    q.chatRestore.run(row.id, user.id);
+    return { chat: chatView(chatOf(user, row.id)) };
+  }
+  function renameChat(user, id, body = {}) {
+    chatOf(user, id);
+    const title = line(body.title, 120);
+    if (!title) throw new AssistantError('Give the chat a title.');
+    q.chatTitle.run(title, String(id), user.id);
+    return { chat: chatView(chatOf(user, id)) };
   }
 
   // The instruction for one call: the assistant's rules, its text knowledge,
@@ -321,6 +373,7 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
   async function send(user, chatId, body = {}) {
     const chat = chatOf(user, chatId);
     const assistant = visible(user, chat.assistant_id);
+    const choice = cleanChoice(body.choice);
     const text = String(body.text || '').replace(/\r\n/g, '\n').trim();
     const images = (Array.isArray(body.images) ? body.images : []).filter((u) => typeof u === 'string').slice(0, 4);
     if (!text && !images.length) throw new AssistantError('Write a message or attach a picture.');
@@ -390,9 +443,10 @@ export function createAssistants({ db, projects, generations, llm, adapter, log 
         const title = cur.title === 'New chat' && text ? line(text, 60) : cur.title;
         if (q.chatSave.run(title, JSON.stringify(list.slice(-MAX_MESSAGES)), Math.max(now(), cur.updated_at + 1), cur.id, cur.updated_at).changes) break;
       }
+      if (choice) q.chatContext.run(JSON.stringify(choice), chat.id, user.id);
     } finally { busyChats.delete(chat.id); }
     return { chat: chatView(chatOf(user, chatId)), answer };
   }
 
-  return { list, create, update, remove, addFile, fileText, removeFile, chats, getChat, newChat, removeChat, send, templates: TEMPLATES };
+  return { list, create, update, remove, duplicate, addFile, fileText, removeFile, chats, getChat, newChat, removeChat, restoreChat, renameChat, send, templates: TEMPLATES };
 }

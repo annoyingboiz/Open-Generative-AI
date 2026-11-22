@@ -125,7 +125,8 @@ function useWide(query = "(min-width: 768px)") {
 
 // Side panel (shadcn Sheet). Desktop: non-modal, below the header — the page
 // stays usable. Narrow screens: a real modal. Focus returns to the opener.
-export function SidePanel({ open, onOpenChange, title, actions, children, className }) {
+// bare: no header row (the content draws its own, e.g. the chat drawer), title stays for screen readers.
+export function SidePanel({ open, onOpenChange, title, actions, children, className, bare = false }) {
   const wide = useWide();
   const opener = useRef(null);
   useEffect(() => {
@@ -141,12 +142,14 @@ export function SidePanel({ open, onOpenChange, title, actions, children, classN
           opener.current = null;
           if (el && typeof el.focus === "function" && document.contains(el)) { e.preventDefault(); el.focus(); }
         }}
-        className={cn("top-14 z-[70] flex h-auto w-full max-w-[420px] flex-col gap-0 bg-card p-0 sm:max-w-[420px] [&>button.absolute]:top-3.5 [&>button.absolute]:right-4", className)}
+        className={cn("top-14 z-[70] flex h-auto w-full max-w-[420px] flex-col gap-0 bg-card p-0 sm:max-w-[420px] [&>button.absolute]:top-3.5 [&>button.absolute]:right-4", bare && "[&>button.absolute]:hidden", className)}
       >
-        <SheetHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border py-3 pl-5 pr-14 text-left">
-          <SheetTitle className="text-lg">{title}</SheetTitle>
-          {actions}
-        </SheetHeader>
+        {bare ? <SheetTitle className="sr-only">{title}</SheetTitle> : (
+          <SheetHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border py-3 pl-5 pr-14 text-left">
+            <SheetTitle className="text-lg">{title}</SheetTitle>
+            {actions}
+          </SheetHeader>
+        )}
         <SheetDescription className="sr-only">{title}</SheetDescription>
         <div className="min-h-0 flex-1">{children}</div>
       </SheetContent>

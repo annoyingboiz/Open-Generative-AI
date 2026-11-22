@@ -1178,6 +1178,16 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/dz/api/assistants/:id/chats', projectRoute((req) => assistants.newChat(req.user, req.params.id)));
   app.get('/dz/api/chats/:id', projectRoute((req) => assistants.getChat(req.user, req.params.id)));
   app.delete('/dz/api/chats/:id', projectRoute((req) => assistants.removeChat(req.user, req.params.id)));
+  app.patch('/dz/api/chats/:id', projectRoute((req) => assistants.renameChat(req.user, req.params.id, req.body || {})));
+  // Dictation in the chat (package 15, C6): a short recording → its text, which only ever goes
+  // into the message field. Which recogniser to use waits for Denis's choice (the connected
+  // ChatGPT plan can't do it); nothing paid is called until then.
+  app.post('/dz/api/speech', async (req, reply) => {
+    try { const f = await req.file(); if (f?.file) f.file.resume(); } catch { /* nothing sent */ }
+    return reply.code(503).send({ detail: 'Speech recognition is not set up yet.' });
+  });
+  app.post('/dz/api/chats/:id/restore', projectRoute((req) => assistants.restoreChat(req.user, req.params.id)));
+  app.post('/dz/api/assistants/:id/duplicate', projectRoute((req) => assistants.duplicate(req.user, req.params.id)));
   app.post('/dz/api/chats/:id/messages', projectRoute((req) => assistants.send(req.user, req.params.id, req.body || {})));
   // Storyboards (AI Director).
   app.get('/dz/api/storyboards', projectRoute((req) => storyboards.list(req.user, req.query)));

@@ -27,7 +27,7 @@ const MIME = { mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audi
 // What each of our model ids does at ElevenLabs. TTS ids are the provider's own
 // (eleven_v4…); the voice changer and sound effects have one model each.
 export const ELEVEN_TOOLS = {
-  'voice-changer': { path: (voice) => `/v1/speech-to-speech/${encodeURIComponent(voice)}`, model: 'eleven_multilingual_sts_v2', input: 'audio' },
+  'voice-changer': { path: (voice) => `/v1/voice-changer/${encodeURIComponent(voice)}`, model: 'eleven_multilingual_sts_v2', input: 'audio' },
   'sound-effects': { path: () => '/v1/sound-generation', model: 'eleven_text_to_sound_v3' },
 };
 

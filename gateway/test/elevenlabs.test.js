@@ -40,7 +40,7 @@ before(async () => {
         { voice_id: 'me1', name: 'Denis', category: 'cloned', labels: {} },
       ], has_more: false });
       if (req.url === '/v1/user/subscription') return json({ tier: 'creator', character_count: 1000, character_limit: 275000, next_character_count_reset_unix: 1796000000 });
-      if (/^\/v1\/(text-to-speech|speech-to-speech)\/|^\/v1\/sound-generation/.test(req.url)) { res.writeHead(200, { 'content-type': 'audio/mpeg' }); return res.end(MP3); }
+      if (/^\/v1\/(text-to-speech|voice-changer)\/|^\/v1\/sound-generation/.test(req.url)) { res.writeHead(200, { 'content-type': 'audio/mpeg' }); return res.end(MP3); }
       if (req.url === '/v1/speech-to-text') return json({ language_code: 'ru', text: 'Привет мир. Это тест.', words: [
         { text: 'Привет', start: 0, end: 0.5, type: 'word' }, { text: ' ', start: 0.5, end: 0.5, type: 'spacing' }, { text: 'мир.', start: 0.5, end: 1, type: 'word' },
         { text: 'Это', start: 2, end: 2.3, type: 'word' }, { text: 'тест.', start: 2.3, end: 2.8, type: 'word' }] });

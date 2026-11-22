@@ -31,6 +31,17 @@ import { dzPictureDragStart, dzPictureDragEnd, useDzPictureDrag } from "../dzDro
 import { DzPosterVideo, dzMediaInfo } from "./DzPosterVideo.jsx";
 
 // This run costs more than what is left of a monthly limit (A10).
+// A15: every attached file as "role|url"; "3 reference images", "the start frame".
+const groupFiles = (attached = {}) => new Set(Object.entries(attached).flatMap(([role, list]) => (Array.isArray(list) ? list : []).map((f) => `${role}|${f.url}`)));
+const FILE_WORDS = { first: ["start frame", "start frames"], middle: ["middle frame", "middle frames"], last: ["end frame", "end frames"], reference: ["reference image", "reference images"], video: ["reference video", "reference videos"], source: ["video to edit", "videos to edit"], audio: ["audio file", "audio files"], edit: ["picture to edit", "pictures to edit"] };
+const countWords = (items, { bare = false } = {}) => {
+  const by = new Map();
+  for (const x of items) by.set(x.role, (by.get(x.role) || 0) + 1);
+  const words = [...by].map(([role, n]) => { const w = FILE_WORDS[role] || ["file", "files"]; return n === 1 ? (bare ? `the ${w[0]}` : `The ${w[0]}`) : `${n} ${w[1]}`; });
+  const text = words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+  return bare ? text.replace(/^The /, "the ") : text.charAt(0).toUpperCase() + text.slice(1);
+};
+const uniqRoles = (items) => [...new Set(items.map((x) => (x.role === "edit" ? "reference" : x.role)))];
 const overBudget = (price, count = 1) => Boolean(price?.budget && Number.isFinite(price.usd) && price.usd * Math.max(1, count) > price.budget.left + 1e-9);
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
@@ -749,8 +760,22 @@ function ElementsWindow({ open, onClose, engine, anchor }) {
     if (tag) engine.insertAtCursor(`@${tag}`);
     onClose();
   };
+  // A17: what is attached can be named in the prompt from here too (as typing "@" offers it).
+  const files = (engine.tags || []).filter((t) => t.kind === "file" && !t.unused && (!q.trim() || `${t.tag} ${t.label}`.toLowerCase().includes(q.trim().toLowerCase())));
   return (
     <ChipMenu open={open} onClose={onClose} anchor={anchor} className="w-[420px] p-3">
+      {files.length > 0 && (
+        <div className="mb-3">
+          <div className="mb-1 px-1.5"><span className="text-overline uppercase text-muted-foreground">Attached</span></div>
+          {files.map((t) => (
+            <button key={`${t.role}-${t.url}`} type="button" onClick={() => { engine.insertAtCursor(`@${t.tag}`); onClose(); }} className="flex h-11 w-full items-center gap-3 rounded-md px-1.5 text-left hover:bg-accent">
+              {t.url ? <img src={dzThumb(t.url, 96)} alt="" className="h-8 w-8 rounded-md object-cover" /> : <span className="h-8 w-8 rounded-md bg-muted" />}
+              <span className="min-w-0 flex-1 truncate text-base font-medium">{t.label}</span>
+              <span className="rounded-xs bg-signal/[.14] px-1.5 text-xs font-medium text-signal">@{t.tag}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="mb-2 flex items-center"><span className="text-lg font-semibold">Elements</span>
         <button type="button" onClick={onClose} aria-label="Close" className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button></div>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search elements" autoFocus
@@ -926,7 +951,7 @@ export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop
       <button type="button" onClick={onPlus} aria-label={plusLabel} disabled={plusDisabled}
         className="-ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground disabled:opacity-40"><Plus size={18} /></button>
       {elements && <div className="relative" ref={atAnchor}>
-        <button type="button" onClick={() => setPop(pop === "els" ? null : "els")} aria-label="Elements" aria-expanded={pop === "els"}
+        <button type="button" onClick={() => setPop(pop === "els" ? null : "els")} aria-label="Name an attached file or an element in the prompt" title="Name an attached file or an element in the prompt" aria-expanded={pop === "els"}
           className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-state hover:bg-accent hover:text-foreground", pop === "els" && "bg-accent text-foreground")}><At size={18} /></button>
         <ElementsWindow open={pop === "els"} onClose={() => setPop(null)} engine={engine} anchor={atAnchor} />
       </div>}
@@ -1078,6 +1103,26 @@ export default function DzStudio(props) {
       bringOn: (item) => engine.bringOn(item.role, item.url),
     };
   }, [offMap, plan.variant, sent, engine.touch, engine.bringOn]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A15: a model or provider change turns attached files off or back on. Say so once,
+  // in the line above the bottom row (it goes away on the next action like an error does).
+  const [note, setNote] = useState(null); // { text, roles? }
+  const lastPlan = useRef(null);
+  useEffect(() => {
+    const now = new Map(plan.off.map((x) => [`${x.role}|${x.url}`, x]));
+    const prev = lastPlan.current;
+    lastPlan.current = { key: entry?.key, off: now, all: groupFiles(attached) };
+    if (!prev || !entry || prev.key === entry.key) return;
+    const offNow = plan.off.filter((x) => !prev.off.has(`${x.role}|${x.url}`) && prev.all.has(`${x.role}|${x.url}`));
+    const onNow = [...prev.off.values()].filter((x) => !now.has(`${x.role}|${x.url}`) && groupFiles(attached).has(`${x.role}|${x.url}`));
+    if (!offNow.length && !onNow.length) return;
+    const parts = [];
+    if (offNow.length) parts.push(`${countWords(offNow)} ${offNow.length === 1 ? "is" : "are"} off. ${offNow[0].reason?.text || ""}`.trim());
+    if (onNow.length) parts.push(`${countWords(onNow)} ${onNow.length === 1 ? "is" : "are"} on again.`);
+    const together = offNow.filter((x) => x.why === "together");
+    setNote({ text: parts.join(" "), roles: together.length ? uniqRoles(together) : null, label: together.length ? `Use ${countWords(together, { bare: true })} instead` : null });
+  }, [entry?.key, plan]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setNote(null); }, [prompt, attached, kind, count]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const tagOf = (url) => tags.find((t) => t.url === url);
   const closeAll = () => { setPanel(null); setPop(null); setLibGroup(null); };
   const openLibrary = (gid, init = null) => {
@@ -1405,7 +1450,7 @@ export default function DzStudio(props) {
             onOpen={() => { setMini(false); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} onGenerate={generateNow} canGo={canGo} />
         ) : (
           <div className={cn("pointer-events-auto relative max-w-full rounded-xl border border-border bg-card p-4 shadow-float", COMPOSER_W[mode])}
-            onPointerDownCapture={(e) => { if (err && !err.sticky && !e.target.closest?.("[data-dz-err]")) setErr(null); }}
+            onPointerDownCapture={(e) => { if (e.target.closest?.("[data-dz-err]")) return; if (err && !err.sticky) setErr(null); if (note) setNote(null); }}
             onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
             onDrop={(e) => { const files = Array.from(e.dataTransfer?.files || []); if (files.length) { e.preventDefault(); e.stopPropagation(); takeFiles(files); } }}>
             <PickerHereContext.Provider value={target?.pickerHere || null}>
@@ -1449,6 +1494,17 @@ export default function DzStudio(props) {
                       {err.retry && <button type="button" onClick={generateNow} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Try again</button>}
                       {err.add && <button type="button" onClick={() => { setErr(null); openLibrary(err.add); }} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Add</button>}
                       <button type="button" onClick={() => setErr(null)} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Dismiss</button>
+                    </span>
+                  </div>
+                )}
+
+                {/* A15: files a model change turned off or back on — information, not an error. */}
+                {note && !err && (
+                  <div data-dz-err="" role="status" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-muted-foreground">
+                    <Info size={14} className="mt-[3px] flex-shrink-0" />
+                    <span className="min-w-0 text-foreground">{note.text}
+                      {note.roles && <button type="button" onClick={() => { st.turnOn(note.roles); setNote(null); }} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">{note.label}</button>}
+                      <button type="button" onClick={() => setNote(null)} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Dismiss</button>
                     </span>
                   </div>
                 )}

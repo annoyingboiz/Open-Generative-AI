@@ -95,6 +95,9 @@ export function settingsPage({ user, providers = [], balances = [], users = [], 
     <div><label>API key ${p.hasKey ? `<span class="mono">${esc(p.keyMask)}</span> <span class="muted">(${p.keySource === 'env' ? 'from .env' : 'saved'})</span>` : '<span class="muted">— not set</span>'}</label>
       <input name="apiKey" type="text" class="secret" autocomplete="off" spellcheck="false" autocapitalize="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="${p.hasKey ? 'Leave empty to keep the current key' : 'Paste the key'}">
       ${p.keysUrl ? `<div class="muted" style="font-size:16px;margin-top:4px">Get a key: <a href="${esc(p.keysUrl)}" target="_blank" rel="noreferrer">${esc(p.keysUrl)}</a></div>` : ''}</div>
+    ${p.billingKeyField ? `<div><label>Balance key (optional) ${p.hasBillingKey ? `<span class="mono">${esc(p.billingKeyMask)}</span> <span class="muted">(saved)</span>` : '<span class="muted">— not set</span>'}</label>
+      <input name="billingKey" type="text" class="secret" autocomplete="off" spellcheck="false" autocapitalize="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="${p.hasBillingKey ? 'Leave empty to keep it' : 'A key on the BILLING preset'}">
+      <div class="muted" style="font-size:16px;margin-top:4px">Only reads the balance. In ${esc(p.name)} → API keys, make a key with the BILLING preset.${p.hasBillingKey ? ' <label class="row" style="display:inline-flex;margin:0 0 0 8px"><input type="checkbox" name="clearBillingKey" value="1"> Remove</label>' : ''}</div></div>` : ''}
     <div><label>Proxy (optional)</label>
       <input name="proxy" value="${esc(p.proxy)}" placeholder="socks5h://127.0.0.1:1080" autocomplete="off">
       <div class="muted" style="font-size:16px;margin-top:4px">All requests to ${esc(p.name)} go through it, incl. downloads. Empty = direct.</div></div>

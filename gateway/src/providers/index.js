@@ -50,7 +50,9 @@ export function createProviderSettings({ db, masterKey, envDefaults }) {
     }
     const proxy = row ? (row.proxy_url || '') : (env.proxy || '');
     const enabled = row ? Boolean(row.enabled) : true;
-    return { id, apiKey, proxy, enabled, keySource };
+    let billingKey = '';
+    if (row?.billing_key_enc) { try { billingKey = decrypt(masterKey, row.billing_key_enc); } catch { billingKey = ''; } }
+    return { id, apiKey, proxy, enabled, keySource, billingKey };
   }
 
   // Safe view for the settings page.
@@ -65,16 +67,22 @@ export function createProviderSettings({ db, masterKey, envDefaults }) {
       keySource: c.keySource,
       proxy: maskProxy(c.proxy),
       enabled: c.enabled,
+      billingKeyField: Boolean(providerById(id)?.billingKey),
+      hasBillingKey: Boolean(c.billingKey),
+      billingKeyMask: maskSecret(c.billingKey),
     };
   }
 
-  function save(id, { apiKey, clearKey, proxy, enabled }) {
+  const setBilling = db.prepare('UPDATE provider_settings SET billing_key_enc = ? WHERE provider = ?');
+  function save(id, { apiKey, clearKey, proxy, enabled, billingKey, clearBillingKey }) {
     const current = getRow.get(id);
     let apiKeyEnc = current?.api_key_enc ?? null;
     if (clearKey) apiKeyEnc = null;
     else if (apiKey) apiKeyEnc = encrypt(masterKey, apiKey.trim());
     const keepProxy = typeof proxy === 'string' && proxy.includes('••••') && current?.proxy_url;
     upsert.run(id, apiKeyEnc, keepProxy ? current.proxy_url : (proxy ?? current?.proxy_url ?? ''), enabled ? 1 : 0, now());
+    if (clearBillingKey) setBilling.run(null, id);
+    else if (billingKey) setBilling.run(encrypt(masterKey, billingKey.trim()), id);
   }
 
   return { resolve, publicView, save };

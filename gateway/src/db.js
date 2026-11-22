@@ -275,6 +275,11 @@ const MIGRATIONS = [
   `
   ALTER TABLE chats ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}';
   `,
+  // 18: a second, read-only key that only shows the balance (fal.ai: a key on the BILLING preset;
+  // the key that makes pictures can stay without billing access).
+  `
+  ALTER TABLE provider_settings ADD COLUMN billing_key_enc TEXT;
+  `,
 ];
 
 export function openDatabase(dataDir) {

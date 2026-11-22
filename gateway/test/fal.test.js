@@ -181,3 +181,27 @@ test('a user with a spending limit cannot run a model without a published price'
   res = await app.inject({ method: 'POST', url: '/api/v1/p/fal/topaz/upscale/image/generative', headers: { cookie: kid }, payload: { image_url: url, model: 'Wonder 3' } });
   assert.equal(res.statusCode, 200, res.body);
 });
+
+test('fal balance key: saved encrypted, used for the balance, removable', async () => {
+  const { createProviderSettings } = await import('../src/providers/index.js');
+  const { openDatabase } = await import('../src/db.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-bk-'));
+  const db = openDatabase(dir);
+  const settings = createProviderSettings({ db, masterKey: Buffer.alloc(32, 7), envDefaults: {} });
+  settings.save('fal', { apiKey: 'gen-key-123456', enabled: true, billingKey: 'bill-key-654321' });
+  assert.equal(settings.resolve('fal').billingKey, 'bill-key-654321');
+  assert.equal(settings.resolve('fal').apiKey, 'gen-key-123456');
+  const row = db.prepare("SELECT billing_key_enc FROM provider_settings WHERE provider = 'fal'").get();
+  assert.equal(String(row.billing_key_enc).includes('bill-key'), false, 'stored encrypted');
+  const view = settings.publicView('fal');
+  assert.equal(view.billingKeyField, true);
+  assert.equal(view.hasBillingKey, true);
+  assert.equal(JSON.stringify(view).includes('bill-key-654321'), false, 'never shown whole');
+  settings.save('fal', { enabled: true });
+  assert.equal(settings.resolve('fal').billingKey, 'bill-key-654321', 'kept when the field is left empty');
+  settings.save('fal', { enabled: true, clearBillingKey: true });
+  assert.equal(settings.resolve('fal').billingKey, '');
+  assert.equal(settings.publicView('apimart').billingKeyField, false);
+  db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});

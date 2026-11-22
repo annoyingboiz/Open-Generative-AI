@@ -541,7 +541,7 @@ export async function buildApp(config, { logger = true } = {}) {
     if (!requireAdmin(req, reply)) return;
     const provider = providerById(req.params.id);
     if (!provider) return reply.code(404).send({ error: 'Unknown provider' });
-    const { apiKey, proxy, enabled, clearKey } = req.body || {};
+    const { apiKey, proxy, enabled, clearKey, billingKey, clearBillingKey } = req.body || {};
     const proxyError = validateProxyUrl(String(proxy || '').trim());
     if (proxyError) return renderSettings(req, reply, { error: `${provider.name}: ${proxyError}`, code: 400 });
     providers.save(provider.id, {
@@ -549,7 +549,10 @@ export async function buildApp(config, { logger = true } = {}) {
       clearKey: Boolean(clearKey),
       proxy: String(proxy || '').trim(),
       enabled: Boolean(enabled),
+      billingKey: String(billingKey || '').trim(),
+      clearBillingKey: Boolean(clearBillingKey),
     });
+    balanceCache = { at: 0, data: null }; // the header shows the new balance at once
     catalog.refreshAll({ force: true }).catch(() => {}); // keys changed → rebuild the model list
     const [balance] = (await fetchBalances(providers)).filter((b) => b.id === provider.id);
     if (balance?.hasKey && balance.enabled && !balance.ok) {

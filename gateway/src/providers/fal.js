@@ -52,17 +52,20 @@ export const fal = {
   website: 'https://fal.ai',
   keysUrl: 'https://fal.ai/dashboard/keys',
 
-  // Needs a key with the "billing:usage:read" permission (presets READONLY,
-  // BILLING or FULL); a plain API key gets 403 and the balance shows "—".
-  async balance({ apiKey, proxy }) {
+  // Needs a key with the "billing:usage:read" permission (presets BILLING, READONLY or FULL).
+  // The key that makes pictures usually has none, so Settings takes a second key for the
+  // balance only (BILLING preset: it can read the balance and nothing else).
+  billingKey: true,
+  async balance({ apiKey, proxy, billingKey }) {
     let data;
     try {
-      data = await providerJson(`${PLATFORM}/account/billing?expand=credits`, { proxy, headers: auth(apiKey), timeoutMs: 20_000 });
+      data = await providerJson(`${PLATFORM}/account/billing?expand=credits`, { proxy, headers: auth(billingKey || apiKey), timeoutMs: 20_000 });
     } catch (error) {
       if (!(error instanceof ProviderHttpError) || error.status !== 403) throw error;
+      if (billingKey) throw new Error('The balance key has no billing access: make it on the BILLING preset.');
       // The key has no billing permission: check that it works at all.
       await providerJson(`${PLATFORM}/models/pricing?endpoint_id=${FAL_TOOL_ENDPOINTS[0]}`, { proxy, headers: auth(apiKey), timeoutMs: 20_000 });
-      return { amount: null, currency: 'USD', note: 'Key works. To see the balance here, use a key with the READONLY or FULL preset.' };
+      return { amount: null, currency: 'USD', note: 'Key works. To see the balance, add a balance key (BILLING preset) below.' };
     }
     const amount = Number(data?.credits?.current_balance);
     if (!Number.isFinite(amount)) throw new Error('Unexpected balance response from fal');

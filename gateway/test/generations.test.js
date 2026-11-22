@@ -254,7 +254,7 @@ test('monthly limit stops generation', async () => {
   variant.server.price = { usd: 0.02, unit: 'image' };
   res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image?m=t2i', headers: { cookie: userCookie }, payload: { prompt: 'x' } });
   assert.equal(res.statusCode, 402);
-  assert.match(res.json().detail, /Monthly limit/);
+  assert.match(res.json().detail, /limit is used up|Not enough left this month/);
 });
 
 test('quote: provider price for our account, media replaced by placeholders, limit uses it', async () => {
@@ -263,6 +263,8 @@ test('quote: provider price for our account, media replaced by placeholders, lim
     payload: { endpoint: 'p/apimart/test-image?m=t2i', body: { prompt: 'x', image_urls: ['/media/u/up_abc.png'] } } });
   assert.equal(res.statusCode, 200, res.body);
   assert.deepEqual(res.json().price, { usd: 0.05, exact: true, source: 'quote' });
+  assert.equal(res.json().budget.limit, 0.01, 'a limited user sees what is left of the month');
+  assert.equal(res.json().budget.left, 0);
   assert.equal(calls.quote.at(-1).model, 'test-image');
   res = await app.inject({ method: 'POST', url: '/dz/api/quote', headers: { cookie: userCookie }, payload: { endpoint: 'p/apimart/test-image', body: {} } });
   assert.equal(res.statusCode, 404, 'outside the catalog only for admins');
@@ -271,7 +273,7 @@ test('quote: provider price for our account, media replaced by placeholders, lim
   // The kid is over the $0.01 limit; the quoted price is what the check uses.
   res = await app.inject({ method: 'POST', url: '/api/v1/p/apimart/test-image?m=t2i', headers: { cookie: userCookie }, payload: { prompt: 'y' } });
   assert.equal(res.statusCode, 402);
-  assert.match(res.json().detail, /Monthly limit/);
+  assert.match(res.json().detail, /limit is used up|Not enough left this month/);
   nextQuote = null;
 });
 

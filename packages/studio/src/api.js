@@ -73,7 +73,9 @@ async function quoteRequest(endpoint, payload) {
         body: JSON.stringify({ endpoint, body: payload }),
     });
     if (!response.ok) return null;
-    return (await response.json()).price || null;
+    const data = await response.json();
+    // With a monthly limit the server also says what is left of it (A10).
+    return data.price ? { ...data.price, ...(data.budget ? { budget: data.budget } : {}) } : null;
 }
 
 // DZ: which studio a request comes from, plus the studio's own settings

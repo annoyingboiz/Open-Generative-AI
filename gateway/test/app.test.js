@@ -105,7 +105,7 @@ test('admin creates a user; user cannot see keys or admin pages', async () => {
   res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'daughter', password: 'kid-password-1' } });
   const userCookie = cookieOf(res);
   res = await app.inject({ url: '/dz/api/me', headers: { cookie: userCookie } });
-  assert.deepEqual(res.json().user, { id: 2, username: 'daughter', displayName: 'Daughter', role: 'user', monthlyLimitUsd: 5 });
+  assert.deepEqual(res.json().user, { id: 2, username: 'daughter', displayName: 'Daughter', role: 'user', monthlyLimitUsd: 5, budget: { limit: 5, spent: 0, left: 5 } });
   res = await app.inject({ url: '/settings', headers: { cookie: userCookie } });
   assert.equal(res.statusCode, 200);
   assert.ok(!res.body.includes('Providers'), 'no provider section for users');

@@ -181,3 +181,27 @@ test('APIMart audio sends only the fields of its spec (no Suno max_mode)', async
   const [tts] = buildApimartVariants({ id: 'gpt-4o-mini-tts', category: 'audio', capability_tags: [] }, manual['gpt-4o-mini-tts'], null);
   assert.deepEqual(toProviderBody(tts, { prompt: 'Hi', voice: 'nova', extra: 1 }), { input: 'Hi', voice: 'nova' });
 });
+
+test('APIMart Seedance: start / end frames go as image_with_roles, references by the doc rule', async () => {
+  const { BodyError } = await import('../src/catalog/build.js');
+  const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
+  const i2v = (id) => buildApimartVariants({ id, capability_tags: ['image-to-video'] }, OV[id], { usd: 0.2, unit: 'second' }).find((v) => v.mode === 'i2v');
+  // 2.5: frames and references together, size adaptive (the docs require it).
+  const v25 = i2v('seedance-2.5');
+  assert.ok(v25.model.inputs.first_frame_image && v25.model.inputs.last_frame_image && v25.model.inputs.image_urls);
+  assert.deepEqual(toProviderBody(v25, { prompt: 'p', aspect_ratio: '16:9', first_frame_image: 'A', last_frame_image: 'B', image_urls: ['R'] }), {
+    prompt: 'p', size: 'adaptive',
+    image_with_roles: [{ url: 'A', role: 'first_frame' }, { url: 'B', role: 'last_frame' }, { url: 'R', role: 'reference_image' }],
+  });
+  // References alone stay as they were.
+  assert.deepEqual(toProviderBody(v25, { prompt: 'p', aspect_ratio: '16:9', image_urls: ['R'] }), { prompt: 'p', size: '16:9', image_urls: ['R'] });
+  assert.throws(() => toProviderBody(v25, { prompt: 'p', last_frame_image: 'B' }), BodyError);
+  // 2.0: frames or references, not both.
+  const v20 = i2v('seedance-2.0');
+  assert.deepEqual(toProviderBody(v20, { prompt: 'p', first_frame_image: 'A' }).image_with_roles, [{ url: 'A', role: 'first_frame' }]);
+  assert.throws(() => toProviderBody(v20, { prompt: 'p', first_frame_image: 'A', image_urls: ['R'] }), BodyError);
+  // 1.5: no references at all, only frames.
+  const v15 = i2v('seedance-1-5-pro');
+  assert.ok(!v15.model.inputs.image_urls);
+  assert.deepEqual(toProviderBody(v15, { prompt: 'p', first_frame_image: 'A' }), { prompt: 'p', image_with_roles: [{ url: 'A', role: 'first_frame' }] });
+});

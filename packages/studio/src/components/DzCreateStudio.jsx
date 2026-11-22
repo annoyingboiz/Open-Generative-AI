@@ -6,8 +6,8 @@
 // camera look and camera moves, price before you press Generate. History
 // comes from the server Library.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { dzGenerate, dzWithMeta, uploadFile, dzThumb } from "../api.js";
-import { useDzQuote } from "./DzPrice.jsx";
+import { dzGenerate, dzWithMeta, uploadFile, dzThumb, DZ_QUOTE } from "../api.js";
+import { useDzQuote, DZ_SPENT_EVENT } from "./DzPrice.jsx";
 import { useDzHistory, dzLibrary } from "../dzLibrary.js";
 import { useDzContext } from "../dzContext.js";
 import { dzOpenUpscale, dzUpscaleSpec, dzIsOwnImage, dzVideoUpscaleSpec, dzOpenVideoUpscale } from "../dzCatalog.js";
@@ -630,6 +630,27 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // The price shows as soon as the model and files are set — not only after the prompt is typed.
   const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: finalPrompt || "price check", values: bodyValues, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null);
   const { price, loading: priceLoading } = useDzQuote(apiKey, () => (quoteBody ? [dzGenerate, { endpoint: variant.model.endpoint, ...quoteBody }] : null));
+  // The same request at another provider of this family (A11): the model menu compares
+  // real prices for these settings, not catalog "from" prices. null when the settings
+  // don't carry over (a value that provider doesn't offer) or the price is unknown.
+  const quoteFor = useCallback(async (other) => {
+    if (!other) return null;
+    const otherPlan = planAttachments(other, withEditFirst(attached, other), { touched, explain: false });
+    const v = otherPlan.variant || other.variants[0];
+    if (!v || missingFor(v, otherPlan.sent)) return null;
+    const { main, advanced } = paramsOf(v.model);
+    for (const p of [...main, ...advanced]) {
+      const val = bodyValues?.[p.key];
+      if (val != null && val !== "" && Array.isArray(p.enum) && p.enum.length && !p.enum.map(String).includes(String(val))) return null;
+    }
+    const b = buildBody(v, { prompt: finalPrompt || "price check", values: bodyValues, attached: otherPlan.sent });
+    try {
+      const price = await dzGenerate(apiKey, { endpoint: v.model.endpoint, ...b, onRequestId: DZ_QUOTE });
+      return price && Number.isFinite(price.usd) ? price : null;
+    } catch {
+      return null;
+    }
+  }, [attached, touched, bodyValues, finalPrompt, apiKey]);
   // The server's view (hints on unusual camera combos; the drawer shows the final prompt).
   const [sentOpen, setSentOpen] = useState(false);
   const sentPreview = useDzPromptPreview({ endpoint: variant?.model.endpoint, body: quoteBody ? { ...quoteBody, prompt: "" } : null, look, enabled: Boolean(variant && look && !sentOpen) });
@@ -813,6 +834,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     const one = async (_, i) => {
       setBusy((n) => n + 1);
       onGenerationStart?.();
+      // The job is booked against the limit when the server takes it (a second or two).
+      setTimeout(() => window.dispatchEvent(new Event(DZ_SPENT_EVENT)), 2500);
       try {
         const res = await dzWithMeta({ studio: mode, meta: count > 1 ? { ...meta, batch: { id: batchId, n: count, i } } : meta, look },
           () => dzGenerate(apiKey, opts.onRequestId ? { ...request, onRequestId: (id) => opts.onRequestId(i, id) } : request));
@@ -821,10 +844,14 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
         else if (res?.url) onGenerationComplete?.({ url: res.url, type: kind });
       } catch (e) {
         onGenerationEnd?.();
-        const m = String(e?.message || e).replace(/^API Request Failed: \d+ [^-]*- /, "");
-        if (opts.onError) opts.onError(i, m); else onGenerationError?.(m);
+        const raw = String(e?.message || e);
+        const status = Number(/^API Request Failed: (\d+)/.exec(raw)?.[1]) || null;
+        const m = raw.replace(/^API Request Failed: \d+ [^-]*- /, "");
+        if (opts.onError) opts.onError(i, m); else onGenerationError?.(m, { status });
       } finally {
         setBusy((n) => n - 1);
+        // What is left of a monthly limit changed: prices next to Generate ask again.
+        window.dispatchEvent(new Event(DZ_SPENT_EVENT));
       }
     };
     await Promise.all(Array.from({ length: count }, one));
@@ -996,7 +1023,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {

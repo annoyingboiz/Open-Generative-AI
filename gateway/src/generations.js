@@ -18,6 +18,10 @@ const SETTLE_DELAYS_MS = [5_000, 20_000, 60_000, 180_000, 900_000];
 const TRASH_KEEP_MS = 7 * 86_400_000;
 const LOCAL_MEDIA_RE = /^(?:https?:\/\/[^/]+)?\/media\/(u|g)\/([A-Za-z0-9_-]+)(?:\.[a-z0-9]+)?(?:\/(\d+)(?:\.[a-z0-9]+)?)?(?:[?#].*)?$/i;
 
+// Money in messages: cents, below 10 cents up to 3 decimals ($0.26, $0.035).
+const money = (usd) => (usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
+const round = (usd) => Math.round(usd * 10_000) / 10_000;
+
 export class GenerationError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
@@ -168,6 +172,13 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   }
 
   // ── Submit ──────────────────────────────────────────────────────────────
+  // What is left of a monthly limit: { limit, spent, left } or null without a limit.
+  function budget(user) {
+    if (user?.monthly_limit_usd == null) return null;
+    const spent = q.spentThisMonth.get(user.id, monthStart()).usd;
+    return { limit: user.monthly_limit_usd, spent: round(spent), left: round(Math.max(0, user.monthly_limit_usd - spent)) };
+  }
+
   function monthStart() {
     const d = new Date();
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
@@ -182,8 +193,12 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     if (!model) throw new GenerationError(`${provider.name} has no model "${modelId}" (catalog may need a refresh).`, 404);
     if (user.monthly_limit_usd != null) {
       const spent = q.spentThisMonth.get(user.id, monthStart()).usd;
-      if (spent >= user.monthly_limit_usd || spent + (estCostUsd || 0) > user.monthly_limit_usd) {
-        throw new GenerationError(`Monthly limit reached ($${spent.toFixed(2)} of $${user.monthly_limit_usd}). Ask the admin to raise it.`, 402);
+      const limit = user.monthly_limit_usd;
+      if (spent >= limit) {
+        throw new GenerationError(`This month's limit is used up: $${money(spent)} of $${money(limit)}. Ask the admin to raise the limit.`, 402);
+      }
+      if (spent + (estCostUsd || 0) > limit) {
+        throw new GenerationError(`Not enough left this month: $${money(limit - spent)} left, this costs $${money(estCostUsd)}. Ask the admin to raise the limit.`, 402);
       }
     }
     if (user.role !== 'admin' && q.activeJobs.get(user.id).n >= maxActiveJobsPerUser) {
@@ -764,6 +779,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   }
 
   return {
+    budget,
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     setOnCompleted(fn) { onCompleted = fn; },
     setAfterDownload(fn) { afterDownload = fn; },

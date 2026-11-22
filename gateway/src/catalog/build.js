@@ -199,14 +199,16 @@ export function buildApimartVariants(model, override, price) {
     if (!STUDIO_MODES.includes(mode)) continue;
     const spec = override?.modes?.[mode];
     let fields;
+    let roles = null; // frames sent as `image_with_roles` (Seedance at APIMart)
     if (spec) {
       const inputs = { ...(override.common?.inputs || {}), ...(spec.inputs || {}) };
       fields = { inputs, hasPrompt: spec.hasPrompt ?? true, promptRequired: spec.promptRequired ?? (mode === 't2i' || mode === 't2v'), required: spec.required || [] };
       for (const [k, v] of Object.entries(spec.media || {})) {
-        if (k === 'image') { fields.imageField = v.field; fields.maxImages = v.max || 1; if (v.last) fields.lastImageField = v.last; }
+        if (k === 'image') { fields.imageField = v.field; fields.maxImages = v.max || 1; if (v.last) fields.lastImageField = v.last; if (v.roles) roles = { ...v.roles, first: v.roles.refs === 'never' ? v.field : v.first, last: v.last, refsField: v.roles.refs === 'never' ? null : v.field }; }
         if (k === 'video') { fields.videoField = v.field; fields.maxVideos = v.max || 1; }
         if (k === 'audio') { fields.audioField = v.field; fields.maxAudios = v.max || 1; }
         inputs[v.field] = { name: v.field, title: v.title || k, type: (v.max || 1) > 1 || /s$/.test(v.field) ? 'array' : 'string', field: k, maxItems: v.max, items: { type: 'string' } };
+        if (v.first) inputs[v.first] = { name: v.first, title: 'First frame', type: 'string', field: k };
         if (v.last) inputs[v.last] = { name: v.last, title: 'Last frame', type: 'string', field: k };
       }
     } else {
@@ -236,6 +238,7 @@ export function buildApimartVariants(model, override, price) {
         // Generic fields the studio adds that this model gets under another name.
         drop: ['image_url', 'images_list', 'video_url', 'videos_list', 'video_files', 'audio_url', 'audios_list']
           .filter((f) => ![fields.imageField, fields.lastImageField, fields.videoField, fields.audioField].includes(f)),
+        ...(roles ? { roles: { ...roles, size: rename.aspect_ratio || 'aspect_ratio' } } : {}),
         fixed: { ...(override?.fixed || {}), ...(spec?.fixed || {}) },
         price,
       },
@@ -487,7 +490,33 @@ export function toProviderBody(variant, body) {
     if (allowed && !allowed.includes(target)) continue;
     out[target] = value;
   }
+  if (variant.server.roles) withRoles(out, variant.server.roles);
   return { ...out, ...fixed };
+}
+
+// An error the user can act on (the request is not sent).
+export class BodyError extends Error {}
+
+// Start / end frames → `image_with_roles` (Seedance at APIMart: the frames have
+// no field of their own). References: inside the roles ('roles'), not together
+// with frames ('alone'), or none ('never').
+function withRoles(out, roles) {
+  const one = (v) => (Array.isArray(v) ? v[0] : v);
+  const first = one(out[roles.first]);
+  const last = one(out[roles.last]);
+  delete out[roles.last];
+  if (roles.first !== roles.refsField) delete out[roles.first];
+  if (!first && !last) return;
+  if (!first) throw new BodyError('An end frame needs a start frame with this model. Add a start frame or remove the end frame.');
+  const refs = roles.refsField ? [].concat(out[roles.refsField] || []).filter(Boolean) : [];
+  if (refs.length && roles.refs === 'alone') throw new BodyError('This model takes frames or reference images, not both. Remove the references or the frames.');
+  if (roles.refsField) delete out[roles.refsField];
+  out[roles.field] = [
+    { url: first, role: 'first_frame' },
+    ...(last ? [{ url: last, role: 'last_frame' }] : []),
+    ...refs.map((url) => ({ url, role: 'reference_image' })),
+  ];
+  if (roles.adaptive) out[roles.size] = 'adaptive';
 }
 
 // Rough cost in USD for the history and monthly limits.

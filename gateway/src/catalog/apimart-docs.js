@@ -143,6 +143,20 @@ function buildOverride(text) {
   const media = {};
   if (params.first_frame_image) {
     media.image = { field: 'first_frame_image', max: 1, ...(params.last_frame_image ? { last: 'last_frame_image' } : {}) };
+  } else if (params.image_with_roles && /`first_frame`/.test(text)) {
+    // Seedance at APIMart: start and end frames only through `image_with_roles`
+    // ({ url, role: first_frame | last_frame | reference_image }); `image_urls` are
+    // references (2.0, 2.5) or frames by count (1.5). The studio sends its usual
+    // start / end frame fields; toProviderBody turns them into roles.
+    const urlsText = params.image_urls ? params.image_urls.body.join('\n') : '';
+    const refs = !params.image_urls || /1 image\s*=\s*first frame/i.test(urlsText) ? 'never'
+      : /cannot be used (simultaneously|together)/i.test(text) ? 'alone'
+        : 'roles';
+    const adaptive = /first[ /–-]*(last )?frame[^\n]*(`size`|aspect)[^\n]*adaptive/i.test(text);
+    const roles = { field: 'image_with_roles', refs, ...(adaptive ? { adaptive: true } : {}) };
+    media.image = refs === 'never'
+      ? { field: 'first_frame_image', max: 1, last: 'last_frame_image', roles }
+      : { field: 'image_urls', max: maxItemsOf(params.image_urls) || 4, first: 'first_frame_image', last: 'last_frame_image', roles };
   } else if (params.image_urls) {
     media.image = { field: 'image_urls', max: maxItemsOf(params.image_urls) || 4 };
   }
@@ -166,7 +180,7 @@ export function buildApimartOverrides(docs) {
         ? {
             t2v: { inputs: {} },
             ...(o.media.image ? { i2v: { inputs: {}, media: { image: o.media.image } } } : {}),
-            ...(o.video ? { v2v: { inputs: {}, ...(o.omniEdit ? { fixed: { omni_reference_task_type: 'edit' } } : {}), media: { video: o.video, ...(o.media.image ? { image: { field: o.media.image.field === 'image_urls' ? 'image_urls' : o.media.image.field, max: o.media.image.max } } : {}) } } } : {}),
+            ...(o.video ? { v2v: { inputs: {}, ...(o.omniEdit ? { fixed: { omni_reference_task_type: 'edit' } } : {}), media: { video: o.video, ...(o.media.image && o.media.image.roles?.refs !== 'never' ? { image: { field: o.media.image.field === 'image_urls' ? 'image_urls' : o.media.image.field, max: o.media.image.max } } : {}) } } } : {}),
           }
         : {
             t2i: { inputs: {} },

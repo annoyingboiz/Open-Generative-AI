@@ -11,8 +11,17 @@ import { DZ_QUOTE } from "../api.js";
 // up to 3–4 decimals without trailing zeros ($0.035, $0.008).
 const fmt = (usd) => (usd >= 0.1 ? usd.toFixed(2) : (usd >= 0.01 ? usd.toFixed(3) : usd.toFixed(4)).replace(/0+$/, "").replace(/\.$/, ""));
 
+// Fired after a generation is sent or ends: what is left of a monthly limit changed.
+export const DZ_SPENT_EVENT = "dz:spent";
+
 export function useDzQuote(apiKey, build, count = 1, { textMatters = false } = {}) {
   const [state, setState] = useState({ price: null, loading: false });
+  const [spent, setSpent] = useState(0);
+  useEffect(() => {
+    const on = () => setSpent((n) => n + 1);
+    window.addEventListener(DZ_SPENT_EVENT, on);
+    return () => window.removeEventListener(DZ_SPENT_EVENT, on);
+  }, []);
   let request = null;
   try { request = build(); } catch { request = null; }
   // Prompt text and reference files don't change the price; the rest does.
@@ -37,7 +46,7 @@ export function useDzQuote(apiKey, build, count = 1, { textMatters = false } = {
       }
     }, 450);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [key, apiKey]);
+  }, [key, apiKey, spent]);
 
   const total = state.price ? state.price.usd * Math.max(1, count) : null;
   return { ...state, total };

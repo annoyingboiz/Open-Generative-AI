@@ -45,7 +45,7 @@ import { pdfText, PdfError } from './pdftext.js';
 import { createThumbs } from './thumbs.js';
 import { createMedia } from './media.js';
 import { createQuoter } from './quotes.js';
-import { toProviderBody } from './catalog/build.js';
+import { toProviderBody, BodyError } from './catalog/build.js';
 import { falTool, falBody, falPrice } from './providers/fal-tools.js';
 import { VIDEO_UPSCALE, isVideoUpscaleEndpoint, videoUpscaleBody, providerPayload, videoUpscalePrice, videoInfo, outputSize, restoreAudio, extractAudio, VideoUpscaleError } from './video-upscale.js';
 import { imageSize } from './imagesize.js';
@@ -651,7 +651,7 @@ export async function buildApp(config, { logger = true } = {}) {
   });
 
   // ── JSON for the studio shell ───────────────────────────────────────────
-  app.get('/dz/api/me', async (req) => ({ user: publicUser(req.user) }));
+  app.get('/dz/api/me', async (req) => ({ user: { ...publicUser(req.user), budget: generations.budget(req.user) } }));
 
   let balanceCache = { at: 0, data: null };
   app.get('/dz/api/balances', async (req) => {
@@ -735,7 +735,13 @@ export async function buildApp(config, { logger = true } = {}) {
 
   function providerBodyFor(resolved, providerId, modelId, body) {
     if (resolved.tool) return falBody(modelId, body);
-    return resolved.variant ? toProviderBody(resolved.variant, body) : body;
+    if (!resolved.variant) return body;
+    try {
+      return toProviderBody(resolved.variant, body);
+    } catch (error) {
+      if (error instanceof BodyError) throw new GenerationError(error.message);
+      throw error;
+    }
   }
 
   // Video upscale: our copy of the video tells size, length and sound; the
@@ -846,9 +852,16 @@ export async function buildApp(config, { logger = true } = {}) {
         throw error;
       }
     }
-    const providerBody = providerBodyFor(resolved, providerId, modelId, body);
+    let providerBody;
+    try {
+      providerBody = providerBodyFor(resolved, providerId, modelId, body);
+    } catch (error) {
+      if (error instanceof GenerationError) return { price: null, problem: error.message };
+      throw error;
+    }
     const price = await priceFor(req.user, resolved, providerId, modelId, providerBody);
-    return { price };
+    // With a monthly limit: what is left now (shown next to the price).
+    return { price, budget: generations.budget(req.user) };
   });
 
   app.post('/api/v1/p/:provider/*', async (req, reply) => {

@@ -170,7 +170,20 @@ export function createEntries(kind, { match = null } = {}) {
     if (entry.canEdit) entry.slots = [{ role: "edit", max: 1 }, ...entry.slots];
     entry.textOnly = entry.variants.some((v) => Object.keys(v.media).length === 0 && v.model.hasPrompt !== false);
   }
-  return [...byKey.values()].sort((a, b) => (a.recommended ?? 1e9) - (b.recommended ?? 1e9) || a.familyName.localeCompare(b.familyName));
+  // Which other providers of the same family take a slot this one doesn't
+  // (APIMart vs Atlas): the reason for an off file names them.
+  const all = [...byKey.values()];
+  for (const entry of all) {
+    entry.alsoAt = {};
+    for (const other of all) {
+      if (other === entry || other.family !== entry.family) continue;
+      for (const s of other.slots) {
+        if (entry.slots.some((x) => x.role === s.role)) continue;
+        (entry.alsoAt[s.role] ||= []).push(other.providerName || other.provider);
+      }
+    }
+  }
+  return all.sort((a, b) => (a.recommended ?? 1e9) - (b.recommended ?? 1e9) || a.familyName.localeCompare(b.familyName));
 }
 
 // ── Elements ─────────────────────────────────────────────────────────────
@@ -559,6 +572,14 @@ export function offReason(entry, x, { onRoles = [], turnsOff = [], variant = nul
       audio: `${name} takes no audio.`,
       edit: `${name} can't edit a picture.`,
     }[role] || `${name} doesn't take this file.`;
+    // The same model at another provider takes it: say whose limit this is.
+    const others = uniq(entry?.alsoAt?.[role] || []);
+    if (others.length && entry?.providerName) {
+      return {
+        text: `${text.replace(name, `${name} at ${entry.providerName}`)} ${orWords(others)} ${others.length > 1 ? "take" : "takes"} ${ONE[role] || "it"}.`,
+        action: `To use it, choose ${orWords(others)} in the model menu`,
+      };
+    }
     return { text, action: "" };
   }
   // Together: some of the same group stays on → "With references this model takes a start frame only."

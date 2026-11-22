@@ -30,6 +30,9 @@ import { dzScrollBoxRef } from "../dzScroll.js";
 import { dzPictureDragStart, dzPictureDragEnd, useDzPictureDrag } from "../dzDrop.js";
 import { DzPosterVideo, dzMediaInfo } from "./DzPosterVideo.jsx";
 
+// This run costs more than what is left of a monthly limit (A10).
+const overBudget = (price, count = 1) => Boolean(price?.budget && Number.isFinite(price.usd) && price.usd * Math.max(1, count) > price.budget.left + 1e-9);
+
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const RATIO_KEYS = ["aspect_ratio", "ratio", "size", "image_size"];
 const RES_KEYS = ["resolution", "quality"];
@@ -915,6 +918,9 @@ export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop
     if (close) setPop(null);
   };
   const priceText = price ? `${price.exact ? "" : "≈ "}${fmtUsd(price.usd * count)}` : entry?.priceLabel || "";
+  // A monthly limit (A10): what is left, and Generate off when this costs more.
+  const budget = price?.budget || null;
+  const over = overBudget(price, count);
   return (
                     <div ref={rowRef} className={cn("mt-3 flex items-center gap-1.5 whitespace-nowrap", squeeze >= 3 && "flex-wrap gap-y-2")}>
       <button type="button" onClick={onPlus} aria-label={plusLabel} disabled={plusDisabled}
@@ -930,7 +936,7 @@ export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop
           <span className="truncate" title={entry ? `${entry.familyName} · ${entry.providerName}` : undefined}>{entry ? (squeeze >= 1 ? entry.familyName : `${entry.familyName} · ${entry.providerName}`) : "Choose a model"}</span><CaretDown size={12} className="flex-shrink-0 text-muted-foreground" />
         </Chip>
         <ChipMenu open={pop === "model"} onClose={() => setPop(null)} anchor={modelAnchor}>
-          <ModelMenu entries={entries} entry={entry} onPick={choose} onClose={() => setPop(null)} kind={kind} />
+          <ModelMenu entries={entries} entry={entry} onPick={choose} onClose={() => setPop(null)} kind={kind} quoteFor={engine.quoteFor} count={count} />
         </ChipMenu>
       </div>
       {/* The picture editor (package 13, C3): the ratio is the base picture's own, shown, not chosen. */}
@@ -964,8 +970,11 @@ export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop
       {/* The price opens what goes to the model (the bare "Sent" label is gone, B10). */}
       <button type="button" onClick={() => variant && setSentOpen(true)} disabled={!variant}
         className={cn("h-8 flex-shrink-0 rounded-md px-1.5 text-sm tabular-nums hover:bg-accent hover:text-foreground disabled:hover:bg-transparent", priceLoading ? "text-subtle" : "text-muted-foreground")}
-        title={`What goes to the model${price ? (price.exact ? " · exact price for your account" : " · estimate") : ""}`}>{priceText}</button>
-      <button type="button" onClick={onGenerate} disabled={!canGo}
+        title={`What goes to the model${price ? (price.exact ? " · exact price for your account" : " · estimate") : ""}${budget ? ` · ${fmtUsd(budget.left)} left of ${fmtUsd(budget.limit)} this month` : ""}`}>
+        {priceText}{budget && <span className={over ? "text-destructive" : "text-subtle"}> · {fmtUsd(budget.left)} left</span>}
+      </button>
+      <button type="button" onClick={onGenerate} disabled={!canGo || over}
+        title={over ? `Not enough left this month: ${fmtUsd(budget.left)} left, this costs ${fmtUsd(price.usd * count)}. Ask the admin to raise the limit.` : undefined}
         className="ml-2 flex h-10 flex-shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-base font-medium text-primary-foreground transition-[background-color,transform] duration-state hover:bg-primary-hover active:scale-[.98] disabled:opacity-50">
         {busy > 0 && <Spinner className="h-4 w-4 border-primary-foreground/30 border-t-primary-foreground" />}Generate
       </button>
@@ -1015,7 +1024,10 @@ export default function DzStudio(props) {
   // Real errors (package 04, §2.5): one line inside the composer, above the bottom row;
   // it goes away on the next action. Set by Generate, uploads and what Generate needs.
   const [err, setErr] = useState(null); // { head, text, retry? }
-  const engine = useDzCreateEngine({ ...props, mode, onGenerationError: (m) => setErr({ head: "Not generated.", text: plainSentence(m), retry: true }) });
+  const engine = useDzCreateEngine({ ...props, mode, onGenerationError: (m, info) => setErr(info?.status === 402
+    // Monthly limit (A10): stays until dismissed; trying again can't help.
+    ? { head: "Not generated.", text: plainSentence(m), sticky: true }
+    : { head: "Not generated.", text: plainSentence(m), retry: true }) });
   const {
     kind, setKind, entries, entry, attached, setAttached, params, values, setValue, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount,
     canRun, missing, price, priceLoading, generate, busy, history, sel: engineSel, ctx, kindFilter, setKindFilter, viewing, setViewing, applyResult, mention, mentionOptions,
@@ -1117,7 +1129,7 @@ export default function DzStudio(props) {
   // Generate is never blocked by off files. What it still needs (a required file) is said when pressed.
   // Only a required file that is missing (it has a group to add it to); other problems keep Generate off.
   const missingGroup = missing ? (groups.find((g) => /start frame|first/i.test(missing) && g.id === "frames") || groups.find((g) => new RegExp(g.label, "i").test(missing)))?.id || null : null;
-  const canGo = canRun || Boolean(variant && missing && missingGroup && !engine.uploads);
+  const canGo = !overBudget(price, count) && (canRun || Boolean(variant && missing && missingGroup && !engine.uploads));
   const generateNow = () => {
     if (!canRun) {
       if (canGo) { setMini(false); setErr({ head: "Not generated.", text: `${missing.replace(/\.$/, "")}. Add it, then try again.`, add: missingGroup }); }
@@ -1148,7 +1160,7 @@ export default function DzStudio(props) {
   }, [entry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The error line goes away on the next action (package 04, §2.5).
-  useEffect(() => { setErr(null); }, [prompt, attached, entry?.key, kind, count, engine.touched, engine.valuesByKind]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setErr((e) => (e?.sticky ? e : null)); }, [prompt, attached, entry?.key, kind, count, engine.touched, engine.valuesByKind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── What the tiles and the viewer can do (package 03, §5–§7) ──
   const { isNew, markSeen } = useSeen();
@@ -1393,7 +1405,7 @@ export default function DzStudio(props) {
             onOpen={() => { setMini(false); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} onGenerate={generateNow} canGo={canGo} />
         ) : (
           <div className={cn("pointer-events-auto relative max-w-full rounded-xl border border-border bg-card p-4 shadow-float", COMPOSER_W[mode])}
-            onPointerDownCapture={(e) => { if (err && !e.target.closest?.("[data-dz-err]")) setErr(null); }}
+            onPointerDownCapture={(e) => { if (err && !err.sticky && !e.target.closest?.("[data-dz-err]")) setErr(null); }}
             onDragOver={(e) => { if (Array.from(e.dataTransfer?.types || []).includes("Files")) { e.preventDefault(); e.stopPropagation(); } }}
             onDrop={(e) => { const files = Array.from(e.dataTransfer?.files || []); if (files.length) { e.preventDefault(); e.stopPropagation(); takeFiles(files); } }}>
             <PickerHereContext.Provider value={target?.pickerHere || null}>
@@ -1431,7 +1443,7 @@ export default function DzStudio(props) {
                 <div className="mt-3"><PromptField engine={engineForPrompt} onFocusChange={setFocus} mentionGroups={mentionGroups} onPasteFiles={takeFiles} placeholder={placeholder} /></div>
                 {/* A real error (package 04, §2.5): one line above the bottom row; link-style actions; gone on the next action. */}
                 {err && (
-                  <div data-dz-err="" role="alert" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-destructive">
+                  <div data-dz-err="" role="alert" className={cn("mt-3 flex items-start gap-2 text-[13px] leading-5 text-destructive", err.sticky && "rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2")}>
                     <WarningCircle size={14} className="mt-[3px] flex-shrink-0" />
                     <span className="min-w-0 text-foreground"><b className="font-semibold text-destructive">{err.head}</b> {err.text}
                       {err.retry && <button type="button" onClick={generateNow} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Try again</button>}

@@ -279,6 +279,9 @@ export function buildLocalVariants() {
       const inputs = {
         prompt: { name: 'prompt', title: 'Prompt', type: 'string' },
         resolution: { name: 'resolution', title: 'Resolution', type: 'string', enum: m.resolutions, default: '720p' },
+        // The video's shape: "auto" follows the start frame (16:9 without one); a chosen ratio
+        // wins, and the bridge crops a frame of another shape in the middle (never stretches).
+        aspect_ratio: { name: 'aspect_ratio', title: 'Aspect Ratio', type: 'string', enum: ['auto', '16:9', '9:16', '1:1', '4:3', '3:4'], default: 'auto' },
         duration: { name: 'duration', title: 'Duration', type: 'int', enum: m.durations, default: 5 },
         turbo: { name: 'turbo', title: 'Turbo (faster, slightly less detail)', type: 'boolean', default: true },
         ...(m.sound ? { generate_audio: { name: 'generate_audio', title: 'Sound', type: 'boolean', default: true } } : {}),

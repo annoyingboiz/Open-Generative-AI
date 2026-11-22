@@ -96,12 +96,13 @@ test('a job: the picture is copied to the bridge, it waits with a reason, can be
   let res = await as('admin', 'POST', '/api/v1/upload_file', up.payload, up.headers);
   assert.equal(res.statusCode, 200, res.body);
   const frame = res.json().url;
-  res = await as('admin', 'POST', '/api/v1/p/local/minimax-h3-i2v?m=i2v', { prompt: 'She turns.', image: frame, resolution: '720p', duration: 5, turbo: true, generate_audio: false, _dz: { studio: 'video' } });
+  res = await as('admin', 'POST', '/api/v1/p/local/minimax-h3-i2v?m=i2v', { prompt: 'She turns.', image: frame, resolution: '720p', aspect_ratio: '9:16', duration: 5, turbo: true, generate_audio: false, _dz: { studio: 'video' } });
   assert.equal(res.statusCode, 200, res.body);
   const genId = res.json().id;
   const sent = received.at(-1);
   assert.equal(sent.engine, 'h3');
   assert.equal(sent.res, '720p');
+  assert.equal(sent.ratio, '9:16', 'the chosen ratio reaches the bridge');
   assert.equal(sent.turbo, true);
   assert.equal(sent.sound, false);
   assert.match(sent.image, /^[A-Za-z0-9_-]+\.png$/);

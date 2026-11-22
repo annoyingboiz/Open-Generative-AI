@@ -231,6 +231,19 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(g["steps"], 4)
         self.assertTrue(g["prompt"].startswith("<Picture 1> <Picture 2> are reference images."))
 
+    def test_8_ratio_sets_the_video_shape(self):
+        img = self.picture("frame_dddddd.png")
+        self.call("POST", "/jobs", {"id": "job_916_1", "engine": "h3", "prompt": "Rain.", "image": img, "res": "720p", "ratio": "9:16", "turbo": True})
+        self.wait_state("job_916_1", ["done"])
+        g = FakeComfy.graphs[-1]
+        self.assertEqual((g["w"], g["h"]), (704, 1248))
+        self.call("POST", "/jobs", {"id": "job_auto_1", "engine": "h3", "prompt": "Rain.", "refs": [self.picture("ref_eeeeee.png")], "res": "768p"})
+        self.wait_state("job_auto_1", ["done"])
+        self.assertEqual((FakeComfy.graphs[-1]["w"], FakeComfy.graphs[-1]["h"]), (1344, 768), "auto without a readable frame: landscape")
+        code, e = self.call("POST", "/jobs", {"id": "job_bad3", "engine": "h3", "prompt": "x", "ratio": "2:1"})
+        self.assertEqual(code, 400)
+        self.assertIn("Aspect ratio", e["error"])
+
     def test_4_cancel_waiting_and_running(self):
         self.busy.write_text("RAM: доступно 3 ГБ, нужно 30")
         self.call("POST", "/jobs", {"id": "job_cancel_wait", "engine": "wan", "prompt": "Rain."})

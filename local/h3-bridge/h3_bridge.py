@@ -54,6 +54,10 @@ JOB_ID = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
 IN_NAME = re.compile(r"^[A-Za-z0-9_-]{6,80}\.(png|jpe?g|webp)$")
 ENGINES = {"h3", "wan"}
 RES = {"h3": ["480p", "576p", "720p", "768p"], "wan": ["480p", "576p", "720p"]}
+# The video's shape: "auto" follows the start frame (16:9 without one); any other value is
+# kept, and a start frame of another shape is cropped to it in the middle — never stretched.
+RATIOS = {"auto": None, "16:9": 16 / 9, "9:16": 9 / 16, "1:1": 1.0, "4:3": 4 / 3, "3:4": 3 / 4}
+GRID = {"h3": 32, "wan": 16}   # width and height are multiples of this
 
 
 def log(msg):
@@ -177,12 +181,16 @@ def clean_request(body):
         raise ValueError("Bad duration.")
     if not 1 <= seconds <= (10 if engine == "h3" else 5):
         raise ValueError("Duration out of range.")
+    ratio = str(body.get("ratio") or "auto")
+    if ratio not in RATIOS:
+        raise ValueError(f"Aspect ratio must be one of {', '.join(RATIOS)}.")
     seed = body.get("seed")
     seed = int(seed) if isinstance(seed, (int, float)) and 0 <= seed < 2**31 else int.from_bytes(os.urandom(4), "big") % 2**31
     mode = "i2v" if image else ("r2v" if engine == "h3" else "t2v")
     return {
         "id": jid, "engine": engine, "mode": mode, "prompt": prompt, "image": image, "refs": refs, "res": res,
         "seconds": seconds, "seed": seed, "turbo": bool(body.get("turbo")), "sound": engine == "h3" and body.get("sound") is not False,
+        "ratio": ratio,
     }
 
 
@@ -327,10 +335,46 @@ def cancel_prompt(pid):
         log(f"cancel {pid}: {e}")
 
 
+def picture_shape(path):
+    """Width / height of a picture, or None (unreadable, or no Pillow)."""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            w, h = im.size
+        return w / h if w and h else None
+    except Exception:
+        return None
+
+
+def video_size(engine, res, ratio, image):
+    """The size for this job: the resolution's pixel count in the job's shape. previz's table
+    is landscape only (768p = 1344×768); 9:16 at 768p is 768×1344."""
+    bw, bh = PV.RES[engine][res]
+    shape = RATIOS.get(ratio or "auto") or (picture_shape(image) if image else None) or bw / bh
+    shape = min(max(shape, 9 / 21), 21 / 9)
+    if abs(shape - bw / bh) < 0.01:
+        return bw, bh
+    px, grid = bw * bh, GRID[engine]
+    snap = lambda v: max(grid * 8, int(round(v / grid)) * grid)
+    return snap((px * shape) ** 0.5), snap((px / shape) ** 0.5)
+
+
+def fit_start_frame(g, engine, w, h):
+    """The start frame goes in at the video's size, cropped in the middle when its shape differs
+    (ComfyUI's ImageScale, crop "center"): the model never gets a stretched frame."""
+    load, use, key = ("20", "10", "first_frame") if engine == "h3" else ("12", "13", "start_image")
+    if not (isinstance(g.get(load), dict) and g[load].get("class_type") == "LoadImage" and isinstance(g.get(use), dict)):
+        return g
+    g["90"] = {"class_type": "ImageScale", "inputs": {   # an id previz's graphs do not use
+        "image": [load, 0], "upscale_method": "lanczos", "width": w, "height": h, "crop": "center"}}
+    g[use]["inputs"][key] = ["90", 0]
+    return g
+
+
 def build_graph(job, prefix):
     engine, mode = job["engine"], job["mode"]
-    w, h = PV.RES[engine][job["res"]]
     image = str(INBOX / job["image"]) if job.get("image") else None
+    w, h = video_size(engine, job["res"], job.get("ratio"), image)
     refs = [str(INBOX / r) for r in job.get("refs") or []]
     prompt = job["prompt"]
     if engine == "h3":
@@ -338,10 +382,11 @@ def build_graph(job, prefix):
         steps = 4 if (job["turbo"] and mode == "r2v") else 8 if job["turbo"] else 20
         if refs and "<Picture" not in prompt:
             prompt = " ".join(f"<Picture {i + 1}>" for i in range(len(refs))) + " are reference images.\n" + prompt
-        return PV.graph_h3(prompt, w, h, frames, job["seed"], steps, refs, image, "i2v" if mode == "i2v" else "r2v", job["turbo"], prefix), prompt
+        g = PV.graph_h3(prompt, w, h, frames, job["seed"], steps, refs, image, "i2v" if mode == "i2v" else "r2v", job["turbo"], prefix)
+        return fit_start_frame(g, engine, w, h), prompt
     frames = int(job["seconds"] * 16) // 4 * 4 + 1
     steps = 4 if job["turbo"] else 20
-    return PV.graph_wan(prompt, w, h, frames, job["seed"], steps, image, job["turbo"], prefix), prompt
+    return fit_start_frame(PV.graph_wan(prompt, w, h, frames, job["seed"], steps, image, job["turbo"], prefix), engine, w, h), prompt
 
 
 def unstage(job):

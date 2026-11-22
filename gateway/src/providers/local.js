@@ -92,6 +92,7 @@ export const local = {
       image: body.image ? name(body.image) : undefined,
       refs: refs.length ? refs : undefined,
       res: body.resolution,
+      ratio: body.aspect_ratio || 'auto',   // "auto": the bridge follows the start frame
       seconds: Number(body.duration) || 5,
       turbo: body.turbo === true,
       sound: body.generate_audio !== false,

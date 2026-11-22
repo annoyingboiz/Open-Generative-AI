@@ -594,22 +594,29 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     hadPrompt.current = has;
   }, [prompt, adaptScope]);
   const needsPrompt = variant?.model.promptRequired;
-  const canRun = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
+  const canRunNow = Boolean(variant && !missing && !uploads && (!needsPrompt || prompt.trim()) && (prompt.trim() || Object.keys(merged.attached).length || elementsUsed));
   // "adaptive" with a start picture (Seedance, package 14, 3.17): the video takes the picture's
   // shape — a landscape picture → the nearest landscape ratio (16:9), a vertical one → the nearest
   // vertical (9:16), as H3 does. A square one keeps "adaptive" (Denis decides that later).
   const startUrl = merged.attached.first?.[0]?.url || null;
-  const [startShape, setStartShape] = useState(null);
+  const [shapeOf, setShapeOf] = useState({ url: null, shape: null });
   useEffect(() => {
-    if (!startUrl) { setStartShape(null); return undefined; }
+    if (!startUrl) return undefined;
     let alive = true;
     const img = new window.Image();
-    img.onload = () => { if (alive && img.naturalWidth) setStartShape(img.naturalWidth / img.naturalHeight); };
+    // A picture that can't be read keeps "adaptive" (shape 1 = square) rather than blocking Generate.
+    img.onload = () => { if (alive) setShapeOf({ url: startUrl, shape: img.naturalWidth ? img.naturalWidth / img.naturalHeight : 1 }); };
+    img.onerror = () => { if (alive) setShapeOf({ url: startUrl, shape: 1 }); };
     img.src = dzThumb(startUrl, 128);
     return () => { alive = false; };
   }, [startUrl]);
+  // Only the shape of the picture that is in the slot now counts (never the one before).
+  const startShape = startUrl && shapeOf.url === startUrl ? shapeOf.shape : null;
+  const adaptiveKey = ["aspect_ratio", "ratio"].find((k) => String(values?.[k] || "").toLowerCase() === "adaptive");
+  const shapePending = Boolean(adaptiveKey && startUrl && startShape == null);
+  const canRun = canRunNow && !shapePending;
   const bodyValues = useMemo(() => {
-    const key = ["aspect_ratio", "ratio"].find((k) => String(values?.[k] || "").toLowerCase() === "adaptive");
+    const key = adaptiveKey;
     if (!key || !startShape || Math.abs(Math.log(startShape)) < Math.log(1.15)) return values;
     const p = [...(params?.main || []), ...(params?.advanced || [])].find((x) => x.key === key);
     const num = (o) => { const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(String(o)); return m ? Number(m[1]) / Number(m[2]) : null; };
@@ -617,7 +624,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (!side.length) return values;
     const best = side.reduce((a, o) => (Math.abs(Math.log(num(o) / startShape)) < Math.abs(Math.log(num(a) / startShape)) ? o : a), side[0]);
     return { ...values, [key]: best };
-  }, [values, startShape, params]);
+  }, [values, startShape, params, adaptiveKey]);
+  // Generate waits the moment it takes to read the start picture's shape.
   const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values: bodyValues, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
   // The price shows as soon as the model and files are set — not only after the prompt is typed.
   const quoteBody = body || (variant && !missing && !uploads ? buildBody(variant, { prompt: finalPrompt || "price check", values: bodyValues, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null);

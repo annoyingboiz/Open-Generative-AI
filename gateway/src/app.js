@@ -1102,7 +1102,9 @@ export async function buildApp(config, { logger = true } = {}) {
       if (!boards.has(id)) { try { boards.set(id, storyboards.get(req.user, id).storyboard); } catch { boards.set(id, null); } }
       return boards.get(id);
     };
-    const projectRows = new Map(db.prepare('SELECT id, slug, name FROM projects').all().map((p) => [p.id, p]));
+    // Only the projects this user is in (a project they left is not named).
+    const mine = new Set(projects.memberProjectIds(req.user.id));
+    const projectRows = new Map(db.prepare('SELECT id, slug, name FROM projects').all().filter((p) => mine.has(p.id)).map((p) => [p.id, p]));
     const items = list.map((t) => {
       let place = null;
       if (t.target?.board) {

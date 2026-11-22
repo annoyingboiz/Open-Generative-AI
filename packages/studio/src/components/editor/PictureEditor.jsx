@@ -325,7 +325,8 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
   }, [doc, general, flat, base.url, running]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveRef = useRef(saveDraftNow);
   saveRef.current = saveDraftNow;
-  useEffect(() => () => saveRef.current(), []);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; saveRef.current(); }; }, []);
   // The message about a draft that came back goes once the work changes, or after a while.
   const restoredDoc = useRef(doc);
   useEffect(() => { if (restored && doc !== restoredDoc.current) setRestored(false); }, [doc, restored]);
@@ -404,7 +405,8 @@ export default function PictureEditor({ url, apiKey, target = null, place: opene
     Promise.resolve().then(() => engine.generate({
       meta: { editor: { source: url } },
       onRequestId: (i, gid) => { if (cancelled.current.has(ids[i])) { stopJob(gid); return; } setVersions((vs) => vs.map((v) => (v.id === ids[i] ? { ...v, gid } : v))); },
-      onResult: (i, res) => { if (res?.url) setVersions((vs) => vs.map((v) => (v.id === ids[i] && v.status === "pending" ? { ...v, url: res.url, status: "done" } : v))); else failed(ids[i], "The model gave no picture."); },
+      // Closed while it ran: the draft that held the taken work goes here (no effect runs any more).
+      onResult: (i, res) => { if (res?.url && !mounted.current) dropDraft(url); if (res?.url) setVersions((vs) => vs.map((v) => (v.id === ids[i] && v.status === "pending" ? { ...v, url: res.url, status: "done" } : v))); else failed(ids[i], "The model gave no picture."); },
       onError: (i, m) => failed(ids[i], plainReason(m)),
     })).catch((e) => ids.forEach((id) => failed(id, plainReason(String(e?.message || e)))));
     baseWork.current = s.work;

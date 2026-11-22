@@ -52,8 +52,9 @@ export function storyboardPage(sb, { aspect = '16:9' } = {}) {
   body.prompts details{display:block} body.prompts details>summary{display:none} body.prompts details pre{display:block}
   footer.page{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid #e3e3e3;font-size:10px;line-height:1;color:#8a8a8a}
   footer.page .brand{display:flex;align-items:center;gap:5px;color:#111;font-weight:600}
+  .sheet.tall{height:auto;min-height:265mm;overflow:visible}
   #src{position:absolute;left:-10000px;top:0;width:186mm}
-  @media print{body{background:#fff}.bar{display:none}.sheet{margin:0;padding:0;box-shadow:none;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto} body:not(.prompts) details{display:none}}
+  @media print{body{background:#fff}.bar{display:none}.sheet{margin:0;padding:0;box-shadow:none;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto} .sheet.tall .shot{break-inside:auto} body:not(.prompts) details{display:none}}
 </style></head><body>
 <div class="bar"><button type="button" onclick="window.print()">Print / Save as PDF</button>
 <label><input type="checkbox" onchange="document.body.classList.toggle('prompts', this.checked);document.querySelectorAll('details').forEach(d=>d.open=this.checked);dzSheets()"> Include prompts</label></div>
@@ -78,13 +79,21 @@ function dzSheets(){
   function next(){sheet=document.createElement('section');sheet.className='sheet';grid=document.createElement('div');grid.className='grid';
     sheet.appendChild(grid);var fill=document.createElement('div');fill.className='fill';sheet.appendChild(fill);sheet.appendChild(foot.content.cloneNode(true));out.appendChild(sheet);sheets.push(sheet);}
   function over(){var f=sheet.querySelector('footer.page');return f.getBoundingClientRect().bottom>sheet.getBoundingClientRect().bottom-parseFloat(getComputedStyle(sheet).paddingBottom)+0.5;}
+  // One card (or the film's header) taller than a sheet is not cut: that sheet grows and runs
+  // over as many printed pages as it needs; the next card starts a new sheet.
+  function tall(){sheet.classList.add('tall');}
   next();
-  var head=src.querySelector('header');if(head)sheet.insertBefore(head,grid);
+  var full=sheet.getBoundingClientRect().height;
+  var head=src.querySelector('header');if(head){sheet.insertBefore(head,grid);if(over())tall();}
   Array.prototype.slice.call(src.querySelectorAll('.shot')).forEach(function(card){
+    if(sheet.classList.contains('tall'))next();
     grid.appendChild(card);
-    if(over()&&grid.children.length>1){next();grid.appendChild(card);}
+    if(!over())return;
+    if(grid.children.length>1||sheet.querySelector('header')){next();grid.appendChild(card);}
+    if(over())tall();
   });
-  sheets.forEach(function(s,i){s.querySelector('footer.page .n').textContent='Page '+(i+1)+' of '+sheets.length;});
+  var total=0,pages=sheets.map(function(s){var n=s.classList.contains('tall')?Math.max(1,Math.ceil(s.getBoundingClientRect().height/full-0.01)):1;total+=n;return n;});
+  var at=0;sheets.forEach(function(s,i){at+=pages[i];s.querySelector('footer.page .n').textContent='Page '+at+' of '+total;});
 }
 (document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(dzSheets);
 window.addEventListener('beforeprint',dzSheets);

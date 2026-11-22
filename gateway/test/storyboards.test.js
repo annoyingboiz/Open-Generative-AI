@@ -251,7 +251,7 @@ test('storyboard print page escapes everything and shows the picked frames', asy
   const { storyboardPage } = await import('../src/storyboard-print.js');
   const html = storyboardPage({ name: '<b>x</b>', scene: 's"', look: { camera: 'film-35', focal: 50 }, shots: [{ id: 'a', title: '<script>', action: 'run', camera: 'phone', move: 'orbit' }], media: { a: { frame: '/media/g/gen_1/0.png' } } }, { aspect: '9:16' });
   assert.ok(html.includes('&lt;script&gt;') && html.split('<script>').length === 2, 'only the page\'s own script');
-  assert.match(html, /Page '\+\(i\+1\)\+' of '/, 'every sheet gets "Page N of M" (package 14, A2)');
+  assert.match(html, /'Page '\+at\+' of '\+total/, 'every sheet gets "Page N of M" (package 14, A2)');
   assert.match(html, /aspect-ratio:9\/16/);
   assert.match(html, /\/media\/g\/gen_1\/0\.png\?w=960/);
   assert.match(html, /35mm Film · 50mm/);

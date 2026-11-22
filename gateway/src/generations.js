@@ -426,11 +426,14 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   // gallery (project, folder, target, kind…), then All, pictures, videos, liked, upscaled.
   function historyCounts(user, opts = {}) {
     const base = { ...opts, liked: undefined, status: undefined, cursor: undefined };
-    const n = (extra) => {
-      const { where, args } = historyWhere(user, { ...base, ...extra });
-      return db.prepare(`SELECT COUNT(*) AS n FROM generations WHERE ${where.join(' AND ')}`).get(...args).n;
-    };
-    return { all: n({}), image: n({ kind: base.kind || 'image' }), video: n({ kind: base.kind || 'video' }), liked: n({ liked: '1' }), upscaled: n({ studio: 'upscale' }) };
+    // One pass for All / pictures / videos / liked; upscaled is its own place (studio=upscale).
+    const { where, args } = historyWhere(user, base);
+    const r = db.prepare(`SELECT COUNT(*) AS n, SUM(kind = 'image') AS image, SUM(kind = 'video') AS video, SUM(liked_at IS NOT NULL) AS liked
+      FROM generations WHERE ${where.join(' AND ')}`).get(...args);
+    const up = historyWhere(user, { ...base, studio: 'upscale' });
+    const upscaled = db.prepare(`SELECT COUNT(*) AS n FROM generations WHERE ${up.where.join(' AND ')}`).get(...up.args).n;
+    const all = r.n || 0;
+    return { all, image: base.kind ? all : r.image || 0, video: base.kind ? all : r.video || 0, liked: r.liked || 0, upscaled };
   }
 
   // The Tasks drawer (package 14, A4): this user's jobs that run or wait, and those that ended in
@@ -440,7 +443,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     const rows = db.prepare(`SELECT * FROM generations WHERE user_id = ? AND purged_at IS NULL AND deleted_at IS NULL
       AND (status IN ('submitting','submitted','processing','downloading') OR (status IN ('completed','failed') AND completed_at >= ?))
       ORDER BY created_at DESC LIMIT 60`).all(user.id, since);
-    return rows.map((row) => {
+    // A project the user has left: its jobs are not theirs to list any more.
+    return rows.filter((row) => canSee(user, row)).map((row) => {
       const item = historyItem(row, user);
       const active = item.status === 'processing';
       const waiting = active && /^(Waiting|In line)/.test(String(item.note || ''));

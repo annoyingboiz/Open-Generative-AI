@@ -15,13 +15,14 @@ async function fetchTasks() {
 
 // The list, kept fresh: every few seconds while something runs or the drawer is open, and after
 // any change in the library (a generation started or ended somewhere in the app).
-export function useDzTasks({ busy = false, open = false } = {}) {
+export function useDzTasks({ busy = false, open = false, off = false } = {}) {
   const [items, setItems] = useState([]);
   const seq = useRef(0);
   const load = useCallback(async () => {
+    if (off) return;
     const mine = ++seq.current;
     try { const list = await fetchTasks(); if (mine === seq.current) setItems(list); } catch { /* keep the last list */ }
-  }, []);
+  }, [off]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     let t = null;
@@ -32,10 +33,10 @@ export function useDzTasks({ busy = false, open = false } = {}) {
   }, [load]);
   const active = items.some((x) => x.state === "running" || x.state === "waiting");
   useEffect(() => {
-    if (!active && !busy && !open) return undefined;
+    if (off || (!active && !busy && !open)) return undefined;
     const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 5000);
     return () => clearInterval(t);
-  }, [active, busy, open, load]);
+  }, [active, busy, open, load, off]);
   // A generation sent from here shows at once (the server has it a moment later).
   useEffect(() => { if (busy) load(); }, [busy, load]);
   const running = items.filter((x) => x.state === "running").length;

@@ -1295,8 +1295,10 @@ export default function DzStudio(props) {
     : { ...(mode === "image" || mode === "video" ? { kind: mode } : {}), ...(ctx.project ? { project: ctx.project.id, folder: ctx.folder || undefined } : { project: "none" }) });
   const tabCounts = useMemo(() => {
     if (!countsRaw) return null;
-    const extra = target?.extra?.length || 0;
-    return { all: countsRaw.all + extra, image: countsRaw.image, video: countsRaw.video, videos: countsRaw.video, pictures: countsRaw.image + extra, liked: countsRaw.liked, upscaled: countsRaw.upscaled,
+    const ex = target?.extra || [];
+    const exVideo = ex.filter((i) => i.kind === "video").length;
+    const extra = ex.length;
+    return { all: countsRaw.all + extra, image: countsRaw.image, video: countsRaw.video, videos: countsRaw.video + exVideo, pictures: countsRaw.image + extra - exVideo, liked: countsRaw.liked, upscaled: countsRaw.upscaled,
       ...(target ? { approved: target.approved?.size || 0 } : {}) };
   }, [countsRaw, target]);
   // A working screen selects among everything it shows (its ready pictures too).

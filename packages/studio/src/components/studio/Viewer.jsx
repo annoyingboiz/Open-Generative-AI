@@ -424,6 +424,25 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
   const [likedHere, setLikedHere] = useState({});
   const fresh = given ? items.find((i) => i.id === given.id) || given : null;
   const item = fresh && likedHere[fresh.id] !== undefined ? { ...fresh, liked: likedHere[fresh.id] } : fresh;
+  // The override lives only while the view is open and until the gallery has the same state;
+  // one like request per item at a time (a second click waits for the first).
+  const liking = useRef(new Set());
+  useEffect(() => { if (!given) setLikedHere({}); }, [given]);
+  const freshLiked = fresh ? items.some((i) => i.id === fresh.id) && Boolean(fresh.liked) : null;
+  useEffect(() => {
+    if (!fresh || likedHere[fresh.id] === undefined || liking.current.has(fresh.id)) return;
+    if (items.some((i) => i.id === fresh.id) && freshLiked === likedHere[fresh.id]) setLikedHere(({ [fresh.id]: _d, ...rest }) => rest);
+  }, [fresh?.id, freshLiked, likedHere]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleLike = () => {
+    if (!item || liking.current.has(item.id)) return;
+    const id = item.id;
+    const was = Boolean(item.liked);
+    liking.current.add(id);
+    setLikedHere((m) => ({ ...m, [id]: !was }));
+    Promise.resolve(act.like(item))
+      .catch(() => setLikedHere((m) => ({ ...m, [id]: was })))
+      .finally(() => { liking.current.delete(id); });
+  };
   const [tab, setTab] = useState("details");
   const [size, setSize] = useState(null);
   useEffect(() => { setTab("details"); setSize(null); }, [item?.id]);
@@ -500,7 +519,7 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
               </button>
             );
           })()}
-          {real && <IconBtn label={item.liked ? "Unlike" : "Like"} onClick={() => { setLikedHere((m) => ({ ...m, [item.id]: !item.liked })); Promise.resolve(act.like(item)).catch(() => setLikedHere((m) => ({ ...m, [item.id]: item.liked }))); }}><Heart size={18} weight={item.liked ? "fill" : "regular"} /></IconBtn>}
+          {real && <IconBtn label={item.liked ? "Unlike" : "Like"} onClick={toggleLike}><Heart size={18} weight={item.liked ? "fill" : "regular"} /></IconBtn>}
           <IconBtn label="Download" onClick={() => download(item.url)}><DownloadSimple size={18} /></IconBtn>
           {real && (
             <DropdownMenu>

@@ -442,6 +442,12 @@ export default function DzShell() {
     openTab('upscale');
   };
 
+  // Tasks (package 14, A4): the header pill "N running · M waiting" opens the drawer.
+  // Hooks stay above the splash return (the hook order must not change once the session loads).
+  const runningCount = Object.keys(running).reduce((n, t) => n + running[t], 0);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const tasks = useDzTasks({ busy: runningCount > 0, open: tasksOpen, off: !user });
+
   // Splash until the session and the project in the URL are known (nothing can go to the wrong place).
   if (!user || (switching && !project && parsePath(typeof window !== 'undefined' ? window.location.pathname : '').slug)) {
     return (
@@ -455,10 +461,6 @@ export default function DzShell() {
   const studioProps = { apiKey: DZ_SESSION_PLACEHOLDER, locale: 'en' };
   const isCollapsed = collapsed && !mobileOpen;
   const runningTabs = Object.keys(running);
-  const runningCount = runningTabs.reduce((n, t) => n + running[t], 0);
-  // Tasks (package 14, A4): the header pill "N running · M waiting" opens the drawer.
-  const [tasksOpen, setTasksOpen] = useState(false);
-  const tasks = useDzTasks({ busy: runningCount > 0, open: tasksOpen });
   // Sent from this window a moment ago: counted here before the server lists it.
   const pillRunning = Math.max(tasks.running, runningCount - tasks.waiting, 0);
   const openTask = async (t) => {

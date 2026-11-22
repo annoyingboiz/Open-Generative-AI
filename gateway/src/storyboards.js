@@ -164,7 +164,6 @@ export function targetOf(meta) {
 }
 // How long the media of a deleted shot or group is kept for Undo (in memory: a restart starts the clock again).
 const MEDIA_GRACE_MS = 30 * 60_000;
-const goneSince = new Map(); // "storyboard:target" -> when it went
 const groupIds = (mood) => new Set((mood.items || []).filter((x) => x.type === 'frame').map((x) => x.id));
 
 export function createStoryboards({ db, projects, generations, log }) {
@@ -388,14 +387,22 @@ export function createStoryboards({ db, projects, generations, log }) {
     const fresh = q.byId.get(row.id);
     const ids = new Set([...parse(fresh.shots_json, []).map((s) => s.id), ...groupIds(parse(fresh.mood_json, {}))]);
     const media = parse(fresh.media_json, {});
+    // When a target went is stored with its media (gone_at), so the 30 minutes hold across restarts
+    // and a shot brought back later than that comes back without them.
     const t = now();
-    const kept = Object.fromEntries(Object.entries(media).filter(([k]) => {
-      const key = `${row.id}:${k}`;
-      if (ids.has(k)) { goneSince.delete(key); return true; }
-      if (!goneSince.has(key)) goneSince.set(key, t);
-      return t - goneSince.get(key) < MEDIA_GRACE_MS;
-    }));
-    if (Object.keys(kept).length !== Object.keys(media).length) q.setMedia.run(JSON.stringify(kept), now(), row.id);
+    let changed = false;
+    const kept = {};
+    for (const [k, m] of Object.entries(media)) {
+      if (!isObj(m)) { kept[k] = m; continue; }
+      const gone = Number(m.gone_at) || 0;
+      if (ids.has(k)) {
+        if (gone && t - gone >= MEDIA_GRACE_MS) { changed = true; continue; }
+        if (gone) { const { gone_at: _g, ...rest } = m; kept[k] = rest; changed = true; } else kept[k] = m;
+      } else if (!gone) { kept[k] = { ...m, gone_at: t }; changed = true; }
+      else if (t - gone < MEDIA_GRACE_MS) kept[k] = m;
+      else changed = true;
+    }
+    if (changed) q.setMedia.run(JSON.stringify(kept), now(), row.id);
     const final = q.byId.get(row.id);
     return { storyboard: view(final, user, { jobs: jobsOf(final) }) };
   }

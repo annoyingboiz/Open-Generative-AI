@@ -72,10 +72,11 @@ export default function ModelMenu({ entries, entry, onPick, onClose, kind = entr
     const paid = openProviders.filter((p) => !p.local);
     if (!quoteFor || paid.length < 2) return undefined;
     let alive = true;
-    setQuotes({});
+    // Old prices stay until the new ones come (no flicker while the studio re-renders);
+    // they are keyed by provider entry, so another family's prices never show here.
     // A moment's wait: clicking through families asks only for the one left open.
     const timer = setTimeout(() => {
-      Promise.all(paid.map(async (p) => [p.entry.key, await quoteFor(p.entry)])).then((pairs) => { if (alive) setQuotes(Object.fromEntries(pairs)); });
+      Promise.all(paid.map(async (p) => [p.entry.key, await quoteFor(p.entry)])).then((pairs) => { if (alive) setQuotes((q) => ({ ...q, ...Object.fromEntries(pairs) })); });
     }, 350);
     return () => { alive = false; clearTimeout(timer); };
   }, [openProviders, quoteFor]);

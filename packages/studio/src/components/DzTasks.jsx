@@ -56,12 +56,14 @@ export function taskTitle(t) {
   if (t.editor) return `Editor · ${word}`;
   return `${STUDIO_NAME[t.studio] || "Library"} · ${word}`;
 }
+// "Nano Banana Pro · APIMart": the model name often carries the provider already.
+const modelLine = (t) => (t.provider && String(t.model || "").endsWith(` · ${t.provider}`) ? t.model : [t.model, t.provider].filter(Boolean).join(" · "));
 function taskLine(t) {
   const where = t.project?.name || "Library";
   if (t.state === "failed") return `${where} · failed: ${String(t.error || "the provider returned an error").replace(/\.$/, "")}`;
   if (t.state === "waiting") return `${where} · ${String(t.note || "waiting").replace(/^Waiting for the GPU: /, "waiting for the graphics card: ").replace(/^In line on this server/, "in line on this server")}`;
-  if (t.state === "completed") return `${where} · ${t.outputs > 1 ? `${t.outputs} ${KIND_WORD[t.kind] || "file"}s` : [t.model, t.provider].filter(Boolean).join(" · ")}`;
-  return [where, t.model, t.provider].filter(Boolean).join(" · ");
+  if (t.state === "completed") return `${where} · ${t.outputs > 1 ? `${t.outputs} ${KIND_WORD[t.kind] || "file"}s` : modelLine(t)}`;
+  return [where, modelLine(t)].filter(Boolean).join(" · ");
 }
 
 function Row({ t, now, onOpen }) {

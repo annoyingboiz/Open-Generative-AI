@@ -695,16 +695,23 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // (a start frame and references). A hint with both prices and a Switch button; never automatic.
   const both = useMemo(() => bothAtOther(entry, entries, attached, { touched }), [entry, entries, attached, touched]);
   const [bothHint, setBothHint] = useState(null);
+  // Quotes again only when the settings change, not on every keystroke (the prompt doesn't change a price).
+  const quoteForRef = useRef(quoteFor);
+  quoteForRef.current = quoteFor;
+  const bothQuoteKey = JSON.stringify([bodyValues, count]);
   useEffect(() => {
-    if (!both) { setBothHint(null); return undefined; }
+    // A hint for a provider that no longer qualifies goes at once, before the new quotes come back.
+    setBothHint((prev) => (prev && both && prev.from === entry?.key && both.others.some((o) => o.key === prev.entry.key) ? prev : null));
+    if (!both) return undefined;
     let alive = true;
-    Promise.all(both.others.map(async (o) => ({ entry: o, price: await quoteFor(o) }))).then((priced) => {
+    const from = entry?.key;
+    Promise.all(both.others.map(async (o) => ({ entry: o, price: await quoteForRef.current(o) }))).then((priced) => {
       if (!alive) return;
       const best = priced.filter((x) => x.price).sort((a, b) => a.price.usd - b.price.usd)[0] || priced[0];
-      setBothHint({ entry: best.entry, price: best.price, words: both.words });
+      setBothHint({ from, entry: best.entry, price: best.price, words: both.words });
     });
     return () => { alive = false; };
-  }, [both, quoteFor]);
+  }, [both, bothQuoteKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // The server's view (hints on unusual camera combos; the drawer shows the final prompt).
   const [sentOpen, setSentOpen] = useState(false);
   const sentPreview = useDzPromptPreview({ endpoint: variant?.model.endpoint, body: quoteBody ? { ...quoteBody, prompt: "" } : null, look, enabled: Boolean(variant && look && !sentOpen) });

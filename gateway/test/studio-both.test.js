@@ -31,4 +31,6 @@ test('a failed task with an automatic refund does not read as an empty account',
   assert.match(plainError(failed), /failed on its side/);
   assert.match(plainError('HTTP 402: Insufficient account balance.'), /out of credit/);
   assert.match(plainError('Your quota exceeded for this month'), /out of credit/);
+  assert.match(plainError('Credit balance exhausted.'), /out of credit/);
+  assert.match(plainError('The task failed because the account has insufficient balance.'), /out of credit/);
 });

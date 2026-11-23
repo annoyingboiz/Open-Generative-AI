@@ -1554,7 +1554,7 @@ export default function DzStudio(props) {
                     <span className="min-w-0 text-foreground">{unsentNote(engine)}</span>
                   </div>
                 )}
-                {engine.bothHint && (
+                {engine.bothHint && engine.bothHint.from === engine.entry?.key && (
                   <div role="status" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-muted-foreground">
                     <Info size={14} className="mt-[3px] flex-shrink-0" />
                     <span className="min-w-0 text-foreground">{bothHintText(engine)}

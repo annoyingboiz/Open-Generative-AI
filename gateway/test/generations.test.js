@@ -306,3 +306,23 @@ test('frame: only a finished video has frames', async () => {
   const res = await app.inject({ method: 'POST', url: `/dz/api/generations/${genId}/frame`, headers: { cookie: adminCookie }, payload: { at: 'last' } });
   assert.equal(res.statusCode, 409, 'a picture has no frames');
 });
+
+test('Phone job files (transient uploads): hidden from the list, removed by the server only, never inferred from a name', async () => {
+  const gens = app.ctx.generations;
+  // A user's own file whose name looks like a job file stays a normal upload.
+  const mp = multipart('file', 'dz-transient:holiday.png', 'image/png', PNG);
+  let res = await app.inject({ method: 'POST', url: '/api/v1/upload_file', headers: { cookie: adminCookie, ...mp.headers }, payload: mp.payload });
+  assert.equal(res.statusCode, 200, res.body);
+  const own = res.json().url;
+  const admin = app.ctx.db.prepare("SELECT * FROM users WHERE username = 'admin'").get();
+  const job = await gens.saveTransient(admin, { buffer: PNG, mime: 'image/png', name: 'phone-canvas.png' });
+  res = await app.inject({ method: 'GET', url: '/api/v1/uploads?limit=100', headers: { cookie: adminCookie } });
+  const listed = res.json().items.map((i) => i.url);
+  assert.ok(listed.includes(own), 'the user file is listed');
+  assert.ok(!listed.includes(job.url), 'the job file is not');
+  // The sweep and a job's own clean-up touch only job files.
+  assert.equal(gens.dropTransient([own, job.url]), 1);
+  assert.ok(gens.mediaFileForUrl(admin, own), 'the user file is still there');
+  assert.equal(gens.mediaFileForUrl(admin, job.url), null);
+  assert.equal(gens.dropTransient(null, Date.now() + 1000), 0);
+});

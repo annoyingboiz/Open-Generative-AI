@@ -85,20 +85,22 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     assistantsUsing: db.prepare('SELECT name FROM assistants WHERE deleted_at IS NULL AND instr(files_json, ?) > 0 LIMIT 1'),
     elementsUsing: db.prepare(`SELECT name FROM elements WHERE deleted_at IS NULL AND (instr(views_json, ?1) > 0 OR instr(videos_json, ?1) > 0 OR instr(images_json, ?1) > 0 OR instr(COALESCE(video_url, ''), ?1) > 0) LIMIT 1`),
     runningUsing: db.prepare(`SELECT id FROM generations WHERE status IN ('submitting','submitted','processing','downloading') AND instr(params_json, ?1) > 0 LIMIT 1`),
-    runningUsingOther: db.prepare(`SELECT id FROM generations WHERE status IN ('submitting','submitted','processing','downloading') AND instr(params_json, ?1) > 0 AND id != ?2 LIMIT 1`),
+    // Also the job's notes: a Phone job keeps its source copy there, not in the request.
+    runningUsingOther: db.prepare(`SELECT id FROM generations WHERE status IN ('submitting','submitted','processing','downloading') AND (instr(params_json, ?1) > 0 OR instr(COALESCE(meta_json, ''), ?1) > 0) AND id != ?2 LIMIT 1`),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, project_id, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
     // Files the server makes for one job (Phone canvas, its source copy): not in the library.
-    staleTransient: db.prepare("SELECT * FROM uploads WHERE original_name LIKE 'dz-transient:%' AND created_at < ? LIMIT 200"),
-    listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND (original_name IS NULL OR original_name NOT LIKE 'dz-transient:%') AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
-    listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND (original_name IS NULL OR original_name NOT LIKE 'dz-transient:%') AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
+    staleTransient: db.prepare('SELECT * FROM uploads WHERE transient = 1 AND created_at < ? LIMIT 200'),
+    markTransient: db.prepare('UPDATE uploads SET transient = 1 WHERE id = ?'),
+    listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND transient = 0 AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
+    listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND transient = 0 AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
   };
   let onCompleted = null; // (row) => … after a job's files are saved (e.g. element videos)
   let afterDownload = null; // { wants(row), run: async (row, saved) => … } may change the saved files in place
   const outputRefCache = new Map(); // `${provider}:${genId}/${n}` -> { url, expiresAt }
 
   // ── Uploads ─────────────────────────────────────────────────────────────
-  async function saveUpload(user, { stream, mime, filename, truncated = () => false, projectId = null, folderId = null }) {
+  async function saveUpload(user, { stream, mime, filename, truncated = () => false, projectId = null, folderId = null, transient = false }) {
     const saved = await storage.saveUpload(user.id, stream, mime);
     if (truncated()) { storage.remove(saved.path); return null; }
     if (saved.bytes > maxUploadBytes || q.uploadBytes.get(user.id).b + saved.bytes > uploadQuotaBytes) {
@@ -108,6 +110,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     // A video starts at once in the player: index first (package 10, M1).
     if (media && await media.prepare(saved.path)) saved.bytes = fs.statSync(saved.path).size;
     q.insertUpload.run(saved.id, user.id, saved.path, mime, saved.bytes, filename || null, projectId, folderId, now());
+    if (transient) q.markTransient.run(saved.id); // same synchronous step: never listed in between
     const ext = saved.path.split('.').pop();
     return { id: saved.id, url: `/media/u/${saved.id}.${ext}` };
   }
@@ -115,7 +118,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   // A file the server makes for one job (Phone canvas, a copy of its source): saved like an
   // upload so the provider can read it, hidden from the library, removed when the job is done.
   function saveTransient(user, { buffer, mime, name, projectId = null, folderId = null }) {
-    return saveUpload(user, { stream: Readable.from([buffer]), mime, filename: `dz-transient:${name}`, projectId, folderId });
+    return saveUpload(user, { stream: Readable.from([buffer]), mime, filename: name, projectId, folderId, transient: true });
   }
   // Removes those files once no running job uses them (`ownerGen`: the job that is finishing,
   // which still counts as running). `urls` limits it to one job's files; without it, files
@@ -127,7 +130,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     let n = 0;
     for (const id of ids) {
       const up = q.upload.get(id);
-      if (!up || !/^dz-transient:/.test(up.original_name || '')) continue;
+      if (!up || up.transient !== 1) continue;
       if (q.runningUsingOther.get(`/media/u/${up.id}.`, ownerGen)) continue;
       storage.remove(up.path);
       q.deleteUpload.run(up.id);

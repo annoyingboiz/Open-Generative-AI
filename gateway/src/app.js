@@ -144,6 +144,19 @@ export async function buildApp(config, { logger = true } = {}) {
     const t = meta?.texture || {};
     return { preset, on: t.on !== false, strength: Number.isFinite(Number(t.strength)) ? Math.max(0, Math.min(100, Math.round(Number(t.strength)))) : TEXTURE_DEFAULT };
   };
+  // Phone (§5.1): the canvas the model fills and an upright copy of the source for the check,
+  // both job files (hidden from the library). Removed as soon as the response is sent unless
+  // the job was sent (keep()); a sent job removes them once its result is checked.
+  async function phoneTransients(req, reply, srcPath, projectId, folderId) {
+    const urls = [];
+    let kept = false;
+    reply.raw.once('close', () => { if (!kept && urls.length) { try { generations.dropTransient(urls); } catch (error) { app.log.warn(`transient files: ${error.message}`); } } });
+    const copy = await generations.saveTransient(req.user, { buffer: await uprightPng(srcPath), mime: 'image/png', name: 'phone-source.png', projectId, folderId });
+    urls.push(copy.url);
+    const canvas = await generations.saveTransient(req.user, { buffer: await makeCanvas(srcPath), mime: 'image/png', name: 'phone-canvas.png', projectId, folderId });
+    urls.push(canvas.url);
+    return { sourceCopy: copy.url, canvas: canvas.url, keep: () => { kept = true; } };
+  }
   const canvasOf = (row) => {
     if (row.kind !== 'image') return null;
     try { return JSON.parse(row.meta_json || '{}').canvas || null; } catch { return null; }
@@ -1010,6 +1023,7 @@ export async function buildApp(config, { logger = true } = {}) {
         });
         return { request_id: id, id, status: 'processing' };
       }
+      let phoneFiles = null; // Phone canvas files of this request (removed if it is never sent)
       let typedPrompt = typeof requestBody.prompt === 'string' ? requestBody.prompt : null;
       // Re-shoot a frame with the chosen camera (handoff 17, §5): the prompt is made here from
       // the look; the new picture keeps that look (so the camera panel can say "Taken from frame").
@@ -1026,13 +1040,10 @@ export async function buildApp(config, { logger = true } = {}) {
         if (isCanvasCamera(look)) {
           const src = generations.mediaFileForUrl(req.user, frameUrl);
           if (!src?.path || !/^image\//.test(src.mime || '')) return reply.code(400).send({ detail: 'The start frame could not be read.' });
-          // Both files belong to this job (hidden from the library, removed when it is done); the
-          // source copy keeps the check working even if the user deletes the frame meanwhile.
-          const copy = await generations.saveTransient(req.user, { buffer: await uprightPng(src.path), mime: 'image/png', name: 'phone-source.png', projectId, folderId });
-          const saved = await generations.saveTransient(req.user, { buffer: await makeCanvas(src.path), mime: 'image/png', name: 'phone-canvas.png', projectId, folderId });
-          const swap = (v) => (v === frameUrl ? saved.url : Array.isArray(v) ? v.map(swap) : v);
+          phoneFiles = await phoneTransients(req, reply, src.path, projectId, folderId);
+          const swap = (v) => (v === frameUrl ? phoneFiles.canvas : Array.isArray(v) ? v.map(swap) : v);
           for (const k of Object.keys(requestBody)) requestBody[k] = swap(requestBody[k]);
-          if (meta) meta.canvas = { source: frameUrl, sourceCopy: copy.url, canvas: saved.url, scale: CANVAS_SCALE };
+          if (meta) meta.canvas = { source: frameUrl, sourceCopy: phoneFiles.sourceCopy, canvas: phoneFiles.canvas, scale: CANVAS_SCALE };
         }
       } else if (dz?.look && !resolved.tool) {
         const built = finalPrompt(resolved, typedPrompt || '', dz.look, requestBody);
@@ -1069,6 +1080,7 @@ export async function buildApp(config, { logger = true } = {}) {
         projectId,
         folderId,
       });
+      phoneFiles?.keep();
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }
   });
@@ -1238,6 +1250,17 @@ export async function buildApp(config, { logger = true } = {}) {
       const resolved = resolveEndpoint(req.user, row.provider, row.provider_model, m[3]);
       if (!resolved || resolved.video) return reply.code(409).send({ detail: 'This model is not available any more.' });
       const { projectId, folderId } = contextOf(req.user, row.project_id, row.folder_id);
+      // A Phone re-shoot gets its own new canvas from the start frame (the old job's files are gone).
+      let phoneFiles = null;
+      if (meta?.canvas) {
+        const src = generations.mediaFileForUrl(req.user, meta.canvas.source);
+        if (!src?.path || !/^image\//.test(src.mime || '')) return reply.code(409).send({ detail: 'The start frame of this Phone re-shoot is gone, so it cannot be tried again.' });
+        phoneFiles = await phoneTransients(req, reply, src.path, projectId, folderId);
+        const old = meta.canvas.canvas;
+        const swap = (v) => (v === old ? phoneFiles.canvas : Array.isArray(v) ? v.map(swap) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)])) : v);
+        for (const k of Object.keys(body)) body[k] = swap(body[k]);
+        meta.canvas = { ...meta.canvas, sourceCopy: phoneFiles.sourceCopy, canvas: phoneFiles.canvas };
+      }
       const price = await priceFor(req.user, resolved, row.provider, row.provider_model, body);
       if (req.user.monthly_limit_usd != null && resolved.tool && price && !price.exact) {
         return reply.code(402).send({ detail: 'This model has no published price, so it is not available with a spending limit.' });
@@ -1259,6 +1282,7 @@ export async function buildApp(config, { logger = true } = {}) {
         projectId,
         folderId,
       });
+      phoneFiles?.keep();
       return { request_id: id, id, status: 'processing' };
     } catch (error) { return sendGenError(reply, error); }
   });

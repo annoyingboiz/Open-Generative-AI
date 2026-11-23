@@ -280,6 +280,11 @@ const MIGRATIONS = [
   `
   ALTER TABLE provider_settings ADD COLUMN billing_key_enc TEXT;
   `,
+  // 19: files the server makes for one job (Phone canvas, a copy of its source): hidden from the
+  // library and removed when the job is done. Set only by the server, never from a file name.
+  `
+  ALTER TABLE uploads ADD COLUMN transient INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openDatabase(dataDir) {

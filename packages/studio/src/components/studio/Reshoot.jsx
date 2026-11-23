@@ -75,15 +75,19 @@ export function useReshoot(engine) {
   // Phone always keeps the frame's own shape: the canvas is the frame's shape, and the server
   // checks and puts back the source by that shape.
   const videoRatio = ["aspect_ratio", "ratio"].map((k) => values?.[k]).find((v) => /^\d+:\d+$/.test(String(v || ""))) || null;
+  // The frame's real shape, upright (the server's ?info=1: the original's size, EXIF turn applied).
   const [shapes, setShapes] = useState({});
   useEffect(() => {
     for (const url of [start, end]) {
-      if (!url || shapes[url]) continue;
-      const img = new window.Image();
-      img.onload = () => setShapes((m) => ({ ...m, [url]: img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 16 / 9 }));
-      img.src = dzThumb(url, 256);
+      if (!url || shapes[url] || !/^\/media\//.test(url)) continue;
+      fetch(`${url.split("?")[0]}?info=1`, { credentials: "same-origin" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d?.width && d?.height) setShapes((m) => ({ ...m, [url]: d.width / d.height })); })
+        .catch(() => {});
     }
   }, [start, end]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Phone keeps the frame's own shape, so it waits for it (never a 16:9 guess).
+  const ready = !phone || Boolean(start && shapes[start]);
   const bodyFor = useCallback((url) => {
     if (!model) return null;
     const { variant } = model;
@@ -91,6 +95,7 @@ export function useReshoot(engine) {
     const opts = key ? variant.model.inputs[key].enum.map(String).filter((o) => /^\d+:\d+$/.test(o)) : [];
     const num = (o) => { const [a, b] = o.split(":").map(Number); return a / b; };
     const want = !phone && videoRatio && opts.includes(videoRatio) ? videoRatio : null;
+    if (phone && !shapes[url]) return null;
     const shape = shapes[url] || 16 / 9;
     const nearest = opts.length ? opts.reduce((x, o) => (Math.abs(Math.log(num(o) / shape)) < Math.abs(Math.log(num(x) / shape)) ? o : x), opts[0]) : null;
     const to = want || nearest;
@@ -101,9 +106,10 @@ export function useReshoot(engine) {
   const [price, setPrice] = useState(null);
   const sample = start || end;
   useEffect(() => {
-    if (!model || !sample) { setPrice(null); return undefined; }
+    const body = model && sample ? bodyFor(sample) : null;
+    if (!body) { setPrice(null); return undefined; }
     let alive = true;
-    dzGenerate(undefined, { endpoint: model.variant.model.endpoint, ...bodyFor(sample), onRequestId: DZ_QUOTE }).then((p) => { if (alive) setPrice(p?.usd ?? null); }).catch(() => {});
+    dzGenerate(undefined, { endpoint: model.variant.model.endpoint, ...body, onRequestId: DZ_QUOTE }).then((p) => { if (alive) setPrice(p?.usd ?? null); }).catch(() => {});
     return () => { alive = false; };
   }, [model, sample, bodyFor]);
 
@@ -113,7 +119,8 @@ export function useReshoot(engine) {
   lookRef.current = look;
   const run = useCallback(async (role) => {
     const url = role === "first" ? start : end;
-    if (!model || !url) return;
+    const body = model && url ? bodyFor(url) : null;
+    if (!body) return;
     // What this run was made from and with: a later change of frame or camera never relabels it.
     const token = Math.random().toString(36).slice(2);
     const shotLook = lookRef.current;
@@ -123,7 +130,7 @@ export function useReshoot(engine) {
       const ref = refSyntaxFor(model.variant.model)?.image(1) || "@img1";
       const meta = { kind: "image", entryKey: model.entry.key, modelName: `Re-shoot · ${model.entry.familyName} · ${model.entry.providerName}`, reshootOf: url, role };
       const res = await dzWithMeta({ studio: "create", meta, look: shotLook, reshoot: { frame: url, ref } },
-        () => dzGenerate(undefined, { endpoint: model.variant.model.endpoint, ...bodyFor(url) }));
+        () => dzGenerate(undefined, { endpoint: model.variant.model.endpoint, ...body }));
       const to = res?.outputs?.[0] || res?.url;
       if (!to) throw new Error("No picture came back.");
       setInfo((m) => ({ ...m, [to]: { url: to, made: true, look: shotLook } }));
@@ -141,7 +148,7 @@ export function useReshoot(engine) {
   };
   const keep = (role) => setJobs((j) => { const { [role]: _x, ...rest } = j; return rest; });
 
-  return { want, roles, taken, mismatch, model, price, jobs, run, use, keep, start, end, phone, phoneBlocked };
+  return { want, roles, taken, mismatch, model, price, jobs, run, use, keep, start, end, phone, phoneBlocked, ready };
 }
 
 const money = (v) => (v == null ? "" : v < 0.1 ? `$${v.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}` : `$${v.toFixed(2)}`);
@@ -165,7 +172,7 @@ export function ReshootBlock({ r }) {
         <p className="text-sm text-muted-foreground">The {r.roles.map((x) => ROLE_NAME[x]).join(" and ")} {r.roles.length > 1 ? "were" : "was"} not made with this camera. {r.phone ? "Re-shooting for Phone widens the frame: the picture is extended on all sides around it." : `The video keeps the look of its frames, so re-shoot ${r.roles.length > 1 ? "them" : "it"} with this camera first.`}</p>
       )}
       {runnable.length > 0 && r.model && (
-        <Button variant="secondary" className="h-9 gap-2 rounded-lg" onClick={() => runnable.forEach((role) => r.run(role))}>
+        <Button variant="secondary" className="h-9 gap-2 rounded-lg" disabled={!r.ready} onClick={() => runnable.forEach((role) => r.run(role))}>
           <ArrowsClockwise size={16} />
           {runnable.length > 1 ? "Re-shoot both frames with this camera" : "Re-shoot frame with this camera"}
           {r.price != null && <span className="tabular-nums text-muted-foreground">· {money(r.price * runnable.length)}</span>}

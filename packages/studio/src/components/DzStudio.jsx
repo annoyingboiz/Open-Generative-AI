@@ -26,7 +26,7 @@ import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList, PickerHereContext, pickerStartFor } from "./studio/Library.jsx";
 import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
-import { useReshoot, ReshootBlock, PhoneRatioHint } from "./studio/Reshoot.jsx";
+import { useReshoot, ReshootBlock, PhoneRatioHint, MISMATCH_TEXT } from "./studio/Reshoot.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
 import { dzPictureDragStart, dzPictureDragEnd, useDzPictureDrag } from "../dzDrop.js";
 import { DzPosterVideo, dzMediaInfo } from "./DzPosterVideo.jsx";
@@ -919,6 +919,16 @@ export function useComposerParams(engine) {
   return { ratioP, resP, durP, settingsParams, settingsChanged, ratioOthers, resOthers, ratioLock, ratioFallback, startUrl };
 }
 
+// Files the model does not get, named in the prompt without saying what they are (acceptance of
+// handoff 17, defect 1): their mentions are left out of the sent text, so say it before Generate.
+function unsentNote(engine) {
+  const list = engine.unsent.map((t) => `@${t}`);
+  const one = list.length === 1;
+  const names = one ? list[0] : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+  const why = engine.attached?.first?.length ? " with a start frame" : "";
+  return `${engine.entry?.familyName || "This model"} gets no ${one ? "file" : "files"} for ${names}${why}, and the prompt does not say what ${one ? "it is" : "they are"}, so ${one ? "it is" : "they are"} left out of the text. Write “${list[0]} is the …” in the prompt or describe ${one ? "it" : "them"} in words.`;
+}
+
 export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop, panel, setPanel, onPlus, plusDisabled = false, plusLabel = "Add from the library", elements = true, onGenerate, canGo, adaptText = engine.prompt, ratioFixed = null }) {
   const { entry, entries, kind, setKind, values, setValue, count, setCount, price, priceLoading, variant, setSentOpen, busy, adaptModel, pickModel } = engine;
   const { ratioP, resP, durP, settingsChanged, ratioOthers, resOthers, ratioLock, ratioFallback } = cp;
@@ -1523,6 +1533,22 @@ export default function DzStudio(props) {
                     <span className="min-w-0 text-foreground">{note.text}
                       {note.roles && <button type="button" onClick={() => { st.turnOn(note.roles); setNote(null); }} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">{note.label}</button>}
                       <button type="button" onClick={() => setNote(null)} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Dismiss</button>
+                    </span>
+                  </div>
+                )}
+
+                {/* Acceptance of handoff 17: what would go wrong in the sent request, said before Generate. */}
+                {engine.unsent?.length > 0 && (
+                  <div role="status" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-warning">
+                    <WarningCircle size={14} className="mt-[3px] flex-shrink-0" />
+                    <span className="min-w-0 text-foreground">{unsentNote(engine)}</span>
+                  </div>
+                )}
+                {!light && kind === "video" && reshoot.mismatch && (
+                  <div role="status" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-warning">
+                    <WarningCircle size={14} className="mt-[3px] flex-shrink-0" />
+                    <span className="min-w-0 text-foreground">{MISMATCH_TEXT}
+                      <button type="button" onClick={() => setPanel("camera")} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Open Camera</button>
                     </span>
                   </div>
                 )}

@@ -22,7 +22,7 @@ import DzSentPanel, { useDzPromptPreview, DzHints } from "./DzSentPanel.jsx";
 import { Viewer } from "./DzLibrary.jsx";
 import {
   createEntries, chooseVariant, planAttachments, withEditFirst, splitEdit, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
-  parseJsonPrompt, promptTags, translateTags, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
+  parseJsonPrompt, promptTags, translateTags, unsentMentions, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
   ROLE_INFO, ROLE_ORDER, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags, resolveInsertTags,
 } from "../dzCreate.js";
 import {
@@ -566,6 +566,9 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const nativeDropped = elementSpec ? activeElements.filter((e) => !elementPairs.some((p) => p.element.id === e.id)).map((e) => e.name) : [];
   const trimmed = merged.trimmed || (nativeDropped.length ? { dropped: nativeDropped, cut: 0 } : null);
   const finalPrompt = composePrompt(translateTags(prompt, tags));
+  // Tags of files this model does not get that the prompt never says what they are: left out of
+  // the sent text, so the composer warns before sending (acceptance of handoff 17, defect 1).
+  const unsent = unsentMentions(prompt, tags);
   // The look goes to the server, which writes it into the prompt for this model.
   // Camera look and Move live in Studio; the light tabs (Image, Video) send none (package 03, §8).
   const look = useMemo(() => (mode === "create" ? lookOf(camera, kind === "video" ? move : "") : null), [camera, kind, move, mode]);
@@ -1060,7 +1063,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, texture, setTexture, texturePreset, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, texture, setTexture, texturePreset, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, unsent, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {

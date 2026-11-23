@@ -124,7 +124,7 @@ export function useReshoot(engine) {
     // What this run was made from and with: a later change of frame or camera never relabels it.
     const token = Math.random().toString(36).slice(2);
     const shotLook = lookRef.current;
-    setJobs((j) => ({ ...j, [role]: { state: "running", from: url, token } }));
+    setJobs((j) => ({ ...j, [role]: { state: "running", from: url, token, started: Date.now() } }));
     const mine = (j) => j[role]?.token === token;
     try {
       const ref = refSyntaxFor(model.variant.model)?.image(1) || "@img1";
@@ -156,7 +156,21 @@ export const PHONE_END_TEXT = "Phone re-shoot widens the frame and works with a 
 export const MISMATCH_TEXT = "Start and end frames look different. The look will drift during the clip.";
 
 // The camera panel's part (§4–§5): "Taken from frame", the re-shoot button, old and new side by side.
+const clock = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 export function ReshootBlock({ r }) {
+  // Acceptance of handoff 17 (notes 3–4): a started re-shoot scrolls its Original / New pair into
+  // view, and a running one counts the time (a re-shoot takes up to a couple of minutes).
+  const jobsRef = useRef(null);
+  const running = Object.values(r?.jobs || {}).filter((j) => j.state === "running");
+  const runKey = running.map((j) => j.token).join("|");
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!runKey) return undefined;
+    jobsRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [runKey]);
   if (!r || (!r.taken && !r.roles.length && !r.mismatch && !r.phoneBlocked && !Object.keys(r.jobs).length)) return null;
   const both = r.phone ? r.roles : r.mismatch ? ["first", "last"] : r.roles;
   const active = Object.keys(r.jobs);
@@ -179,7 +193,7 @@ export function ReshootBlock({ r }) {
         </Button>
       )}
       {!r.model && (r.roles.length > 0 || r.mismatch) && <p className="text-xs text-muted-foreground">Re-shooting needs Nano Banana Pro, which is not available here.</p>}
-      {active.map((role) => {
+      {active.length > 0 && <div ref={jobsRef} className="space-y-3">{active.map((role) => {
         const job = r.jobs[role];
         return (
           <div key={role} className="space-y-2">
@@ -188,12 +202,15 @@ export function ReshootBlock({ r }) {
               {[["Original", job.from], ["New", job.to]].map(([label, url]) => (
                 <figure key={label} className="space-y-1">
                   <div className={cn("flex aspect-video items-center justify-center overflow-hidden rounded-md bg-muted", label === "New" && job.state === "done" && "ring-2 ring-signal")}>
-                    {url ? <img src={dzThumb(url, 480)} alt="" className="h-full w-full object-contain" /> : job.state === "running" ? <Spinner /> : null}
+                    {url ? <img src={dzThumb(url, 480)} alt="" className="h-full w-full object-contain" /> : job.state === "running" ? (
+                      <span className="flex flex-col items-center gap-1.5 text-xs text-muted-foreground"><Spinner /><span className="tabular-nums">Re-shooting · {clock(now - (job.started || now))}</span></span>
+                    ) : null}
                   </div>
                   <figcaption className="text-xs text-muted-foreground">{label}</figcaption>
                 </figure>
               ))}
             </div>
+            {job.state === "running" && <p className="text-xs text-muted-foreground">Usually one to two minutes, longer while other jobs are in the queue. You can keep working meanwhile.</p>}
             {job.state === "error" && <p className="text-sm text-destructive">{job.error}</p>}
             {job.state === "done" && (
               <div className="flex gap-2">
@@ -203,7 +220,7 @@ export function ReshootBlock({ r }) {
             )}
           </div>
         );
-      })}
+      })}</div>}
     </div>
   );
 }

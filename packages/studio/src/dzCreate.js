@@ -391,6 +391,74 @@ export function migrateTags(prompt, keep = null) {
     return all;
   });
 }
+// Mentions of files this model does not get (a start frame turns references off on most
+// video models), made readable instead of cut out (acceptance of handoff 17, defect 1):
+//   "@img1 is the woman, …"            → the definition clause goes (it names nothing now)
+//   "The woman from @img1 sits"        → "The woman sits" (the noun before already says it)
+//   "@img1 sits at the counter"        → "The woman sits at the counter" (its definition)
+//   "(@img1)"                          → gone
+// What is left without a definition is reported in `lost`: the studio warns before sending,
+// and those mentions are still cut out of the sent text.
+// `alias`: lower-case spelling → its tag, for the files not sent.
+const ARTICLE = "(?:the|a|an|her|his|their|its|our|my|this|that)";
+const CONNECTOR = "(?:from|as shown in|shown in|as seen in|seen in|as in|like in|depicted in|pictured in)";
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function unsentWords(text, alias) {
+  if (!alias.size) return { text, lost: [] };
+  const names = [...alias.keys()].sort((a, b) => b.length - a.length).map(esc).join("|");
+  const at = `@(${names})(?![\\p{L}\\p{N}_])`;
+  const pre = "(^|[^\\p{L}\\p{N}_@])";
+  const defs = new Map();
+  let out = text;
+  // 1. Definitions: "@img1 is the woman" (an article first, at most ten words), then the separator after it
+  //    (not the space after that: the next definition needs it in front of its "@").
+  out = out.replace(new RegExp(`${pre}${at}\\s*(?:\\bis\\b|=|:|—|–|\\bshows\\b)\\s*(${ARTICLE}\\s+[^,.;:!?\\n@]{1,80}?)(?=\\s*(?:[,.;!?\\n]|$|\\band\\b\\s*@))(\\s*(?:,|;|\\band\\b))?`, "giu"),
+    (all, p, name, phrase) => {
+      const words = phrase.trim().split(/\s+/);
+      if (words.length > 10) return all;
+      const tag = alias.get(name.toLowerCase());
+      if (!defs.has(tag)) defs.set(tag, /^(a|an)$/i.test(words[0]) ? `the ${words.slice(1).join(" ")}` : words.join(" ").replace(/^\w/, (c) => c.toLowerCase()));
+      return p;
+    });
+  // 2. "the woman from @img1", "the bowl (@img3)": the words before already name it.
+  out = out.replace(new RegExp(`\\s+${CONNECTOR}\\s+${at}`, "giu"), "");
+  out = out.replace(new RegExp(`\\s*\\(\\s*${at}\\s*\\)`, "giu"), "");
+  // 3. The rest: its definition, with a capital where it opens a sentence; no definition → lost.
+  const lost = new Set();
+  out = out.replace(new RegExp(`${pre}${at}`, "giu"), (all, p, name, offset, whole) => {
+    const tag = alias.get(name.toLowerCase());
+    const def = defs.get(tag);
+    if (!def) { lost.add(tag); return all; }
+    const before = whole.slice(0, offset + p.length);
+    const opens = /(^|[.!?]\s+|\n\s*)$/.test(before);
+    return `${p}${opens ? def[0].toUpperCase() + def.slice(1) : def}`;
+  });
+  // Tidy what the removed clauses leave: a sentence start "., " or ", ", an empty sentence, double spaces.
+  out = out
+    .replace(/(^|[.!?]\s+|\n)[\s,;]+/g, "$1")
+    .replace(/(^|\n)\s*[.!?]+\s*/g, "$1")
+    .replace(/([.!?])(\s+[.!?])+(?=\s|$)/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +([,.;:!?])/g, "$1")
+    .replace(/[,;]\s*([.!?])/g, "$1");
+  return { text: out, lost: [...lost] };
+}
+function unsentAlias(tags) {
+  const alias = new Map();
+  for (const t of tags) {
+    if (t.kind !== "file" || t.to !== "") continue;
+    for (const n of [t.tag, ...OLD_SPELLINGS(t.tag)]) if (!alias.has(n.toLowerCase())) alias.set(n.toLowerCase(), t.tag);
+  }
+  return alias;
+}
+// The tags the prompt names whose files this model does not get and that the prompt never
+// defines ("@img2 is the ramen shop"): the studio says so before sending.
+export function unsentMentions(prompt, tags = []) {
+  const text = String(prompt || "");
+  if (!tags.length || parseJsonPrompt(text).ok) return [];
+  return unsentWords(text, unsentAlias(tags)).lost;
+}
+
 export function translateTags(prompt, tags = []) {
   if (!tags.length) return prompt;
   const map = new Map(tags.map((t) => [t.tag.toLowerCase(), t.to]));
@@ -398,8 +466,9 @@ export function translateTags(prompt, tags = []) {
   for (const t of tags) {
     for (const old of OLD_SPELLINGS(t.tag)) if (!map.has(old)) map.set(old, t.to);
   }
-  const text = String(prompt || "");
-  const json = parseJsonPrompt(text).ok;
+  const raw = String(prompt || "");
+  const json = parseJsonPrompt(raw).ok;
+  const text = json ? raw : unsentWords(raw, unsentAlias(tags)).text;
   return text.replace(TAG_RE, (all, pre, name, at) => {
     const to = map.get(name.toLowerCase());
     if (to == null) return all;

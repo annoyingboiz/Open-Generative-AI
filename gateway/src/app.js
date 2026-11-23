@@ -150,7 +150,9 @@ export async function buildApp(config, { logger = true } = {}) {
   async function phoneTransients(req, reply, srcPath, projectId, folderId) {
     const urls = [];
     let kept = false;
-    reply.raw.once('close', () => { if (!kept && urls.length) { try { generations.dropTransient(urls); } catch (error) { app.log.warn(`transient files: ${error.message}`); } } });
+    // Only once our answer was really sent (an error before the job was stored). If the browser
+    // went away mid-request the job may still be stored after this: the hourly sweep decides.
+    reply.raw.once('close', () => { if (!kept && urls.length && reply.raw.writableFinished) { try { generations.dropTransient(urls); } catch (error) { app.log.warn(`transient files: ${error.message}`); } } });
     const copy = await generations.saveTransient(req.user, { buffer: await uprightPng(srcPath), mime: 'image/png', name: 'phone-source.png', projectId, folderId });
     urls.push(copy.url);
     const canvas = await generations.saveTransient(req.user, { buffer: await makeCanvas(srcPath), mime: 'image/png', name: 'phone-canvas.png', projectId, folderId });

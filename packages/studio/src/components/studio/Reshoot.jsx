@@ -18,6 +18,8 @@ export function reshootSig(look) {
   if (!look || look.on === false) return MODERN;
   const cams = lookData().cameras || [];
   const cam = cams.some((c) => c.id === look.camera) ? look.camera : "modern";
+  // Phone ignores lens and aperture (canvas extension): the camera alone decides.
+  if (cam === "phone") return "phone||";
   const ana = /anamorphic/.test(String(look.lens || "")) ? "ana" : "";
   const n = Number(String(look.aperture || "").replace(/^f\//, ""));
   const ap = !n ? "" : n <= 2.8 ? "shallow" : n >= 8 ? "deep" : "";
@@ -60,7 +62,8 @@ export function useReshoot(engine) {
   // Phone (§5.1) widens the frame by canvas extension: start frame only, and never with an end frame
   // (a wider start and an unchanged end would turn the clip into a push-in nobody asked for).
   const phone = want.startsWith("phone|");
-  const phoneBlocked = phone && Boolean(end);
+  // The note shows whenever Phone meets an end frame, unless the start frame is already a Phone one.
+  const phoneBlocked = phone && Boolean(end) && !(start && sStart === want);
   const roles = phoneBlocked ? [] : [["first", start, sStart], ...(phone ? [] : [["last", end, sEnd]])].filter(([, url, s]) => needs(url, s)).map(([r]) => r);
   const taken = Boolean(start && want !== MODERN && sStart === want);
   // §4: start and end frames from different cameras (two uploads: nothing to compare).
@@ -69,6 +72,8 @@ export function useReshoot(engine) {
   const model = useMemo(() => (kind === "video" && (roles.length || mismatch) ? reshootModel() : null), [kind, roles.length, mismatch]); // eslint-disable-line react-hooks/exhaustive-deps
   // The re-shoot keeps the video's ratio (16:9…), or the frame's own shape when the video's is
   // "adaptive"; the image model's field may be aspect_ratio, ratio or size (APIMart: size).
+  // Phone always keeps the frame's own shape: the canvas is the frame's shape, and the server
+  // checks and puts back the source by that shape.
   const videoRatio = ["aspect_ratio", "ratio"].map((k) => values?.[k]).find((v) => /^\d+:\d+$/.test(String(v || ""))) || null;
   const [shapes, setShapes] = useState({});
   useEffect(() => {
@@ -85,12 +90,12 @@ export function useReshoot(engine) {
     const key = ["aspect_ratio", "ratio", "size"].find((k) => (variant.model.inputs?.[k]?.enum || []).some((o) => /^\d+:\d+$/.test(String(o))));
     const opts = key ? variant.model.inputs[key].enum.map(String).filter((o) => /^\d+:\d+$/.test(o)) : [];
     const num = (o) => { const [a, b] = o.split(":").map(Number); return a / b; };
-    const want = videoRatio && opts.includes(videoRatio) ? videoRatio : null;
+    const want = !phone && videoRatio && opts.includes(videoRatio) ? videoRatio : null;
     const shape = shapes[url] || 16 / 9;
     const nearest = opts.length ? opts.reduce((x, o) => (Math.abs(Math.log(num(o) / shape)) < Math.abs(Math.log(num(x) / shape)) ? o : x), opts[0]) : null;
     const to = want || nearest;
     return buildBody(variant, { prompt: "Re-shoot", values: key && to ? { [key]: to } : {}, attached: { reference: [{ url }] } });
-  }, [model, videoRatio, shapes]);
+  }, [model, videoRatio, shapes, phone]);
 
   // The price of one re-shoot (the server's quote for this exact request).
   const [price, setPrice] = useState(null);
@@ -136,7 +141,7 @@ export function useReshoot(engine) {
   };
   const keep = (role) => setJobs((j) => { const { [role]: _x, ...rest } = j; return rest; });
 
-  return { want, roles, taken, mismatch, model, price, jobs, run, use, keep, start, end, phone, phoneBlocked: phoneBlocked && (needs(start, sStart) || needs(end, sEnd) || mismatch) };
+  return { want, roles, taken, mismatch, model, price, jobs, run, use, keep, start, end, phone, phoneBlocked };
 }
 
 const money = (v) => (v == null ? "" : v < 0.1 ? `$${v.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}` : `$${v.toFixed(2)}`);

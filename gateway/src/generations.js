@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 // Generations: submit to a provider, poll on the server, download results to
 // our disk, keep history. Runs even when nobody has the page open.
+import { Readable } from 'node:stream';
 import { providerById } from './providers/index.js';
 import { newId, mimeForExt } from './storage.js';
 import { now } from './db.js';
@@ -84,10 +85,13 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     assistantsUsing: db.prepare('SELECT name FROM assistants WHERE deleted_at IS NULL AND instr(files_json, ?) > 0 LIMIT 1'),
     elementsUsing: db.prepare(`SELECT name FROM elements WHERE deleted_at IS NULL AND (instr(views_json, ?1) > 0 OR instr(videos_json, ?1) > 0 OR instr(images_json, ?1) > 0 OR instr(COALESCE(video_url, ''), ?1) > 0) LIMIT 1`),
     runningUsing: db.prepare(`SELECT id FROM generations WHERE status IN ('submitting','submitted','processing','downloading') AND instr(params_json, ?1) > 0 LIMIT 1`),
+    runningUsingOther: db.prepare(`SELECT id FROM generations WHERE status IN ('submitting','submitted','processing','downloading') AND instr(params_json, ?1) > 0 AND id != ?2 LIMIT 1`),
     insertUpload: db.prepare('INSERT INTO uploads (id, user_id, path, mime, bytes, original_name, project_id, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     setUploadRefs: db.prepare('UPDATE uploads SET provider_refs = ? WHERE id = ?'),
-    listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
-    listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
+    // Files the server makes for one job (Phone canvas, its source copy): not in the library.
+    staleTransient: db.prepare("SELECT * FROM uploads WHERE original_name LIKE 'dz-transient:%' AND created_at < ? LIMIT 200"),
+    listUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE user_id = ? AND project_id IS NULL AND (original_name IS NULL OR original_name NOT LIKE 'dz-transient:%') AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
+    listProjectUploads: db.prepare("SELECT id, path, mime, original_name, created_at FROM uploads WHERE project_id = ? AND (original_name IS NULL OR original_name NOT LIKE 'dz-transient:%') AND mime LIKE ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
   };
   let onCompleted = null; // (row) => … after a job's files are saved (e.g. element videos)
   let afterDownload = null; // { wants(row), run: async (row, saved) => … } may change the saved files in place
@@ -106,6 +110,30 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     q.insertUpload.run(saved.id, user.id, saved.path, mime, saved.bytes, filename || null, projectId, folderId, now());
     const ext = saved.path.split('.').pop();
     return { id: saved.id, url: `/media/u/${saved.id}.${ext}` };
+  }
+
+  // A file the server makes for one job (Phone canvas, a copy of its source): saved like an
+  // upload so the provider can read it, hidden from the library, removed when the job is done.
+  function saveTransient(user, { buffer, mime, name, projectId = null, folderId = null }) {
+    return saveUpload(user, { stream: Readable.from([buffer]), mime, filename: `dz-transient:${name}`, projectId, folderId });
+  }
+  // Removes those files once no running job uses them (`ownerGen`: the job that is finishing,
+  // which still counts as running). `urls` limits it to one job's files; without it, files
+  // older than `olderThan` (a job that failed or was never sent).
+  function dropTransient(urls = null, olderThan = 0, ownerGen = '') {
+    const ids = urls
+      ? urls.map((u) => LOCAL_MEDIA_RE.exec(String(u || ''))).filter((m) => m && m[1].toLowerCase() === 'u').map((m) => m[2])
+      : q.staleTransient.all(olderThan).map((r) => r.id);
+    let n = 0;
+    for (const id of ids) {
+      const up = q.upload.get(id);
+      if (!up || !/^dz-transient:/.test(up.original_name || '')) continue;
+      if (q.runningUsingOther.get(`/media/u/${up.id}.`, ownerGen)) continue;
+      storage.remove(up.path);
+      q.deleteUpload.run(up.id);
+      n += 1;
+    }
+    return n;
   }
 
   // Replaces our /media/... links in a request with links the provider can read.
@@ -812,7 +840,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,
     cachedProviderUrl,
-    saveUpload, addLocalEdit, uploads, deleteUploads, submit, result, history, historyCounts, tasks, cancel, retrySource, visibleRow: visible, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
+    saveUpload, saveTransient, dropTransient, addLocalEdit, uploads, deleteUploads, submit, result, history, historyCounts, tasks, cancel, retrySource, visibleRow: visible, trash, restore, like, purge, move, copy, batch, mediaFile, mediaFileForUrl, adoptMedia, adoptMany,
     start() {
       // A restart between "saved" and "sent to the provider" leaves a job in
       // 'submitting' that nobody polls: end it so it doesn't hang forever.

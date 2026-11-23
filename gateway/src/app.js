@@ -35,8 +35,7 @@ import { createLlm, LlmError } from './llm.js';
 import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
 import { cleanLook, renderLook, lookHints, lookAdvice, cameraOf, textureOf, reshootPrompt, isCanvasCamera, CANVAS_SCALE } from './look.js';
-import { makeCanvas, centreSsim, compositeBack, DRIFT_SSIM } from './canvas.js';
-import { Readable } from 'node:stream';
+import { makeCanvas, uprightPng, centreSsim, compositeBack, DRIFT_SSIM } from './canvas.js';
 import { applyTexture, TEXTURE_DEFAULT } from './texture.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
 import { EditError, sweepTemp, frameOf } from './edit.js';
@@ -173,7 +172,8 @@ export async function buildApp(config, { logger = true } = {}) {
       // Phone canvas extension (§5.1): the middle must still be the source; if it drifted, put the source back.
       const cv = canvasOf(row);
       if (cv) {
-        const src = generations.mediaFileForUrl({ id: row.user_id, role: 'user' }, cv.source);
+        const owner = { id: row.user_id, role: 'user' };
+        const src = generations.mediaFileForUrl(owner, cv.sourceCopy || cv.source) || generations.mediaFileForUrl(owner, cv.source);
         for (const out of saved) {
           if (!src?.path || !/^image\//.test(out.mime || '')) continue;
           try {
@@ -184,6 +184,7 @@ export async function buildApp(config, { logger = true } = {}) {
             app.log.info({ gen: row.id, ssim: out.canvasCheck.ssim, composited }, 'phone canvas centre check');
           } catch (error) { app.log.warn(`canvas check ${row.id}: ${error.message}`); }
         }
+        generations.dropTransient([cv.canvas, cv.sourceCopy].filter(Boolean), 0, row.id);
       }
       // The sound back into an upscale first, so the clean original keeps it for every re-render.
       const audio = audioFileOf(row);
@@ -232,6 +233,10 @@ export async function buildApp(config, { logger = true } = {}) {
     setInterval(() => elements.attachPending().catch(() => {}), 10 * 60_000).unref?.();
     setTimeout(() => { try { storyboards.attachPending(); } catch { /* logged inside */ } }, 30_000).unref?.();
     setInterval(() => { try { storyboards.attachPending(); } catch { /* logged inside */ } }, 10 * 60_000).unref?.();
+    // Phone canvas files of jobs that failed or were never sent (a finished job removes its own).
+    const dropOld = () => { try { generations.dropTransient(null, Date.now() - 6 * 3600_000); } catch (error) { app.log.warn(`transient files: ${error.message}`); } };
+    setTimeout(dropOld, 60_000).unref?.();
+    setInterval(dropOld, 3600_000).unref?.();
   }
   app.decorate('ctx', { db, auth, providers, config, catalog, generations, elements, storyboards, director, assistants, llm, chatgpt, adapter });
   await app.register(cookie);
@@ -1021,10 +1026,13 @@ export async function buildApp(config, { logger = true } = {}) {
         if (isCanvasCamera(look)) {
           const src = generations.mediaFileForUrl(req.user, frameUrl);
           if (!src?.path || !/^image\//.test(src.mime || '')) return reply.code(400).send({ detail: 'The start frame could not be read.' });
-          const saved = await generations.saveUpload(req.user, { stream: Readable.from(await makeCanvas(src.path)), mime: 'image/png', filename: 'phone-canvas.png', projectId, folderId });
+          // Both files belong to this job (hidden from the library, removed when it is done); the
+          // source copy keeps the check working even if the user deletes the frame meanwhile.
+          const copy = await generations.saveTransient(req.user, { buffer: await uprightPng(src.path), mime: 'image/png', name: 'phone-source.png', projectId, folderId });
+          const saved = await generations.saveTransient(req.user, { buffer: await makeCanvas(src.path), mime: 'image/png', name: 'phone-canvas.png', projectId, folderId });
           const swap = (v) => (v === frameUrl ? saved.url : Array.isArray(v) ? v.map(swap) : v);
           for (const k of Object.keys(requestBody)) requestBody[k] = swap(requestBody[k]);
-          if (meta) meta.canvas = { source: frameUrl, canvas: saved.url, scale: CANVAS_SCALE };
+          if (meta) meta.canvas = { source: frameUrl, sourceCopy: copy.url, canvas: saved.url, scale: CANVAS_SCALE };
         }
       } else if (dz?.look && !resolved.tool) {
         const built = finalPrompt(resolved, typedPrompt || '', dz.look, requestBody);

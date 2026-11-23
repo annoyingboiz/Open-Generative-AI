@@ -631,6 +631,27 @@ export function planAttachments(entry, attached = {}, { touched = [], explain = 
   return { variant: best.v, sent: best.sent, unused: off, off, onRoles };
 }
 
+// Doc 42, answer 2: another provider of the same model that sends together what this one
+// can't (e.g. a start frame and references). Only a suggestion: the studio shows it above
+// Generate with both prices and a Switch button; it never switches by itself.
+// → { others: [entry…], words } or null. `words`: "a start frame and references".
+export function bothAtOther(entry, entries, attached = {}, { touched = [] } = {}) {
+  if (!entry) return null;
+  const plan = planAttachments(entry, withEditFirst(attached, entry), { touched, explain: false });
+  const norm = (r) => (r === "edit" ? "reference" : r);
+  const dropped = uniq(plan.off.filter((x) => x.why === "together").map((x) => norm(x.role)));
+  if (!dropped.length) return null;
+  const wanted = uniq([...plan.onRoles.map(norm), ...dropped]);
+  const others = (entries || []).filter((other) => {
+    if (other.key === entry.key || !other.family || other.family !== entry.family) return false;
+    const p = planAttachments(other, withEditFirst(attached, other), { touched, explain: false });
+    if (!p.variant || missingFor(p.variant, p.sent)) return false;
+    const on = p.onRoles.map(norm);
+    return wanted.every((r) => on.includes(r));
+  });
+  return others.length ? { others, words: listWords(ROLE_ORDER.filter((r) => wanted.includes(r)).map((r) => ONE[r])) } : null;
+}
+
 // The tooltip of an off file (package 04, §2.4): the reason, and what a click does.
 export function offReason(entry, x, { onRoles = [], turnsOff = [], variant = null } = {}) {
   const name = entry?.familyName || "This model";

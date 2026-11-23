@@ -58,7 +58,10 @@ export function plainError(raw) {
   if (!t) return "The provider gave no reason.";
   if (/safety|content|moderat|policy|nsfw|sensitive|blocked/i.test(t)) return "The provider rejected the prompt or a picture: content filter.";
   if (/timed? ?out|timeout/i.test(t)) return "The provider took too long and stopped.";
-  if (/insufficient|balance|quota|credit/i.test(t)) return "The provider account is out of credit.";
+  // APIMart's generic failure ("The task failed… Any deducted quota has been refunded") is
+  // the provider's own failure, not an empty account: "quota" alone must not read as credit.
+  if (/task failed|refunded/i.test(t)) return "The provider failed on its side. Try again later, or switch this model to another provider.";
+  if (/insufficient|out of (credit|quota|balance)|no (credit|balance)|balance (is )?(too low|not enough)|quota (exceeded|exhausted)|exceeded.*quota/i.test(t)) return "The provider account is out of credit.";
   if (/interrupted/i.test(t)) return t;
   // "HTTP 400: kling-v4 video-edit requires `prompt`" → a sentence a person can act on.
   const needs = /requires\s+`?([a-z_]+)`?/i.exec(t);

@@ -368,6 +368,10 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
   const camText = fromFrame ? null : cameraLines(look, { kind, family, ratio });
   // Any look with a start frame (camera, lens, move, light…): the frame decides the picture.
   const keepLine = fromFrame ? KEEP_FRAME : '';
+  // Phone from a start frame (doc 42, answer 1): only the handheld behaviour line, no look
+  // words. It describes motion; without it the clip stands still like a tripod shot.
+  const cam = look.on !== false ? cameraOf(look.camera) : null;
+  const motionLine = fromFrame && cam?.behaviour ? dot(cam.behaviour) : '';
   const parts = [w.camera, w.move, w.light, w.palette, w.genre, w.era, keepLine, camText];
   if (!parts.some(Boolean)) return raw;
   const camOne = camText ? [camText.lead, camText.header?.[1], ...(camText.lines || []).map(([, t]) => t), camText.sentence].filter(Boolean).join(' ') : '';
@@ -394,6 +398,7 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
       else { put('camera', [camOne, w.camera].filter(Boolean).join(' ')); put('camera_movement', w.move); }
       if (rule.style) put(rule.style, [w.light, w.palette, w.genre, w.era].filter(Boolean).join(', '));
       else { put('lighting', w.light); put('color', w.palette); put('genre', w.genre); put('era', w.era); }
+      put(rule.camera || 'camera_movement', motionLine);
       put('keep', keepLine);
       return JSON.stringify(out, null, 2);
     } catch { /* not JSON after all: plain text */ }
@@ -402,6 +407,7 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
   let out = camText ? placeCamera(text, camText) : text;
   // Any other model: the camera's sentence goes where its camera words go, before the lens and move.
   out = placeRest(out, w, rule, camText?.sentence || '');
+  if (motionLine) out = `${out.replace(/\s+$/, '')}${out.trim() ? '\n' : ''}${motionLine}`;
   if (keepLine) out = `${out.replace(/\s+$/, '')}${out.trim() ? '\n' : ''}${keepLine}`;
   return out;
 }

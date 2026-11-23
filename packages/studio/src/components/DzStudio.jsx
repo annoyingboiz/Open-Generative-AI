@@ -929,6 +929,16 @@ function unsentNote(engine) {
   return `${engine.entry?.familyName || "This model"} gets no ${one ? "file" : "files"} for ${names}${why}, and the prompt does not say what ${one ? "it is" : "they are"}, so ${one ? "it is" : "they are"} left out of the text. Write “${list[0]} is the …” in the prompt or describe ${one ? "it" : "them"} in words.`;
 }
 
+// Doc 42, answer 2: "Kling 4.0 at Atlas takes a start frame and references together — $0.42 instead of $0.53."
+export function bothHintText(engine) {
+  const h = engine.bothHint;
+  const o = h.entry;
+  const n = engine.count || 1;
+  const money = (p) => `${p.exact ? "" : "≈ "}${fmtUsd(p.usd * n)}`;
+  const prices = h.price && engine.price ? ` — ${money(h.price)} instead of ${money(engine.price)}` : "";
+  return `${o.familyName} at ${o.providerName || o.provider} takes ${h.words} together${prices}.`;
+}
+
 export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop, panel, setPanel, onPlus, plusDisabled = false, plusLabel = "Add from the library", elements = true, onGenerate, canGo, adaptText = engine.prompt, ratioFixed = null }) {
   const { entry, entries, kind, setKind, values, setValue, count, setCount, price, priceLoading, variant, setSentOpen, busy, adaptModel, pickModel } = engine;
   const { ratioP, resP, durP, settingsChanged, ratioOthers, resOthers, ratioLock, ratioFallback } = cp;
@@ -1542,6 +1552,14 @@ export default function DzStudio(props) {
                   <div role="status" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-warning">
                     <WarningCircle size={14} className="mt-[3px] flex-shrink-0" />
                     <span className="min-w-0 text-foreground">{unsentNote(engine)}</span>
+                  </div>
+                )}
+                {engine.bothHint && (
+                  <div role="status" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-muted-foreground">
+                    <Info size={14} className="mt-[3px] flex-shrink-0" />
+                    <span className="min-w-0 text-foreground">{bothHintText(engine)}
+                      <button type="button" onClick={() => engine.pickModel(engine.bothHint.entry.key)} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Switch</button>
+                    </span>
                   </div>
                 )}
                 {!light && kind === "video" && reshoot.mismatch && (

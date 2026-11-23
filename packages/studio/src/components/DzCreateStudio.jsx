@@ -21,7 +21,7 @@ import { DzMediaPicker } from "./DzMedia.jsx";
 import DzSentPanel, { useDzPromptPreview, DzHints } from "./DzSentPanel.jsx";
 import { Viewer } from "./DzLibrary.jsx";
 import {
-  createEntries, chooseVariant, planAttachments, withEditFirst, splitEdit, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
+  createEntries, chooseVariant, planAttachments, bothAtOther, withEditFirst, splitEdit, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, promptTags, translateTags, unsentMentions, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
   ROLE_INFO, ROLE_ORDER, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags, resolveInsertTags,
 } from "../dzCreate.js";
@@ -691,6 +691,20 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       return null;
     }
   }, [attached, touched, bodyValues, finalPrompt, apiKey, elements]);
+  // Doc 42, answer 2: another provider of this model sends together what this one dims
+  // (a start frame and references). A hint with both prices and a Switch button; never automatic.
+  const both = useMemo(() => bothAtOther(entry, entries, attached, { touched }), [entry, entries, attached, touched]);
+  const [bothHint, setBothHint] = useState(null);
+  useEffect(() => {
+    if (!both) { setBothHint(null); return undefined; }
+    let alive = true;
+    Promise.all(both.others.map(async (o) => ({ entry: o, price: await quoteFor(o) }))).then((priced) => {
+      if (!alive) return;
+      const best = priced.filter((x) => x.price).sort((a, b) => a.price.usd - b.price.usd)[0] || priced[0];
+      setBothHint({ entry: best.entry, price: best.price, words: both.words });
+    });
+    return () => { alive = false; };
+  }, [both, quoteFor]);
   // The server's view (hints on unusual camera combos; the drawer shows the final prompt).
   const [sentOpen, setSentOpen] = useState(false);
   const sentPreview = useDzPromptPreview({ endpoint: variant?.model.endpoint, body: quoteBody ? { ...quoteBody, prompt: "" } : null, look, enabled: Boolean(variant && look && !sentOpen) });
@@ -1063,7 +1077,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, texture, setTexture, texturePreset, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, unsent, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, texture, setTexture, texturePreset, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, unsent, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, bothHint, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {

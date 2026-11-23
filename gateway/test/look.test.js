@@ -103,7 +103,16 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
     assert.ok(p.includes(KEEP_FRAME), id);
     assert.doesNotMatch(p, /smartphone|phone lens|anamorphic|24mm|f\/2|depth of field|Pro-Mist|Overall style|Visual style/i, id);
     assert.match(p, id === 'kling' ? /very slight slow move closer/ : /push-in/, id);
+    // Doc 42, answer 1: Phone keeps its handheld behaviour line (motion, not look), before the keep line.
+    assert.match(p, /\nHandheld phone video - small natural hand shake.*No phone or other device is visible in the picture\.\n/, id);
+    assert.doesNotMatch(p, /continuous shot|Not cinematic|computational HDR/, id);
   }
+  // Another camera from a start frame: no behaviour line.
+  assert.doesNotMatch(renderLook('A woman walks.', cleanLook({ on: true, camera: 'vhs' }), { kind: 'video', memo: memos.kling, framed: true }), /Handheld/);
+  // An image from a start frame (not a video): no behaviour line either.
+  assert.doesNotMatch(renderLook('A woman walks.', cleanLook({ on: true, camera: 'phone' }), { kind: 'image', framed: true }), /Handheld/);
+  // A JSON prompt from a start frame: the line goes with the camera movement.
+  assert.match(JSON.parse(renderLook('{"scene":"a woman walks"}', cleanLook({ on: true, camera: 'phone' }), { kind: 'video', framed: true })).camera_movement, /^Handheld phone video/);
   // Old cameras stay as stored and add nothing (shown as Modern).
   const old = cleanLook({ on: true, camera: 'digital' });
   assert.equal(old.camera, 'digital');

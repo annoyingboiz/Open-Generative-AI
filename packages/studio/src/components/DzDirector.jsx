@@ -130,7 +130,7 @@ function ShotCard({
           <Textarea value={shot.action} onChange={(e) => set("action", e.target.value)} disabled={readOnly} rows={3} placeholder="What happens in this shot" className="min-h-[72px] resize-y" />
           <Input value={shot.light} onChange={(e) => set("light", e.target.value)} disabled={readOnly} placeholder="Light (e.g. low warm key from the left, teal rim)" className="h-9" />
           <div className="flex flex-wrap gap-1.5">
-            <Pick label="Camera" value={shot.camera} options={lookData().cameras.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => set("camera", v)} />
+            <Pick label="Camera" value={lookData().cameras.some((x) => x.id === shot.camera) ? shot.camera : "modern"} options={lookData().cameras.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => set("camera", v)} />
             <Pick label="Lens" value={shot.lens} options={lookData().lenses.map((x) => ({ value: x.id, label: x.label }))} onChange={(v) => set("lens", v)} />
             <Pick label="Focal" value={shot.focal} options={lookData().focals.map((f) => ({ value: f, label: `${f}mm` }))} onChange={(v) => set("focal", v == null ? null : Number(v))} />
             <Pick label="Aperture" value={shot.aperture} options={lookData().apertures} onChange={(v) => set("aperture", v)} />

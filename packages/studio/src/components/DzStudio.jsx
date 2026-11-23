@@ -26,6 +26,7 @@ import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList, PickerHereContext, pickerStartFor } from "./studio/Library.jsx";
 import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
+import { useReshoot, ReshootBlock } from "./studio/Reshoot.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
 import { dzPictureDragStart, dzPictureDragEnd, useDzPictureDrag } from "../dzDrop.js";
 import { DzPosterVideo, dzMediaInfo } from "./DzPosterVideo.jsx";
@@ -1014,11 +1015,12 @@ export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop
 
 // Settings, Adapt and "what goes to the model" for that row.
 export function ComposerPanels({ engine, cp, panel, setPanel, onAdaptUse, adaptText = engine.prompt, sentRequests = null }) {
-  const { entry, kind, values, setValue, setValuesByKind, adaptModel, adaptContext, look, adaptScope, variant, quoteBody, finalPrompt, merged, elementSpec, activeElements, missing, sentOpen, setSentOpen } = engine;
+  const { entry, kind, values, setValue, setValuesByKind, adaptModel, adaptContext, look, adaptScope, variant, quoteBody, finalPrompt, merged, elementSpec, activeElements, missing, sentOpen, setSentOpen, texture, setTexture, texturePreset } = engine;
   const { settingsParams } = cp;
   return (
     <>
       <SettingsPanel open={panel === "settings"} onClose={() => setPanel(null)} modelName={entry?.familyName} params={settingsParams} values={values} setValue={setValue}
+        texture={texturePreset ? { preset: texturePreset, value: texture, onChange: setTexture } : null}
         onReset={() => setValuesByKind((prev) => { const next = { ...(prev[kind] || {}) }; for (const p of settingsParams) delete next[p.key]; return { ...prev, [kind]: next }; })} />
       <AdaptPanel open={panel === "adapt"} onClose={() => setPanel(null)} prompt={adaptText} model={adaptModel} context={adaptContext} look={look} scope={adaptScope}
         request={variant ? { endpoint: variant.model.endpoint, body: quoteBody ? { ...quoteBody } : null } : null}
@@ -1066,6 +1068,8 @@ export default function DzStudio(props) {
 
   // The look in the Studio: every part Auto unless chosen.
   useEffect(() => { if (!light && !camera?.auto) setCamera(autoLook(camera)); }, [light, camera, setCamera]);
+  // Frames and the chosen camera (handoff 17, §4–§5): re-shoot, "Taken from frame", mismatch.
+  const reshoot = useReshoot(engine);
   const a = autoLook(camera);
 
   const [panel, setPanel] = useState(null); // camera | move | look | settings | adapt | list
@@ -1493,7 +1497,7 @@ export default function DzStudio(props) {
               <div className={cn("min-w-0", libraryOpen ? "overflow-hidden" : "overflow-visible")}>
                 {/* Camera · Move · Look · Settings live in Studio only; Image and Video have a Settings chip (package 03, §2). */}
                 {!light && <div className={cn("mt-3 grid gap-2", kind === "video" ? "grid-cols-4" : "grid-cols-3")}>
-                  <Block icon={Camera} label="Camera" value={camParts.length ? camParts.join(" · ") : "Auto"} auto={!camParts.length} onClick={() => setPanel("camera")} active={panel === "camera"} advice={adviceFor("camera").length > 0} />
+                  <Block icon={Camera} label="Camera" value={camParts.length ? camParts.join(" · ") : "Auto"} auto={!camParts.length} onClick={() => setPanel("camera")} active={panel === "camera"} advice={adviceFor("camera").length > 0 || reshoot.mismatch || reshoot.roles.length > 0} />
                   {kind === "video" && <Block icon={ArrowsOutCardinal} label="Move" value={moveLabel || "Auto"} auto={!moveLabel} onClick={() => setPanel("move")} active={panel === "move"} advice={adviceFor("move").length > 0} />}
                   <Block icon={Palette} label="Look" value={lookParts.length ? `${lookParts[0]}${lookParts.length > 1 ? ` +${lookParts.length - 1}` : ""}` : "Auto"} auto={!lookParts.length} onClick={() => setPanel("look")} active={panel === "look"} />
                   <Block icon={SlidersHorizontal} label="Settings" value={settingsChanged ? "Changed" : "Model defaults"} auto={!settingsChanged} onClick={() => setPanel("settings")} active={panel === "settings"} />
@@ -1534,7 +1538,8 @@ export default function DzStudio(props) {
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm" multiple className="hidden"
         onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) takeFiles(f); }} />
 
-      <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")} />
+      <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")}
+        extra={kind === "video" ? <ReshootBlock r={reshoot} /> : null} />
       <MovePanel open={panel === "move"} onClose={() => setPanel(null)} move={move} setMove={setMove} hints={adviceFor("move")} />
       <LookPanel open={panel === "look"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} />
       <ComposerPanels engine={engine} cp={cp} panel={panel} setPanel={setPanel} onAdaptUse={(t) => { setPrompt(t); setPanel(null); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} />

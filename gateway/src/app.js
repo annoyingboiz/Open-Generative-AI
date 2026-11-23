@@ -34,7 +34,8 @@ import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
 import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
-import { cleanLook, renderLook, lookHints, lookAdvice } from './look.js';
+import { cleanLook, renderLook, lookHints, lookAdvice, cameraOf, textureOf, reshootPrompt } from './look.js';
+import { applyTexture, TEXTURE_DEFAULT } from './texture.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
 import { EditError, sweepTemp, frameOf } from './edit.js';
 import { storyboardPage } from './storyboard-print.js';
@@ -131,10 +132,42 @@ export async function buildApp(config, { logger = true } = {}) {
     const name = up?.audio_file;
     return name && /^[a-z0-9_-]+\.m4a$/i.test(name) ? path.join(audioDir, name) : null;
   };
+  // Texture filter (handoff 17, §6): a video made with a film or video camera gets the
+  // camera's texture right after it is saved; the clean original stays next to it.
+  const textureWanted = (row) => {
+    if (row.kind !== 'video') return null;
+    let meta = null;
+    try { meta = JSON.parse(row.meta_json || '{}'); } catch { meta = null; }
+    const preset = textureOf(meta?.look);
+    if (!preset) return null;
+    const t = meta?.texture || {};
+    return { preset, on: t.on !== false, strength: Number.isFinite(Number(t.strength)) ? Math.max(0, Math.min(100, Math.round(Number(t.strength)))) : TEXTURE_DEFAULT };
+  };
+  async function texturize(out, want, v) {
+    const clean = out.clean || out.path;
+    let file = clean;
+    if (want.on && want.strength > 0) {
+      const info = await videoInfo(clean);
+      const dst = clean.replace(/(\.[a-z0-9]+)$/i, `-t${v}$1`);
+      await applyTexture(clean, dst, want.preset, want.strength, { width: info?.width, height: info?.height, fps: info?.fps });
+      file = dst;
+    }
+    const old = out.path !== clean ? out.path : null;
+    Object.assign(out, { path: file, clean, bytes: fs.statSync(file).size, tex: { preset: want.preset, on: want.on && want.strength > 0, strength: want.strength, v } });
+    return old;
+  }
   generations.setAfterDownload({
-    wants: (row) => row.studio === 'upscale' && row.kind === 'video' && Boolean(audioFileOf(row)),
+    wants: (row) => (row.studio === 'upscale' && row.kind === 'video' && Boolean(audioFileOf(row))) || Boolean(textureWanted(row)),
     run: async (row, saved) => {
+      const want = textureWanted(row);
+      if (want) {
+        for (const out of saved) {
+          if (!/^video\//.test(out.mime || '')) continue;
+          try { await texturize(out, want, 1); } catch (error) { app.log.warn(`texture ${row.id}: ${error.message}`); }
+        }
+      }
       const audio = audioFileOf(row);
+      if (!audio) return;
       if (!fs.existsSync(audio)) return;
       for (const out of saved) {
         if (!/^video\//.test(out.mime || '')) continue;
@@ -725,12 +758,42 @@ export async function buildApp(config, { logger = true } = {}) {
   // The prompt the model gets: what was typed, plus the camera look (camera,
   // lens, focal, aperture, filter, era, light, move) in this model's words and
   // place (src/look.js, memo frontmatter "look").
-  function finalPrompt(resolved, prompt, rawLook) {
+  // A start frame in the studio body (the same roles as the studio's dzCreate.js roleOf).
+  const FIRST_FIELD = /^(first_frame|first_frame_image|start_image|start_frame|start_image_url|first_frame_url)$/;
+  function hasStartFrame(variant, body) {
+    for (const [name, input] of Object.entries(variant?.model?.inputs || {})) {
+      if (input?.field !== 'image' || input.type === 'array') continue;
+      const first = FIRST_FIELD.test(name) || (variant.kind === 'video' && /^(image|image_url|img|input_image)$/.test(name));
+      if (first && typeof body?.[name] === 'string' && body[name]) return true;
+    }
+    return false;
+  }
+  // §4 rule 2 (handoff 17): a camera other than Modern and no start frame — never
+  // "adaptive"/"auto" (the model changes the format together with the look): 16:9,
+  // or the nearest landscape ratio the model takes. Changes `body` in place.
+  function fixFreeRatio(variant, body, look) {
+    if (variant?.kind !== 'video' || !cameraOf(look?.camera)?.shot || look.on === false || hasStartFrame(variant, body)) return;
+    for (const key of ['aspect_ratio', 'ratio']) {
+      if (!/^(adaptive|auto)$/i.test(String(body[key] ?? variant.model?.inputs?.[key]?.default ?? ''))) continue;
+      const opts = (variant.model?.inputs?.[key]?.enum || []).map(String);
+      const num = (o) => { const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(o); return m ? Number(m[1]) / Number(m[2]) : null; };
+      const to = opts.includes('16:9') ? '16:9' : opts.filter((o) => num(o) > 1).sort((a, b) => Math.abs(Math.log(num(a) / (16 / 9))) - Math.abs(Math.log(num(b) / (16 / 9))))[0];
+      if (to) body[key] = to;
+    }
+  }
+
+  // The prompt the model gets: what was typed, plus the camera look (camera,
+  // lens, focal, aperture, filter, era, light, move) in this model's words and
+  // place (src/look.js, memo frontmatter "look"). With a start frame: no camera,
+  // lens or aperture words (handoff 17, §4). `body`: the studio body (start frame, ratio).
+  function finalPrompt(resolved, prompt, rawLook, body = {}) {
     const variant = resolved?.variant;
     const look = cleanLook(rawLook);
     if (!variant || !look || variant.model?.hasPrompt === false) return { prompt, look: null, memo: null };
+    fixFreeRatio(variant, body, look);
     const memo = adapter.memoFor(variant.family, variant.kind === 'image' ? 'image' : 'video');
-    return { prompt: renderLook(prompt, look, { kind: variant.kind, memo }), look, memo };
+    const framed = hasStartFrame(variant, body);
+    return { prompt: renderLook(prompt, look, { kind: variant.kind, memo, framed, ratio: body.aspect_ratio || body.ratio || null }), look, memo, framed };
   }
 
   function providerBodyFor(resolved, providerId, modelId, body) {
@@ -810,7 +873,7 @@ export async function buildApp(config, { logger = true } = {}) {
     if (!resolved?.variant) return reply.code(404).send({ error: 'Unknown model' });
     const { _dz: _ignored, ...body } = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
     const typed = typeof body.prompt === 'string' ? body.prompt : '';
-    const built = finalPrompt(resolved, typed, req.body?.look);
+    const built = finalPrompt(resolved, typed, req.body?.look, body);
     if (built.look && built.prompt.trim()) body.prompt = built.prompt;
     const variant = resolved.variant;
     const sent = providerBodyFor(resolved, providerId, modelId, body);
@@ -878,6 +941,12 @@ export async function buildApp(config, { logger = true } = {}) {
       const metaText = dz?.meta && typeof dz.meta === 'object' ? JSON.stringify(dz.meta) : null;
       const meta = metaText && metaText.length <= 65_536 ? { ...dz.meta } : null;
       if (meta) delete meta.upscale; // ours, set by the server for video upscales only
+      if (meta) delete meta.texture;
+      // Texture filter before generating (Settings): on / off and strength 0–100.
+      if (meta && dz?.texture && typeof dz.texture === 'object') {
+        const st = Number(dz.texture.strength);
+        meta.texture = { on: dz.texture.on !== false, strength: Number.isFinite(st) ? Math.max(0, Math.min(100, Math.round(st))) : TEXTURE_DEFAULT };
+      }
       const { projectId, folderId } = contextOf(req.user, dz?.project, dz?.folder);
       if (resolved.video) {
         const vr = await videoRequest(req.user, providerId, modelId, requestBody);
@@ -901,8 +970,17 @@ export async function buildApp(config, { logger = true } = {}) {
         return { request_id: id, id, status: 'processing' };
       }
       const typedPrompt = typeof requestBody.prompt === 'string' ? requestBody.prompt : null;
-      if (dz?.look && !resolved.tool) {
-        const built = finalPrompt(resolved, typedPrompt || '', dz.look);
+      // Re-shoot a frame with the chosen camera (handoff 17, §5): the prompt is made here from
+      // the look; the new picture keeps that look (so the camera panel can say "Taken from frame").
+      if (dz?.reshoot && typeof dz.reshoot === 'object' && variant?.kind === 'image' && !resolved.tool) {
+        const look = cleanLook(dz.look);
+        const ref = /^[@<]?[\w <>-]{1,20}$/.test(String(dz.reshoot.ref || '')) ? String(dz.reshoot.ref) : '@img1';
+        const prompt = reshootPrompt(look, { ratio: requestBody.aspect_ratio || requestBody.ratio || null, ref });
+        if (!prompt) return reply.code(400).send({ detail: 'Choose a camera, lens or aperture to re-shoot the frame with.' });
+        requestBody.prompt = prompt;
+        if (meta) { meta.look = look; meta.reshootOf = String(dz.reshoot.frame || '').slice(0, 500); }
+      } else if (dz?.look && !resolved.tool) {
+        const built = finalPrompt(resolved, typedPrompt || '', dz.look, requestBody);
         if (built.look) {
           if (built.prompt.trim()) requestBody.prompt = built.prompt;
           if (meta) meta.look = built.look;
@@ -975,6 +1053,49 @@ export async function buildApp(config, { logger = true } = {}) {
       if (error instanceof ProviderHttpError) return reply.code(424).send({ detail: error.message.slice(0, 300) });
       return sendGenError(reply, error);
     }
+  });
+
+  // The look each frame was made with (handoff 17, §4–§5): a picture made here keeps its
+  // camera look; an upload or a frame from elsewhere has none (made: false).
+  app.post('/dz/api/frames/look', async (req) => {
+    const urls = (Array.isArray(req.body?.urls) ? req.body.urls : []).filter((u) => typeof u === 'string').slice(0, 8);
+    const frames = urls.map((url) => {
+      const m = /^(?:https?:\/\/[^/]+)?\/media\/g\/([A-Za-z0-9_-]+)\//.exec(url);
+      if (!m) return { url, made: false, look: null };
+      try {
+        const row = generations.visibleRow(req.user, m[1]);
+        let meta = null;
+        try { meta = JSON.parse(row.meta_json || '{}'); } catch { meta = null; }
+        // A frame saved from a video has the video's look.
+        if (!meta?.look && meta?.frameOf) {
+          try { meta = JSON.parse(generations.visibleRow(req.user, meta.frameOf).meta_json || '{}'); } catch { /* the video is gone */ }
+        }
+        return { url, made: true, look: cleanLook(meta?.look) };
+      } catch { return { url, made: false, look: null }; }
+    });
+    return { frames };
+  });
+
+  // Texture filter on a finished video (handoff 17, §6): { on, strength 0–100 }.
+  // Re-rendered from the clean original — never a new generation, never a charge.
+  const textureBusy = new Set();
+  app.post('/dz/api/generations/:id/texture', async (req, reply) => {
+    try {
+      const row = generations.editableRow(req.user, req.params.id);
+      if (row.kind !== 'video' || row.status !== 'completed') return reply.code(409).send({ detail: 'Only a finished video has a texture.' });
+      const outputs = JSON.parse(row.outputs_json || '[]');
+      const out = outputs[0];
+      if (!out?.tex) return reply.code(409).send({ detail: 'This video was made without a film or video camera.' });
+      if (textureBusy.has(row.id)) return reply.code(409).send({ detail: 'The texture is still being applied.' });
+      const st = Number(req.body?.strength);
+      const want = { preset: out.tex.preset, on: req.body?.on !== false, strength: Number.isFinite(st) ? Math.max(0, Math.min(100, Math.round(st))) : out.tex.strength };
+      textureBusy.add(row.id);
+      let old = null;
+      try { old = await texturize(out, want, (Number(out.tex.v) || 1) + 1); } finally { textureBusy.delete(row.id); }
+      generations.setOutputs(row.id, outputs);
+      if (old && old !== out.path) fs.rmSync(old, { force: true });
+      return { ok: true, texture: { preset: out.tex.preset, on: out.tex.on, strength: out.tex.strength }, url: `/media/g/${row.id}/0-t${out.tex.v}.${out.ext}` };
+    } catch (error) { return sendGenError(reply, error); }
   });
 
   // A frame of a video (package 03, §5–§7): { at: "first" | "last" | seconds, save }.
@@ -1389,7 +1510,8 @@ export async function buildApp(config, { logger = true } = {}) {
     return sendMedia(req, reply, f);
   });
   app.get('/media/g/:id/:file', async (req, reply) => {
-    const f = generations.mediaFile(req.user, 'g', req.params.id, req.params.file.split('.')[0]);
+    // "0.mp4", or "0-t3.mp4" (a texture version): the index is the number in front.
+    const f = generations.mediaFile(req.user, 'g', req.params.id, String(Number.parseInt(req.params.file, 10) || 0));
     if (!f) return reply.code(404).header('cache-control', 'no-store').send({ error: 'Not found' });
     return sendMedia(req, reply, f);
   });

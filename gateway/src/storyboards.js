@@ -512,7 +512,7 @@ export function createStoryboards({ db, projects, generations, log }) {
     const files = outputs.map((o, i) => {
       const mime = String(o?.mime || '');
       if (!mime.startsWith('image/') && !mime.startsWith('video/')) return null;
-      return { url: `/media/g/${gen.id}/${i}.${o.ext}`, key: mime.startsWith('video/') ? 'videos' : 'frames' };
+      return { url: `/media/g/${gen.id}/${i}${o.tex ? `-t${o.tex.v}` : ''}.${o.ext}`, key: mime.startsWith('video/') ? 'videos' : 'frames' };
     }).filter(Boolean);
     if (!files.length) return;
     changeMedia(row, t.id, (m) => {

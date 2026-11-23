@@ -661,11 +661,11 @@ export function keepValues(values, variant) {
 // The choices (ids) go to the server with the request (`_dz.look`); the server
 // writes them into the prompt in the chosen model's words and place
 // (gateway/src/look.js). Here: only the lists to draw the controls.
-const LOOK_FALLBACK = { cameras: [], lenses: [], filters: [], focals: [], apertures: [], eras: [], lights: [], palettes: [], genres: [], moves: [], defaults: { camera: "digital", lens: "clean", focal: 35, aperture: "f/4" } };
+const LOOK_FALLBACK = { cameras: [], lenses: [], filters: [], focals: [], apertures: [], eras: [], lights: [], palettes: [], genres: [], moves: [], defaults: { camera: "modern", lens: "clean", focal: 35, aperture: "f/4" } };
 export function lookData() {
   return (typeof window !== "undefined" && window.__DZ_CATALOG__?.look) || LOOK_FALLBACK;
 }
-export const DEFAULT_CAMERA = { on: false, camera: "digital", lens: "clean", focal: 35, aperture: "f/4", filter: null, era: null, light: null };
+export const DEFAULT_CAMERA = { on: false, camera: "modern", lens: "clean", focal: 35, aperture: "f/4", filter: null, era: null, light: null };
 // Settings saved before 18.11 used display names; the server maps those too.
 const LEGACY_CAMERA = { "Modular 8K Digital": "digital", "Full-Frame Cine Digital": "digital", "Studio Digital S35": "digital", "Grand Format 70mm Film": "imax-70", "Classic 16mm Film": "film-16", "Premium Large Format Digital": "large-format" };
 const LEGACY_LENS = { "Premium Modern Prime": "clean", "Clinical Sharp Prime": "clean", "Classic Anamorphic": "anamorphic", "Compact Anamorphic": "anamorphic", "70s Cinema Prime": "vintage-prime", "Warm Cinema Prime": "vintage-prime", "Vintage Prime": "vintage-prime", "Swirl Bokeh Portrait": "petzval", "Halation Diffusion": "clean", "Creative Tilt Lens": "tilt-shift", "Extreme Macro": "macro" };
@@ -840,4 +840,31 @@ export function resolveInsertTags(text, { refs = [], tags = [], refCount = 0, ac
     return all;
   });
   return { text: out, add, addElements, unmatched };
+}
+
+// ── What a provider takes, in a few words (provider rows in the model menu) ──
+// One phrase per endpoint, from the catalog: what goes together joins with " · ",
+// endpoints that can't be combined join with " or ". "Frames · 4 refs" = one
+// endpoint takes both; "Frames or 30 refs" = either one or the other.
+// An endpoint that takes less than another one (text only, start frame only) is left out.
+export function acceptsOf(entry) {
+  if (!entry) return "";
+  const covered = (a, b) => Object.entries(a.media).every(([r, m]) => b.media[r] && b.media[r].max >= m.max);
+  const vs = entry.variants.filter((v) => Object.keys(v.media).length);
+  const kept = vs.filter((v, i) => !vs.some((w, j) => j !== i && covered(v, w) && (!covered(w, v) || j < i)));
+  const phrase = (m) => {
+    const parts = [];
+    if (m.first && m.last) parts.push("Frames");
+    else if (m.first) parts.push("Start frame");
+    else if (m.last) parts.push("End frame");
+    if (m.source) parts.push("Edit video");
+    const refs = [m.reference && `${m.reference.max} ${m.reference.max === 1 ? "ref" : "refs"}`, m.video && `${m.video.max} ${m.video.max === 1 ? "video" : "videos"}`, m.audio && `${m.audio.max} audio`].filter(Boolean);
+    if (refs.length) parts.push(refs.join(", "));
+    return parts.join(" · ");
+  };
+  // Frames first, then references, then video edit, whatever the catalog order.
+  const rank = (m) => (m.source ? 2 : m.first || m.last ? 0 : 1);
+  const out = uniq(kept.sort((a, b) => rank(a.media) - rank(b.media)).map((v) => phrase(v.media)).filter(Boolean));
+  if (entry.canEdit && !out.length) out.push("Edits a picture");
+  return out.length ? out.join(" or ") : entry.textOnly ? "Text only" : "";
 }

@@ -9,6 +9,7 @@ import { lookData, autoLook, AUTO_LOOK } from "../../dzCreate.js";
 import { useAdaptModels, LLM_KEY, useAdaptResult } from "../DzAdapt.jsx";
 import { RequestView } from "../DzSentPanel.jsx";
 import { StudioPanel, Overline, ChipMenu, MenuRow } from "./ui.jsx";
+import { TextureControl } from "./Texture.jsx";
 import { dzWheelStepper } from "../../dzScroll.js";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
@@ -17,8 +18,8 @@ const FOCAL_STOPS = [null, 24, 35, 50, 85, 135];
 export const lookPicture = (kind, id) => (id ? `/look/${kind}-${String(id).replace("/", "").replace(".", "_")}.webp` : null);
 
 // ── Camera: three wheels and the focal track ────────────────────────────────
-function Wheel({ title, options, value, onChange, icon: Icon }) {
-  const list = [{ id: null, label: "Auto" }, ...options];
+function Wheel({ title, options, value, onChange, icon: Icon, auto = { id: null, label: "Auto" } }) {
+  const list = [auto, ...options];
   const i = Math.max(0, list.findIndex((o) => o.id === value));
   const n = list.length;
   const go = (to) => onChange(list[(to + n) % n].id);
@@ -33,7 +34,7 @@ function Wheel({ title, options, value, onChange, icon: Icon }) {
     <button type="button" onClick={onClick} title={o.note || undefined} tabIndex={big ? -1 : 0}
       className={cn("flex w-full flex-col items-center justify-center gap-2 rounded-xl px-2 text-center transition-all duration-state ease-soft",
         big ? "h-[170px] border-[1.5px] border-signal" : "h-[120px] opacity-60 hover:opacity-100")}>
-      {o.id == null
+      {o.id == null && !o.image
         ? <span className={cn("rounded-md border border-dashed border-input", big ? "h-[110px] w-[150px]" : "h-12 w-16")} />
         : o.image
           ? <img src={o.image} alt="" draggable={false} className={cn("rounded-md object-cover", big ? "h-[110px] w-[150px]" : "h-12 w-16")} />
@@ -96,7 +97,7 @@ function FocalTrack({ value, onChange }) {
   );
 }
 
-export function CameraLookPanel({ open, onClose, look, setLook, hints = [] }) {
+export function CameraLookPanel({ open, onClose, look, setLook, hints = [], extra = null }) {
   const d = lookData();
   const a = autoLook(look);
   const set = (k, v) => setLook((prev) => ({ ...autoLook(prev), [k]: v }));
@@ -104,7 +105,10 @@ export function CameraLookPanel({ open, onClose, look, setLook, hints = [] }) {
     <StudioPanel open={open} onClose={onClose} title="Camera" resetLabel="Reset to Auto"
       onReset={() => setLook((prev) => ({ ...autoLook(prev), camera: null, lens: null, aperture: null, focal: null, filter: null }))}>
       <div className="grid grid-cols-3 gap-3">
-        <Wheel title="Camera" icon={Camera} options={d.cameras.map((o) => ({ ...o, image: lookPicture("camera", o.id) }))} value={a.camera} onChange={(v) => set("camera", v)} />
+        {/* Seven cameras (handoff 17, §3): Modern is the first and default (adds nothing);
+            a camera from before 23.11 is kept as stored and shows as Modern. */}
+        <Wheel title="Camera" icon={Camera} auto={{ id: null, label: "Modern", note: "Clean modern picture, nothing added", image: lookPicture("camera", "digital") }}
+          options={d.cameras.filter((o) => o.id !== "modern").map((o) => ({ ...o, image: lookPicture("camera", o.id) }))} value={a.camera === "modern" ? null : a.camera} onChange={(v) => set("camera", v)} />
         <Wheel title="Lens" icon={Aperture} options={d.lenses.map((o) => ({ ...o, image: lookPicture("lens", o.id) }))} value={a.lens} onChange={(v) => set("lens", v)} />
         <Wheel title="Aperture" icon={CircleDashed} options={(d.apertures || []).map((f) => ({ id: f, label: f, image: lookPicture("aperture", f) }))} value={a.aperture} onChange={(v) => set("aperture", v)} />
       </div>
@@ -115,6 +119,7 @@ export function CameraLookPanel({ open, onClose, look, setLook, hints = [] }) {
           <Switch checked={a.filter === f.id} onCheckedChange={(v) => set("filter", v ? f.id : null)} />
         </label>
       ))}
+      {extra}
       <p className="mt-6 text-sm text-muted-foreground">Scroll a wheel, or click the option above or below. Drag the focal handle. Anything left on Auto is chosen by the model.</p>
       {hints.length > 0 && <ul className="mt-3 space-y-1 text-sm text-warning">{hints.map((h, i) => <li key={i}>{h}</li>)}</ul>}
     </StudioPanel>
@@ -258,10 +263,12 @@ function SettingControl({ p, value, onChange }) {
   return <Input value={value ?? ""} placeholder={p.default != null ? String(p.default) : ""} onChange={(e) => onChange(e.target.value)} aria-label={p.title} />;
 }
 
-export function SettingsPanel({ open, onClose, modelName, params, values, setValue, onReset }) {
+export function SettingsPanel({ open, onClose, modelName, params, values, setValue, onReset, texture = null }) {
   return (
     <StudioPanel open={open} onClose={onClose} title="Settings" width={560} resetLabel="Reset to defaults" onReset={onReset}
       aside={<span className="truncate text-sm text-muted-foreground">{modelName}</span>}>
+      {/* Texture filter (handoff 17, §6): for film and video cameras, whatever the model. */}
+      {texture?.preset && <TextureControl className="mb-4 rounded-xl border border-border p-3" preset={texture.preset} value={texture.value} onChange={texture.onChange} />}
       <p className="mb-3 text-sm text-muted-foreground">These are the settings {modelName || "this model"} has. Another model shows its own list.</p>
       {params.length === 0 && <p className="py-6 text-center text-muted-foreground">This model has no other settings.</p>}
       <div className="divide-y divide-border">

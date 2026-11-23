@@ -61,6 +61,7 @@ for (const [family, list] of byFamily) {
   studio[family] = Object.fromEntries(list.map((e) => [e.provider, {
     name: e.familyName,
     price: e.priceLabel,
+    accepts: dz.acceptsOf(e),
     variants: e.variants.map((v) => ({
       endpoint: v.model.endpoint,
       mode: v.mode,

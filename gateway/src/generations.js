@@ -16,7 +16,8 @@ const SLOW_POLL_MS = 60_000;
 const MAX_POLL_ERRORS = 40;
 const SETTLE_DELAYS_MS = [5_000, 20_000, 60_000, 180_000, 900_000];
 const TRASH_KEEP_MS = 7 * 86_400_000;
-const LOCAL_MEDIA_RE = /^(?:https?:\/\/[^/]+)?\/media\/(u|g)\/([A-Za-z0-9_-]+)(?:\.[a-z0-9]+)?(?:\/(\d+)(?:\.[a-z0-9]+)?)?(?:[?#].*)?$/i;
+// /media/g/<id>/<index>[-t<version>].<ext>: the version changes when the texture filter re-renders a video.
+const LOCAL_MEDIA_RE = /^(?:https?:\/\/[^/]+)?\/media\/(u|g)\/([A-Za-z0-9_-]+)(?:\.[a-z0-9]+)?(?:\/(\d+)(?:-t\d+)?(?:\.[a-z0-9]+)?)?(?:[?#].*)?$/i;
 
 // Money in messages: cents, below 10 cents up to 3 decimals ($0.26, $0.035).
 const money = (usd) => (usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
@@ -51,6 +52,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     setProcessing: db.prepare("UPDATE generations SET status = 'processing', next_poll_at = ?, poll_errors = 0, updated_at = ? WHERE id = ? AND status IN ('submitted', 'processing')"),
     setFailedIfActive: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ? AND status IN ('submitted', 'processing')"),
     pollRetry: db.prepare('UPDATE generations SET next_poll_at = ?, updated_at = ? WHERE id = ?'),
+    setOutputs: db.prepare('UPDATE generations SET outputs_json = ?, updated_at = ? WHERE id = ?'),
     setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, settle_next_at = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     settleDue: db.prepare('SELECT * FROM generations WHERE settle_next_at IS NOT NULL AND settle_next_at <= ? ORDER BY settle_next_at LIMIT 10'),
     settleLater: db.prepare('UPDATE generations SET settle_attempts = settle_attempts + 1, settle_next_at = ? WHERE id = ?'),
@@ -357,7 +359,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
 
   // Files go, the row stays (as a tombstone): it still counts for spending.
   function removeFiles(row) {
-    for (const o of JSON.parse(row.outputs_json || '[]')) storage.remove(o.path);
+    for (const o of JSON.parse(row.outputs_json || '[]')) { storage.remove(o.path); if (o.clean && o.clean !== o.path) storage.remove(o.clean); }
     q.tombstone.run(now(), now(), row.id);
   }
   function purgeTrash() {
@@ -366,7 +368,13 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   }
 
   // ── Read side (in the shape the studio expects) ───────────────
-  const outputUrls = (row) => JSON.parse(row.outputs_json || '[]').map((o, i) => `/media/g/${row.id}/${i}.${o.ext}`);
+  // A video with the texture filter: its link carries the version, so a re-render is never served from a cache.
+  const outputUrls = (row) => JSON.parse(row.outputs_json || '[]').map((o, i) => `/media/g/${row.id}/${i}${o.tex ? `-t${o.tex.v}` : ''}.${o.ext}`);
+  // The texture filter's state of a finished video (handoff 17, §6), for the Texture control.
+  const textureState = (row) => {
+    const o = row.status === 'completed' ? JSON.parse(row.outputs_json || '[]')[0] : null;
+    return o?.tex ? { preset: o.tex.preset, on: o.tex.on, strength: o.tex.strength } : null;
+  };
 
   function result(user, id) {
     const row = q.byId.get(id);
@@ -398,6 +406,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       status: row.status === 'completed' ? 'completed' : row.status === 'failed' ? 'failed' : 'processing',
       url: outputs[0] || null,
       outputs,
+      texture: textureState(row),
       prompt: row.prompt,
       model: row.endpoint,
       provider: row.provider,
@@ -615,12 +624,17 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       for (let i = 0; i < outputs.length; i += 1) {
         const f = await storage.copyResult({ userId: user.id, generationId: newGen, index: i, from: outputs[i].path, ext: outputs[i].ext });
         saved.push({ ...outputs[i], path: f.path, bytes: f.bytes });
+        // A filtered video keeps its clean original next to it (the copy can be re-rendered too).
+        if (outputs[i].clean && outputs[i].clean !== outputs[i].path) {
+          const c = await storage.copyResult({ userId: user.id, generationId: `${newGen}-clean`, index: i, from: outputs[i].clean, ext: outputs[i].ext });
+          saved[i] = { ...saved[i], clean: c.path };
+        } else if (outputs[i].clean) saved[i] = { ...saved[i], clean: f.path };
       }
       const t = now();
       q.insertCopy.run(newGen, user.id, row.endpoint, row.provider, row.provider_model, row.kind, row.prompt, row.params_json || '{}', row.studio,
         JSON.stringify({ ...(meta || {}), copiedFrom: row.id }), projectId, folderId, JSON.stringify(saved), t, t, t);
     } catch (error) {
-      for (const f of saved) storage.remove(f.path);
+      for (const f of saved) { storage.remove(f.path); if (f.clean && f.clean !== f.path) storage.remove(f.clean); }
       throw error.status ? error : new GenerationError('The file could not be copied.', 500);
     }
     return { ok: true, id: newGen, project_id: projectId, folder_id: folderId };
@@ -784,6 +798,9 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     budget,
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     setOnCompleted(fn) { onCompleted = fn; },
+    // The texture filter's re-render (app.js): the row's files, replaced as a whole.
+    setOutputs(id, outputs) { q.setOutputs.run(JSON.stringify(outputs), now(), id); },
+    editableRow: (user, id) => editable(user, id),
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,
     cachedProviderUrl,

@@ -8,18 +8,56 @@
 // better than bare numbers, so every value carries both; real camera / film /
 // lens names work as look cues. Research: docs/camera-lens-research.md.
 
+// Seven cameras (handoff 17, §3). Modern is the default and adds nothing.
+// shot + look: the camera's words for a video or picture made without a start frame
+// (tested wording, §5/§7); keep: what the model must not draw. No grain, dust,
+// scratches, light leaks or timestamps here: the texture filter adds those (§6), and
+// drawn ones turn into real objects in a video. texture: the filter preset (§6).
+// toneOnly: Kling draws a 4:3 picture with rounded corners when the medium is named,
+// so it gets the colour and tone words only (§7).
 // sensor: 'small' formats rarely blur the background much; 'large' do it easily.
 export const CAMERAS = [
-  { id: 'digital', label: 'Digital Cinema', note: 'Clean modern cinema look', text: 'ARRI Alexa 35 digital cinema camera, clean natural color' },
-  { id: 'large-format', label: 'Large Format', note: 'Immersive, very shallow depth of field', text: 'ARRI Alexa 65 large-format camera, immersive perspective, very shallow depth of field', sensor: 'large' },
-  { id: 'film-35', label: '35mm Film', note: 'Classic film grain and color', text: '35mm film camera, Kodak Vision3 500T stock, fine grain, organic film color' },
-  { id: 'film-16', label: '16mm Film', note: 'Grainy, documentary texture', text: '16mm film camera, visible grain, documentary texture', sensor: 'small' },
-  { id: 'super-8', label: 'Super 8', note: 'Home movie, heavy grain', text: 'Super 8 home-movie film, heavy grain, soft focus, faded color, light leaks', sensor: 'small' },
-  { id: 'imax-70', label: 'IMAX 70mm', note: 'Epic scale, ultra detail', text: '65mm IMAX film camera, ultra-detailed, epic scale', sensor: 'large' },
-  { id: 'dv', label: 'DV Camcorder', note: 'Early-2000s video', text: 'early-2000s DV camcorder, video sharpness, slight interlacing, consumer video color', sensor: 'small' },
-  { id: 'vhs', label: 'VHS', note: '90s tape: soft, color bleed', text: '1990s VHS camcorder tape, low resolution, color bleeding, tracking noise', sensor: 'small' },
-  { id: 'phone', label: 'Phone', note: 'Modern smartphone / vlog', text: 'modern smartphone camera, deep focus, crisp computational look', sensor: 'small' },
+  { id: 'modern', label: 'Modern', note: 'Clean modern picture, nothing added' },
+  { id: 'film-35', label: '35mm Film', note: 'Soft highlights, film colour, fine grain', texture: '35mm',
+    shot: 'Shot on 35mm motion-picture colour negative film with a spherical cinema lens',
+    look: 'soft highlight roll-off with a gentle glow around light sources, rich but slightly muted colour with warm skin and cool green-teal shadows, slightly soft detail, not digitally sharp',
+    reshoot: { camera: 'on 35mm motion-picture colour negative film with a spherical cinema lens', look: 'Soft highlight roll-off with a gentle glow around light sources, rich but slightly muted colour with warm skin and cool green-teal shadows, slightly soft detail, not digitally sharp' } },
+  { id: 'film-16', label: '16mm Film', note: 'Soft, faded colour, coarse grain', texture: '16mm', sensor: 'small',
+    shot: 'Shot on 16mm colour film',
+    look: 'soft lower-resolution detail, slightly lifted milky blacks, warm slightly faded colours, a gentle dark vignette in the corners',
+    reshoot: { camera: 'on 16mm colour film', look: 'Soft lower-resolution detail, slightly lifted milky blacks, warm slightly faded colours, a gentle dark vignette in the corners' } },
+  { id: 'super-8', label: '8mm Film', note: 'Home movie: warm cast, heavy grain, flicker', texture: '8mm', sensor: 'small', toneOnly: true,
+    shot: 'A Super 8 home movie',
+    look: 'soft blurry detail, strong warm yellow-red colour cast, faded blacks, heavy dark vignette in the corners',
+    keep: 'No rounded corners, no sprocket holes',
+    reshoot: { camera: 'as a frame of a Super 8 home movie', look: 'Soft blurry detail, strong warm yellow-red colour cast, faded blacks, heavy dark vignette in the corners. No rounded corners, no sprocket holes' } },
+  { id: 'dv', label: 'DV Camcorder', note: 'Home video from 2000', texture: 'dv', sensor: 'small',
+    shot: 'Amateur home video from the year 2000 recorded on MiniDV tape with a consumer camcorder',
+    look: 'standard-definition video, over-sharpened edges, everything in focus, windows and lights blown out to flat white, muddy shadows, dull video colours with a slight green-magenta cast',
+    keep: 'No text, no date stamp',
+    reshoot: { camera: 'as a still frame of amateur home video from the year 2000 recorded on MiniDV tape with a consumer camcorder', look: 'Standard-definition video frame, over-sharpened edges, everything in focus, windows and lights blown out to flat white, muddy shadows, dull video colours with a slight green-magenta cast. No text, no date stamp' } },
+  { id: 'vhs', label: 'VHS', note: '90s tape: soft, colour bleed', texture: 'vhs', sensor: 'small', toneOnly: true,
+    shot: 'A 1990s VHS home recording',
+    look: 'very soft low-resolution picture, washed-out contrast with greyish blacks, blown-out highlights',
+    keep: 'No text, no timestamp',
+    reshoot: { camera: 'as a paused frame of a 1990s VHS home recording', look: 'Very soft low-resolution picture, washed-out contrast with greyish blacks, blown-out highlights. No text, no timestamp' } },
+  { id: 'phone', label: 'Phone', note: 'Modern smartphone, everything sharp', sensor: 'small',
+    shot: 'Casual video filmed on a modern smartphone main camera',
+    look: 'wide-angle phone lens held close, everything in sharp focus, computational HDR with bright lifted shadows, over-sharpened crisp detail, vivid colours, clean picture with no grain, no background blur',
+    // Kling (§7): tested as one block; never "stretching at the frame edges" (gives fisheye).
+    kling: 'Casual horizontal video filmed by a friend on a modern smartphone main camera. Wide-angle phone lens held close, everything in sharp focus, computational HDR with bright lifted shadows, over-sharpened crisp detail, vivid colours, clean picture with no grain. Not cinematic, no background blur.',
+    reshoot: { camera: 'as if it was filmed on a modern smartphone', look: 'Wide-angle phone lens held close, so more of the place is visible; everything in sharp focus from foreground to background; computational HDR with bright lifted shadows; crisp over-sharpened detail; vivid colours; no background blur, no film grain' } },
+  // Cameras from before 23.11: kept as stored (settings, storyboards, history), shown and sent as Modern.
+  { id: 'digital', label: 'Digital Cinema', as: 'modern', hidden: true },
+  { id: 'large-format', label: 'Large Format', as: 'modern', hidden: true, sensor: 'large' },
+  { id: 'imax-70', label: 'IMAX 70mm', as: 'modern', hidden: true, sensor: 'large' },
 ];
+// The camera whose words and filter apply (an old camera → Modern, which has none).
+export const cameraOf = (id) => { const c = CAMERAS.find((x) => x.id === id) || null; return c?.as ? CAMERAS.find((x) => x.id === c.as) : c; };
+// The texture filter preset for a look (§6): film and video cameras only.
+export const textureOf = (look) => (look && look.on !== false ? cameraOf(look.camera)?.texture || null : null);
+// With a start frame (§4, rule 1): no camera, lens or aperture words, only this line.
+export const KEEP_FRAME = 'Keep the lens, focus, colour and image texture of the first frame unchanged for the whole clip.';
 
 // focal: the range this kind of lens is made in; aperture: the widest f-number where its effect shows.
 export const LENSES = [
@@ -128,7 +166,7 @@ export const MOVES = [
   { id: 'dolly-zoom', label: 'Dolly zoom', text: 'dolly zoom (vertigo effect) on the subject' },
 ];
 
-export const DEFAULT_LOOK = { camera: 'digital', lens: 'clean', focal: 35, aperture: 'f/4' };
+export const DEFAULT_LOOK = { camera: 'modern', lens: 'clean', focal: 35, aperture: 'f/4' };
 
 // Names used before 18.11 (saved settings, storyboards, history) → today's ids.
 const LEGACY_CAMERA = {
@@ -199,7 +237,7 @@ export function lookHints(look, opts = {}) {
 export function lookForClient() {
   const pick = (list, keys) => list.map((x) => Object.fromEntries(keys.filter((k) => x[k] !== undefined).map((k) => [k, x[k]])));
   return {
-    cameras: pick(CAMERAS, ['id', 'label', 'note', 'sensor']),
+    cameras: pick(CAMERAS.filter((c) => !c.hidden), ['id', 'label', 'note', 'sensor', 'texture']),
     lenses: pick(LENSES, ['id', 'label', 'note', 'focal', 'maxAperture', 'wide']),
     filters: pick(FILTERS, ['id', 'label', 'note']),
     focals: FOCALS.map((f) => f.mm),
@@ -213,21 +251,24 @@ export function lookForClient() {
   };
 }
 
-// The words: camera (with lens, focal, aperture, filter), move, light, era.
-function words(look, kind) {
-  const camera = byId(CAMERAS, look.camera);
+// The words: lens, focal, aperture, filter (the camera itself has its own words,
+// cameraLines below), move, light, era. `framed` (a video from a start frame):
+// no lens, focal, aperture or filter words at all (§4, rule 1).
+const CLOSER = new Set(['dolly-in', 'push-in', 'zoom-in']);
+function words(look, kind, { framed = false, family = null } = {}) {
   const lens = byId(LENSES, look.lens);
   const focal = FOCALS.find((f) => f.mm === look.focal);
   const ap = APERTURES.find((a) => a.f === look.aperture);
   const filter = byId(FILTERS, look.filter);
-  const cam = look.on ? [
-    camera ? `shot on ${camera.text}` : '',
+  const cam = look.on && !framed ? [
     lens ? lens.text : '',
     focal ? `${focal.mm}mm (${focal.text})` : '',
     ap ? `${ap.f} (${ap.text})` : '',
   ].filter(Boolean) : [];
-  if (filter) cam.push(filter.text);
-  const move = kind === 'video' ? byId(MOVES, look.move)?.text || '' : '';
+  if (filter && !framed) cam.push(filter.text);
+  // Kling from a start frame: "push-in" alone moves far too much (§7).
+  let move = kind === 'video' ? byId(MOVES, look.move)?.text || '' : '';
+  if (move && framed && family === 'kling' && CLOSER.has(look.move)) move = 'very slight slow move closer';
   return {
     camera: cam.join(', '),
     move,
@@ -236,6 +277,28 @@ function words(look, kind) {
     genre: byId(GENRES, look.genre)?.text || '',
     era: byId(ERAS, look.era)?.text || '',
   };
+}
+
+// The camera's own words, in the model's template (§7), when there is no start frame.
+// → { lead, lines: [[label, text]], header: [label, text], sentence }:
+//   lead      a sentence right after Wan's "Generate single shot." (else first);
+//   lines     "Label: text" lines (Kling Visual style / Camera tone, Wan Style);
+//   header    Seedance's "[Overall style] …" block;
+//   sentence  any other model: one sentence where its camera words go.
+const fillLine = (ratio, corners) => `The picture fills the whole ${/^\d+(\.\d+)?:\d+(\.\d+)?$/.test(String(ratio || '')) ? `${ratio} ` : ''}frame edge to edge, no black bars, no border${corners ? ', square corners' : ''}.`;
+const dot = (t) => (t ? `${cap(t.replace(/[.\s]+$/, ''))}.` : '');
+export function cameraLines(look, { kind = 'video', family = null, ratio = null } = {}) {
+  const c = look && look.on !== false ? cameraOf(look.camera) : null;
+  if (!c?.shot) return null;
+  const keep = c.keep ? dot(c.keep) : '';
+  if (kind === 'video' && family === 'kling') {
+    if (c.kling) return { lines: [['Visual style', c.kling]] };
+    if (c.toneOnly) return { lines: [['Camera tone', dot(c.look)]] };
+    return { lines: [['Visual style', dot(c.shot)], ['Camera tone', [dot(c.look), keep].filter(Boolean).join(' ')]] };
+  }
+  if (kind === 'video' && family === 'seedance') return { header: ['[Overall style]', [dot(c.shot), dot(c.look), keep, fillLine(ratio, true)].filter(Boolean).join(' ')] };
+  if (kind === 'video' && family === 'wan') return { lead: dot(c.shot), lines: [['Style', [dot(c.look), keep, fillLine(ratio, false)].filter(Boolean).join(' ')]] };
+  return { sentence: [dot(`${c.shot}: ${c.look}`), keep].filter(Boolean).join(' ') };
 }
 
 // Where the look goes, per model (from its memo, see prompt-memos frontmatter
@@ -253,12 +316,41 @@ function intoBlock(prompt, label, text) {
   return `${prompt.replace(/\s+$/, '')}${prompt.trim() ? '\n' : ''}${label}: ${text}.`;
 }
 
-export function renderLook(prompt, look, { kind = 'video', memo = null } = {}) {
+// ── Re-shoot a frame with the chosen camera (handoff 17, §5) ─────────────────
+// One picture in, the same scene out, through the chosen camera, lens and aperture.
+// Lens and aperture: only the wording tested in the re-shoot round, and only when
+// that lens or aperture is chosen (the controls themselves are unchanged).
+// Never dust, scratches, hairs, light leaks, tracking bands or timestamps: the video
+// model turns them into real objects; the filter adds them (§5, hard rule).
+const RESHOOT_LENS = { anamorphic: true, 'vintage-anamorphic': true };
+const RESHOOT_ANAMORPHIC = 'Long thin horizontal blue lens flares stretch sideways from small light sources; faces stay clear of flares. Out-of-focus background lights are vertical ovals';
+export function reshootPrompt(look, { ratio = null, ref = '@img1', subject = null } = {}) {
+  const c = look && look.on !== false ? cameraOf(look.camera) : null;
+  const ap = APERTURES.find((a) => a.f === look?.aperture);
+  const lens = look?.on !== false && RESHOOT_LENS[look?.lens];
+  const camera = [c?.reshoot?.camera, lens ? 'through an anamorphic lens' : ''].filter(Boolean).join(' ');
+  const looks = [c?.reshoot?.look, lens ? RESHOOT_ANAMORPHIC : '',
+    look?.on !== false && ap && ap.n <= 2.8 ? 'Shallow depth of field, the background softly blurred' : '',
+    look?.on !== false && ap && ap.n >= 8 ? 'Everything is sharp from the nearest object to the far background; no background blur at all' : ''].filter(Boolean);
+  if (!camera && !looks.length) return null;
+  const same = subject ? `the same ${subject}` : 'the same people, clothes, objects and place, same faces';
+  const shape = /^\d+(\.\d+)?:\d+(\.\d+)?$/.test(String(ratio || '')) ? `${ratio} ` : '';
+  return `Re-shoot the scene in ${ref}${camera ? ` ${camera}` : ''}: ${same}, same moment and pose. ${looks.map(dot).join(' ')} The picture fills the whole ${shape}frame, no black bars, no border.`;
+}
+
+// opts.framed: a video made from a start frame (§4): no camera, lens or aperture
+// words; KEEP_FRAME instead. opts.ratio: the ratio sent (for the fill-frame line).
+export function renderLook(prompt, look, { kind = 'video', memo = null, framed = false, ratio = null } = {}) {
   const raw = String(prompt ?? '');
   if (!look) return raw;
-  const w = words(look, kind);
-  const parts = [w.camera, w.move, w.light, w.palette, w.genre, w.era];
+  const family = memo?.id || null;
+  const fromFrame = kind === 'video' && framed;
+  const w = words(look, kind, { framed: fromFrame, family });
+  const camText = fromFrame ? null : cameraLines(look, { kind, family, ratio });
+  const keepLine = fromFrame && (look.on || look.filter) ? KEEP_FRAME : '';
+  const parts = [w.camera, w.move, w.light, w.palette, w.genre, w.era, keepLine, camText];
   if (!parts.some(Boolean)) return raw;
+  const camOne = camText ? [camText.lead, camText.header?.[1], ...(camText.lines || []).map(([, t]) => t), camText.sentence].filter(Boolean).join(' ') : '';
 
   const rule = memo?.look || {};
   // A JSON prompt stays JSON: the look goes into the model's own keys (its
@@ -278,26 +370,54 @@ export function renderLook(prompt, look, { kind = 'video', memo = null } = {}) {
         else if (out[k] && typeof out[k] === 'object') out[k] = { ...out[k], look: [out[k].look, t].filter((x) => typeof x === 'string' && x).join('; ') };
         else out[k] = t;
       };
-      if (rule.camera) put(rule.camera, [w.camera, w.move].filter(Boolean).join(', '));
-      else { put('camera', w.camera); put('camera_movement', w.move); }
+      if (rule.camera) put(rule.camera, [camOne, w.camera, w.move].filter(Boolean).join(', '));
+      else { put('camera', [camOne, w.camera].filter(Boolean).join(' ')); put('camera_movement', w.move); }
       if (rule.style) put(rule.style, [w.light, w.palette, w.genre, w.era].filter(Boolean).join(', '));
       else { put('lighting', w.light); put('color', w.palette); put('genre', w.genre); put('era', w.era); }
+      put('keep', keepLine);
       return JSON.stringify(out, null, 2);
     } catch { /* not JSON after all: plain text */ }
   }
 
+  let out = camText ? placeCamera(text, camText) : text;
+  // Any other model: the camera's sentence goes where its camera words go, before the lens and move.
+  out = placeRest(out, w, rule, camText?.sentence || '');
+  if (keepLine) out = `${out.replace(/\s+$/, '')}${out.trim() ? '\n' : ''}${keepLine}`;
+  return out;
+}
+
+// The camera's own words (cameraLines) into the prompt.
+function placeCamera(text, cam) {
+  let out = text;
+  if (cam.header) {
+    const [label, t] = cam.header;
+    const re = new RegExp(`^(\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(.*)$`, 'im');
+    out = re.test(out) ? out.replace(re, (_, head, rest) => `${head}${rest.replace(/[.\s]*$/, '')}${rest.trim() ? '. ' : ' '}${t}`) : `${label} ${t}${out.trim() ? '\n' : ''}${out}`;
+  }
+  if (cam.lead) {
+    const re = /(generate single shot\.)/i;
+    out = re.test(out) ? out.replace(re, `$1 ${cam.lead}`) : `${cam.lead}${out.trim() ? ' ' : ''}${out}`;
+  }
+  for (const [label, t] of cam.lines || []) out = intoBlock(out, label, t.replace(/\.$/, ''));
+  return out;
+}
+
+const hasLabel = (text, label) => Boolean(label) && new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`, 'im').test(text);
+
+// Lens, focal, aperture, filter, move, light, palette, genre and era, as before.
+function placeRest(text, w, rule, camSentence = '') {
+  if (![camSentence, w.camera, w.move, w.light, w.palette, w.genre, w.era].some(Boolean)) return text;
   // A prompt already written in the model's labeled blocks (e.g. by "Adapt to
   // model"): the look joins those blocks, whatever the model's usual place.
-  const hasLabel = (label) => label && new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`, 'im').test(text);
-  if (rule.place === 'blocks' || hasLabel(rule.camera) || hasLabel(rule.style)) {
+  if (rule.place === 'blocks' || hasLabel(text, rule.camera) || hasLabel(text, rule.style)) {
     const camLabel = rule.camera || 'Camera';
     const styleLabel = rule.style || camLabel;
     let out = text;
-    out = intoBlock(out, camLabel, [w.camera, w.move].filter(Boolean).join(', '));
+    out = intoBlock(out, camLabel, [camSentence.replace(/\.$/, ''), [w.camera, w.move].filter(Boolean).join(', ')].filter(Boolean).join('; '));
     out = intoBlock(out, styleLabel, [w.light, w.palette, w.genre, w.era].filter(Boolean).join(', '));
     return out;
   }
-  const cameraSentence = sentence([w.camera, w.move].filter(Boolean).join(', '));
+  const cameraSentence = [camSentence, sentence([w.camera, w.move].filter(Boolean).join(', '))].filter(Boolean).join(' ');
   const styleSentence = [sentence(w.light && `lighting: ${w.light}`), sentence(w.palette && `color: ${w.palette}`), sentence(w.genre), sentence(w.era)].filter(Boolean).join(' ');
   const body = text ? (/[.!?"')\]]$/.test(text) ? text : `${text.replace(/[,;:\s]+$/, '')}.`) : '';
   if (rule.place === 'start') return [cameraSentence, body, styleSentence].filter(Boolean).join(' ');

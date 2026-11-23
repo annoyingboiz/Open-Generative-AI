@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MagnifyingGlass, ImageSquare, Images, FilmStrip, SpeakerHigh, PencilSimple, TextAa } from "@phosphor-icons/react";
 import { cn } from "../../ui/index.js";
 import { Monogram } from "./ui.jsx";
-import { paramsOf } from "../../dzCreate.js";
+import { paramsOf, acceptsOf } from "../../dzCreate.js";
 
 const SOUND = /^(generate_audio|audio|sound|enable_audio|with_audio)$/;
 
@@ -67,6 +67,9 @@ export default function ModelMenu({ entries, entry, onPick, onClose, kind = entr
   const [openFamily, setOpenFamily] = useState(entry?.family || null);
   // Prices of the open family's providers for the current settings (A11): { [entry key]: price | null }.
   const [quotes, setQuotes] = useState({});
+  // A family opened without a provider picked by hand (none saved): its cheapest
+  // provider for the current settings is chosen once the real prices come.
+  const [autoFamily, setAutoFamily] = useState(null);
   const openProviders = useMemo(() => families.find((f) => f.family === openFamily)?.providers || [], [families, openFamily]);
   useEffect(() => {
     const paid = openProviders.filter((p) => !p.local);
@@ -80,6 +83,13 @@ export default function ModelMenu({ entries, entry, onPick, onClose, kind = entr
     }, 350);
     return () => { alive = false; clearTimeout(timer); };
   }, [openProviders, quoteFor]);
+  useEffect(() => {
+    if (!autoFamily || autoFamily !== openFamily) return;
+    const cheapest = cheapestOf(openProviders, quotes);
+    if (!cheapest) return;
+    setAutoFamily(null);
+    if (cheapest !== entry?.key) onPick(cheapest, { close: false });
+  }, [autoFamily, openFamily, openProviders, quotes, entry?.key, onPick]);
   const vendors = useMemo(() => {
     const m = new Map();
     for (const f of families) if (!f.local) m.set(f.vendor, (m.get(f.vendor) || 0) + 1);
@@ -130,7 +140,12 @@ export default function ModelMenu({ entries, entry, onPick, onClose, kind = entr
                     setOpenFamily(f.family);
                     let saved = null;
                     try { saved = localStorage.getItem(`dz_studio_provider_${f.family}`); } catch { /* storage is optional */ }
-                    const keep = f.providers.find((p) => p.entry.key === entry?.key) || f.providers.find((p) => p.entry.key === saved) || f.providers[0];
+                    // The provider in use, else the one picked by hand before; else the cheapest:
+                    // by catalog price now, then by the real price for these settings (autoFamily).
+                    const manual = f.providers.find((p) => p.entry.key === entry?.key) || f.providers.find((p) => p.entry.key === saved);
+                    const byCatalog = [...f.providers].filter((p) => !p.local && p.price).sort((a, b) => a.price.usd - b.price.usd)[0];
+                    const keep = manual || byCatalog || f.providers[0];
+                    setAutoFamily(manual || f.providers.length === 1 ? null : f.family);
                     onPick(keep.entry.key, { close: f.providers.length === 1 });
                   }}
                   className={cn("flex h-[46px] w-full items-center gap-2.5 rounded-slot border px-3 text-left transition-colors duration-state",
@@ -151,13 +166,17 @@ export default function ModelMenu({ entries, entry, onPick, onClose, kind = entr
                       const on = p.entry.key === entry?.key;
                       return (
                         <button key={p.entry.key} type="button" role="radio" aria-checked={on}
-                          onClick={() => { try { localStorage.setItem(`dz_studio_provider_${f.family}`, p.entry.key); } catch { /* optional */ } onPick(p.entry.key, { close: true }); onClose?.(); }}
-                          className="flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-base transition-colors duration-state hover:bg-accent">
-                          <span className={cn("flex h-4 w-4 items-center justify-center rounded-full border", on ? "border-signal" : "border-input")}>{on && <span className="h-2 w-2 rounded-full bg-signal" />}</span>
-                          <span className="font-medium">{p.entry.providerName}</span>
-                          {cheapest === p.entry.key && <span className="rounded-xs bg-signal/15 px-1.5 text-xs font-medium text-signal">Cheapest</span>}
+                          onClick={() => { setAutoFamily(null); try { localStorage.setItem(`dz_studio_provider_${f.family}`, p.entry.key); } catch { /* optional */ } onPick(p.entry.key, { close: true }); onClose?.(); }}
+                          className="flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 py-1 text-left text-base transition-colors duration-state hover:bg-accent">
+                          <span className={cn("flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border", on ? "border-signal" : "border-input")}>{on && <span className="h-2 w-2 rounded-full bg-signal" />}</span>
+                          <span className="flex min-w-0 flex-col">
+                            <span className="font-medium">{p.entry.providerName}</span>
+                            {/* What this provider takes (from the catalog): "Frames · 4 refs", "Frames or 30 refs". */}
+                            {acceptsOf(p.entry) && <span className="truncate text-xs text-muted-foreground" title={acceptsOf(p.entry)}>{acceptsOf(p.entry)}</span>}
+                          </span>
+                          {cheapest === p.entry.key && <span className="flex-shrink-0 rounded-xs bg-signal/15 px-1.5 text-xs font-medium text-signal">Cheapest</span>}
                           {/* The price of this exact request when known (the settings now), else the catalog label. */}
-                          <span className="ml-auto text-sm tabular-nums text-muted-foreground" title={quotes[p.entry.key] ? "For the current settings" : undefined}>
+                          <span className="ml-auto flex-shrink-0 text-sm tabular-nums text-muted-foreground" title={quotes[p.entry.key] ? "For the current settings" : undefined}>
                             {p.local ? "Free" : quotes[p.entry.key] ? `${quotes[p.entry.key].exact ? "" : "≈ "}${fmt(quotes[p.entry.key].usd * Math.max(1, count))}` : p.entry.priceLabel || "—"}
                           </span>
                         </button>

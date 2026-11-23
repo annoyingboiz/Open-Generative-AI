@@ -1,0 +1,169 @@
+"use client";
+
+// Re-shoot a frame with the chosen camera (handoff 17, §5) and the frames' camera check (§4).
+// A start (or end) frame keeps its own look in the video, whatever the prompt says, so a
+// camera other than the frame's is applied by re-shooting the frame with an image model
+// (Nano Banana Pro, the user's frame as the only reference). The server writes the prompt
+// (look.js reshootPrompt) and keeps the look with the new picture.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowsClockwise, Warning, CheckCircle } from "@phosphor-icons/react";
+import { dzGenerate, dzWithMeta, dzThumb, DZ_QUOTE } from "../../api.js";
+import { createEntries, lookData, buildBody, refSyntaxFor } from "../../dzCreate.js";
+import { Button, Spinner, cn } from "../../ui/index.js";
+
+const MODERN = "modern||";
+// What the re-shoot changes: the camera (an old one counts as Modern), an anamorphic
+// lens, shallow or deep focus. Two frames with the same signature look alike.
+export function reshootSig(look) {
+  if (!look || look.on === false) return MODERN;
+  const cams = lookData().cameras || [];
+  const cam = cams.some((c) => c.id === look.camera) ? look.camera : "modern";
+  const ana = /anamorphic/.test(String(look.lens || "")) ? "ana" : "";
+  const n = Number(String(look.aperture || "").replace(/^f\//, ""));
+  const ap = !n ? "" : n <= 2.8 ? "shallow" : n >= 8 ? "deep" : "";
+  return `${cam}|${ana}|${ap}`;
+}
+
+// The image model for re-shooting: Nano Banana Pro, at its cheapest provider.
+function reshootModel() {
+  const list = createEntries("image").filter((e) => /nano banana pro/i.test(e.familyName || "") && e.variants.some((v) => v.media.reference));
+  const price = (e) => Math.min(...e.variants.map((v) => v.model.dzPrice?.usd ?? Infinity));
+  const entry = [...list].sort((a, b) => price(a) - price(b))[0];
+  const variant = entry?.variants.find((v) => v.media.reference) || null;
+  return entry && variant ? { entry, variant } : null;
+}
+
+const ROLE_NAME = { first: "start frame", last: "end frame" };
+
+export function useReshoot(engine) {
+  const { kind, look, attached, setAttached, values } = engine;
+  const start = attached?.first?.[0]?.url || null;
+  const end = attached?.last?.[0]?.url || null;
+  // url → { made, look } (from the server; an upload has no look).
+  const [info, setInfo] = useState({});
+  useEffect(() => {
+    const urls = [start, end].filter((u) => u && !(u in info));
+    if (!urls.length || kind !== "video") return undefined;
+    let alive = true;
+    fetch("/dz/api/frames/look", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ urls }) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d?.frames) setInfo((m) => ({ ...m, ...Object.fromEntries(d.frames.map((f) => [f.url, f])) })); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [start, end, kind]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const want = kind === "video" ? reshootSig(look) : MODERN;
+  const sigOf = (url) => (!url || !info[url] ? null : info[url].made ? reshootSig(info[url].look) : "unknown");
+  const sStart = sigOf(start);
+  const sEnd = sigOf(end);
+  const needs = (url, s) => Boolean(url && s && want !== MODERN && s !== want);
+  const roles = [["first", start, sStart], ["last", end, sEnd]].filter(([, url, s]) => needs(url, s)).map(([r]) => r);
+  const taken = Boolean(start && want !== MODERN && sStart === want);
+  // §4: start and end frames from different cameras (two uploads: nothing to compare).
+  const mismatch = Boolean(start && end && sStart && sEnd && sStart !== sEnd && !(sStart === "unknown" && sEnd === "unknown"));
+
+  const model = useMemo(() => (kind === "video" && (roles.length || mismatch) ? reshootModel() : null), [kind, roles.length, mismatch]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ratio = ["aspect_ratio", "ratio"].map((k) => values?.[k]).find((v) => /^\d+:\d+$/.test(String(v || ""))) || null;
+  const bodyFor = useCallback((url) => {
+    if (!model) return null;
+    const { variant } = model;
+    const ratioKey = ["aspect_ratio", "ratio"].find((k) => (variant.model.inputs?.[k]?.enum || []).map(String).includes(String(ratio)));
+    return buildBody(variant, { prompt: "Re-shoot", values: ratioKey ? { [ratioKey]: ratio } : {}, attached: { reference: [{ url }] } });
+  }, [model, ratio]);
+
+  // The price of one re-shoot (the server's quote for this exact request).
+  const [price, setPrice] = useState(null);
+  const sample = start || end;
+  useEffect(() => {
+    if (!model || !sample) { setPrice(null); return undefined; }
+    let alive = true;
+    dzGenerate(undefined, { endpoint: model.variant.model.endpoint, ...bodyFor(sample), onRequestId: DZ_QUOTE }).then((p) => { if (alive) setPrice(p?.usd ?? null); }).catch(() => {});
+    return () => { alive = false; };
+  }, [model, sample, bodyFor]);
+
+  // role → { state: running | done | error, from, to, error }
+  const [jobs, setJobs] = useState({});
+  const lookRef = useRef(look);
+  lookRef.current = look;
+  const run = useCallback(async (role) => {
+    const url = role === "first" ? start : end;
+    if (!model || !url) return;
+    setJobs((j) => ({ ...j, [role]: { state: "running", from: url } }));
+    try {
+      const ref = refSyntaxFor(model.variant.model)?.image(1) || "@img1";
+      const meta = { kind: "image", entryKey: model.entry.key, modelName: `Re-shoot · ${model.entry.familyName} · ${model.entry.providerName}`, reshootOf: url, role };
+      const res = await dzWithMeta({ studio: "create", meta, look: lookRef.current, reshoot: { frame: url, ref } },
+        () => dzGenerate(undefined, { endpoint: model.variant.model.endpoint, ...bodyFor(url) }));
+      const to = res?.outputs?.[0] || res?.url;
+      if (!to) throw new Error("No picture came back.");
+      setInfo((m) => ({ ...m, [to]: { url: to, made: true, look: lookRef.current } }));
+      setJobs((j) => ({ ...j, [role]: { state: "done", from: url, to } }));
+    } catch (e) {
+      setJobs((j) => ({ ...j, [role]: { state: "error", from: url, error: e?.message || "The re-shoot failed." } }));
+    }
+  }, [model, start, end, bodyFor]);
+  const use = (role) => {
+    const job = jobs[role];
+    if (!job?.to) return;
+    setAttached((prev) => ({ ...prev, [role]: [{ url: job.to, name: `Re-shot ${ROLE_NAME[role]}` }, ...(prev[role] || []).slice(1)] }));
+    setJobs((j) => { const { [role]: _x, ...rest } = j; return rest; });
+  };
+  const keep = (role) => setJobs((j) => { const { [role]: _x, ...rest } = j; return rest; });
+
+  return { want, roles, taken, mismatch, model, price, jobs, run, use, keep, start, end };
+}
+
+const money = (v) => (v == null ? "" : v < 0.1 ? `$${v.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}` : `$${v.toFixed(2)}`);
+export const MISMATCH_TEXT = "Start and end frames look different. The look will drift during the clip.";
+
+// The camera panel's part (§4–§5): "Taken from frame", the re-shoot button, old and new side by side.
+export function ReshootBlock({ r }) {
+  if (!r || (!r.taken && !r.roles.length && !r.mismatch && !Object.keys(r.jobs).length)) return null;
+  const both = r.mismatch ? ["first", "last"] : r.roles;
+  const active = Object.keys(r.jobs);
+  const runnable = both.filter((role) => !r.jobs[role] || r.jobs[role].state === "error");
+  return (
+    <div className="mt-5 space-y-3 rounded-xl border border-border p-3">
+      {r.taken && !r.roles.length && !r.mismatch && (
+        <p className="flex items-center gap-2 text-sm"><CheckCircle size={16} className="text-success" />Taken from frame — the start frame was made with this camera.</p>
+      )}
+      {r.mismatch && <p className="flex items-start gap-2 text-sm text-warning"><Warning size={16} className="mt-0.5 shrink-0" />{MISMATCH_TEXT}</p>}
+      {r.roles.length > 0 && !r.mismatch && (
+        <p className="text-sm text-muted-foreground">The {r.roles.map((x) => ROLE_NAME[x]).join(" and ")} {r.roles.length > 1 ? "were" : "was"} not made with this camera. The video keeps the look of its frames, so re-shoot {r.roles.length > 1 ? "them" : "it"} with this camera first.</p>
+      )}
+      {runnable.length > 0 && r.model && (
+        <Button variant="secondary" className="h-9 gap-2 rounded-lg" onClick={() => runnable.forEach((role) => r.run(role))}>
+          <ArrowsClockwise size={16} />
+          {runnable.length > 1 ? "Re-shoot both frames with this camera" : "Re-shoot frame with this camera"}
+          {r.price != null && <span className="tabular-nums text-muted-foreground">· {money(r.price * runnable.length)}</span>}
+        </Button>
+      )}
+      {!r.model && (r.roles.length > 0 || r.mismatch) && <p className="text-xs text-muted-foreground">Re-shooting needs Nano Banana Pro, which is not available here.</p>}
+      {active.map((role) => {
+        const job = r.jobs[role];
+        return (
+          <div key={role} className="space-y-2">
+            <div className="text-xs font-medium uppercase text-muted-foreground">{ROLE_NAME[role]}</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[["Original", job.from], ["New", job.to]].map(([label, url]) => (
+                <figure key={label} className="space-y-1">
+                  <div className={cn("flex aspect-video items-center justify-center overflow-hidden rounded-md bg-muted", label === "New" && job.state === "done" && "ring-2 ring-signal")}>
+                    {url ? <img src={dzThumb(url, 480)} alt="" className="h-full w-full object-contain" /> : job.state === "running" ? <Spinner /> : null}
+                  </div>
+                  <figcaption className="text-xs text-muted-foreground">{label}</figcaption>
+                </figure>
+              ))}
+            </div>
+            {job.state === "error" && <p className="text-sm text-destructive">{job.error}</p>}
+            {job.state === "done" && (
+              <div className="flex gap-2">
+                <Button className="h-8 rounded-lg" onClick={() => r.use(role)}>Use new frame</Button>
+                <Button variant="ghost" className="h-8 rounded-lg" onClick={() => r.keep(role)}>Keep original</Button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

@@ -17,6 +17,8 @@ import { Overline, useEscLayer, fmtDur } from "./ui.jsx";
 import { download } from "../DzCreateStudio.jsx";
 import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
+import { dzLibrary } from "../../dzLibrary.js";
+import { TextureControl } from "./Texture.jsx";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
@@ -422,8 +424,21 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
   // The item as the gallery has it now (a like changes it there), and a like pressed here shows at
   // once even when the gallery drops the item (the Liked tab) — package 14, A3.
   const [likedHere, setLikedHere] = useState({});
-  const fresh = given ? items.find((i) => i.id === given.id) || given : null;
+  const fresh0 = given ? items.find((i) => i.id === given.id) || given : null;
+  // A texture re-render (handoff 17, §6) shows here at once, before the gallery reloads.
+  const [texHere, setTexHere] = useState({});
+  const fresh = fresh0 && texHere[fresh0.id] && fresh0.url !== texHere[fresh0.id].url ? { ...fresh0, url: texHere[fresh0.id].url, outputs: [texHere[fresh0.id].url], texture: texHere[fresh0.id].texture } : fresh0;
   const item = fresh && likedHere[fresh.id] !== undefined ? { ...fresh, liked: likedHere[fresh.id] } : fresh;
+  const [texBusy, setTexBusy] = useState(false);
+  const retexture = (v) => {
+    if (!item || texBusy) return;
+    const id = item.id;
+    setTexBusy(true);
+    dzLibrary.texture(id, v)
+      .then((r) => setTexHere((m) => ({ ...m, [id]: { url: r.url, texture: r.texture } })))
+      .catch((e) => notify({ type: "error", title: "Texture not changed", message: e?.message || "Try again." }))
+      .finally(() => setTexBusy(false));
+  };
   // The override lives only while the view is open and until the gallery has the same state;
   // one like request per item at a time (a second click waits for the first).
   const liking = useRef(new Set());
@@ -595,6 +610,11 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
                     </button>
                   ))}
                 </div>
+              </section>
+            )}
+            {isVideo && item.texture && item.mine !== false && (
+              <section>
+                <TextureControl preset={item.texture.preset} value={{ on: item.texture.on, strength: item.texture.strength }} busy={texBusy} onCommit={retexture} />
               </section>
             )}
             {rows.length > 0 && (

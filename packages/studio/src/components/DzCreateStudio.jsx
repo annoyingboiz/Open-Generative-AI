@@ -31,6 +31,7 @@ import {
 } from "../ui/index.js";
 import { dzScrollBoxRef } from "../dzScroll.js";
 import { DzPosterVideo } from "./DzPosterVideo.jsx";
+import { TEXTURE_DEFAULT, texturePresetOf } from "./studio/Texture.jsx";
 
 const { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } = SelectParts;
 
@@ -277,6 +278,9 @@ export function MediaSlot({ role, max, files, onPick, onRemove, uploading, apiKe
 // Camera look: camera, lens, focal, aperture, filter (switch "Camera look"),
 // plus era and light (on their own). The server writes them into the prompt
 // in the chosen model's words; "Sent to the model" shows the result.
+// A camera from before 23.11 (Digital Cinema, Large Format, IMAX) is kept as stored
+// and shown as Modern (handoff 17, §3).
+const shownCamera = (id) => (lookData().cameras.some((x) => x.id === id) ? id : "modern");
 export function CameraPanel({ camera, setCamera, hints = [] }) {
   const d = lookData();
   const c = normalizeCamera(camera);
@@ -287,7 +291,7 @@ export function CameraPanel({ camera, setCamera, hints = [] }) {
       <div className="grid grid-cols-3 gap-1.5">
         {options.map((o) => (
           <button key={o.id} type="button" onClick={() => set(k, o.id)} title={o.note || undefined}
-            className={cn("flex flex-col items-start gap-0.5 rounded-xl border p-2 text-left leading-tight transition-colors", c[k] === o.id ? "border-signal bg-signal/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
+            className={cn("flex flex-col items-start gap-0.5 rounded-xl border p-2 text-left leading-tight transition-colors", (k === "camera" ? shownCamera(c.camera) : c[k]) === o.id ? "border-signal bg-signal/10 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
             <span className="font-medium">{o.label}</span>
             {o.note && <span className="line-clamp-2 text-muted-foreground">{o.note}</span>}
           </button>
@@ -423,6 +427,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const [prompt, setPrompt] = useState(saved.prompt || "");
   const [camera, setCamera] = useState(() => normalizeCamera(saved.camera, { auto: mode === "create" }));
   const [move, setMove] = useState(saved.move || "");
+  // Texture filter before generating (handoff 17, §6): applies to film and video cameras.
+  const [texture, setTexture] = useState(() => ({ on: saved.texture?.on !== false, strength: Number.isFinite(Number(saved.texture?.strength)) ? Number(saved.texture.strength) : TEXTURE_DEFAULT }));
   const [count, setCount] = useState(saved.count || 1); // ×1–4: same request, several results
   const [attached, setAttached] = useState(saved.attached || {});
   // Package 04: the slots the user touched, the last first. When two slots can't be
@@ -509,8 +515,8 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const storedValues = valuesByKind[kind] || {};
 
   useEffect(() => {
-    try { localStorage.setItem(cfg.store, JSON.stringify(target || editor ? { kind, modelByKind, valuesByKind, count } : { kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched })); } catch { /* optional */ }
-  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched]); // eslint-disable-line react-hooks/exhaustive-deps
+    try { localStorage.setItem(cfg.store, JSON.stringify(target || editor ? { kind, modelByKind, valuesByKind, count, texture } : { kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched, texture })); } catch { /* optional */ }
+  }, [cfg.store, kind, modelByKind, valuesByKind, prompt, camera, move, attached, elements, count, touched, texture]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Only the slots this model has; other attached files are kept but not sent.
   // What is sent and what is kept but not sent (over a limit, a kind the model does
@@ -562,6 +568,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // The look goes to the server, which writes it into the prompt for this model.
   // Camera look and Move live in Studio; the light tabs (Image, Video) send none (package 03, §8).
   const look = useMemo(() => (mode === "create" ? lookOf(camera, kind === "video" ? move : "") : null), [camera, kind, move, mode]);
+  const texturePreset = texturePresetOf(look, kind);
   const usedTags = useMemo(() => {
     const names = new Set([...String(prompt).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()));
     return tags.filter((t) => names.has(t.tag.toLowerCase()) && !(t.kind === "file" && t.unused));
@@ -864,7 +871,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       // The job is booked against the limit when the server takes it (a second or two).
       setTimeout(() => window.dispatchEvent(new Event(DZ_SPENT_EVENT)), 2500);
       try {
-        const res = await dzWithMeta({ studio: mode, meta: count > 1 ? { ...meta, batch: { id: batchId, n: count, i } } : meta, look },
+        const res = await dzWithMeta({ studio: mode, meta: count > 1 ? { ...meta, batch: { id: batchId, n: count, i } } : meta, look, ...(texturePreset ? { texture } : {}) },
           () => dzGenerate(apiKey, opts.onRequestId ? { ...request, onRequestId: (id) => opts.onRequestId(i, id) } : request));
         onGenerationEnd?.();
         if (opts.onResult) opts.onResult(i, res);
@@ -882,7 +889,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       }
     };
     await Promise.all(Array.from({ length: count }, one));
-  }, [canRun, variant, kind, entry, prompt, values, camera, move, look, used, body, count, apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, target]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canRun, variant, kind, entry, prompt, values, camera, move, look, used, body, count, apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, target, texture, texturePreset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyResult = (item, how) => {
     if (how === "animate" && fixedKind === "image") {
@@ -1050,7 +1057,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, texture, setTexture, texturePreset, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {

@@ -982,7 +982,7 @@ export async function buildApp(config, { logger = true } = {}) {
       if (dz?.reshoot && typeof dz.reshoot === 'object' && variant?.kind === 'image' && !resolved.tool) {
         const look = cleanLook(dz.look);
         const ref = /^[@<]?[\w <>-]{1,20}$/.test(String(dz.reshoot.ref || '')) ? String(dz.reshoot.ref) : '@img1';
-        const prompt = reshootPrompt(look, { ratio: requestBody.aspect_ratio || requestBody.ratio || null, ref });
+        const prompt = reshootPrompt(look, { ratio: [requestBody.aspect_ratio, requestBody.ratio, requestBody.size].find((v) => /^\d+:\d+$/.test(String(v || ''))) || null, ref });
         if (!prompt) return reply.code(400).send({ detail: 'Choose a camera, lens or aperture to re-shoot the frame with.' });
         requestBody.prompt = prompt;
         typedPrompt = prompt; // the history shows the re-shoot prompt, not a placeholder

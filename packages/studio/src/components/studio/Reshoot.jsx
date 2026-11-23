@@ -63,13 +63,30 @@ export function useReshoot(engine) {
   const mismatch = Boolean(start && end && sStart && sEnd && sStart !== sEnd && !(sStart === "unknown" && sEnd === "unknown"));
 
   const model = useMemo(() => (kind === "video" && (roles.length || mismatch) ? reshootModel() : null), [kind, roles.length, mismatch]); // eslint-disable-line react-hooks/exhaustive-deps
-  const ratio = ["aspect_ratio", "ratio"].map((k) => values?.[k]).find((v) => /^\d+:\d+$/.test(String(v || ""))) || null;
+  // The re-shoot keeps the video's ratio (16:9…), or the frame's own shape when the video's is
+  // "adaptive"; the image model's field may be aspect_ratio, ratio or size (APIMart: size).
+  const videoRatio = ["aspect_ratio", "ratio"].map((k) => values?.[k]).find((v) => /^\d+:\d+$/.test(String(v || ""))) || null;
+  const [shapes, setShapes] = useState({});
+  useEffect(() => {
+    for (const url of [start, end]) {
+      if (!url || shapes[url]) continue;
+      const img = new window.Image();
+      img.onload = () => setShapes((m) => ({ ...m, [url]: img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 16 / 9 }));
+      img.src = dzThumb(url, 256);
+    }
+  }, [start, end]); // eslint-disable-line react-hooks/exhaustive-deps
   const bodyFor = useCallback((url) => {
     if (!model) return null;
     const { variant } = model;
-    const ratioKey = ["aspect_ratio", "ratio"].find((k) => (variant.model.inputs?.[k]?.enum || []).map(String).includes(String(ratio)));
-    return buildBody(variant, { prompt: "Re-shoot", values: ratioKey ? { [ratioKey]: ratio } : {}, attached: { reference: [{ url }] } });
-  }, [model, ratio]);
+    const key = ["aspect_ratio", "ratio", "size"].find((k) => (variant.model.inputs?.[k]?.enum || []).some((o) => /^\d+:\d+$/.test(String(o))));
+    const opts = key ? variant.model.inputs[key].enum.map(String).filter((o) => /^\d+:\d+$/.test(o)) : [];
+    const num = (o) => { const [a, b] = o.split(":").map(Number); return a / b; };
+    const want = videoRatio && opts.includes(videoRatio) ? videoRatio : null;
+    const shape = shapes[url] || 16 / 9;
+    const nearest = opts.length ? opts.reduce((x, o) => (Math.abs(Math.log(num(o) / shape)) < Math.abs(Math.log(num(x) / shape)) ? o : x), opts[0]) : null;
+    const to = want || nearest;
+    return buildBody(variant, { prompt: "Re-shoot", values: key && to ? { [key]: to } : {}, attached: { reference: [{ url }] } });
+  }, [model, videoRatio, shapes]);
 
   // The price of one re-shoot (the server's quote for this exact request).
   const [price, setPrice] = useState(null);

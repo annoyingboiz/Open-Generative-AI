@@ -976,7 +976,7 @@ export async function buildApp(config, { logger = true } = {}) {
         });
         return { request_id: id, id, status: 'processing' };
       }
-      const typedPrompt = typeof requestBody.prompt === 'string' ? requestBody.prompt : null;
+      let typedPrompt = typeof requestBody.prompt === 'string' ? requestBody.prompt : null;
       // Re-shoot a frame with the chosen camera (handoff 17, §5): the prompt is made here from
       // the look; the new picture keeps that look (so the camera panel can say "Taken from frame").
       if (dz?.reshoot && typeof dz.reshoot === 'object' && variant?.kind === 'image' && !resolved.tool) {
@@ -985,6 +985,7 @@ export async function buildApp(config, { logger = true } = {}) {
         const prompt = reshootPrompt(look, { ratio: requestBody.aspect_ratio || requestBody.ratio || null, ref });
         if (!prompt) return reply.code(400).send({ detail: 'Choose a camera, lens or aperture to re-shoot the frame with.' });
         requestBody.prompt = prompt;
+        typedPrompt = prompt; // the history shows the re-shoot prompt, not a placeholder
         if (meta) { meta.look = look; meta.reshootOf = String(dz.reshoot.frame || '').slice(0, 500); }
       } else if (dz?.look && !resolved.tool) {
         const built = finalPrompt(resolved, typedPrompt || '', dz.look, requestBody);

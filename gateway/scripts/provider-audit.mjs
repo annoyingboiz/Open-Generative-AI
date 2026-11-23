@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildAtlasVariant, buildApimartVariants, buildStudioLists, apimartPrice } from '../src/catalog/build.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dir = process.argv[2];
+const dir = process.argv.slice(2).find((a) => !a.startsWith('--'));
 if (!dir) { console.error('usage: provider-audit.mjs <catalog dir>'); process.exit(2); }
 const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')); } catch { return fallback; } };
 const schemaFile = (id) => path.join(dir, 'atlas-schemas', `${id.replace(/[^a-z0-9.-]+/gi, '__')}.json`);
@@ -77,7 +77,31 @@ const atlasOut = Object.fromEntries(Object.entries(atlasRaw).filter(([id]) => LI
 const allFamilies = {};
 for (const [family, list] of byFamily) allFamilies[family] = { name: list[0].familyName, providers: list.map((e) => e.provider) };
 
-process.stdout.write(JSON.stringify({ studio, atlas: atlasOut, families: allFamilies }));
+// Coverage: a media field the provider takes that no studio endpoint offers (our gap).
+const MEDIA_FIELD = /^(image|images|image_url|image_urls|last_image|end_image|middle_images|reference_images|reference_videos|reference_audios|refers|video|video_url|video_urls|audio|audio_url|audio_urls|first_frame_image|last_frame_image|image_with_roles)$/;
+const studioInputs = new Map();
+for (const v of variants) studioInputs.set(v.key, v);
+const issues = [];
+for (const [id, raw] of Object.entries(atlasRaw)) {
+  const v = studioInputs.get(`p/atlas/${id}`);
+  if (!raw.fields) continue;
+  for (const [name, f] of Object.entries(raw.fields)) {
+    if (!MEDIA_FIELD.test(name) || (name === 'audio' && f.type === 'boolean')) continue;
+    const sent = v && (v.model.inputs[name] || Object.keys(v.model.inputs).some((k) => k.startsWith(`${name}__`)) || Object.values(v.server.rename || {}).includes(name));
+    if (!sent) issues.push({ provider: 'atlas', model: id, field: name, studio: Boolean(v) });
+  }
+}
+// APIMart: every media field in a model's override is offered by one of its endpoints.
+for (const v of variants.filter((x) => x.provider === 'apimart' && x.kind === 'video')) {
+  const ov = overrides[v.providerModel];
+  if (!ov?.onlyModes) continue;
+}
+
+if (process.argv.includes('--check')) {
+  for (const i of issues) console.log(`${i.provider} ${i.model}: ${i.field} not offered${i.studio ? '' : ' (endpoint not in Studio)'}`);
+  process.exit(issues.length ? 1 : 0);
+}
+process.stdout.write(JSON.stringify({ studio, atlas: atlasOut, families: allFamilies, issues }));
 
 function rawFields(doc) {
   let props = null; let required = [];

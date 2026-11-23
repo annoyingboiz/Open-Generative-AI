@@ -70,10 +70,14 @@ for (const [family, list] of byFamily) {
     })),
   }]));
 }
-const families = new Set(Object.keys(studio));
-const atlasOut = Object.fromEntries(Object.entries(atlasRaw).filter(([id]) => [...families].some((f) => id.toLowerCase().replace(/[^a-z0-9]/g, '').includes(f.replace(/[^a-z0-9]/g, '')))));
+// Raw Atlas fields for the model lines Studio sells at two providers (and their relatives).
+const LINES = /kling|seedance|wan|veo|gemini-omni|minimax|h3|grok|happyhorse/i;
+const atlasOut = Object.fromEntries(Object.entries(atlasRaw).filter(([id]) => LINES.test(id)));
+// Every video family with its providers and display name (finds one model split in two families).
+const allFamilies = {};
+for (const [family, list] of byFamily) allFamilies[family] = { name: list[0].familyName, providers: list.map((e) => e.provider) };
 
-process.stdout.write(JSON.stringify({ studio, atlas: atlasOut }, null, 1));
+process.stdout.write(JSON.stringify({ studio, atlas: atlasOut, families: allFamilies }));
 
 function rawFields(doc) {
   let props = null; let required = [];

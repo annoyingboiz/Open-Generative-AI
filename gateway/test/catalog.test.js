@@ -182,32 +182,6 @@ test('APIMart audio sends only the fields of its spec (no Suno max_mode)', async
   assert.deepEqual(toProviderBody(tts, { prompt: 'Hi', voice: 'nova', extra: 1 }), { input: 'Hi', voice: 'nova' });
 });
 
-test('APIMart Seedance: start / end frames go as image_with_roles, references by the doc rule', async () => {
-  const { BodyError } = await import('../src/catalog/build.js');
-  const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
-  const i2v = (id) => buildApimartVariants({ id, capability_tags: ['image-to-video'] }, OV[id], { usd: 0.2, unit: 'second' }).find((v) => v.mode === 'i2v');
-  // 2.5: frames OR references (the API refuses both: checked 23.11) — two studio endpoints.
-  const all25 = buildApimartVariants({ id: 'seedance-2.5', capability_tags: ['image-to-video'] }, OV['seedance-2.5'], { usd: 0.2, unit: 'second' }).filter((v) => v.mode === 'i2v');
-  const v25 = all25.find((v) => v.key.endsWith('?m=i2v'));
-  const r25 = all25.find((v) => v.key.endsWith('?m=reference'));
-  assert.ok(v25.model.inputs.first_frame_image && v25.model.inputs.last_frame_image && !v25.model.inputs.image_urls);
-  assert.ok(r25.model.inputs.image_urls && !r25.model.inputs.first_frame_image);
-  assert.deepEqual(toProviderBody(v25, { prompt: 'p', aspect_ratio: '16:9', first_frame_image: 'A', last_frame_image: 'B' }), {
-    prompt: 'p', size: 'adaptive',
-    image_with_roles: [{ url: 'A', role: 'first_frame' }, { url: 'B', role: 'last_frame' }],
-  });
-  assert.deepEqual(toProviderBody(r25, { prompt: 'p', aspect_ratio: '16:9', image_urls: ['R'] }), { prompt: 'p', size: '16:9', image_urls: ['R'] });
-  assert.throws(() => toProviderBody(v25, { prompt: 'p', last_frame_image: 'B' }), BodyError);
-  // 2.0: frames or references, not both.
-  const v20 = i2v('seedance-2.0');
-  assert.deepEqual(toProviderBody(v20, { prompt: 'p', first_frame_image: 'A' }).image_with_roles, [{ url: 'A', role: 'first_frame' }]);
-  assert.ok(!v20.model.inputs.image_urls, 'frames endpoint has no references');
-  // 1.5: no references at all, only frames.
-  const v15 = i2v('seedance-1-5-pro');
-  assert.ok(!v15.model.inputs.image_urls);
-  assert.deepEqual(toProviderBody(v15, { prompt: 'p', first_frame_image: 'A' }), { prompt: 'p', image_with_roles: [{ url: 'A', role: 'first_frame' }] });
-});
-
 test('Atlas: a model without categories takes its mode from tags / id; typed reference lists', async () => {
   const { buildAtlasVariant, atlasModeOf } = await import('../src/catalog/build.js');
   assert.equal(atlasModeOf({ model: 'google/gemini-omni-1.2-flash/reference-to-video', categories: null, tags: ['REFERENCE-TO-VIDEO', 'NEW'] }), 'i2v');
@@ -222,37 +196,6 @@ test('Atlas: a model without categories takes its mode from tags / id; typed ref
   assert.deepEqual(toProviderBody(v, { prompt: 'p', refers__image: ['A', 'B'], refers__audio: ['S'] }).refers, [{ url: 'A', type: 'image' }, { url: 'B', type: 'image' }, { url: 'S', type: 'audio' }]);
 });
 
-test('APIMart Gemini Omni: one reference is never read as a start frame', async () => {
-  const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
-  const v = buildApimartVariants({ id: 'gemini-omni-1.2-flash', capability_tags: ['image-to-video'] }, OV['gemini-omni-1.2-flash'], { usd: 0.02, unit: 'second' }).find((x) => x.mode === 'i2v');
-  assert.deepEqual(toProviderBody(v, { prompt: 'p', image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
-  const both = toProviderBody(v, { prompt: 'p', first_frame_image: 'A', image_urls: ['R', 'Q'] });
-  assert.deepEqual(both.image_with_roles.map((x) => x.role), ['first_frame', 'reference_image', 'reference_image']);
-  assert.equal(both.image_urls, undefined);
-});
-
-test('Typed lists: a total limit, no audio alone; Wan 3.0 at APIMart sets generation_type; Gemini edit references keep their role', async () => {
-  const { BodyError } = await import('../src/catalog/build.js');
-  const schema = { components: { schemas: { Input: { required: ['model', 'prompt', 'refers'], properties: {
-    model: { type: 'string' }, prompt: { type: 'string' },
-    refers: { type: 'array', maxItems: 3, items: { type: 'object', properties: { url: { type: 'string' }, type: { type: 'string', enum: ['image', 'video', 'audio'] } } } },
-  } } } } };
-  const v = buildAtlasVariant({ model: 'x/y/reference-to-video', categories: ['IMAGE-TO-VIDEO'], type: 'Video', displayName: 'Y', price: { actual: { base_price: '0.1', unit: 'second' } } }, schema);
-  assert.ok(!v.model.required.includes('refers'));
-  assert.throws(() => toProviderBody(v, { prompt: 'p', refers__image: ['A', 'B', 'C'], refers__audio: ['S'] }), BodyError);
-  assert.throws(() => toProviderBody(v, { prompt: 'p', refers__audio: ['S'] }), BodyError);
-  assert.throws(() => toProviderBody(v, { prompt: 'p' }), BodyError);
-  const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
-  const wans = buildApimartVariants({ id: 'wan3.0-video', capability_tags: ['image-to-video'] }, OV['wan3.0-video'], { usd: 0.1, unit: 'second' }).filter((x) => x.mode === 'i2v');
-  const wanRefs = wans.find((x) => x.key.endsWith('?m=reference'));
-  const wanFrames = wans.find((x) => x.key.endsWith('?m=i2v'));
-  assert.deepEqual(toProviderBody(wanRefs, { prompt: 'p', image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
-  assert.equal(toProviderBody(wanRefs, { prompt: 'p', image_urls: ['R'] }).generation_type, 'reference');
-  assert.equal(toProviderBody(wanFrames, { prompt: 'p', first_frame_image: 'A' }).generation_type, 'frame');
-  const gem = buildApimartVariants({ id: 'gemini-omni-1.2-flash', capability_tags: ['video-to-video'] }, OV['gemini-omni-1.2-flash'], { usd: 0.02, unit: 'second' }).find((x) => x.mode === 'v2v');
-  assert.deepEqual(toProviderBody(gem, { prompt: 'p', video_urls: ['V'], image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
-});
-
 test('APIMart Seedance: pictures only never go to the edit endpoint', async () => {
   const { BodyError } = await import('../src/catalog/build.js');
   const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
@@ -261,14 +204,61 @@ test('APIMart Seedance: pictures only never go to the edit endpoint', async () =
   assert.equal(toProviderBody(v2v, { prompt: 'p', video_urls: ['V'], image_urls: ['A'] }).omni_reference_task_type, 'edit');
 });
 
-test('APIMart frames / references endpoints refuse the other side', async () => {
-  const { BodyError } = await import('../src/catalog/build.js');
+
+// APIMart video models, read from the docs (apimart-docs.js videoReader / videoModes).
+const apimartOf = async (id) => {
   const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
-  const all = buildApimartVariants({ id: 'seedance-2.5', capability_tags: ['image-to-video'] }, OV['seedance-2.5'], { usd: 0.2, unit: 'second' }).filter((v) => v.mode === 'i2v');
-  const [frames, refs] = [all.find((v) => v.key.endsWith('?m=i2v')), all.find((v) => v.key.endsWith('?m=reference'))];
-  assert.throws(() => toProviderBody(frames, { prompt: 'p', first_frame_image: 'A', image_urls: ['R'] }), BodyError);
-  assert.throws(() => toProviderBody(refs, { prompt: 'p', first_frame_image: 'A', image_urls: ['R'] }), BodyError);
-  assert.equal(frames.model.imageField, 'first_frame_image');
-  assert.equal(refs.model.imageField, 'image_urls');
-  assert.equal(refs.model.lastImageField, undefined);
+  const all = buildApimartVariants({ id, capability_tags: [] }, OV[id], { usd: 0.1, unit: 'second' });
+  return (suffix) => all.find((v) => v.key.endsWith(`?m=${suffix}`));
+};
+
+test('APIMart Seedance 2.5: frames (image_with_roles, adaptive) or references (30) — never both', async () => {
+  const { BodyError } = await import('../src/catalog/build.js');
+  const at = await apimartOf('seedance-2.5');
+  assert.deepEqual(toProviderBody(at('i2v'), { prompt: 'p', aspect_ratio: '16:9', first_frame_image: 'A', last_frame_image: 'B' }), {
+    prompt: 'p', size: 'adaptive', image_with_roles: [{ url: 'A', role: 'first_frame' }, { url: 'B', role: 'last_frame' }],
+  });
+  assert.ok(!at('i2v').model.inputs.image_urls);
+  assert.equal(at('reference').model.inputs.image_urls.maxItems, 30);
+  assert.equal(at('reference').model.inputs.reference_videos.maxItems, 10);
+  const refs = toProviderBody(at('reference'), { prompt: 'p', aspect_ratio: '16:9', image_urls: ['R'], reference_videos: ['V'] });
+  assert.deepEqual(refs, { prompt: 'p', size: '16:9', image_urls: ['R'], video_urls: ['V'], omni_reference_task_type: 'reference' });
+  assert.throws(() => toProviderBody(at('i2v'), { prompt: 'p', last_frame_image: 'B' }), BodyError);
+  // Pictures only never reach the edit endpoint's "edit".
+  assert.throws(() => toProviderBody(at('v2v'), { prompt: 'p', image_urls: ['A'] }), BodyError);
+});
+
+test('APIMart Kling 4.0: references with a role and task type "reference"; Gemini Omni 1.2: frames and references together', async () => {
+  const k = await apimartOf('kling-v4');
+  assert.deepEqual(toProviderBody(k('reference'), { prompt: 'p', image_urls: ['R'] }), { prompt: 'p', image_with_roles: [{ url: 'R', role: 'reference_image' }], omni_reference_task_type: 'reference' });
+  assert.deepEqual(toProviderBody(k('i2v'), { prompt: 'p', first_frame_image: 'A' }), { prompt: 'p', first_frame_image: 'A' });
+  const g = await apimartOf('gemini-omni-1.2-flash');
+  assert.deepEqual(toProviderBody(g('i2v'), { prompt: 'p', image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference' }]);
+  assert.deepEqual(toProviderBody(g('i2v'), { prompt: 'p', first_frame_image: 'A', image_urls: ['R'] }).image_with_roles.map((x) => x.role), ['first_frame', 'reference']);
+});
+
+test('APIMart Veo 3.1 and Wan 3.0: generation_type decides frames or references; Lite takes no pictures', async () => {
+  const v = await apimartOf('veo3.1-fast');
+  assert.deepEqual(toProviderBody(v('i2v'), { prompt: 'p', first_frame_image: 'A', last_frame_image: 'B' }), { prompt: 'p', image_urls: ['A', 'B'], generation_type: 'frame' });
+  assert.deepEqual(toProviderBody(v('reference'), { prompt: 'p', image_urls: ['R'] }), { prompt: 'p', image_urls: ['R'], generation_type: 'reference' });
+  const lite = await apimartOf('veo3.1-lite');
+  assert.equal(lite('i2v'), undefined);
+  assert.equal(lite('reference'), undefined);
+  const w = await apimartOf('wan3.0-video');
+  assert.equal(toProviderBody(w('i2v'), { prompt: 'p', first_frame_image: 'A' }).generation_type, 'frame');
+  assert.equal(toProviderBody(w('reference'), { prompt: 'p', image_urls: ['R'] }).generation_type, 'reference');
+});
+
+test('APIMart H3: references are bare image_urls (9), reference videos and audio; audio is never alone at Atlas', async () => {
+  const h = await apimartOf('MiniMax-H3');
+  assert.equal(h('reference').model.inputs.image_urls.maxItems, 9);
+  assert.deepEqual(toProviderBody(h('reference'), { prompt: 'p', image_urls: ['R'], reference_audios: ['S'] }), { prompt: 'p', image_urls: ['R'], audio_urls: ['S'] });
+  const { BodyError } = await import('../src/catalog/build.js');
+  const schema = { components: { schemas: { Input: { required: ['model', 'prompt', 'refers'], properties: {
+    model: { type: 'string' }, prompt: { type: 'string' },
+    refers: { type: 'array', maxItems: 3, items: { type: 'object', properties: { url: { type: 'string' }, type: { type: 'string', enum: ['image', 'video', 'audio'] } } } },
+  } } } } };
+  const a = buildAtlasVariant({ model: 'x/y/reference-to-video', categories: ['IMAGE-TO-VIDEO'], type: 'Video', displayName: 'Y', price: { actual: { base_price: '0.1', unit: 'second' } } }, schema);
+  assert.throws(() => toProviderBody(a, { prompt: 'p', refers__image: ['A', 'B', 'C'], refers__audio: ['S'] }), BodyError);
+  assert.throws(() => toProviderBody(a, { prompt: 'p', refers__audio: ['S'] }), BodyError);
 });

@@ -212,16 +212,21 @@ export function buildApimartVariants(model, override, price) {
   if (override?.priceFrom && price) price = { ...price, from: true };
   const familyName = override?.name || prettyFamilyName(family);
   const out = [];
-  for (const mode of [...new Set(modes)]) {
+  for (const specMode of [...new Set(modes)]) {
+    // "reference": an image-to-video endpoint for references only (?m=reference).
+    const mode = specMode === 'reference' ? 'i2v' : specMode;
     if (!STUDIO_MODES.includes(mode)) continue;
-    const spec = override?.modes?.[mode];
+    const spec = override?.modes?.[specMode];
     let fields;
-    let roles = null; // frames sent as `image_with_roles` (Seedance at APIMart)
+    let roles = null; // frames sent as `image_with_roles` (Seedance at APIMart; older spec format)
+    let images = null; // the docs-read format (videoModes): see serializeImages
     if (spec) {
       const inputs = { ...(override.common?.inputs || {}), ...(spec.inputs || {}) };
       fields = { inputs, hasPrompt: spec.hasPrompt ?? true, promptRequired: spec.promptRequired ?? (mode === 't2i' || mode === 't2v'), required: spec.required || [] };
       for (const [k, v] of Object.entries(spec.media || {})) {
         if (k === 'image') { fields.imageField = v.field; fields.maxImages = v.max || 1; if (v.last) fields.lastImageField = v.last; if (v.roles) roles = { ...v.roles, first: v.roles.refs === 'never' ? v.field : v.first, last: v.last, refsField: v.roles.refs === 'never' ? null : v.field }; }
+        // Frames and references in one endpoint (the docs say they combine).
+        if (k === 'image' && v.refsField) inputs[v.refsField] = { name: v.refsField, title: 'Reference images', type: 'array', field: 'image', maxItems: v.refsMax, items: { type: 'string' } };
         if (k === 'video') { fields.videoField = v.field; fields.maxVideos = v.max || 1; }
         if (k === 'audio') { fields.audioField = v.field; fields.maxAudios = v.max || 1; }
         inputs[v.field] = { name: v.field, title: v.title || k, type: (v.max || 1) > 1 || /s$/.test(v.field) ? 'array' : 'string', field: k, maxItems: v.max, items: { type: 'string' } };
@@ -231,7 +236,13 @@ export function buildApimartVariants(model, override, price) {
     } else {
       fields = apimartBasicFields(model, mode);
     }
-    const endpoint = `p/apimart/${model.id}?m=${mode}`;
+    // Docs-read video spec (apimart-docs.js videoModes): how pictures go to APIMart.
+    if (spec?.roles) {
+      const img = spec.media?.image || {};
+      const framesHere = img.field === 'first_frame_image';
+      images = { ...spec.roles, first: framesHere ? 'first_frame_image' : null, last: framesHere ? img.last || null : null, refsField: framesHere ? img.refsField || null : img.field || null };
+    }
+    const endpoint = `p/apimart/${model.id}?m=${specMode}`;
     const kind = KIND_OF_MODE[mode];
     // Images: APIMart calls the aspect ratio "size".
     const rename = { ...(kind === 'image' ? { aspect_ratio: 'size' } : {}), ...(override?.rename || {}), ...(spec?.rename || {}) };
@@ -257,6 +268,7 @@ export function buildApimartVariants(model, override, price) {
         drop: ['image_url', 'images_list', 'video_url', 'videos_list', 'video_files', 'audio_url', 'audios_list']
           .filter((f) => ![fields.imageField, fields.lastImageField, fields.videoField, fields.audioField].includes(f)),
         ...(roles ? { roles: { ...roles, size: rename.aspect_ratio || 'aspect_ratio' } } : {}),
+        ...(images ? { images: { ...images, size: rename.aspect_ratio || 'aspect_ratio' } } : {}),
         fixed: { ...(override?.fixed || {}), ...(spec?.fixed || {}) },
         price,
       },
@@ -264,7 +276,7 @@ export function buildApimartVariants(model, override, price) {
     // Frames OR references (Seedance, Wan 3.0, H3 at APIMart: one model address, but the API
     // refuses both in one request): two studio endpoints, so the composer shows the choice
     // (the same as Atlas, where they are two addresses). `?m=reference`: the references one.
-    if (roles?.refs === 'alone' && roles.refsField && roles.first) out.push(...splitFramesRefs(out.pop(), roles));
+    if (!images && roles?.refs === 'alone' && roles.refsField && roles.first) out.push(...splitFramesRefs(out.pop(), roles));
   }
   return out;
 }
@@ -538,6 +550,7 @@ export function toProviderBody(variant, body) {
     if ([].concat(out[f] ?? []).filter(Boolean).length) throw new BodyError('This model takes frames or reference images, not both in one request. Remove the references or the frames.');
   }
   if (variant.server.roles) withRoles(out, variant.server.roles);
+  if (variant.server.images) serializeImages(out, variant.server.images);
   // "edit" only with a video to edit (APIMart: edit without video_urls is a 400).
   if (fixed.omni_reference_task_type === 'edit' && ![].concat(out.video_urls || out.video_url || []).filter(Boolean).length) {
     throw new BodyError('This endpoint edits a video: add the video to edit, or remove it from the request.');
@@ -560,6 +573,40 @@ export function toProviderBody(variant, body) {
 
 // An error the user can act on (the request is not sent).
 export class BodyError extends Error {}
+
+// Pictures as APIMart reads them (spec from the docs, apimart-docs.js videoModes):
+//   frames: 'fields' (first_frame_image / last_frame_image) | 'roles' (image_with_roles
+//           first_frame / last_frame) | 'list' (image_urls [start, end] + generation_type "frame")
+//   refs:   bare image_urls | 'roles' (image_with_roles with refRole, always) | 'list'
+//           (image_urls + generation_type "reference")
+function serializeImages(out, s) {
+  const one = (v) => (Array.isArray(v) ? v[0] : v);
+  const list = (v) => [].concat(v ?? []).filter(Boolean);
+  const first = s.first ? one(out[s.first]) : null;
+  const last = s.last ? one(out[s.last]) : null;
+  const refs = s.refsField ? list(out[s.refsField]) : [];
+  if (!first && last) throw new BodyError('An end frame needs a start frame with this model. Add a start frame or remove the end frame.');
+  const roles = [];
+  if (first) {
+    if (s.frames === 'roles' || s.refs === 'roles') {
+      delete out[s.first]; delete out[s.last];
+      roles.push({ url: first, role: 'first_frame' }, ...(last ? [{ url: last, role: 'last_frame' }] : []));
+    } else if (s.frames === 'list') {
+      delete out[s.first]; delete out[s.last];
+      out[s.field] = [first, ...(last ? [last] : [])];
+    }
+    if (s.typeField) out[s.typeField] = 'frame';
+    if (s.adaptive) out[s.size] = 'adaptive';
+  }
+  if (refs.length) {
+    if (s.refs === 'roles') {
+      delete out[s.refsField];
+      roles.push(...refs.map((url) => ({ url, role: s.refRole || 'reference_image' })));
+    }
+    if (!first && s.typeField && (s.refs === 'roles' || s.refs === 'list')) out[s.typeField] = 'reference';
+  }
+  if (roles.length) out[s.field] = roles;
+}
 
 // Start / end frames → `image_with_roles` (Seedance at APIMart: the frames have
 // no field of their own). References: inside the roles ('roles'), not together

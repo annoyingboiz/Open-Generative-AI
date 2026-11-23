@@ -149,5 +149,7 @@ Reference images, up to \`7\`
   assert.deepEqual(o.common.inputs.duration.enum, [5, 10]);
   assert.deepEqual(o.common.inputs.aspect_ratio.enum, ['16:9', '9:16', '1:1']);
   assert.equal(o.rename.aspect_ratio, 'size');
-  assert.equal(o.modes.i2v.media.image.max, 7);
+  // Bare references, never frames: a references endpoint (?m=reference), no image-to-video one.
+  assert.equal(o.modes.reference.media.image.max, 7);
+  assert.equal(o.modes.i2v, undefined);
 });

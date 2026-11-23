@@ -82,10 +82,16 @@ function rangeOf(p) {
   return m ? [Number(m[1]), Number(m[2])] : null;
 }
 
+// "Up to 10", "Max **30** images", "Count: ≤ **9**", "Maximum 3 images".
+const MAX_WORDS = /(?:up to|maximum(?: of)?|max(?:imum)?|at most|no more than|≤|<=)\s*[`*]{0,2}\s*(\d+)\s*[`*]{0,2}/i;
 function maxItemsOf(p) {
-  const body = p.body.join('\n');
-  const m = /(?:up to|maximum(?: of)?|max(?:imum)?|at most|no more than)\s*`?(\d+)`?/i.exec(body);
+  const m = MAX_WORDS.exec(p.body.join('\n'));
   return m ? Number(m[1]) : null;
+}
+// The limit stated next to a word ("up to 10 reference images"), else the first limit.
+function maxNear(text, word) {
+  for (const line of String(text || '').split('\n')) if (new RegExp(word, 'i').test(line)) { const m = MAX_WORDS.exec(line); if (m) return Number(m[1]); }
+  return null;
 }
 
 function modelIdsOf(text, params) {
@@ -115,6 +121,122 @@ function studioInput(name, p, otherNames, as = name) {
 }
 
 const KEEP = ['resolution', 'duration', 'quality', 'n', 'generate_audio', 'audio', 'output_format', 'background', 'watermark', 'prompt_extend', 'prompt_optimizer', 'negative_prompt', 'mode', 'shot_type', 'generation_type'];
+
+// ── Video inputs from the docs (every APIMart video model) ───────────────
+// APIMart has one address per model; what a request is (frames, references, a video
+// edit) is chosen by fields: first_frame_image / last_frame_image, image_with_roles
+// roles, image_urls, video_urls, audio_urls, generation_type, omni_reference_task_type.
+// This reads them into up to three studio endpoints:
+//   i2v        start / end frame          (p/apimart/<id>?m=i2v)
+//   reference  reference pictures, videos, audio  (?m=reference)
+//   v2v        a video to edit (+ references)     (?m=v2v)
+// Frames and references go in one endpoint only when the docs say they combine.
+// What each wording means is written next to the rule; the audit script
+// (scripts/provider-audit.mjs) compares the result with the docs again.
+const FRAME_BY_COUNT = /first image is the (start|first) frame|image-to-video: the first image is the first frame|(one|1|single) image[^.\n]{0,60}(start(ing)?|first)[ -]frame|first image in `image_urls`|1 image\s*=\s*first frame/i;
+const URLS_ARE_REFS = /regardless of count|all treated as `?reference|never auto-mapped to (first|frames)/i;
+const COMBINE = /including (the )?first\/last frames|in total,? including (first|frames)/i;
+const valuesOf = (p) => (p ? ticks([p.head, ...p.body].join('\n')).filter((v) => /^[a-z_]+$/.test(v)) : []);
+
+function videoReader(params, text, ids) {
+  const body = (n) => (params[n] ? params[n].body.join('\n') : '');
+  const urls = body('image_urls');
+  const rolesText = body('image_with_roles') + '\n' + (text.match(/`(first_frame|last_frame|reference_image|reference)`[^\n]*/g) || []).join('\n');
+  const roleNames = new Set(params.image_with_roles ? [...rolesText.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]) : []);
+  const typeValues = valuesOf(params.generation_type);
+  const omni = valuesOf(params.omni_reference_task_type);
+  // Per model in one page: "`veo3.1-lite` model does not support this parameter" (under a field),
+  // "`veo3.1-quality` model does not support `reference` mode".
+  const noField = (id, name) => new RegExp('`' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '` model does not support this parameter', 'i').test(body(name));
+  const noMode = (id, mode) => new RegExp('`' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '` model does not support `' + mode + '` mode', 'i').test(text);
+
+  return (rawId) => {
+    // "veo3.1-lite-ext" is the same model as "veo3.1-lite": its rules apply too.
+    const base = rawId.replace(/-ext$/, '');
+    const id = base;
+    const has = (n) => Boolean(params[n]) && !noField(id, n) && !noField(rawId, n);
+    const modes = {};
+    const bareIsFrame = has('image_urls') && FRAME_BY_COUNT.test(urls + '\n' + body('first_frame_image'));
+    // Frames: their own fields, roles in image_with_roles, or image_urls with generation_type "frame" (Veo).
+    const firstVia = has('first_frame_image') ? 'field' : roleNames.has('first_frame') ? 'roles'
+      : has('image_urls') && typeValues.includes('frame') && !noMode(id, 'frame') ? 'list'
+        : has('image_urls') && bareIsFrame && !has('image_with_roles') && !omni.includes('reference') ? 'list' : null;
+    const lastVia = firstVia === 'list' ? (/second (image )?is the (end|last) frame|first and last frame|first\+last|2 images/i.test(urls + text) ? 'list' : null)
+      : has('last_frame_image') ? 'field' : roleNames.has('last_frame') ? 'roles' : null;
+    // References: bare image_urls when they are never frames; else with a role or a task type.
+    const refRole = roleNames.has('reference_image') ? 'reference_image' : roleNames.has('reference') ? 'reference' : null;
+    // In order: bare image_urls that are always references (H3); a type field that classifies
+    // bare image_urls (Veo, Wan 3.0: generation_type "reference"); a role, when one bare
+    // picture would be a start frame (Kling 4.0, Gemini Omni); a task type (omni "reference");
+    // bare image_urls on a page where they are never frames; a role.
+    let refsVia = null;
+    if (has('image_urls') && URLS_ARE_REFS.test(urls)) refsVia = 'urls';
+    else if (has('image_urls') && typeValues.includes('reference')) refsVia = noMode(id, 'reference') ? null : 'list';
+    else if (bareIsFrame && refRole) refsVia = 'roles';
+    else if (has('image_urls') && omni.includes('reference')) refsVia = 'urls-task';
+    else if (has('image_urls') && !bareIsFrame && firstVia !== 'list') refsVia = 'urls';
+    else if (refRole) refsVia = 'roles';
+    // "up to 30 images + 10 videos + 10 audios" in the overview when the field says nothing.
+    const overview = (word) => { const m = new RegExp(`(\\d+)\\s+(?:reference\\s+)?${word}`, 'i').exec(text); return m ? Number(m[1]) : null; };
+    const refMax = (refsVia && (maxNear(urls, 'reference') || maxNear(rolesText, 'reference') || maxItemsOf(params.image_urls || { body: [] }) || overview('images'))) || 4;
+    const videoRefs = has('video_urls') && /reference/i.test(body('video_urls')) ? { field: 'reference_videos', provider: 'video_urls', max: maxItemsOf(params.video_urls) || maxNear(body('video_urls'), 'video|clip') || overview('videos') || 1 } : null;
+    const audioRefs = has('audio_urls') ? { field: 'reference_audios', provider: 'audio_urls', max: maxItemsOf(params.audio_urls) || overview('audios') || 1 } : null;
+    const together = Boolean(firstVia && refsVia) && COMBINE.test(text);
+
+    const frames = firstVia ? { via: firstVia, last: Boolean(lastVia) } : null;
+    if (frames && !together) modes.i2v = { frames };
+    const refs = refsVia || videoRefs || audioRefs ? { via: refsVia, max: refMax, refRole, video: videoRefs, audio: audioRefs } : null;
+    if (refs && !together) modes.reference = { refs };
+    if (together) modes.i2v = { frames, refs };
+    // A video to edit: omni_reference_task_type "edit" with a video field (Kling: video_url,
+    // Seedance: video_urls), or a page about editing / remixing with one video.
+    const editField = has('video_url') ? 'video_url' : has('video_urls') ? 'video_urls' : null;
+    if (editField && (omni.includes('edit') || (!videoRefs && /edit|remix|restyle|video-to-video/i.test(text)))) {
+      modes.v2v = { edit: { field: editField, task: omni.includes('edit') ? 'edit' : null }, refs: refsVia ? { via: refsVia === 'urls-task' ? 'urls' : refsVia, max: refMax, refRole } : null };
+    }
+    return { modes, omniRef: omni.includes('reference'), typeField: params.generation_type ? 'generation_type' : null, adaptive: /first[ /–-]*(last )?frame[^\n]*(`size`|aspect)[^\n]*adaptive/i.test(text) };
+  };
+}
+
+// The reader's result → override modes (build.js: buildApimartVariants).
+function videoModes(read) {
+  const out = { t2v: { inputs: {} } };
+  const rolesSpec = (extra) => ({ field: 'image_with_roles', ...(read.typeField ? { typeField: read.typeField } : {}), ...extra });
+  for (const [mode, m] of Object.entries(read.modes)) {
+    const media = {};
+    const rename = {};
+    const fixed = {};
+    let roles = null;
+    if (m.frames) {
+      media.image = { field: 'first_frame_image', max: 1, ...(m.frames.last ? { last: 'last_frame_image' } : {}) };
+      if (m.frames.via === 'roles') roles = rolesSpec({ frames: 'roles' });
+      if (m.frames.via === 'list') roles = { field: 'image_urls', frames: 'list', ...(read.typeField ? { typeField: read.typeField } : {}) };
+      if (read.adaptive) roles = { ...(roles || { frames: 'fields' }), adaptive: true };
+    }
+    if (m.refs) {
+      if (m.refs.via) {
+        const refs = { field: 'image_urls', max: m.refs.max };
+        if (media.image) media.image = { ...media.image, refsField: 'image_urls', refsMax: m.refs.max };
+        else media.image = refs;
+        if (m.refs.via === 'roles') roles = { ...(roles || rolesSpec({})), refs: 'roles', refRole: m.refs.refRole, always: true };
+        if (m.refs.via === 'list') roles = { ...(roles || {}), field: roles?.field || 'image_urls', refs: 'list', typeField: read.typeField };
+        if ((m.refs.via === 'urls-task' || read.omniRef) && !m.frames && !m.edit) fixed.omni_reference_task_type = 'reference';
+      }
+      if (m.refs.video) { media.video = { field: m.refs.video.field, max: m.refs.video.max }; rename[m.refs.video.field] = m.refs.video.provider; }
+      if (m.refs.audio) { media.audio = { field: m.refs.audio.field, max: m.refs.audio.max }; rename[m.refs.audio.field] = m.refs.audio.provider; }
+    }
+    if (m.edit) {
+      media.video = { field: m.edit.field, max: 1 };
+      if (m.edit.task) fixed.omni_reference_task_type = m.edit.task;
+      if (m.refs) {
+        media.image = { field: 'image_urls', max: m.refs.max };
+        if (m.refs.via === 'roles') roles = { field: 'image_with_roles', refs: 'roles', refRole: m.refs.refRole, always: true };
+      }
+    }
+    out[mode] = { inputs: {}, media, ...(roles ? { roles } : {}), ...(Object.keys(rename).length ? { rename } : {}), ...(Object.keys(fixed).length ? { fixed } : {}) };
+  }
+  return out;
+}
 
 function buildOverride(text) {
   const params = parseParams(text);
@@ -185,7 +307,7 @@ function buildOverride(text) {
   const audio = params.audio_urls ? { field: 'audio_urls', max: maxItemsOf(params.audio_urls) || 1 } : params.audio_url ? { field: 'audio_url', max: 1 } : null;
   // How the prompt names references ("use `@Image1`, `@Video1`…"): the studio writes tags that way.
   const refSyntax = /`@Image1`/.test(text) ? 'ImageN' : /`@image_1`/.test(text) ? 'image_N' : /`@image1`/.test(text) ? 'imageN' : null;
-  return { ids, inputs, rename, media, video, audio, refSyntax, omniEdit: Boolean(params.omni_reference_task_type), title: (/^#\s+(.+)$/m.exec(text) || [])[1] };
+  return { ids, inputs, rename, media, video, audio, refSyntax, readVideo: videoReader(params, text, ids), title: (/^#\s+(.+)$/m.exec(text) || [])[1] };
 }
 
 
@@ -200,18 +322,16 @@ export function buildApimartOverrides(docs) {
       const isVideo = /\/videos\/|videos__/.test(url);
       const common = { inputs: o.inputs };
       const modes = isVideo
-        ? {
-            t2v: { inputs: {} },
-            ...(o.media.image ? { i2v: { inputs: {}, media: { image: o.media.image } } } : {}),
-            ...(o.video ? { v2v: { inputs: {}, ...(o.omniEdit ? { fixed: { omni_reference_task_type: 'edit' } } : {}), media: { video: o.video, ...(o.media.image && o.media.image.roles?.refs !== 'never' ? { image: { field: o.media.image.field === 'image_urls' ? 'image_urls' : o.media.image.field, max: o.media.image.max, ...(o.media.image.roles?.always ? { roles: { field: o.media.image.roles.field, refs: 'roles', always: true, ...(o.media.image.roles.refRole ? { refRole: o.media.image.roles.refRole } : {}), ...(o.media.image.roles.typeField ? { typeField: o.media.image.roles.typeField } : {}) } } : {}) } } : {}) } } } : {}),
-          }
+        ? videoModes(o.readVideo(id))
         : {
             t2i: { inputs: {} },
             ...(o.media.image ? { i2i: { inputs: {}, media: { image: o.media.image } } } : {}),
           };
       const score = Object.keys(o.inputs).length + Object.keys(modes).length;
       if (out[id] && out[id].score >= score) continue; // keep the most complete page (e.g. not "remix")
-      out[id] = { source: url, docTitle: o.title, score, rename: o.rename, common, modes, ...(o.refSyntax ? { refSyntax: o.refSyntax } : {}) };
+      // Video modes come from the docs alone (APIMart's tags are sometimes wrong: Veo 3.1 Lite
+      // is tagged image-to-video but takes no pictures).
+      out[id] = { source: url, docTitle: o.title, score, rename: o.rename, common, modes, ...(isVideo ? { onlyModes: true } : {}), ...(o.refSyntax ? { refSyntax: o.refSyntax } : {}) };
     }
   }
   return out;

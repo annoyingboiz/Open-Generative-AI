@@ -4262,9 +4262,9 @@
     }
   },
   "apimart-zoe": {
-    "source": "videos__apimart-zoe__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/apimart-zoe/generation.md",
     "docTitle": "apimart-zoe Video Generation",
-    "score": 9,
+    "score": 10,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -4345,28 +4345,53 @@
           }
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
         "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 30
+          },
           "video": {
-            "field": "video_urls",
+            "field": "reference_videos",
             "max": 10
           },
+          "audio": {
+            "field": "reference_audios",
+            "max": 10
+          }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
+        },
+        "fixed": {
+          "omni_reference_task_type": "reference"
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
           "image": {
-            "field": "first_frame_image",
+            "field": "image_urls",
+            "max": 30
+          },
+          "video": {
+            "field": "video_urls",
             "max": 1
           }
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "seedance-1-0-pro-fast": {
-    "source": "videos__doubao__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/doubao/generation.md",
     "docTitle": "seedance-1-0-pro Video Generation",
-    "score": 4,
+    "score": 5,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -4411,13 +4436,28 @@
     "modes": {
       "t2v": {
         "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
+        }
       }
-    }
+    },
+    "onlyModes": true
   },
   "seedance-1-0-pro-quality": {
-    "source": "videos__doubao__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/doubao/generation.md",
     "docTitle": "seedance-1-0-pro Video Generation",
-    "score": 4,
+    "score": 5,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -4462,11 +4502,26 @@
     "modes": {
       "t2v": {
         "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
+        }
       }
-    }
+    },
+    "onlyModes": true
   },
   "flux-3-video": {
-    "source": "videos__flux-3-video__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/flux-3-video/generation.md",
     "docTitle": "FLUX 3 Video Generation",
     "score": 5,
     "rename": {
@@ -4502,34 +4557,35 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 2
           }
         }
       },
       "v2v": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 1
-          },
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 2
+          },
+          "video": {
+            "field": "video_url",
+            "max": 1
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "gemini-omni-1.1-flash": {
-    "source": "videos__gemini-omni-1.1-flash__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/gemini-omni-1.1-flash/generation.md",
     "docTitle": "Gemini Omni 1.1 Flash Video Generation",
-    "score": 5,
+    "score": 6,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -4567,44 +4623,53 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 10,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "roles",
-              "refRole": "reference",
-              "always": true
-            }
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference",
+          "always": true
         }
       },
       "v2v": {
         "inputs": {},
         "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
           "video": {
             "field": "video_urls",
             "max": 1
-          },
-          "image": {
-            "field": "image_urls",
-            "max": 10,
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "roles",
-              "always": true,
-              "refRole": "reference"
-            }
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference",
+          "always": true
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "gemini-omni-1.2-flash-ext": {
-    "source": "videos__gemini-omni-1.2-flash-ext__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/gemini-omni-1.2-flash-ext/generation.md",
     "docTitle": "gemini-omni-1.2-flash-ext Video Generation",
-    "score": 8,
+    "score": 9,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -4675,26 +4740,56 @@
           }
         }
       },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 15
+          }
+        },
+        "roles": {
+          "field": "image_urls",
+          "refs": "list",
+          "typeField": "generation_type"
+        },
+        "rename": {
+          "reference_videos": "video_urls"
+        },
+        "fixed": {
+          "omni_reference_task_type": "reference"
+        }
+      },
       "v2v": {
         "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
         "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
           "video": {
             "field": "video_urls",
-            "max": 15
-          },
-          "image": {
-            "field": "first_frame_image",
             "max": 1
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "refs": "list",
+          "typeField": "generation_type"
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "gemini-omni-1.2-flash": {
-    "source": "videos__gemini-omni-1.2-flash__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/gemini-omni-1.2-flash/generation.md",
     "docTitle": "Gemini Omni 1.2 Flash Video Generation",
     "score": 6,
     "rename": {
@@ -4744,47 +4839,49 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 10,
-            "first": "first_frame_image",
+            "field": "first_frame_image",
+            "max": 1,
             "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "roles",
-              "refRole": "reference_image",
-              "always": true
-            }
+            "refsField": "image_urls",
+            "refsMax": 10
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference",
+          "always": true
         }
       },
       "v2v": {
         "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
         "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
           "video": {
             "field": "video_urls",
             "max": 1
-          },
-          "image": {
-            "field": "image_urls",
-            "max": 10,
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "roles",
-              "always": true,
-              "refRole": "reference_image"
-            }
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference",
+          "always": true
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "gemini-omni-flash-preview": {
-    "source": "videos__gemini-omni-flash-preview__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/gemini-omni-flash-preview/generation.md",
     "docTitle": "Gemini Omni Flash Video Generation",
-    "score": 4,
+    "score": 3,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -4806,34 +4903,29 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
             "field": "image_urls",
-            "max": 4
-          }
-        }
-      },
-      "v2v": {
-        "inputs": {},
-        "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 1
+            "max": 16
           },
-          "image": {
-            "field": "image_urls",
-            "max": 4
+          "video": {
+            "field": "reference_videos",
+            "max": 1
           }
+        },
+        "rename": {
+          "reference_videos": "video_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "grok-imagine-1.5-video-ext": {
-    "source": "videos__grok-imagine__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/grok-imagine/generation.md",
     "docTitle": "Grok Imagine 1.5 Video Generation",
-    "score": 5,
+    "score": 6,
     "rename": {
       "aspect_ratio": "size"
     },
@@ -4847,6 +4939,8 @@
             "16:9",
             "9:16",
             "1:1",
+            "4:3",
+            "3:4",
             "3:2",
             "2:3"
           ],
@@ -4858,7 +4952,8 @@
           "type": "string",
           "enum": [
             "480p",
-            "720p"
+            "720p",
+            "1080p"
           ],
           "default": "480p"
         },
@@ -4866,7 +4961,7 @@
           "name": "duration",
           "title": "Duration",
           "type": "int",
-          "minValue": 6,
+          "minValue": 1,
           "maxValue": 15,
           "step": 1,
           "default": 6
@@ -4881,15 +4976,36 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 7
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 14
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference_image",
+          "always": true
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "grok-imagine-video": {
-    "source": "videos__grok-imagine__official.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/grok-imagine/official.md",
     "docTitle": "Grok Official Video Models",
     "score": 4,
     "rename": {
@@ -4927,7 +5043,7 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
@@ -4936,10 +5052,11 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "grok-imagine-video-1.5": {
-    "source": "videos__grok-imagine__official.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/grok-imagine/official.md",
     "docTitle": "Grok Official Video Models",
     "score": 4,
     "rename": {
@@ -4977,7 +5094,7 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
@@ -4986,11 +5103,99 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "happyhorse-1.0": {
-    "source": "videos__happyhorse-1.0__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/happyhorse-1.0/generation.md",
     "docTitle": "HappyHorse 1.0 Video Generation",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 3,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          }
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "video_url",
+            "max": 1
+          }
+        }
+      }
+    },
+    "onlyModes": true
+  },
+  "happyhorse-1.1": {
+    "source": "https://docs.apimart.ai/en/api-reference/videos/happyhorse-1.1/generation.md",
+    "docTitle": "HappyHorse 1.1 Video Generation",
     "score": 7,
     "rename": {
       "aspect_ratio": "size"
@@ -5050,87 +5255,20 @@
           }
         }
       },
-      "v2v": {
-        "inputs": {},
-        "media": {
-          "video": {
-            "field": "video_url",
-            "max": 1
-          },
-          "image": {
-            "field": "first_frame_image",
-            "max": 1
-          }
-        }
-      }
-    }
-  },
-  "happyhorse-1.1": {
-    "source": "videos__happyhorse-1.1__generation.md",
-    "docTitle": "HappyHorse 1.1 Video Generation",
-    "score": 6,
-    "rename": {
-      "aspect_ratio": "size"
-    },
-    "common": {
-      "inputs": {
-        "aspect_ratio": {
-          "name": "aspect_ratio",
-          "title": "Aspect Ratio",
-          "type": "string",
-          "enum": [
-            "16:9",
-            "9:16",
-            "1:1",
-            "4:3",
-            "3:4"
-          ],
-          "default": "16:9"
-        },
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "720P",
-            "1080P"
-          ],
-          "default": "1080P"
-        },
-        "duration": {
-          "name": "duration",
-          "title": "Duration",
-          "type": "int",
-          "minValue": 3,
-          "maxValue": 15,
-          "step": 1,
-          "default": 5
-        },
-        "watermark": {
-          "name": "watermark",
-          "title": "Watermark",
-          "type": "boolean",
-          "default": false
-        }
-      }
-    },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
-            "field": "first_frame_image",
-            "max": 1
+            "field": "image_urls",
+            "max": 10
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "kling-3.0-turbo": {
-    "source": "videos__kling-3.0-turbo__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-3.0-turbo/generation.md",
     "docTitle": "Kling 3.0 Turbo Video Generation",
     "score": 6,
     "rename": {
@@ -5189,10 +5327,11 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "kling-v2-6": {
-    "source": "videos__kling-v2-6__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/generation.md",
     "docTitle": "Kling 2.6 Video Generation",
     "score": 8,
     "rename": {
@@ -5258,17 +5397,23 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 2
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "kling-v3-motion-control": {
-    "source": "videos__kling-v2-6__kling-v2-6-motion-control-generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/kling-v2-6-motion-control-generation.md",
     "docTitle": "Kling v2.6 Motion Control Video Generation",
-    "score": 3,
+    "score": 2,
     "rename": {},
     "common": {
       "inputs": {
@@ -5287,22 +5432,14 @@
     "modes": {
       "t2v": {
         "inputs": {}
-      },
-      "v2v": {
-        "inputs": {},
-        "media": {
-          "video": {
-            "field": "video_url",
-            "max": 1
-          }
-        }
       }
-    }
+    },
+    "onlyModes": true
   },
   "kling-v2-6-motion-control": {
-    "source": "videos__kling-v2-6__kling-v2-6-motion-control-generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/kling-v2-6-motion-control-generation.md",
     "docTitle": "Kling v2.6 Motion Control Video Generation",
-    "score": 3,
+    "score": 2,
     "rename": {},
     "common": {
       "inputs": {
@@ -5321,22 +5458,14 @@
     "modes": {
       "t2v": {
         "inputs": {}
-      },
-      "v2v": {
-        "inputs": {},
-        "media": {
-          "video": {
-            "field": "video_url",
-            "max": 1
-          }
-        }
       }
-    }
+    },
+    "onlyModes": true
   },
   "kling-v3-omni": {
-    "source": "videos__kling-v3-omni__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v3-omni/generation.md",
     "docTitle": "Kling v3 Omni Video Generation",
-    "score": 9,
+    "score": 10,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -5410,15 +5539,30 @@
         "inputs": {},
         "media": {
           "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
             "field": "image_urls",
             "max": 4
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "kling-v3": {
-    "source": "videos__kling-v3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v3/generation.md",
     "docTitle": "Kling v3 Video Generation",
     "score": 9,
     "rename": {
@@ -5494,17 +5638,23 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 2
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "kling-v4-flash": {
-    "source": "videos__kling-v4-flash__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v4-flash/generation.md",
     "docTitle": "Kling V4 Flash Video Generation",
-    "score": 6,
+    "score": 7,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -5557,29 +5707,61 @@
           }
         }
       },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 5
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference_image",
+          "always": true
+        },
+        "rename": {
+          "reference_videos": "video_urls"
+        },
+        "fixed": {
+          "omni_reference_task_type": "reference"
+        }
+      },
       "v2v": {
         "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 5
-          },
           "image": {
-            "field": "first_frame_image",
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "video_url",
             "max": 1
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference_image",
+          "always": true
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
         }
       }
     },
+    "onlyModes": true,
     "refSyntax": "ImageN"
   },
   "kling-v4": {
-    "source": "videos__kling-v4__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v4/generation.md",
     "docTitle": "Kling V4 Video Generation",
-    "score": 6,
+    "score": 7,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -5633,30 +5815,66 @@
           }
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
         "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
           "video": {
-            "field": "video_urls",
+            "field": "reference_videos",
             "max": 5
           },
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference_image",
+          "always": true
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
+        },
+        "fixed": {
+          "omni_reference_task_type": "reference"
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
           "image": {
-            "field": "first_frame_image",
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "video_url",
             "max": 1
           }
         },
-        "promptRequired": true
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference_image",
+          "always": true
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        }
       }
     },
+    "onlyModes": true,
     "refSyntax": "ImageN"
   },
   "kling-video-o1": {
-    "source": "videos__kling-video-o1__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/kling-video-o1/generation.md",
     "docTitle": "Kling Video O1 Video Generation",
-    "score": 5,
+    "score": 6,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -5703,15 +5921,30 @@
         "inputs": {},
         "media": {
           "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 2
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "MiniMax-H3-Context-IR": {
-    "source": "videos__minimax-h3__context-ir.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/context-ir.md",
     "docTitle": "MiniMax-H3 Context-IR Prompt Enhancement",
     "score": 3,
     "rename": {},
@@ -5732,23 +5965,32 @@
           }
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 1
-          },
           "image": {
-            "field": "first_frame_image",
-            "max": 1
+            "field": "image_urls",
+            "max": 9
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 3
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
           }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "MiniMax-H3": {
-    "source": "videos__minimax-h3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md",
     "docTitle": "MiniMax-H3 Video Generation",
     "score": 6,
     "rename": {},
@@ -5795,86 +6037,32 @@
           }
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 1
-          },
           "image": {
-            "field": "first_frame_image",
-            "max": 1
+            "field": "image_urls",
+            "max": 9
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 3
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
           }
-        }
-      }
-    }
-  },
-  "model": {
-    "source": "videos__minimax-h3__generation.md",
-    "docTitle": "MiniMax-H3 Video Generation",
-    "score": 6,
-    "rename": {},
-    "common": {
-      "inputs": {
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "2K",
-            "768P"
-          ],
-          "default": "2K"
         },
-        "duration": {
-          "name": "duration",
-          "title": "Duration",
-          "type": "int",
-          "minValue": 4,
-          "maxValue": 15,
-          "step": 1,
-          "default": 5
-        },
-        "watermark": {
-          "name": "watermark",
-          "title": "Watermark",
-          "type": "boolean",
-          "default": false
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
     },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "first_frame_image",
-            "max": 1,
-            "last": "last_frame_image"
-          }
-        }
-      },
-      "v2v": {
-        "inputs": {},
-        "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 1
-          },
-          "image": {
-            "field": "first_frame_image",
-            "max": 1
-          }
-        }
-      }
-    }
+    "onlyModes": true
   },
   "MiniMax-H3-Max": {
-    "source": "videos__minimax-h3__max.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/max.md",
     "docTitle": "MiniMax-H3-Max Video Generation",
     "score": 6,
     "rename": {},
@@ -5922,23 +6110,32 @@
           }
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          },
           "video": {
-            "field": "video_urls",
+            "field": "reference_videos",
             "max": 3
           },
-          "image": {
-            "field": "first_frame_image",
-            "max": 1
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
           }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "minimax-h3-max": {
-    "source": "videos__minimax-h3__max.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/max.md",
     "docTitle": "MiniMax-H3-Max Video Generation",
     "score": 6,
     "rename": {},
@@ -5986,23 +6183,32 @@
           }
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 9
+          },
           "video": {
-            "field": "video_urls",
+            "field": "reference_videos",
             "max": 3
           },
-          "image": {
-            "field": "first_frame_image",
-            "max": 1
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
           }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "MiniMax-H3-Regeneration": {
-    "source": "videos__minimax-h3__regeneration.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/regeneration.md",
     "docTitle": "MiniMax-H3 Regeneration",
     "score": 1,
     "rename": {},
@@ -6013,10 +6219,11 @@
       "t2v": {
         "inputs": {}
       }
-    }
+    },
+    "onlyModes": true
   },
   "MiniMax-Hailuo-2.3": {
-    "source": "videos__minimax-hailuo-2.3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/minimax-hailuo-2.3/generation.md",
     "docTitle": "MiniMax-Hailuo-2.3 Video Generation",
     "score": 6,
     "rename": {},
@@ -6069,10 +6276,11 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "MiniMax-Hailuo-2.3-Fast": {
-    "source": "videos__minimax-hailuo-2.3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/minimax-hailuo-2.3/generation.md",
     "docTitle": "MiniMax-Hailuo-2.3 Video Generation",
     "score": 6,
     "rename": {},
@@ -6125,66 +6333,11 @@
           }
         }
       }
-    }
-  },
-  "first_frame_image": {
-    "source": "videos__minimax-hailuo-2.3__generation.md",
-    "docTitle": "MiniMax-Hailuo-2.3 Video Generation",
-    "score": 6,
-    "rename": {},
-    "common": {
-      "inputs": {
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "768p",
-            "1080p"
-          ],
-          "default": "768p"
-        },
-        "duration": {
-          "name": "duration",
-          "title": "Duration",
-          "type": "int",
-          "enum": [
-            6,
-            10
-          ],
-          "default": 6
-        },
-        "watermark": {
-          "name": "watermark",
-          "title": "Watermark",
-          "type": "boolean",
-          "default": false
-        },
-        "prompt_optimizer": {
-          "name": "prompt_optimizer",
-          "title": "Prompt Optimizer",
-          "type": "boolean",
-          "default": true
-        }
-      }
     },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "first_frame_image",
-            "max": 1
-          }
-        }
-      }
-    }
+    "onlyModes": true
   },
   "MiniMax-Hailuo-02": {
-    "source": "videos__minimax-hailuo__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/minimax-hailuo/generation.md",
     "docTitle": "MiniMax-Hailuo-02 Video Generation",
     "score": 6,
     "rename": {},
@@ -6239,10 +6392,11 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "muse-video-ext": {
-    "source": "videos__muse-video-ext__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/muse-video-ext/generation.md",
     "docTitle": "Muse Video Ext Video Generation",
     "score": 6,
     "rename": {},
@@ -6295,7 +6449,7 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
@@ -6304,10 +6458,11 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "gemini-omni-1.1-flash-ext": {
-    "source": "videos__omni-flash-ext__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/omni-flash-ext/generation.md",
     "docTitle": "gemini-omni-1.1-flash-ext Video Generation",
     "score": 7,
     "rename": {
@@ -6369,28 +6524,43 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 4
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list",
+          "typeField": "generation_type"
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 1
-          },
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 3
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 1
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "refs": "list",
+          "typeField": "generation_type"
+        },
+        "rename": {
+          "reference_videos": "video_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "pixverse-v6-max": {
-    "source": "videos__pixverse-v6-max__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/pixverse-v6-max/generation.md",
     "docTitle": "PixVerse V6 Max Video Generation",
     "score": 6,
     "rename": {
@@ -6447,7 +6617,7 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
@@ -6456,12 +6626,13 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "pixverse-v6": {
-    "source": "videos__pixverse-v6__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/pixverse-v6/generation.md",
     "docTitle": "Pixverse v6 Video Generation",
-    "score": 8,
+    "score": 9,
     "rename": {
       "aspect_ratio": "size"
     },
@@ -6536,8 +6707,18 @@
             "last": "last_frame_image"
           }
         }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 7
+          }
+        }
       }
-    }
+    },
+    "onlyModes": true
   },
   "seedance-1-5-pro": {
     "source": "videos__seedance-1-5-pro__generation.md",
@@ -6611,7 +6792,7 @@
     }
   },
   "seedance-2.0": {
-    "source": "videos__seedance-2-0__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
     "docTitle": "seedance-2.0 Video Generation",
     "score": 7,
     "rename": {
@@ -6671,34 +6852,42 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 9,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone"
-            }
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 3
-          },
           "image": {
             "field": "image_urls",
             "max": 9
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 3
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
           }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "seedance-2.0-fast": {
-    "source": "videos__seedance-2-0__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
     "docTitle": "seedance-2.0 Video Generation",
     "score": 7,
     "rename": {
@@ -6758,34 +6947,42 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 9,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone"
-            }
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 3
-          },
           "image": {
             "field": "image_urls",
             "max": 9
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 3
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
           }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "seedance-2.0-mini": {
-    "source": "videos__seedance-2-0__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
     "docTitle": "seedance-2.0 Video Generation",
     "score": 7,
     "rename": {
@@ -6845,36 +7042,44 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 9,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone"
-            }
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 3
-          },
           "image": {
             "field": "image_urls",
             "max": 9
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 3
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
           }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "seedance-2-5-flash": {
-    "source": "videos__seedance-2-5-flash__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5-flash/generation.md",
     "docTitle": "Seedance 2.5 Flash Video Generation",
-    "score": 9,
+    "score": 10,
     "rename": {
       "aspect_ratio": "size"
     },
@@ -6949,360 +7154,457 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 10,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone",
-              "adaptive": true
-            }
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles",
+          "adaptive": true
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 5
-          },
           "image": {
             "field": "image_urls",
             "max": 10
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 5
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 5
           }
-        }
-      }
-    }
-  },
-  "doubao-seedance-2-5-flash": {
-    "source": "videos__seedance-2-5-flash__generation.md",
-    "docTitle": "Seedance 2.5 Flash Video Generation",
-    "score": 9,
-    "rename": {
-      "aspect_ratio": "size"
-    },
-    "common": {
-      "inputs": {
-        "aspect_ratio": {
-          "name": "aspect_ratio",
-          "title": "Aspect Ratio",
-          "type": "string",
-          "enum": [
-            "16:9",
-            "4:3",
-            "1:1",
-            "3:4",
-            "9:16",
-            "21:9",
-            "adaptive"
-          ],
-          "default": "adaptive"
         },
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "480p",
-            "720p",
-            "1080p",
-            "2k",
-            "4k"
-          ],
-          "default": "720p"
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         },
-        "duration": {
-          "name": "duration",
-          "title": "Duration",
-          "type": "int",
-          "minValue": 4,
-          "maxValue": 30,
-          "step": 1,
-          "default": 5
-        },
-        "generate_audio": {
-          "name": "generate_audio",
-          "title": "Generate Audio",
-          "type": "boolean",
-          "default": true
-        },
-        "output_format": {
-          "name": "output_format",
-          "title": "Output Format",
-          "type": "string",
-          "enum": [
-            "mp4",
-            "mov"
-          ],
-          "default": "mp4"
-        },
-        "watermark": {
-          "name": "watermark",
-          "title": "Watermark",
-          "type": "boolean",
-          "default": false
-        }
-      }
-    },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "image_urls",
-            "max": 10,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone",
-              "adaptive": true
-            }
-          }
+        "fixed": {
+          "omni_reference_task_type": "reference"
         }
       },
       "v2v": {
         "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 5
-          },
           "image": {
             "field": "image_urls",
             "max": 10
-          }
-        }
-      }
-    }
-  },
-  "seedance-2.5-flash": {
-    "source": "videos__seedance-2-5-flash__generation.md",
-    "docTitle": "Seedance 2.5 Flash Video Generation",
-    "score": 9,
-    "rename": {
-      "aspect_ratio": "size"
-    },
-    "common": {
-      "inputs": {
-        "aspect_ratio": {
-          "name": "aspect_ratio",
-          "title": "Aspect Ratio",
-          "type": "string",
-          "enum": [
-            "16:9",
-            "4:3",
-            "1:1",
-            "3:4",
-            "9:16",
-            "21:9",
-            "adaptive"
-          ],
-          "default": "adaptive"
-        },
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "480p",
-            "720p",
-            "1080p",
-            "2k",
-            "4k"
-          ],
-          "default": "720p"
-        },
-        "duration": {
-          "name": "duration",
-          "title": "Duration",
-          "type": "int",
-          "minValue": 4,
-          "maxValue": 30,
-          "step": 1,
-          "default": 5
-        },
-        "generate_audio": {
-          "name": "generate_audio",
-          "title": "Generate Audio",
-          "type": "boolean",
-          "default": true
-        },
-        "output_format": {
-          "name": "output_format",
-          "title": "Output Format",
-          "type": "string",
-          "enum": [
-            "mp4",
-            "mov"
-          ],
-          "default": "mp4"
-        },
-        "watermark": {
-          "name": "watermark",
-          "title": "Watermark",
-          "type": "boolean",
-          "default": false
-        }
-      }
-    },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "image_urls",
-            "max": 10,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone",
-              "adaptive": true
-            }
-          }
-        }
-      },
-      "v2v": {
-        "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
-        "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 5
           },
-          "image": {
-            "field": "image_urls",
-            "max": 10
-          }
-        }
-      }
-    }
-  },
-  "seedance-2.5": {
-    "source": "videos__seedance-2-5__generation.md",
-    "docTitle": "seedance-2.5 Video Generation",
-    "score": 9,
-    "rename": {
-      "aspect_ratio": "size"
-    },
-    "common": {
-      "inputs": {
-        "aspect_ratio": {
-          "name": "aspect_ratio",
-          "title": "Aspect Ratio",
-          "type": "string",
-          "enum": [
-            "16:9",
-            "4:3",
-            "1:1",
-            "3:4",
-            "9:16",
-            "21:9",
-            "adaptive"
-          ],
-          "default": "adaptive"
-        },
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "480p",
-            "720p",
-            "1080p"
-          ],
-          "default": "720p"
-        },
-        "duration": {
-          "name": "duration",
-          "title": "Duration",
-          "type": "int",
-          "minValue": 4,
-          "maxValue": 30,
-          "step": 1,
-          "default": 5
-        },
-        "generate_audio": {
-          "name": "generate_audio",
-          "title": "Generate Audio",
-          "type": "boolean",
-          "default": true
-        },
-        "output_format": {
-          "name": "output_format",
-          "title": "Output Format",
-          "type": "string",
-          "enum": [
-            "mp4",
-            "mov"
-          ],
-          "default": "mp4"
-        },
-        "watermark": {
-          "name": "watermark",
-          "title": "Watermark",
-          "type": "boolean",
-          "default": false
-        }
-      }
-    },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "image_urls",
-            "max": 4,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone",
-              "adaptive": true
-            }
-          }
-        }
-      },
-      "v2v": {
-        "inputs": {},
-        "fixed": {
-          "omni_reference_task_type": "edit"
-        },
-        "media": {
           "video": {
             "field": "video_urls",
             "max": 1
-          },
-          "image": {
-            "field": "image_urls",
-            "max": 4
           }
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
         }
       }
-    }
+    },
+    "onlyModes": true
+  },
+  "doubao-seedance-2-5-flash": {
+    "source": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5-flash/generation.md",
+    "docTitle": "Seedance 2.5 Flash Video Generation",
+    "score": 10,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "2k",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "mp4",
+            "mov"
+          ],
+          "default": "mp4"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles",
+          "adaptive": true
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 5
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 5
+          }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
+        },
+        "fixed": {
+          "omni_reference_task_type": "reference"
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          }
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        }
+      }
+    },
+    "onlyModes": true
+  },
+  "seedance-2.5-flash": {
+    "source": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5-flash/generation.md",
+    "docTitle": "Seedance 2.5 Flash Video Generation",
+    "score": 10,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "2k",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "mp4",
+            "mov"
+          ],
+          "default": "mp4"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles",
+          "adaptive": true
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 5
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 5
+          }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
+        },
+        "fixed": {
+          "omni_reference_task_type": "reference"
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 10
+          },
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          }
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        }
+      }
+    },
+    "onlyModes": true
+  },
+  "seedance-2.5": {
+    "source": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md",
+    "docTitle": "seedance-2.5 Video Generation",
+    "score": 10,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16",
+            "21:9",
+            "adaptive"
+          ],
+          "default": "adaptive"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "4k"
+          ],
+          "default": "720p"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 4,
+          "maxValue": 30,
+          "step": 1,
+          "default": 5
+        },
+        "generate_audio": {
+          "name": "generate_audio",
+          "title": "Generate Audio",
+          "type": "boolean",
+          "default": true
+        },
+        "output_format": {
+          "name": "output_format",
+          "title": "Output Format",
+          "type": "string",
+          "enum": [
+            "mp4",
+            "mov"
+          ],
+          "default": "mp4"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles",
+          "adaptive": true
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 30
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 10
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 10
+          }
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
+        },
+        "fixed": {
+          "omni_reference_task_type": "reference"
+        }
+      },
+      "v2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 30
+          },
+          "video": {
+            "field": "video_urls",
+            "max": 1
+          }
+        },
+        "fixed": {
+          "omni_reference_task_type": "edit"
+        }
+      }
+    },
+    "onlyModes": true
   },
   "skyreels-v4-fast": {
-    "source": "videos__skyreels-v4__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/skyreels-v4/generation.md",
     "docTitle": "SkyReels V4 Video Generation",
     "score": 6,
     "rename": {
@@ -7355,24 +7657,21 @@
           }
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_url",
-            "max": 1
-          },
           "image": {
-            "field": "first_frame_image",
-            "max": 1
+            "field": "image_urls",
+            "max": 10
           }
         }
       }
     },
+    "onlyModes": true,
     "refSyntax": "imageN"
   },
   "skyreels-v4-std": {
-    "source": "videos__skyreels-v4__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/skyreels-v4/generation.md",
     "docTitle": "SkyReels V4 Video Generation",
     "score": 6,
     "rename": {
@@ -7425,94 +7724,21 @@
           }
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_url",
-            "max": 1
-          },
           "image": {
-            "field": "first_frame_image",
-            "max": 1
+            "field": "image_urls",
+            "max": 10
           }
         }
       }
     },
-    "refSyntax": "imageN"
-  },
-  "ref_videos": {
-    "source": "videos__skyreels-v4__generation.md",
-    "docTitle": "SkyReels V4 Video Generation",
-    "score": 6,
-    "rename": {
-      "aspect_ratio": "aspect_ratio"
-    },
-    "common": {
-      "inputs": {
-        "aspect_ratio": {
-          "name": "aspect_ratio",
-          "title": "Aspect Ratio",
-          "type": "string",
-          "enum": [
-            "16:9",
-            "4:3",
-            "1:1",
-            "9:16",
-            "3:4"
-          ],
-          "default": "16:9"
-        },
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "480p",
-            "720p",
-            "1080p"
-          ],
-          "default": "1080p"
-        },
-        "prompt_optimizer": {
-          "name": "prompt_optimizer",
-          "title": "Prompt Optimizer",
-          "type": "boolean",
-          "default": true
-        }
-      }
-    },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "first_frame_image",
-            "max": 1
-          }
-        }
-      },
-      "v2v": {
-        "inputs": {},
-        "media": {
-          "video": {
-            "field": "video_url",
-            "max": 1
-          },
-          "image": {
-            "field": "first_frame_image",
-            "max": 1
-          }
-        }
-      }
-    },
+    "onlyModes": true,
     "refSyntax": "imageN"
   },
   "veo3.1-fast-official": {
-    "source": "videos__veo3__generation-official.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation-official.md",
     "docTitle": "VEO3 Official Video Generation",
     "score": 6,
     "rename": {
@@ -7568,10 +7794,11 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "veo3.1-quality-official": {
-    "source": "videos__veo3__generation-official.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation-official.md",
     "docTitle": "VEO3 Official Video Generation",
     "score": 6,
     "rename": {
@@ -7627,12 +7854,13 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "veo3.1-fast": {
-    "source": "videos__veo3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md",
     "docTitle": "VEO3 Video Generation",
-    "score": 5,
+    "score": 6,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -7679,17 +7907,38 @@
         "inputs": {},
         "media": {
           "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list",
+          "typeField": "generation_type"
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
             "field": "image_urls",
             "max": 3
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "refs": "list",
+          "typeField": "generation_type"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "veo3.1-fast-ext": {
-    "source": "videos__veo3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md",
     "docTitle": "VEO3 Video Generation",
-    "score": 5,
+    "score": 6,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -7736,15 +7985,36 @@
         "inputs": {},
         "media": {
           "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list",
+          "typeField": "generation_type"
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
             "field": "image_urls",
             "max": 3
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "refs": "list",
+          "typeField": "generation_type"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "veo3.1-quality": {
-    "source": "videos__veo3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md",
     "docTitle": "VEO3 Video Generation",
     "score": 5,
     "rename": {
@@ -7793,15 +8063,22 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 3
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list",
+          "typeField": "generation_type"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "veo3.1-quality-ext": {
-    "source": "videos__veo3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md",
     "docTitle": "VEO3 Video Generation",
     "score": 5,
     "rename": {
@@ -7850,17 +8127,24 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 3
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list",
+          "typeField": "generation_type"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "veo3.1-lite": {
-    "source": "videos__veo3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md",
     "docTitle": "VEO3 Video Generation",
-    "score": 5,
+    "score": 4,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -7902,22 +8186,14 @@
     "modes": {
       "t2v": {
         "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "image_urls",
-            "max": 3
-          }
-        }
       }
-    }
+    },
+    "onlyModes": true
   },
   "veo3.1-lite-ext": {
-    "source": "videos__veo3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md",
     "docTitle": "VEO3 Video Generation",
-    "score": 5,
+    "score": 4,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -7959,20 +8235,12 @@
     "modes": {
       "t2v": {
         "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "image_urls",
-            "max": 3
-          }
-        }
       }
-    }
+    },
+    "onlyModes": true
   },
   "viduq3-pro": {
-    "source": "videos__vidu-q3-pro__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/vidu-q3-pro/generation.md",
     "docTitle": "Vidu Q3(pro/turbo) Video Generation",
     "score": 6,
     "rename": {
@@ -8029,15 +8297,21 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 2
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "viduq3-turbo": {
-    "source": "videos__vidu-q3-pro__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/vidu-q3-pro/generation.md",
     "docTitle": "Vidu Q3(pro/turbo) Video Generation",
     "score": 6,
     "rename": {
@@ -8094,15 +8368,21 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 2
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "frames": "list"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "viduq3-mix": {
-    "source": "videos__vidu-q3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/vidu-q3/generation.md",
     "docTitle": "Vidu Q3(mix/standard) Reference-to-Video",
     "score": 4,
     "rename": {
@@ -8138,19 +8418,20 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 50
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "viduq3": {
-    "source": "videos__vidu-q3__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/vidu-q3/generation.md",
     "docTitle": "Vidu Q3(mix/standard) Reference-to-Video",
     "score": 4,
     "rename": {
@@ -8186,21 +8467,22 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 50
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "viduq4-preview": {
-    "source": "videos__vidu-q4-preview__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/vidu-q4-preview/generation.md",
     "docTitle": "Vidu Q4 Preview Video Generation",
-    "score": 5,
+    "score": 6,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -8249,14 +8531,38 @@
         "media": {
           "image": {
             "field": "first_frame_image",
-            "max": 1
+            "max": 1,
+            "last": "last_frame_image"
           }
         }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 15
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 3
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference_image",
+          "always": true
+        },
+        "rename": {
+          "reference_audios": "audio_urls"
+        }
       }
-    }
+    },
+    "onlyModes": true
   },
   "wan2.5-preview": {
-    "source": "videos__wan2.5__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/wan2.5/generation.md",
     "docTitle": "wan2.5-preview Video Generation",
     "score": 9,
     "rename": {
@@ -8327,7 +8633,7 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
@@ -8336,10 +8642,11 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "wan2.6": {
-    "source": "videos__wan2.6__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/wan2.6/generation.md",
     "docTitle": "Wan2.6 Video Generation",
     "score": 10,
     "rename": {
@@ -8420,7 +8727,7 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
@@ -8429,10 +8736,11 @@
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "wan2.6-i2v-flash": {
-    "source": "videos__wan2.6__i2v-flash-generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/wan2.6/i2v-flash-generation.md",
     "docTitle": "wan2.6-i2v-flash Image-to-Video",
     "score": 9,
     "rename": {},
@@ -8496,174 +8804,21 @@
       "t2v": {
         "inputs": {}
       },
-      "i2v": {
+      "reference": {
         "inputs": {},
         "media": {
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 10
           }
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "wan2.7-r2v": {
-    "source": "videos__wan2.7-r2v__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/wan2.7-r2v/generation.md",
     "docTitle": "Wan2.7-R2V Reference-to-Video",
-    "score": 8,
-    "rename": {
-      "aspect_ratio": "size"
-    },
-    "common": {
-      "inputs": {
-        "aspect_ratio": {
-          "name": "aspect_ratio",
-          "title": "Aspect Ratio",
-          "type": "string",
-          "enum": [
-            "16:9",
-            "9:16",
-            "1:1",
-            "4:3",
-            "3:4"
-          ],
-          "default": "16:9"
-        },
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "720P",
-            "1080P"
-          ],
-          "default": "1080P"
-        },
-        "duration": {
-          "name": "duration",
-          "title": "Duration",
-          "type": "int",
-          "minValue": 2,
-          "maxValue": 15,
-          "step": 1,
-          "default": 5
-        },
-        "watermark": {
-          "name": "watermark",
-          "title": "Watermark",
-          "type": "boolean",
-          "default": false
-        },
-        "prompt_extend": {
-          "name": "prompt_extend",
-          "title": "Prompt Extend",
-          "type": "boolean",
-          "default": true
-        },
-        "negative_prompt": {
-          "name": "negative_prompt",
-          "title": "Negative Prompt",
-          "type": "string"
-        }
-      }
-    },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "v2v": {
-        "inputs": {},
-        "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 5
-          }
-        }
-      }
-    }
-  },
-  "wan2.7-videoedit": {
-    "source": "videos__wan2.7-videoedit__generation.md",
-    "docTitle": "Wan2.7-VideoEdit Video Editing",
-    "score": 8,
-    "rename": {
-      "aspect_ratio": "size"
-    },
-    "common": {
-      "inputs": {
-        "aspect_ratio": {
-          "name": "aspect_ratio",
-          "title": "Aspect Ratio",
-          "type": "string",
-          "enum": [
-            "16:9",
-            "9:16",
-            "1:1",
-            "4:3",
-            "3:4"
-          ],
-          "default": "16:9"
-        },
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "720P",
-            "1080P"
-          ],
-          "default": "1080P"
-        },
-        "watermark": {
-          "name": "watermark",
-          "title": "Watermark",
-          "type": "boolean",
-          "default": false
-        },
-        "prompt_extend": {
-          "name": "prompt_extend",
-          "title": "Prompt Extend",
-          "type": "boolean",
-          "default": true
-        },
-        "negative_prompt": {
-          "name": "negative_prompt",
-          "title": "Negative Prompt",
-          "type": "string"
-        }
-      }
-    },
-    "modes": {
-      "t2v": {
-        "inputs": {}
-      },
-      "i2v": {
-        "inputs": {},
-        "media": {
-          "image": {
-            "field": "image_urls",
-            "max": 4
-          }
-        }
-      },
-      "v2v": {
-        "inputs": {},
-        "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 100
-          },
-          "image": {
-            "field": "image_urls",
-            "max": 4
-          }
-        }
-      }
-    }
-  },
-  "wan2.7": {
-    "source": "videos__wan2.7__generation.md",
-    "docTitle": "Wan2.7 Video Generation",
     "score": 9,
     "rename": {
       "aspect_ratio": "size"
@@ -8729,6 +8884,99 @@
         "inputs": {},
         "media": {
           "image": {
+            "field": "first_frame_image",
+            "max": 1
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
+        }
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "image_urls",
+            "max": 4
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 5
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "refs": "roles",
+          "refRole": "reference_image",
+          "always": true
+        },
+        "rename": {
+          "reference_videos": "video_urls"
+        }
+      }
+    },
+    "onlyModes": true
+  },
+  "wan2.7-videoedit": {
+    "source": "https://docs.apimart.ai/en/api-reference/videos/wan2.7-videoedit/generation.md",
+    "docTitle": "Wan2.7-VideoEdit Video Editing",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "reference": {
+        "inputs": {},
+        "media": {
+          "image": {
             "field": "image_urls",
             "max": 4
           }
@@ -8737,20 +8985,102 @@
       "v2v": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 100
-          },
           "image": {
             "field": "image_urls",
             "max": 4
+          },
+          "video": {
+            "field": "video_urls",
+            "max": 1
           }
         }
       }
-    }
+    },
+    "onlyModes": true
+  },
+  "wan2.7": {
+    "source": "https://docs.apimart.ai/en/api-reference/videos/wan2.7/generation.md",
+    "docTitle": "Wan2.7 Video Generation",
+    "score": 8,
+    "rename": {
+      "aspect_ratio": "size"
+    },
+    "common": {
+      "inputs": {
+        "aspect_ratio": {
+          "name": "aspect_ratio",
+          "title": "Aspect Ratio",
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ],
+          "default": "16:9"
+        },
+        "resolution": {
+          "name": "resolution",
+          "title": "Resolution",
+          "type": "string",
+          "enum": [
+            "720P",
+            "1080P"
+          ],
+          "default": "1080P"
+        },
+        "duration": {
+          "name": "duration",
+          "title": "Duration",
+          "type": "int",
+          "minValue": 2,
+          "maxValue": 15,
+          "step": 1,
+          "default": 5
+        },
+        "watermark": {
+          "name": "watermark",
+          "title": "Watermark",
+          "type": "boolean",
+          "default": false
+        },
+        "prompt_extend": {
+          "name": "prompt_extend",
+          "title": "Prompt Extend",
+          "type": "boolean",
+          "default": true
+        },
+        "negative_prompt": {
+          "name": "negative_prompt",
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      }
+    },
+    "modes": {
+      "t2v": {
+        "inputs": {}
+      },
+      "i2v": {
+        "inputs": {},
+        "media": {
+          "image": {
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
+          }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "frames": "roles"
+        }
+      }
+    },
+    "onlyModes": true
   },
   "wan3.0-video": {
-    "source": "videos__wan3.0-video__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md",
     "docTitle": "Wan3.0 Video Generation",
     "score": 10,
     "rename": {
@@ -8831,42 +9161,48 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 4,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone",
-              "always": true,
-              "typeField": "generation_type"
-            }
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "typeField": "generation_type",
+          "frames": "roles"
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 1
-          },
           "image": {
             "field": "image_urls",
-            "max": 4,
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "roles",
-              "always": true,
-              "typeField": "generation_type"
-            }
+            "max": 10
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 5
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 5
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "refs": "list",
+          "typeField": "generation_type"
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   },
   "wan3.0-video-prime": {
-    "source": "videos__wan3.0-video__generation.md",
+    "source": "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md",
     "docTitle": "Wan3.0 Video Generation",
     "score": 10,
     "rename": {
@@ -8947,38 +9283,44 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "image_urls",
-            "max": 4,
-            "first": "first_frame_image",
-            "last": "last_frame_image",
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "alone",
-              "always": true,
-              "typeField": "generation_type"
-            }
+            "field": "first_frame_image",
+            "max": 1,
+            "last": "last_frame_image"
           }
+        },
+        "roles": {
+          "field": "image_with_roles",
+          "typeField": "generation_type",
+          "frames": "roles"
         }
       },
-      "v2v": {
+      "reference": {
         "inputs": {},
         "media": {
-          "video": {
-            "field": "video_urls",
-            "max": 1
-          },
           "image": {
             "field": "image_urls",
-            "max": 4,
-            "roles": {
-              "field": "image_with_roles",
-              "refs": "roles",
-              "always": true,
-              "typeField": "generation_type"
-            }
+            "max": 10
+          },
+          "video": {
+            "field": "reference_videos",
+            "max": 5
+          },
+          "audio": {
+            "field": "reference_audios",
+            "max": 5
           }
+        },
+        "roles": {
+          "field": "image_urls",
+          "refs": "list",
+          "typeField": "generation_type"
+        },
+        "rename": {
+          "reference_videos": "video_urls",
+          "reference_audios": "audio_urls"
         }
       }
-    }
+    },
+    "onlyModes": true
   }
 }

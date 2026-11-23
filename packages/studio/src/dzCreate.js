@@ -410,16 +410,19 @@ function unsentWords(text, alias) {
   const pre = "(^|[^\\p{L}\\p{N}_@])";
   const defs = new Map();
   let out = text;
-  // 1. Definitions: "@img1 is the woman" (an article first, at most ten words), then the separator after it
-  //    (not the space after that: the next definition needs it in front of its "@").
-  out = out.replace(new RegExp(`${pre}${at}\\s*(?:\\bis\\b|=|:|—|–|\\bshows\\b)\\s*(${ARTICLE}\\s+[^,.;:!?\\n@]{1,80}?)(?=\\s*(?:[,.;!?\\n]|$|\\band\\b\\s*@))(\\s*(?:,|;|\\band\\b))?`, "giu"),
-    (all, p, name, phrase) => {
-      const words = phrase.trim().split(/\s+/);
-      if (words.length > 10) return all;
-      const tag = alias.get(name.toLowerCase());
-      if (!defs.has(tag)) defs.set(tag, /^(a|an)$/i.test(words[0]) ? `the ${words.slice(1).join(" ")}` : words.join(" ").replace(/^\w/, (c) => c.toLowerCase()));
-      return p;
-    });
+  // 1. Definitions: "@img1 is the woman" / "@img1: the woman" (an article first, at most ten words), or
+  //    "@img1 — жінка" / "@img1 = the woman" (any words: other languages have no article). The
+  //    separator after it goes too; a lookbehind (not a consumed character) marks the start, so a
+  //    definition right after "the woman,@img2 …" is still found.
+  const DEF = `(?<![\\p{L}\\p{N}_@])${at}\\s*(?:(?:\\bis\\b|:|\\bshows\\b)\\s*(${ARTICLE}\\s+[^,.;:!?\\n@]{1,80}?)|(?:=|—|–)\\s*([^,.;:!?\\n@]{1,80}?))(?=\\s*(?:[,.;!?\\n]|$|\\band\\b\\s*@))(\\s*(?:,|;|\\band\\b))?`;
+  out = out.replace(new RegExp(DEF, "giu"), (all, name, en, other) => {
+    const phrase = (en || other || "").trim();
+    const words = phrase.split(/\s+/);
+    if (!phrase || words.length > 10) return all;
+    const tag = alias.get(name.toLowerCase());
+    if (!defs.has(tag)) defs.set(tag, /^(a|an)$/i.test(words[0]) ? `the ${words.slice(1).join(" ")}` : en ? words.join(" ").replace(/^\w/, (c) => c.toLowerCase()) : phrase);
+    return "";
+  });
   // 2. "the woman from @img1", "the bowl (@img3)": the words before already name it.
   out = out.replace(new RegExp(`\\s+${CONNECTOR}\\s+${at}`, "giu"), "");
   out = out.replace(new RegExp(`\\s*\\(\\s*${at}\\s*\\)`, "giu"), "");
@@ -430,17 +433,22 @@ function unsentWords(text, alias) {
     const def = defs.get(tag);
     if (!def) { lost.add(tag); return all; }
     const before = whole.slice(0, offset + p.length);
-    const opens = /(^|[.!?]\s+|\n\s*)$/.test(before);
+    const opens = /(^|[.!?]\s+|\n\s*)["“«'(\[]*$/.test(before);
     return `${p}${opens ? def[0].toUpperCase() + def.slice(1) : def}`;
   });
-  // Tidy what the removed clauses leave: a sentence start "., " or ", ", an empty sentence, double spaces.
+  // Tidy what the removed clauses leave: a sentence start "., " or ", ", an empty sentence, double
+  // spaces. Only when something was rewritten, and never across line breaks or indentation.
+  if (out === text) return { text, lost: [...lost] };
   out = out
-    .replace(/(^|[.!?]\s+|\n)[\s,;]+/g, "$1")
-    .replace(/(^|\n)\s*[.!?]+\s*/g, "$1")
-    .replace(/([.!?])(\s+[.!?])+(?=\s|$)/g, "$1")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/ +([,.;:!?])/g, "$1")
-    .replace(/[,;]\s*([.!?])/g, "$1");
+    .replace(/(^|[.!?][ \t]+|\n)[ \t]*(?:[,;][ \t]*)+/g, "$1")
+    .replace(/(^|\n)[ \t]*[.;,](?=[ \t]|$)[ \t]*/g, "$1")
+    .replace(/([.!?])([ \t]+[.!?])+(?=\s|$)/g, "$1")
+    // a label left with nothing after it ("Characters: ." once its definition went)
+    .replace(/(^|\n|[.!?][ \t]+)[^\n.!?:]{1,40}:[ \t]*[.;,][ \t]*/gu, "$1")
+    .replace(/(\S)[ \t]{2,}/g, "$1 ")
+    .replace(/(\S)[ \t]+([,.;:!?])/g, "$1$2")
+    .replace(/[,;][ \t]*([.!?])/g, "$1");
+  if (!/^\s/.test(text)) out = out.replace(/^[ \t]+/, "");
   return { text: out, lost: [...lost] };
 }
 function unsentAlias(tags) {

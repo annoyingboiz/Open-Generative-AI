@@ -160,17 +160,19 @@ const clock = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${
 export function ReshootBlock({ r }) {
   // Acceptance of handoff 17 (notes 3–4): a started re-shoot scrolls its Original / New pair into
   // view, and a running one counts the time (a re-shoot takes up to a couple of minutes).
-  const jobsRef = useRef(null);
-  const running = Object.values(r?.jobs || {}).filter((j) => j.state === "running");
-  const runKey = running.map((j) => j.token).join("|");
+  const nodes = useRef({});
+  const running = Object.entries(r?.jobs || {}).filter(([, j]) => j.state === "running");
+  const runKey = running.map(([, j]) => j.token).join("|");
+  // The pair that started last (a retry of one frame while the other's result is still shown).
+  const newest = running.reduce((a, b) => ((b[1].started || 0) > (a?.[1].started || 0) ? b : a), null)?.[0] || null;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!runKey) return undefined;
-    jobsRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    nodes.current[newest]?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
     setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [runKey]);
+  }, [runKey]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!r || (!r.taken && !r.roles.length && !r.mismatch && !r.phoneBlocked && !Object.keys(r.jobs).length)) return null;
   const both = r.phone ? r.roles : r.mismatch ? ["first", "last"] : r.roles;
   const active = Object.keys(r.jobs);
@@ -193,10 +195,10 @@ export function ReshootBlock({ r }) {
         </Button>
       )}
       {!r.model && (r.roles.length > 0 || r.mismatch) && <p className="text-xs text-muted-foreground">Re-shooting needs Nano Banana Pro, which is not available here.</p>}
-      {active.length > 0 && <div ref={jobsRef} className="space-y-3">{active.map((role) => {
+      {active.length > 0 && <div className="space-y-3">{active.map((role) => {
         const job = r.jobs[role];
         return (
-          <div key={role} className="space-y-2">
+          <div key={role} ref={(el) => { nodes.current[role] = el; }} className="space-y-2">
             <div className="text-xs font-medium uppercase text-muted-foreground">{ROLE_NAME[role]}</div>
             <div className="grid grid-cols-2 gap-2">
               {[["Original", job.from], ["New", job.to]].map(([label, url]) => (

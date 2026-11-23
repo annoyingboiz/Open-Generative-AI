@@ -38,3 +38,21 @@ test('references the model gets are untouched; a JSON prompt keeps the old rule'
   assert.deepEqual(unsentMentions('{"subject": "@img1 is the woman"}', off), []);
   assert.equal(translateTags('{"subject": "the woman @img1"}', off), '{"subject": "the woman"}');
 });
+
+test('review x57: no tidy without a rewrite, other languages, a comma without a space, empty labels, quotes', async () => {
+  const { promptTags, translateTags, unsentMentions } = await dz();
+  const tags = promptTags({ attached: { first: [frame] }, all: { first: [frame], reference: refs }, variant: noRefs });
+  // Nothing about the unsent files: the text is left exactly as typed.
+  assert.equal(translateTags('...and then she leaves.\n\n  Two  spaces stay.', tags), '...and then she leaves.\n\n  Two  spaces stay.');
+  // A definition without an English article after a dash.
+  assert.equal(translateTags('@img1 — жінка. @img1 сидить за стійкою.', tags), 'Жінка сидить за стійкою.');
+  assert.deepEqual(unsentMentions('@img1 — жінка. @img1 сидить.', tags), []);
+  // No space after the comma: the second definition is still found.
+  assert.equal(translateTags('@img1 is the woman,@img2 is the shop. @img2 glows.', tags), 'The shop glows.');
+  // A label whose only content was a definition goes with it.
+  assert.equal(translateTags('Characters: @img1 is the woman. Action: @img1 waves.', tags), 'Action: the woman waves.');
+  // An opening quote does not hide the sentence start.
+  assert.equal(translateTags('@img1 is the woman. "@img1 walks."', tags), '"The woman walks."');
+  // "is" with no article is not a definition (a verb follows): reported, not guessed.
+  assert.deepEqual(unsentMentions('@img1 is sitting at the counter.', tags), ['img1']);
+});

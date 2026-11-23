@@ -142,10 +142,14 @@ export default function ModelMenu({ entries, entry, onPick, onClose, kind = entr
                     try { saved = localStorage.getItem(`dz_studio_provider_${f.family}`); } catch { /* storage is optional */ }
                     // The provider in use, else the one picked by hand before; else the cheapest:
                     // by catalog price now, then by the real price for these settings (autoFamily).
-                    const manual = f.providers.find((p) => p.entry.key === entry?.key) || f.providers.find((p) => p.entry.key === saved);
+                    // Picked by hand = a provider row clicked before (saved); the provider in use may have
+                    // been chosen automatically, so it is kept only until the real prices come.
+                    const manual = f.providers.find((p) => p.entry.key === saved);
+                    const current = f.providers.find((p) => p.entry.key === entry?.key);
                     const byCatalog = [...f.providers].filter((p) => !p.local && p.price).sort((a, b) => a.price.usd - b.price.usd)[0];
-                    const keep = manual || byCatalog || f.providers[0];
+                    const keep = manual || current || byCatalog || f.providers[0];
                     setAutoFamily(manual || f.providers.length === 1 ? null : f.family);
+                    if (keep.entry.key === entry?.key && f.providers.length > 1) return; // already in use: the prices decide
                     onPick(keep.entry.key, { close: f.providers.length === 1 });
                   }}
                   className={cn("flex h-[46px] w-full items-center gap-2.5 rounded-slot border px-3 text-left transition-colors duration-state",

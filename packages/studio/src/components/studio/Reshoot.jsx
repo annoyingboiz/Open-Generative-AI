@@ -88,24 +88,29 @@ export function useReshoot(engine) {
   const run = useCallback(async (role) => {
     const url = role === "first" ? start : end;
     if (!model || !url) return;
-    setJobs((j) => ({ ...j, [role]: { state: "running", from: url } }));
+    // What this run was made from and with: a later change of frame or camera never relabels it.
+    const token = Math.random().toString(36).slice(2);
+    const shotLook = lookRef.current;
+    setJobs((j) => ({ ...j, [role]: { state: "running", from: url, token } }));
+    const mine = (j) => j[role]?.token === token;
     try {
       const ref = refSyntaxFor(model.variant.model)?.image(1) || "@img1";
       const meta = { kind: "image", entryKey: model.entry.key, modelName: `Re-shoot · ${model.entry.familyName} · ${model.entry.providerName}`, reshootOf: url, role };
-      const res = await dzWithMeta({ studio: "create", meta, look: lookRef.current, reshoot: { frame: url, ref } },
+      const res = await dzWithMeta({ studio: "create", meta, look: shotLook, reshoot: { frame: url, ref } },
         () => dzGenerate(undefined, { endpoint: model.variant.model.endpoint, ...bodyFor(url) }));
       const to = res?.outputs?.[0] || res?.url;
       if (!to) throw new Error("No picture came back.");
-      setInfo((m) => ({ ...m, [to]: { url: to, made: true, look: lookRef.current } }));
-      setJobs((j) => ({ ...j, [role]: { state: "done", from: url, to } }));
+      setInfo((m) => ({ ...m, [to]: { url: to, made: true, look: shotLook } }));
+      setJobs((j) => (mine(j) ? { ...j, [role]: { state: "done", from: url, to, token } } : j));
     } catch (e) {
-      setJobs((j) => ({ ...j, [role]: { state: "error", from: url, error: e?.message || "The re-shoot failed." } }));
+      setJobs((j) => (mine(j) ? { ...j, [role]: { state: "error", from: url, token, error: e?.message || "The re-shoot failed." } } : j));
     }
   }, [model, start, end, bodyFor]);
   const use = (role) => {
     const job = jobs[role];
     if (!job?.to) return;
-    setAttached((prev) => ({ ...prev, [role]: [{ url: job.to, name: `Re-shot ${ROLE_NAME[role]}` }, ...(prev[role] || []).slice(1)] }));
+    // Only in place of the frame it was made from (the frame may have been swapped meanwhile).
+    setAttached((prev) => ((prev[role] || [])[0]?.url === job.from ? { ...prev, [role]: [{ url: job.to, name: `Re-shot ${ROLE_NAME[role]}` }, ...(prev[role] || []).slice(1)] } : prev));
     setJobs((j) => { const { [role]: _x, ...rest } = j; return rest; });
   };
   const keep = (role) => setJobs((j) => { const { [role]: _x, ...rest } = j; return rest; });

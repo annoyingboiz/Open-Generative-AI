@@ -347,7 +347,8 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
   const fromFrame = kind === 'video' && framed;
   const w = words(look, kind, { framed: fromFrame, family });
   const camText = fromFrame ? null : cameraLines(look, { kind, family, ratio });
-  const keepLine = fromFrame && (look.on || look.filter) ? KEEP_FRAME : '';
+  // Any look with a start frame (camera, lens, move, light…): the frame decides the picture.
+  const keepLine = fromFrame ? KEEP_FRAME : '';
   const parts = [w.camera, w.move, w.light, w.palette, w.genre, w.era, keepLine, camText];
   if (!parts.some(Boolean)) return raw;
   const camOne = camText ? [camText.lead, camText.header?.[1], ...(camText.lines || []).map(([, t]) => t), camText.sentence].filter(Boolean).join(' ') : '';
@@ -395,8 +396,11 @@ function placeCamera(text, cam) {
     out = re.test(out) ? out.replace(re, (_, head, rest) => `${head}${rest.replace(/[.\s]*$/, '')}${rest.trim() ? '. ' : ' '}${t}`) : `${label} ${t}${out.trim() ? '\n' : ''}${out}`;
   }
   if (cam.lead) {
+    // Wan (§7): "Generate single shot. <camera>." — a multi-shot prompt ("Shot 1 [0–3s]…") gets the camera first.
     const re = /(generate single shot\.)/i;
-    out = re.test(out) ? out.replace(re, `$1 ${cam.lead}`) : `${cam.lead}${out.trim() ? ' ' : ''}${out}`;
+    if (re.test(out)) out = out.replace(re, `$1 ${cam.lead}`);
+    else if (/\bshot\s*\d/i.test(out)) out = `${cam.lead}${out.trim() ? ' ' : ''}${out}`;
+    else out = `Generate single shot. ${cam.lead}${out.trim() ? ' ' : ''}${out}`;
   }
   for (const [label, t] of cam.lines || []) out = intoBlock(out, label, t.replace(/\.$/, ''));
   return out;

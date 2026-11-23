@@ -124,6 +124,12 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
   const wan = renderLook('Generate single shot. A woman walks.', cleanLook({ on: true, camera: 'dv' }), { kind: 'video', memo: memos.wan, ratio: '16:9' });
   assert.match(wan, /^Generate single shot\. Amateur home video from the year 2000.*\. A woman walks\./);
   assert.match(wan, /^Style: Standard-definition video.*No text, no date stamp\. The picture fills the whole 16:9 frame edge to edge, no black bars, no border\.$/m);
+  const wan2 = renderLook('A woman walks.', cleanLook({ on: true, camera: 'vhs' }), { kind: 'video', memo: memos.wan, ratio: '16:9' });
+  assert.match(wan2, /^Generate single shot\. A 1990s VHS home recording\. A woman walks\./);
+  const wanMulti = renderLook('Shot 1 [0-3s] a woman walks. Shot 2 [3-6s] she sits.', cleanLook({ on: true, camera: 'vhs' }), { kind: 'video', memo: memos.wan });
+  assert.doesNotMatch(wanMulti, /Generate single shot/);
+  // A start frame with only a move or a light: the keep line too.
+  assert.ok(renderLook('A woman walks.', cleanLook({ move: 'orbit' }), { kind: 'video', memo: memos.kling, framed: true }).includes(KEEP_FRAME));
   // No drawn texture anywhere: grain, dust, scratches, light leaks, tracking bands, timestamps belong to the filter.
   const BAD = /dust|scratch|hair|light leak|tracking|grain(?!s? *$)|timestamp(?! *$)/i;
   for (const c of CAMERAS.filter((x) => x.shot)) {

@@ -138,7 +138,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     const index = Number(m[3] || 0);
     const output = gen && JSON.parse(gen.outputs_json || '[]')[index];
     if (!output || !canSee(user, gen)) throw new GenerationError('Reference file not found.', 404);
-    const key = `${providerId}:${gen.id}/${index}`;
+    // Keyed by the file too: a texture re-render makes a new file under the same index.
+    const key = `${providerId}:${gen.id}/${index}:${output.path}`;
     const cached = outputRefCache.get(key);
     if (cached && cached.expiresAt > Date.now() + 3_600_000) return cached.url;
     const ref = await provider.upload(cfg, { path: output.path, mime: output.mime, name: output.path.split('/').pop(), kind: output.mime.split('/')[0] });
@@ -169,7 +170,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     }
     const gen = q.byId.get(m[2]);
     if (!gen || !canSee(user, gen)) return null;
-    const cached = outputRefCache.get(`${providerId}:${gen.id}/${Number(m[3] || 0)}`);
+    const out = JSON.parse(gen.outputs_json || '[]')[Number(m[3] || 0)];
+    const cached = out && outputRefCache.get(`${providerId}:${gen.id}/${Number(m[3] || 0)}:${out.path}`);
     return cached && cached.expiresAt > Date.now() + 3_600_000 ? cached.url : null;
   }
 
@@ -676,7 +678,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     const row = q.byId.get(id);
     if (!canSee(user, row)) return null;
     const o = JSON.parse(row.outputs_json || '[]')[Number(index) || 0];
-    return o ? { path: o.path, mime: o.mime || mimeForExt(o.ext) } : null;
+    return o ? { path: o.path, mime: o.mime || mimeForExt(o.ext), ...(o.tex ? { tex: o.tex.v, ext: o.ext } : {}) } : null;
   }
 
   // The user's own uploaded files (newest first), e.g. to pick one to upscale.
@@ -799,7 +801,13 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     setOnCompleted(fn) { onCompleted = fn; },
     // The texture filter's re-render (app.js): the row's files, replaced as a whole.
-    setOutputs(id, outputs) { q.setOutputs.run(JSON.stringify(outputs), now(), id); },
+    // Only onto the files it was made from (`before`: outputs_json then), and never onto a purged row.
+    setOutputs(id, outputs, before) {
+      const row = q.byId.get(id);
+      if (!row || row.purged_at != null || row.status !== 'completed' || (before != null && row.outputs_json !== before)) return false;
+      q.setOutputs.run(JSON.stringify(outputs), now(), id);
+      return true;
+    },
     editableRow: (user, id) => editable(user, id),
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,

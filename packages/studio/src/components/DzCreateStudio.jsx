@@ -55,6 +55,7 @@ function normalizeSaved(raw) {
     images: Array.isArray(e.images) ? e.images.filter((u) => typeof u === "string").slice(0, 8) : [], video: typeof e.video === "string" ? e.video : null,
   }));
   if (isObj(s.attached)) out.attached = Object.fromEntries(Object.entries(s.attached).filter(([role]) => ROLE_INFO[role]).map(([role, list]) => [role, cleanFiles(list)]));
+  if (isObj(s.texture)) out.texture = { on: s.texture.on !== false, strength: Number.isFinite(Number(s.texture.strength)) ? Math.max(0, Math.min(100, Math.round(Number(s.texture.strength)))) : 60 };
   if (Array.isArray(s.touched)) out.touched = s.touched.filter((r) => typeof r === "string" && ROLE_INFO[r]).slice(0, 12);
   if (typeof out.prompt === "string") out.prompt = migrateTags(out.prompt, keepTags(out.elements));
   return out;
@@ -629,7 +630,9 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const allParams = [...(params?.main || []), ...(params?.advanced || [])];
   const effective = (k) => values?.[k] ?? allParams.find((x) => x.key === k)?.default;
   const freeKey = ["aspect_ratio", "ratio"].find((k) => allParams.some((x) => x.key === k) && /^(adaptive|auto)$/i.test(String(effective(k) ?? "")));
-  const lookSet = Boolean(look && (look.on || look.filter || look.era || look.light || look.palette || look.genre));
+  // Only what changes the format: a camera other than Modern (handoff 17, §4 rule 2) or a lens
+  // (anamorphic → extra wide). Light, palette, genre and era leave "adaptive" alone.
+  const lookSet = Boolean(look && look.on !== false && (((lookData().cameras || []).some((c) => c.id === look.camera) && look.camera !== "modern") || look.lens));
   const ratioFixed = useMemo(() => {
     if (!freeKey || startUrl || kind !== "video" || !lookSet) return null;
     const p = [...(params?.main || []), ...(params?.advanced || [])].find((x) => x.key === freeKey);

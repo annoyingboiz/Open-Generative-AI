@@ -149,7 +149,12 @@ export async function buildApp(config, { logger = true } = {}) {
     if (want.on && want.strength > 0) {
       const info = await videoInfo(clean);
       const dst = clean.replace(/(\.[a-z0-9]+)$/i, `-t${v}$1`);
-      await applyTexture(clean, dst, want.preset, want.strength, { width: info?.width, height: info?.height, fps: info?.fps });
+      // Into a temporary file first: a failed render leaves nothing behind.
+      const tmp = clean.replace(/(\.[a-z0-9]+)$/i, `-t${v}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp$1`);
+      try {
+        await applyTexture(clean, tmp, want.preset, want.strength, { width: info?.width, height: info?.height, fps: info?.fps });
+        fs.renameSync(tmp, dst);
+      } finally { fs.rmSync(tmp, { force: true }); }
       file = dst;
     }
     const old = out.path !== clean ? out.path : null;
@@ -159,6 +164,18 @@ export async function buildApp(config, { logger = true } = {}) {
   generations.setAfterDownload({
     wants: (row) => (row.studio === 'upscale' && row.kind === 'video' && Boolean(audioFileOf(row))) || Boolean(textureWanted(row)),
     run: async (row, saved) => {
+      // The sound back into an upscale first, so the clean original keeps it for every re-render.
+      const audio = audioFileOf(row);
+      if (audio && fs.existsSync(audio)) {
+        for (const out of saved) {
+          if (!/^video\//.test(out.mime || '')) continue;
+          const info = await videoInfo(out.path);
+          if (!info || info.audio) continue;
+          const ok = (await restoreAudio(out.path, audio)) || (await restoreAudio(out.path, audio));
+          if (ok) out.bytes = fs.statSync(out.path).size;
+          else app.log.warn(`upscale ${row.id}: could not put the sound back`);
+        }
+      }
       const want = textureWanted(row);
       if (want) {
         for (const out of saved) {
@@ -166,17 +183,7 @@ export async function buildApp(config, { logger = true } = {}) {
           try { await texturize(out, want, 1); } catch (error) { app.log.warn(`texture ${row.id}: ${error.message}`); }
         }
       }
-      const audio = audioFileOf(row);
       if (!audio) return;
-      if (!fs.existsSync(audio)) return;
-      for (const out of saved) {
-        if (!/^video\//.test(out.mime || '')) continue;
-        const info = await videoInfo(out.path);
-        if (!info || info.audio) continue;
-        const ok = (await restoreAudio(out.path, audio)) || (await restoreAudio(out.path, audio));
-        if (ok) out.bytes = fs.statSync(out.path).size;
-        else app.log.warn(`upscale ${row.id}: could not put the sound back`);
-      }
       fs.rmSync(audio, { force: true });
     },
   });
@@ -1092,7 +1099,11 @@ export async function buildApp(config, { logger = true } = {}) {
       textureBusy.add(row.id);
       let old = null;
       try { old = await texturize(out, want, (Number(out.tex.v) || 1) + 1); } finally { textureBusy.delete(row.id); }
-      generations.setOutputs(row.id, outputs);
+      // Deleted, purged or changed meanwhile: the new file goes, nothing is written.
+      if (!generations.setOutputs(row.id, outputs, row.outputs_json)) {
+        if (out.path !== out.clean) fs.rmSync(out.path, { force: true });
+        return reply.code(409).send({ detail: 'This video changed meanwhile. Try again.' });
+      }
       if (old && old !== out.path) fs.rmSync(old, { force: true });
       return { ok: true, texture: { preset: out.tex.preset, on: out.tex.on, strength: out.tex.strength }, url: `/media/g/${row.id}/0-t${out.tex.v}.${out.ext}` };
     } catch (error) { return sendGenError(reply, error); }
@@ -1513,6 +1524,12 @@ export async function buildApp(config, { logger = true } = {}) {
     // "0.mp4", or "0-t3.mp4" (a texture version): the index is the number in front.
     const f = generations.mediaFile(req.user, 'g', req.params.id, String(Number.parseInt(req.params.file, 10) || 0));
     if (!f) return reply.code(404).header('cache-control', 'no-store').send({ error: 'Not found' });
+    // An older texture version: never other bytes under its link — sent on to the current one.
+    const tv = /^\d+-t(\d+)\./.exec(req.params.file);
+    if (tv && f.tex && Number(tv[1]) !== Number(f.tex)) {
+      const q = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+      return reply.code(302).header('cache-control', 'no-store').header('location', `/media/g/${req.params.id}/${Number.parseInt(req.params.file, 10) || 0}-t${f.tex}.${f.ext}${q}`).send();
+    }
     return sendMedia(req, reply, f);
   });
 

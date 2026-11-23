@@ -247,3 +247,11 @@ test('Typed lists: a total limit, no audio alone; Wan 3.0 at APIMart sets genera
   const gem = buildApimartVariants({ id: 'gemini-omni-1.2-flash', capability_tags: ['video-to-video'] }, OV['gemini-omni-1.2-flash'], { usd: 0.02, unit: 'second' }).find((x) => x.mode === 'v2v');
   assert.deepEqual(toProviderBody(gem, { prompt: 'p', video_urls: ['V'], image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
 });
+
+test('APIMart Seedance: pictures only never go to the edit endpoint', async () => {
+  const { BodyError } = await import('../src/catalog/build.js');
+  const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
+  const v2v = buildApimartVariants({ id: 'seedance-2.5', capability_tags: ['video-to-video'] }, OV['seedance-2.5'], { usd: 0.2, unit: 'second' }).find((x) => x.mode === 'v2v');
+  assert.throws(() => toProviderBody(v2v, { prompt: 'p', image_urls: ['A', 'B', 'C'] }), BodyError);
+  assert.equal(toProviderBody(v2v, { prompt: 'p', video_urls: ['V'], image_urls: ['A'] }).omni_reference_task_type, 'edit');
+});

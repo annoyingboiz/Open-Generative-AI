@@ -404,7 +404,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       provider_model: row.provider_model,
       kind: row.kind,
       params: JSON.parse(row.params_json || '{}'),
-      cost_usd: row.cost_usd ?? row.est_cost_usd,
+      // A failed request shows what the provider charged, not the estimate (usually nothing).
+      cost_usd: row.status === 'failed' ? row.cost_usd : row.cost_usd ?? row.est_cost_usd,
       cost_final: row.cost_usd != null,
       error: row.error,
       note: row.status === 'completed' || row.status === 'failed' ? null : row.note || null,

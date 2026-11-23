@@ -458,7 +458,9 @@ export function chooseVariant(entry, attached, { native = false } = {}) {
     if (plain) return plain;
   }
   // Prefer endpoints whose required media are all attached, then the simplest one.
-  const score = (v) => (missingFor(v, attached) ? 1000 : 0) + Object.keys(v.media).length;
+  // An endpoint made for a video to edit is never picked without one (APIMart's
+  // video endpoint is fixed to "edit": with pictures only it is refused, 400).
+  const score = (v) => (missingFor(v, attached) ? 1000 : 0) + (v.media.source && !used.includes("source") ? 500 : 0) + Object.keys(v.media).length;
   return [...fits].sort((a, b) => score(a) - score(b))[0];
 }
 

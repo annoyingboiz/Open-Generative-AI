@@ -509,6 +509,10 @@ export function toProviderBody(variant, body) {
     out[target] = value;
   }
   if (variant.server.roles) withRoles(out, variant.server.roles);
+  // "edit" only with a video to edit (APIMart: edit without video_urls is a 400).
+  if (fixed.omni_reference_task_type === 'edit' && ![].concat(out.video_urls || out.video_url || []).filter(Boolean).length) {
+    throw new BodyError('This endpoint edits a video: add the video to edit, or remove it from the request.');
+  }
   for (const list of variant.server.typedLists || []) {
     const items = list.types.flatMap((t) => {
       const v = out[`${list.field}__${t}`];

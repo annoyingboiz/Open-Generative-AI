@@ -222,6 +222,8 @@ export function buildApimartVariants(model, override, price) {
     let images = null; // the docs-read format (videoModes): see serializeImages
     if (spec) {
       const inputs = { ...(override.common?.inputs || {}), ...(spec.inputs || {}) };
+      // A setting this endpoint must not get (Kling 4.0 Flash image-to-video: aspect ratio → 400).
+      for (const k of spec.omit || []) delete inputs[k];
       fields = { inputs, hasPrompt: spec.hasPrompt ?? true, promptRequired: spec.promptRequired ?? (mode === 't2i' || mode === 't2v'), required: spec.required || [] };
       for (const [k, v] of Object.entries(spec.media || {})) {
         if (k === 'image') { fields.imageField = v.field; fields.maxImages = v.max || 1; if (v.last) fields.lastImageField = v.last; if (v.roles) roles = { ...v.roles, first: v.roles.refs === 'never' ? v.field : v.first, last: v.last, refsField: v.roles.refs === 'never' ? null : v.field }; }
@@ -269,6 +271,7 @@ export function buildApimartVariants(model, override, price) {
           .filter((f) => ![fields.imageField, fields.lastImageField, fields.videoField, fields.audioField].includes(f)),
         ...(roles ? { roles: { ...roles, size: rename.aspect_ratio || 'aspect_ratio' } } : {}),
         ...(images ? { images: { ...images, size: rename.aspect_ratio || 'aspect_ratio' } } : {}),
+        ...(spec?.checks ? { checks: spec.checks } : {}),
         fixed: { ...(override?.fixed || {}), ...(spec?.fixed || {}) },
         price,
       },
@@ -550,6 +553,7 @@ export function toProviderBody(variant, body) {
     if ([].concat(out[f] ?? []).filter(Boolean).length) throw new BodyError('This model takes frames or reference images, not both in one request. Remove the references or the frames.');
   }
   if (variant.server.roles) withRoles(out, variant.server.roles);
+  if (variant.server.checks) checkCounts(out, variant.server.checks);
   if (variant.server.images) serializeImages(out, variant.server.images);
   // "edit" only with a video to edit (APIMart: edit without video_urls is a 400).
   if (fixed.omni_reference_task_type === 'edit' && ![].concat(out.video_urls || out.video_url || []).filter(Boolean).length) {
@@ -573,6 +577,18 @@ export function toProviderBody(variant, body) {
 
 // An error the user can act on (the request is not sent).
 export class BodyError extends Error {}
+
+// Limits the docs state across fields (before renaming / serializing).
+function checkCounts(out, c) {
+  const n = (k) => [].concat(out[k] ?? []).filter(Boolean).length;
+  if (c.audioNeeds && n(c.audioNeeds) && !n('image_urls') && !n('reference_videos') && !n('first_frame_image')) {
+    throw new BodyError('Reference audio needs a reference picture or video with it.');
+  }
+  const assets = n('image_urls') + n('reference_videos') + n('reference_audios');
+  if (c.assetsTotal && assets > c.assetsTotal) throw new BodyError(`This model takes up to ${c.assetsTotal} reference files in total (pictures, videos and audio together). Remove ${assets - c.assetsTotal}.`);
+  const images = n('image_urls') + n('first_frame_image') + n('last_frame_image');
+  if (c.imagesTotal && images > c.imagesTotal) throw new BodyError(`This model takes up to ${c.imagesTotal} pictures in total, frames included. Remove ${images - c.imagesTotal}.`);
+}
 
 // Pictures as APIMart reads them (spec from the docs, apimart-docs.js videoModes):
 //   frames: 'fields' (first_frame_image / last_frame_image) | 'roles' (image_with_roles

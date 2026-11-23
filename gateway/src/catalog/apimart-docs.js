@@ -69,7 +69,10 @@ function enumOf(p, otherNames) {
     const inline = /(?:only|one of|either)[^.\n]*?((?:`[^`]+`[,\s/or]*){2,})/i.exec(body);
     if (inline) candidates = ticks(inline[1]);
   }
+  // "`1080p` returns HTTP 400", "`4k` is not supported": named only to be refused.
+  const refused = new Set(body.split(/(?<=[.;])\s+|\n/).filter((t) => /returns? (HTTP )?4\d\d|not supported|unsupported|not available|is rejected/i.test(t) && !/\bonly\b/i.test(t)).flatMap((t) => ticks(t)));
   const valid = VALID[p.name];
+  candidates = candidates.filter((v) => !refused.has(v));
   const values = candidates.filter((v) => !STOP.has(v) && !otherNames.has(v) && !/\s|@|\/\/|^-?\d+\s*~/.test(v) && v.length <= 20 && (!valid || valid.test(v)));
   return values.length >= 2 ? [...new Set(values)] : null;
 }
@@ -194,13 +197,33 @@ function videoReader(params, text, ids) {
     if (editField && (omni.includes('edit') || (!videoRefs && /edit|remix|restyle|video-to-video/i.test(text)))) {
       modes.v2v = { edit: { field: editField, task: omni.includes('edit') ? 'edit' : null }, refs: refsVia ? { via: refsVia === 'urls-task' ? 'urls' : refsVia, max: refMax, refRole } : null };
     }
-    return { modes, omniRef: omni.includes('reference'), typeField: params.generation_type ? 'generation_type' : null, adaptive: /first[ /–-]*(last )?frame[^\n]*(`size`|aspect)[^\n]*adaptive/i.test(text) };
+    // Per mode, from the docs' own words:
+    //  prompt: "*required*", or "Optional for image-to-video; required otherwise" (Kling);
+    const promptText = [params.prompt?.head || '', body('prompt')].join('\n');
+    const promptReq = /\*required\*|\brequired\b/i.test(params.prompt?.head || '') ? 'all' : /optional for image-to-video;? required otherwise/i.test(promptText) ? 'not-i2v' : null;
+    //  aspect ratio: "Image-to-video does not accept `aspect_ratio`" (Kling 4.0 Flash: 400);
+    const ar = body('aspect_ratio') + body('size');
+    const i2vNoRatio = /image-to-video (does not accept|do not send|must not)[^.\n]*(`aspect_ratio`|`size`)/i.test(ar);
+    //  edit: "`size` must be `adaptive`, `duration` must be `-1`" (Seedance);
+    const editFixed = /edit[^\n]*`size` must be `adaptive`[^\n]*`duration` must be `-1`/i.test(text);
+    //  audio: "Cannot be used alone" (H3) — with a reference picture or video;
+    const audioNeeds = /cannot be used alone|audio alone is not allowed/i.test(body('audio_urls') + text);
+    //  totals: "no more than 15 assets combined" (Kling), "Up to 10 images in total, including first/last frames" (Gemini).
+    const assetsTotal = Number((/no more than\s+\**(\d+)\**\s+assets/i.exec(text) || [])[1]) || null;
+    const imagesTotal = Number((/(?:up to|no more than)\s+\**(\d+)\**\s+images in total,? including (?:the )?first/i.exec(text) || [])[1]) || null;
+    return {
+      modes, omniRef: omni.includes('reference'), typeField: params.generation_type && has('generation_type') ? 'generation_type' : null,
+      adaptive: /first[ /–-]*(last )?frame[^\n]*(`size`|aspect)[^\n]*adaptive/i.test(text),
+      promptReq, i2vNoRatio, editFixed, audioNeeds, assetsTotal, imagesTotal,
+      // Fields this model in a shared page doesn't take ("`veo3.1-lite` model does not support this parameter").
+      noFields: Object.keys(params).filter((n) => !has(n)),
+    };
   };
 }
 
 // The reader's result → override modes (build.js: buildApimartVariants).
 function videoModes(read) {
-  const out = { t2v: { inputs: {} } };
+  const out = { t2v: { inputs: {}, ...(read.promptReq ? { promptRequired: true } : {}) } };
   const rolesSpec = (extra) => ({ field: 'image_with_roles', ...(read.typeField ? { typeField: read.typeField } : {}), ...extra });
   for (const [mode, m] of Object.entries(read.modes)) {
     const media = {};
@@ -233,7 +256,20 @@ function videoModes(read) {
         if (m.refs.via === 'roles') roles = { field: 'image_with_roles', refs: 'roles', refRole: m.refs.refRole, always: true };
       }
     }
-    out[mode] = { inputs: {}, media, ...(roles ? { roles } : {}), ...(Object.keys(rename).length ? { rename } : {}), ...(Object.keys(fixed).length ? { fixed } : {}) };
+    if (m.edit && read.editFixed) { fixed.size = 'adaptive'; fixed.duration = -1; }
+    const checks = {
+      ...(read.audioNeeds && media.audio ? { audioNeeds: media.audio.field } : {}),
+      ...(read.assetsTotal && mode === 'reference' ? { assetsTotal: read.assetsTotal } : {}),
+      ...(read.imagesTotal && m.frames && m.refs ? { imagesTotal: read.imagesTotal } : {}),
+    };
+    out[mode] = {
+      inputs: {}, media,
+      ...(read.promptReq === 'all' || (read.promptReq === 'not-i2v' && mode !== 'i2v') ? { promptRequired: true } : {}),
+      ...(mode === 'i2v' && read.i2vNoRatio ? { omit: ['aspect_ratio'] } : {}),
+      ...(m.edit && read.editFixed ? { omit: ['aspect_ratio', 'duration'] } : {}),
+      ...(Object.keys(checks).length ? { checks } : {}),
+      ...(roles ? { roles } : {}), ...(Object.keys(rename).length ? { rename } : {}), ...(Object.keys(fixed).length ? { fixed } : {}),
+    };
   }
   return out;
 }
@@ -320,9 +356,11 @@ export function buildApimartOverrides(docs) {
     if (!o) continue;
     for (const id of o.ids) {
       const isVideo = /\/videos\/|videos__/.test(url);
-      const common = { inputs: o.inputs };
+      const read = isVideo ? o.readVideo(id) : null;
+      // A shared page: inputs this model doesn't take are left out (Veo 3.1 Lite: generation_type).
+      const common = { inputs: read ? Object.fromEntries(Object.entries(o.inputs).filter(([k]) => !read.noFields.includes(k) && !read.noFields.includes(o.rename?.[k]))) : o.inputs };
       const modes = isVideo
-        ? videoModes(o.readVideo(id))
+        ? videoModes(read)
         : {
             t2i: { inputs: {} },
             ...(o.media.image ? { i2i: { inputs: {}, media: { image: o.media.image } } } : {}),

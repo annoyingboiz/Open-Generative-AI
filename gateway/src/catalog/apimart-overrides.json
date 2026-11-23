@@ -4435,7 +4435,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -4446,6 +4447,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles"
@@ -4501,7 +4503,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -4512,6 +4515,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles"
@@ -4555,7 +4559,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -4564,7 +4569,8 @@
             "field": "image_urls",
             "max": 2
           }
-        }
+        },
+        "promptRequired": true
       },
       "v2v": {
         "inputs": {},
@@ -4577,7 +4583,8 @@
             "field": "video_url",
             "max": 1
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -4728,7 +4735,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -4738,7 +4746,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -4752,6 +4761,7 @@
             "max": 15
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "refs": "list",
@@ -4776,6 +4786,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "refs": "list",
@@ -4833,7 +4844,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -4845,6 +4857,10 @@
             "refsField": "image_urls",
             "refsMax": 10
           }
+        },
+        "promptRequired": true,
+        "checks": {
+          "imagesTotal": 10
         },
         "roles": {
           "field": "image_with_roles",
@@ -4865,6 +4881,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "refs": "roles",
@@ -4901,7 +4918,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -4915,6 +4933,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "rename": {
           "reference_videos": "video_urls"
         }
@@ -4970,7 +4989,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -4981,6 +5001,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles"
@@ -4994,6 +5015,7 @@
             "max": 14
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "refs": "roles",
@@ -5041,7 +5063,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -5050,7 +5073,8 @@
             "field": "image_urls",
             "max": 4
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -5092,7 +5116,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -5101,7 +5126,8 @@
             "field": "image_urls",
             "max": 4
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -5316,7 +5342,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -5325,7 +5352,8 @@
             "field": "first_frame_image",
             "max": 1
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -5391,7 +5419,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -5402,6 +5431,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list"
@@ -5533,7 +5563,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -5544,6 +5575,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles"
@@ -5556,7 +5588,8 @@
             "field": "image_urls",
             "max": 4
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -5632,7 +5665,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -5643,6 +5677,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list"
@@ -5654,7 +5689,7 @@
   "kling-v4-flash": {
     "source": "https://docs.apimart.ai/en/api-reference/videos/kling-v4-flash/generation.md",
     "docTitle": "Kling V4 Flash Video Generation",
-    "score": 7,
+    "score": 6,
     "rename": {
       "aspect_ratio": "aspect_ratio"
     },
@@ -5673,16 +5708,6 @@
           ],
           "default": "16:9"
         },
-        "resolution": {
-          "name": "resolution",
-          "title": "Resolution",
-          "type": "string",
-          "enum": [
-            "720p",
-            "1080p"
-          ],
-          "default": "720p"
-        },
         "duration": {
           "name": "duration",
           "title": "Duration",
@@ -5696,7 +5721,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -5705,7 +5731,10 @@
             "field": "first_frame_image",
             "max": 1
           }
-        }
+        },
+        "omit": [
+          "aspect_ratio"
+        ]
       },
       "reference": {
         "inputs": {},
@@ -5719,6 +5748,7 @@
             "max": 5
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "refs": "roles",
@@ -5744,6 +5774,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "refs": "roles",
@@ -5831,6 +5862,9 @@
             "max": 3
           }
         },
+        "checks": {
+          "assetsTotal": 15
+        },
         "roles": {
           "field": "image_with_roles",
           "refs": "roles",
@@ -5915,7 +5949,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -5926,6 +5961,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles"
@@ -5938,7 +5974,8 @@
             "field": "image_urls",
             "max": 2
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -5953,7 +5990,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -5963,7 +6001,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -5980,6 +6019,10 @@
             "field": "reference_audios",
             "max": 3
           }
+        },
+        "promptRequired": true,
+        "checks": {
+          "audioNeeds": "reference_audios"
         },
         "rename": {
           "reference_videos": "video_urls",
@@ -6025,7 +6068,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -6035,7 +6079,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -6052,6 +6097,10 @@
             "field": "reference_audios",
             "max": 3
           }
+        },
+        "promptRequired": true,
+        "checks": {
+          "audioNeeds": "reference_audios"
         },
         "rename": {
           "reference_videos": "video_urls",
@@ -6098,7 +6147,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -6108,7 +6158,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -6126,6 +6177,7 @@
             "max": 3
           }
         },
+        "promptRequired": true,
         "rename": {
           "reference_videos": "video_urls",
           "reference_audios": "audio_urls"
@@ -6171,7 +6223,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -6181,7 +6234,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -6199,6 +6253,7 @@
             "max": 3
           }
         },
+        "promptRequired": true,
         "rename": {
           "reference_videos": "video_urls",
           "reference_audios": "audio_urls"
@@ -6265,7 +6320,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -6274,7 +6330,8 @@
             "field": "first_frame_image",
             "max": 1
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -6322,7 +6379,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -6331,7 +6389,8 @@
             "field": "first_frame_image",
             "max": 1
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -6380,7 +6439,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -6390,7 +6450,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -6447,7 +6508,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -6456,7 +6518,8 @@
             "field": "image_urls",
             "max": 9
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -6518,7 +6581,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -6529,6 +6593,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list",
@@ -6547,6 +6612,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "refs": "list",
@@ -6696,7 +6762,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -6706,7 +6773,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -6715,7 +6783,8 @@
             "field": "image_urls",
             "max": 7
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -7106,10 +7175,7 @@
           "type": "string",
           "enum": [
             "480p",
-            "720p",
-            "1080p",
-            "2k",
-            "4k"
+            "720p"
           ],
           "default": "720p"
         },
@@ -7148,7 +7214,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7159,6 +7226,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles",
@@ -7181,6 +7249,7 @@
             "max": 5
           }
         },
+        "promptRequired": true,
         "rename": {
           "reference_videos": "video_urls",
           "reference_audios": "audio_urls"
@@ -7201,6 +7270,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "fixed": {
           "omni_reference_task_type": "edit"
         }
@@ -7238,10 +7308,7 @@
           "type": "string",
           "enum": [
             "480p",
-            "720p",
-            "1080p",
-            "2k",
-            "4k"
+            "720p"
           ],
           "default": "720p"
         },
@@ -7280,7 +7347,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7291,6 +7359,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles",
@@ -7313,6 +7382,7 @@
             "max": 5
           }
         },
+        "promptRequired": true,
         "rename": {
           "reference_videos": "video_urls",
           "reference_audios": "audio_urls"
@@ -7333,6 +7403,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "fixed": {
           "omni_reference_task_type": "edit"
         }
@@ -7370,10 +7441,7 @@
           "type": "string",
           "enum": [
             "480p",
-            "720p",
-            "1080p",
-            "2k",
-            "4k"
+            "720p"
           ],
           "default": "720p"
         },
@@ -7412,7 +7480,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7423,6 +7492,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles",
@@ -7445,6 +7515,7 @@
             "max": 5
           }
         },
+        "promptRequired": true,
         "rename": {
           "reference_videos": "video_urls",
           "reference_audios": "audio_urls"
@@ -7465,6 +7536,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "fixed": {
           "omni_reference_task_type": "edit"
         }
@@ -7596,8 +7668,14 @@
             "max": 1
           }
         },
+        "omit": [
+          "aspect_ratio",
+          "duration"
+        ],
         "fixed": {
-          "omni_reference_task_type": "edit"
+          "omni_reference_task_type": "edit",
+          "size": "adaptive",
+          "duration": -1
         }
       }
     },
@@ -7646,7 +7724,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7655,7 +7734,8 @@
             "field": "first_frame_image",
             "max": 1
           }
-        }
+        },
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -7664,7 +7744,8 @@
             "field": "image_urls",
             "max": 10
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true,
@@ -7713,7 +7794,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7722,7 +7804,8 @@
             "field": "first_frame_image",
             "max": 1
           }
-        }
+        },
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -7731,7 +7814,8 @@
             "field": "image_urls",
             "max": 10
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true,
@@ -7782,7 +7866,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7792,7 +7877,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -7842,7 +7928,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7852,7 +7939,8 @@
             "max": 1,
             "last": "last_frame_image"
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -7901,7 +7989,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7912,6 +8001,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list",
@@ -7926,6 +8016,7 @@
             "max": 3
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "refs": "list",
@@ -7979,7 +8070,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -7990,6 +8082,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list",
@@ -8004,6 +8097,7 @@
             "max": 3
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "refs": "list",
@@ -8057,7 +8151,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -8068,6 +8163,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list",
@@ -8121,7 +8217,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -8132,6 +8229,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list",
@@ -8170,22 +8268,13 @@
             "4k"
           ],
           "default": "720p"
-        },
-        "generation_type": {
-          "name": "generation_type",
-          "title": "Generation Type",
-          "type": "string",
-          "enum": [
-            "frame",
-            "reference"
-          ],
-          "default": "frame"
         }
       }
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -8219,22 +8308,13 @@
             "4k"
           ],
           "default": "720p"
-        },
-        "generation_type": {
-          "name": "generation_type",
-          "title": "Generation Type",
-          "type": "string",
-          "enum": [
-            "frame",
-            "reference"
-          ],
-          "default": "frame"
         }
       }
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -8291,7 +8371,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -8302,6 +8383,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list"
@@ -8362,7 +8444,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -8373,6 +8456,7 @@
             "last": "last_frame_image"
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_urls",
           "frames": "list"
@@ -8416,7 +8500,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -8425,7 +8510,8 @@
             "field": "image_urls",
             "max": 50
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -8465,7 +8551,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -8474,7 +8561,8 @@
             "field": "image_urls",
             "max": 50
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -8725,7 +8813,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "reference": {
         "inputs": {},
@@ -8734,7 +8823,8 @@
             "field": "image_urls",
             "max": 4
           }
-        }
+        },
+        "promptRequired": true
       }
     },
     "onlyModes": true
@@ -8878,7 +8968,8 @@
     },
     "modes": {
       "t2v": {
-        "inputs": {}
+        "inputs": {},
+        "promptRequired": true
       },
       "i2v": {
         "inputs": {},
@@ -8888,6 +8979,7 @@
             "max": 1
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "frames": "roles"
@@ -8905,6 +8997,7 @@
             "max": 5
           }
         },
+        "promptRequired": true,
         "roles": {
           "field": "image_with_roles",
           "refs": "roles",

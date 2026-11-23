@@ -189,7 +189,7 @@ test('APIMart Seedance: start / end frames go as image_with_roles, references by
   // 2.5: frames OR references (the API refuses both: checked 23.11) — two studio endpoints.
   const all25 = buildApimartVariants({ id: 'seedance-2.5', capability_tags: ['image-to-video'] }, OV['seedance-2.5'], { usd: 0.2, unit: 'second' }).filter((v) => v.mode === 'i2v');
   const v25 = all25.find((v) => v.key.endsWith('?m=i2v'));
-  const r25 = all25.find((v) => v.key.endsWith('?m=i2vref'));
+  const r25 = all25.find((v) => v.key.endsWith('?m=reference'));
   assert.ok(v25.model.inputs.first_frame_image && v25.model.inputs.last_frame_image && !v25.model.inputs.image_urls);
   assert.ok(r25.model.inputs.image_urls && !r25.model.inputs.first_frame_image);
   assert.deepEqual(toProviderBody(v25, { prompt: 'p', aspect_ratio: '16:9', first_frame_image: 'A', last_frame_image: 'B' }), {
@@ -244,7 +244,7 @@ test('Typed lists: a total limit, no audio alone; Wan 3.0 at APIMart sets genera
   assert.throws(() => toProviderBody(v, { prompt: 'p' }), BodyError);
   const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
   const wans = buildApimartVariants({ id: 'wan3.0-video', capability_tags: ['image-to-video'] }, OV['wan3.0-video'], { usd: 0.1, unit: 'second' }).filter((x) => x.mode === 'i2v');
-  const wanRefs = wans.find((x) => x.key.endsWith('?m=i2vref'));
+  const wanRefs = wans.find((x) => x.key.endsWith('?m=reference'));
   const wanFrames = wans.find((x) => x.key.endsWith('?m=i2v'));
   assert.deepEqual(toProviderBody(wanRefs, { prompt: 'p', image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
   assert.equal(toProviderBody(wanRefs, { prompt: 'p', image_urls: ['R'] }).generation_type, 'reference');
@@ -259,4 +259,16 @@ test('APIMart Seedance: pictures only never go to the edit endpoint', async () =
   const v2v = buildApimartVariants({ id: 'seedance-2.5', capability_tags: ['video-to-video'] }, OV['seedance-2.5'], { usd: 0.2, unit: 'second' }).find((x) => x.mode === 'v2v');
   assert.throws(() => toProviderBody(v2v, { prompt: 'p', image_urls: ['A', 'B', 'C'] }), BodyError);
   assert.equal(toProviderBody(v2v, { prompt: 'p', video_urls: ['V'], image_urls: ['A'] }).omni_reference_task_type, 'edit');
+});
+
+test('APIMart frames / references endpoints refuse the other side', async () => {
+  const { BodyError } = await import('../src/catalog/build.js');
+  const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
+  const all = buildApimartVariants({ id: 'seedance-2.5', capability_tags: ['image-to-video'] }, OV['seedance-2.5'], { usd: 0.2, unit: 'second' }).filter((v) => v.mode === 'i2v');
+  const [frames, refs] = [all.find((v) => v.key.endsWith('?m=i2v')), all.find((v) => v.key.endsWith('?m=reference'))];
+  assert.throws(() => toProviderBody(frames, { prompt: 'p', first_frame_image: 'A', image_urls: ['R'] }), BodyError);
+  assert.throws(() => toProviderBody(refs, { prompt: 'p', first_frame_image: 'A', image_urls: ['R'] }), BodyError);
+  assert.equal(frames.model.imageField, 'first_frame_image');
+  assert.equal(refs.model.imageField, 'image_urls');
+  assert.equal(refs.model.lastImageField, undefined);
 });

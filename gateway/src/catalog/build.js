@@ -263,7 +263,7 @@ export function buildApimartVariants(model, override, price) {
     });
     // Frames OR references (Seedance, Wan 3.0, H3 at APIMart: one model address, but the API
     // refuses both in one request): two studio endpoints, so the composer shows the choice
-    // (the same as Atlas, where they are two addresses). `?m=i2vref`: the references one.
+    // (the same as Atlas, where they are two addresses). `?m=reference`: the references one.
     if (roles?.refs === 'alone' && roles.refsField && roles.first) out.push(...splitFramesRefs(out.pop(), roles));
   }
   return out;
@@ -271,18 +271,21 @@ export function buildApimartVariants(model, override, price) {
 
 function splitFramesRefs(v, roles) {
   const without = (names) => Object.fromEntries(Object.entries(v.model.inputs).filter(([k]) => !names.includes(k)));
+  const frameFields = [roles.first, roles.last].filter(Boolean);
   const frames = {
     ...v,
-    model: { ...v.model, inputs: without([roles.refsField]) },
-    server: { ...v.server, roles: { ...v.server.roles, refsField: null } },
+    model: { ...v.model, inputs: without([roles.refsField]), imageField: roles.first, lastImageField: roles.last, maxImages: 1 },
+    // The other side's fields are refused, never silently dropped (APIMart: 400 on a mix).
+    server: { ...v.server, roles: { ...v.server.roles, refsField: null }, forbid: [roles.refsField] },
   };
-  const endpoint = v.model.endpoint.replace(/\?m=i2v$/, '?m=i2vref');
+  // "?m=reference": the endpoint says what it is (the model menu labels it "References").
+  const endpoint = v.model.endpoint.replace(/\?m=i2v$/, '?m=reference');
   const refs = {
     ...v,
     key: endpoint,
-    model: { ...v.model, endpoint, id: `${v.model.id}-ref`, inputs: without([roles.first, roles.last].filter(Boolean)) },
+    model: { ...v.model, endpoint, id: `${v.model.id}-ref`, inputs: without(frameFields), imageField: roles.refsField, lastImageField: undefined },
     // References alone: as the provider reads them (with roles where one bare picture would be a frame).
-    server: { ...v.server, roles: roles.always ? { ...v.server.roles, first: undefined, last: undefined } : undefined },
+    server: { ...v.server, roles: roles.always ? { ...v.server.roles, first: undefined, last: undefined } : undefined, forbid: frameFields },
   };
   if (!refs.server.roles) delete refs.server.roles;
   return [frames, refs];
@@ -530,6 +533,9 @@ export function toProviderBody(variant, body) {
     const target = rename[key] || key;
     if (allowed && !allowed.includes(target)) continue;
     out[target] = value;
+  }
+  for (const f of variant.server.forbid || []) {
+    if ([].concat(out[f] ?? []).filter(Boolean).length) throw new BodyError('This model takes frames or reference images, not both in one request. Remove the references or the frames.');
   }
   if (variant.server.roles) withRoles(out, variant.server.roles);
   // "edit" only with a video to edit (APIMart: edit without video_urls is a 400).

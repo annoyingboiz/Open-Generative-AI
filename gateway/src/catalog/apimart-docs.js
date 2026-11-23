@@ -171,7 +171,7 @@ function buildOverride(text) {
     // Wan 3.0: one bare picture counts as a start frame (`generation_type` decides otherwise),
     // so references always go with their role.
     const always = Boolean(params.generation_type);
-    const roles = { field: 'image_with_roles', refs, ...(adaptive ? { adaptive: true } : {}), ...(always ? { always: true } : {}) };
+    const roles = { field: 'image_with_roles', refs, ...(adaptive ? { adaptive: true } : {}), ...(always ? { always: true, typeField: 'generation_type' } : {}) };
     media.image = refs === 'never'
       ? { field: 'first_frame_image', max: 1, last: 'last_frame_image', roles }
       : { field: 'image_urls', max: maxItemsOf(params.image_urls) || 4, first: 'first_frame_image', last: 'last_frame_image', roles };
@@ -200,7 +200,7 @@ export function buildApimartOverrides(docs) {
         ? {
             t2v: { inputs: {} },
             ...(o.media.image ? { i2v: { inputs: {}, media: { image: o.media.image } } } : {}),
-            ...(o.video ? { v2v: { inputs: {}, ...(o.omniEdit ? { fixed: { omni_reference_task_type: 'edit' } } : {}), media: { video: o.video, ...(o.media.image && o.media.image.roles?.refs !== 'never' ? { image: { field: o.media.image.field === 'image_urls' ? 'image_urls' : o.media.image.field, max: o.media.image.max } } : {}) } } } : {}),
+            ...(o.video ? { v2v: { inputs: {}, ...(o.omniEdit ? { fixed: { omni_reference_task_type: 'edit' } } : {}), media: { video: o.video, ...(o.media.image && o.media.image.roles?.refs !== 'never' ? { image: { field: o.media.image.field === 'image_urls' ? 'image_urls' : o.media.image.field, max: o.media.image.max, ...(o.media.image.roles?.always ? { roles: { field: o.media.image.roles.field, refs: 'roles', always: true, ...(o.media.image.roles.refRole ? { refRole: o.media.image.roles.refRole } : {}), ...(o.media.image.roles.typeField ? { typeField: o.media.image.roles.typeField } : {}) } } : {}) } } : {}) } } } : {}),
           }
         : {
             t2i: { inputs: {} },

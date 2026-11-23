@@ -228,3 +228,22 @@ test('APIMart Gemini Omni: one reference is never read as a start frame', async 
   assert.deepEqual(both.image_with_roles.map((x) => x.role), ['first_frame', 'reference_image', 'reference_image']);
   assert.equal(both.image_urls, undefined);
 });
+
+test('Typed lists: a total limit, no audio alone; Wan 3.0 at APIMart sets generation_type; Gemini edit references keep their role', async () => {
+  const { BodyError } = await import('../src/catalog/build.js');
+  const schema = { components: { schemas: { Input: { required: ['model', 'prompt', 'refers'], properties: {
+    model: { type: 'string' }, prompt: { type: 'string' },
+    refers: { type: 'array', maxItems: 3, items: { type: 'object', properties: { url: { type: 'string' }, type: { type: 'string', enum: ['image', 'video', 'audio'] } } } },
+  } } } } };
+  const v = buildAtlasVariant({ model: 'x/y/reference-to-video', categories: ['IMAGE-TO-VIDEO'], type: 'Video', displayName: 'Y', price: { actual: { base_price: '0.1', unit: 'second' } } }, schema);
+  assert.ok(!v.model.required.includes('refers'));
+  assert.throws(() => toProviderBody(v, { prompt: 'p', refers__image: ['A', 'B', 'C'], refers__audio: ['S'] }), BodyError);
+  assert.throws(() => toProviderBody(v, { prompt: 'p', refers__audio: ['S'] }), BodyError);
+  assert.throws(() => toProviderBody(v, { prompt: 'p' }), BodyError);
+  const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
+  const wan = buildApimartVariants({ id: 'wan3.0-video', capability_tags: ['image-to-video'] }, OV['wan3.0-video'], { usd: 0.1, unit: 'second' }).find((x) => x.mode === 'i2v');
+  assert.equal(toProviderBody(wan, { prompt: 'p', image_urls: ['R'] }).generation_type, 'reference');
+  assert.equal(toProviderBody(wan, { prompt: 'p', first_frame_image: 'A' }).generation_type, 'frame');
+  const gem = buildApimartVariants({ id: 'gemini-omni-1.2-flash', capability_tags: ['video-to-video'] }, OV['gemini-omni-1.2-flash'], { usd: 0.02, unit: 'second' }).find((x) => x.mode === 'v2v');
+  assert.deepEqual(toProviderBody(gem, { prompt: 'p', video_urls: ['V'], image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
+});

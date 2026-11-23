@@ -515,6 +515,11 @@ export function toProviderBody(variant, body) {
       delete out[`${list.field}__${t}`];
       return [].concat(v || []).filter(Boolean).map((url) => ({ url, type: t }));
     });
+    if (list.max && items.length > list.max) throw new BodyError(`This model takes up to ${list.max} reference files in total (pictures, videos and audio together). Remove ${items.length - list.max}.`);
+    // Audio alone is not a reference set: it goes with a picture or a video.
+    if ((list.required || items.length) && !items.some((x) => x.type !== 'audio')) {
+      throw new BodyError(items.length ? 'Reference audio needs a reference picture or video with it.' : 'Add a reference picture or video.');
+    }
     if (items.length) out[list.field] = items;
   }
   return { ...out, ...fixed };
@@ -537,9 +542,14 @@ function withRoles(out, roles) {
     // A provider that reads one bare picture as a start frame (Gemini Omni at APIMart):
     // references always go with an explicit role.
     const solo = roles.always && roles.refsField ? [].concat(out[roles.refsField] || []).filter(Boolean) : [];
-    if (solo.length) { delete out[roles.refsField]; out[roles.field] = solo.map((url) => ({ url, role: refRole })); }
+    if (solo.length) {
+      delete out[roles.refsField];
+      out[roles.field] = solo.map((url) => ({ url, role: refRole }));
+      if (roles.typeField) out[roles.typeField] = 'reference';
+    }
     return;
   }
+  if (roles.typeField) out[roles.typeField] = 'frame';
   if (!first) throw new BodyError('An end frame needs a start frame with this model. Add a start frame or remove the end frame.');
   const refs = roles.refsField ? [].concat(out[roles.refsField] || []).filter(Boolean) : [];
   if (refs.length && roles.refs === 'alone') throw new BodyError('This model takes frames or reference images, not both. Remove the references or the frames.');

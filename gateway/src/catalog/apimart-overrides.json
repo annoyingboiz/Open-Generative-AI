@@ -4589,7 +4589,13 @@
           },
           "image": {
             "field": "image_urls",
-            "max": 10
+            "max": 10,
+            "roles": {
+              "field": "image_with_roles",
+              "refs": "roles",
+              "always": true,
+              "refRole": "reference"
+            }
           }
         }
       }
@@ -4763,7 +4769,13 @@
           },
           "image": {
             "field": "image_urls",
-            "max": 10
+            "max": 10,
+            "roles": {
+              "field": "image_with_roles",
+              "refs": "roles",
+              "always": true,
+              "refRole": "reference_image"
+            }
           }
         }
       }
@@ -8826,7 +8838,8 @@
             "roles": {
               "field": "image_with_roles",
               "refs": "alone",
-              "always": true
+              "always": true,
+              "typeField": "generation_type"
             }
           }
         }
@@ -8840,7 +8853,13 @@
           },
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 4,
+            "roles": {
+              "field": "image_with_roles",
+              "refs": "roles",
+              "always": true,
+              "typeField": "generation_type"
+            }
           }
         }
       }
@@ -8935,7 +8954,8 @@
             "roles": {
               "field": "image_with_roles",
               "refs": "alone",
-              "always": true
+              "always": true,
+              "typeField": "generation_type"
             }
           }
         }
@@ -8949,7 +8969,13 @@
           },
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 4,
+            "roles": {
+              "field": "image_with_roles",
+              "refs": "roles",
+              "always": true,
+              "typeField": "generation_type"
+            }
           }
         }
       }

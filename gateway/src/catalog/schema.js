@@ -118,7 +118,8 @@ export function studioFieldsFromSchema(properties = {}, required = [], { renames
         media[t].push({ name, prop: { type: 'array', maxItems: prop.maxItems } });
         inputs[name] = clean({ name, title: titleOf(rawName, prop), type: 'array', field: t, maxItems: prop.maxItems, items: { type: 'string' } });
       }
-      typedLists.push({ field: rawName, types: typed });
+      // maxItems counts the whole list (all types together): checked when the body is made.
+      typedLists.push({ field: rawName, types: typed, ...(prop.maxItems ? { max: prop.maxItems } : {}), ...(required.includes(rawName) ? { required: true } : {}) });
       continue;
     }
     const name = renames[rawName] || rawName;
@@ -160,6 +161,7 @@ export function studioFieldsFromSchema(properties = {}, required = [], { renames
     ...(typedLists.length ? { typedLists } : {}),
     hasPrompt,
     promptRequired: hasPrompt && required.includes(promptRaw),
-    required: required.filter((n) => !HIDDEN_FIELDS.has(n)).map((n) => renames[n] || n),
+    // A required typed list is checked when the body is made (it has no studio field of its name).
+    required: required.filter((n) => !HIDDEN_FIELDS.has(n) && !typedLists.some((l) => l.field === n)).map((n) => renames[n] || n),
   };
 }

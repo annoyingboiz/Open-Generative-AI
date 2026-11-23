@@ -144,6 +144,7 @@ export default function PromptEditor({ value, onChange, tags, modelName, inputRe
   const inputsAtRedraw = useRef(0);
   const root = useRef(null);
   const emitted = useRef(null);
+  const nativeEdit = useRef(false);
   const tagMap = useMemo(() => new Map(tags.map((t) => [t.tag.toLowerCase(), t])), [tags]);
   const chipKey = useMemo(() => `${modelName}#${tags.map((t) => `${t.tag}:${t.url || ""}:${t.unused ? 1 : 0}:${t.text || ""}`).join("|")}`, [tags, modelName]);
 
@@ -198,12 +199,17 @@ export default function PromptEditor({ value, onChange, tags, modelName, inputRe
       if (!sel || sel.isCollapsed || !sel.rangeCount) return;
       const range = sel.getRangeAt(0);
       if (![...el.querySelectorAll("[data-tag]")].some((chip) => range.intersectsNode(chip))) return;
-      e.preventDefault();
+      if (nativeEdit.current) return; // our own native replacement below
       const v = serialize(el);
       const off = getOffset(el);
       if (!off) return;
       const text = e.data ?? "";
       const next = v.slice(0, off.start) + text + v.slice(off.end);
+      e.preventDefault();
+      // First the browser's own edit (it stays in ⌘Z); the input event syncs the prompt.
+      nativeEdit.current = true;
+      try { if (insertNative(text) && serialize(el) === next) return; } finally { nativeEdit.current = false; }
+      // The browser kept part of the selection: replaced here instead (not in ⌘Z).
       inputs.current += 1;
       render(el, next, tagMap, modelName);
       setOffset(el, off.start + text.length);

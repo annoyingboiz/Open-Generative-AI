@@ -60,7 +60,8 @@ function roleOf(name, input, kind) {
     if (kind === "video" && input.type !== "array" && /^(image|image_url|img|input_image)$/.test(name)) return "first";
     return "reference";
   }
-  if (input.field === "video") return VIDEO_REF.test(name) ? "video" : "source";
+  // One field of a typed reference list (Wan 3.0 "refers__video"): a reference video.
+  if (input.field === "video") return VIDEO_REF.test(name) || /__video$/.test(name) ? "video" : "source";
   if (input.field === "audio") return "audio";
   return null;
 }

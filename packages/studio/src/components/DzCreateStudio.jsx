@@ -618,7 +618,10 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   // A ratio the model picks itself ("adaptive", "auto") with a camera look and no start frame:
   // the model takes the format from the look words (smartphone → vertical, anamorphic →
   // extra wide; look test round 1). A fixed ratio goes instead: 16:9, or the nearest landscape one.
-  const freeKey = ["aspect_ratio", "ratio"].find((k) => /^(adaptive|auto)$/i.test(String(values?.[k] || "")));
+  // The value that will be sent: the chosen one, else the model's default (a fresh pick has none stored).
+  const allParams = [...(params?.main || []), ...(params?.advanced || [])];
+  const effective = (k) => values?.[k] ?? allParams.find((x) => x.key === k)?.default;
+  const freeKey = ["aspect_ratio", "ratio"].find((k) => allParams.some((x) => x.key === k) && /^(adaptive|auto)$/i.test(String(effective(k) ?? "")));
   const lookSet = Boolean(look && (look.on || look.filter || look.era || look.light || look.palette || look.genre));
   const ratioFixed = useMemo(() => {
     if (!freeKey || startUrl || kind !== "video" || !lookSet) return null;
@@ -626,7 +629,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     const opts = (p?.enum || []).map(String);
     const num = (o) => { const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(o); return m ? Number(m[1]) / Number(m[2]) : null; };
     const to = opts.includes("16:9") ? "16:9" : opts.filter((o) => num(o) > 1).sort((a, b) => Math.abs(Math.log(num(a) / (16 / 9))) - Math.abs(Math.log(num(b) / (16 / 9))))[0];
-    return to ? { key: freeKey, from: String(values[freeKey]), to } : null;
+    return to ? { key: freeKey, from: String(effective(freeKey)), to } : null;
   }, [freeKey, startUrl, kind, lookSet, params, values]);
   const bodyValues = useMemo(() => {
     if (ratioFixed) return { ...values, [ratioFixed.key]: ratioFixed.to };

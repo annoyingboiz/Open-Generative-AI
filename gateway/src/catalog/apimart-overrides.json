@@ -6955,7 +6955,7 @@
             "last": "last_frame_image",
             "roles": {
               "field": "image_with_roles",
-              "refs": "roles",
+              "refs": "alone",
               "adaptive": true
             }
           }
@@ -7063,7 +7063,7 @@
             "last": "last_frame_image",
             "roles": {
               "field": "image_with_roles",
-              "refs": "roles",
+              "refs": "alone",
               "adaptive": true
             }
           }
@@ -7171,7 +7171,7 @@
             "last": "last_frame_image",
             "roles": {
               "field": "image_with_roles",
-              "refs": "roles",
+              "refs": "alone",
               "adaptive": true
             }
           }
@@ -7277,7 +7277,7 @@
             "last": "last_frame_image",
             "roles": {
               "field": "image_with_roles",
-              "refs": "roles",
+              "refs": "alone",
               "adaptive": true
             }
           }

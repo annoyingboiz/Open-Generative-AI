@@ -164,8 +164,11 @@ function buildOverride(text) {
     // references (2.0, 2.5) or frames by count (1.5). The studio sends its usual
     // start / end frame fields; toProviderBody turns them into roles.
     const urlsText = params.image_urls ? params.image_urls.body.join('\n') : '';
+    // Seedance (every version): frames and references never in one request, whatever the docs
+    // say. Checked 23.11.2026 on APIMart 2.5: "first/last frame content cannot be mixed with
+    // reference media content" (async failure, refunded). Atlas splits them into two endpoints too.
     const refs = !params.image_urls || /1 image\s*=\s*first frame/i.test(urlsText) ? 'never'
-      : /cannot be used (simultaneously|together)|mutual exclusion rules|reference mode is mutually exclusive/i.test(text) ? 'alone'
+      : ids.some((id) => /seedance/i.test(id)) || /cannot be used (simultaneously|together)|mutual exclusion rules|reference mode is mutually exclusive/i.test(text) ? 'alone'
         : 'roles';
     const adaptive = /first[ /–-]*(last )?frame[^\n]*(`size`|aspect)[^\n]*adaptive/i.test(text);
     // Wan 3.0: one bare picture counts as a start frame (`generation_type` decides otherwise),

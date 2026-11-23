@@ -803,7 +803,7 @@ export async function buildApp(config, { logger = true } = {}) {
     if (recent.length >= 60) return reply.code(429).send({ error: 'Too many previews, slow down.' });
     recent.push(t);
     previewThrottle.set(req.user.id, recent);
-    const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([a-z0-9]+))?$/i.exec(String(req.body?.endpoint || ''));
+    const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([\w-]+))?$/i.exec(String(req.body?.endpoint || ''));
     if (!m) return reply.code(400).send({ error: 'Bad endpoint' });
     const [, providerId, modelId, mode] = m;
     const resolved = resolveEndpoint(req.user, providerId, modelId, mode);
@@ -835,7 +835,7 @@ export async function buildApp(config, { logger = true } = {}) {
     if (recent.length >= 40) return reply.code(429).send({ error: 'Too many price checks, slow down.' });
     recent.push(t);
     quoteThrottle.set(req.user.id, recent);
-    const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([a-z0-9]+))?$/i.exec(String(req.body?.endpoint || ''));
+    const m = /^p\/([a-z0-9-]+)\/([^?]+)(?:\?m=([\w-]+))?$/i.exec(String(req.body?.endpoint || ''));
     if (!m) return reply.code(400).send({ error: 'Bad endpoint' });
     const [, providerId, modelId, mode] = m;
     const resolved = resolveEndpoint(req.user, providerId, modelId, mode);

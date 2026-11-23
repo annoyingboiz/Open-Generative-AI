@@ -261,8 +261,31 @@ export function buildApimartVariants(model, override, price) {
         price,
       },
     });
+    // Frames OR references (Seedance, Wan 3.0, H3 at APIMart: one model address, but the API
+    // refuses both in one request): two studio endpoints, so the composer shows the choice
+    // (the same as Atlas, where they are two addresses). `?m=i2vref`: the references one.
+    if (roles?.refs === 'alone' && roles.refsField && roles.first) out.push(...splitFramesRefs(out.pop(), roles));
   }
   return out;
+}
+
+function splitFramesRefs(v, roles) {
+  const without = (names) => Object.fromEntries(Object.entries(v.model.inputs).filter(([k]) => !names.includes(k)));
+  const frames = {
+    ...v,
+    model: { ...v.model, inputs: without([roles.refsField]) },
+    server: { ...v.server, roles: { ...v.server.roles, refsField: null } },
+  };
+  const endpoint = v.model.endpoint.replace(/\?m=i2v$/, '?m=i2vref');
+  const refs = {
+    ...v,
+    key: endpoint,
+    model: { ...v.model, endpoint, id: `${v.model.id}-ref`, inputs: without([roles.first, roles.last].filter(Boolean)) },
+    // References alone: as the provider reads them (with roles where one bare picture would be a frame).
+    server: { ...v.server, roles: roles.always ? { ...v.server.roles, first: undefined, last: undefined } : undefined },
+  };
+  if (!refs.server.roles) delete refs.server.roles;
+  return [frames, refs];
 }
 
 // ── This server (local ComfyUI through h3-bridge) ─────────────────────────

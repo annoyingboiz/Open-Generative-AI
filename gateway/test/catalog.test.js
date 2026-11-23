@@ -186,20 +186,22 @@ test('APIMart Seedance: start / end frames go as image_with_roles, references by
   const { BodyError } = await import('../src/catalog/build.js');
   const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
   const i2v = (id) => buildApimartVariants({ id, capability_tags: ['image-to-video'] }, OV[id], { usd: 0.2, unit: 'second' }).find((v) => v.mode === 'i2v');
-  // 2.5: frames and references together, size adaptive (the docs require it).
-  const v25 = i2v('seedance-2.5');
-  assert.ok(v25.model.inputs.first_frame_image && v25.model.inputs.last_frame_image && v25.model.inputs.image_urls);
-  assert.deepEqual(toProviderBody(v25, { prompt: 'p', aspect_ratio: '16:9', first_frame_image: 'A', last_frame_image: 'B', image_urls: ['R'] }), {
+  // 2.5: frames OR references (the API refuses both: checked 23.11) — two studio endpoints.
+  const all25 = buildApimartVariants({ id: 'seedance-2.5', capability_tags: ['image-to-video'] }, OV['seedance-2.5'], { usd: 0.2, unit: 'second' }).filter((v) => v.mode === 'i2v');
+  const v25 = all25.find((v) => v.key.endsWith('?m=i2v'));
+  const r25 = all25.find((v) => v.key.endsWith('?m=i2vref'));
+  assert.ok(v25.model.inputs.first_frame_image && v25.model.inputs.last_frame_image && !v25.model.inputs.image_urls);
+  assert.ok(r25.model.inputs.image_urls && !r25.model.inputs.first_frame_image);
+  assert.deepEqual(toProviderBody(v25, { prompt: 'p', aspect_ratio: '16:9', first_frame_image: 'A', last_frame_image: 'B' }), {
     prompt: 'p', size: 'adaptive',
-    image_with_roles: [{ url: 'A', role: 'first_frame' }, { url: 'B', role: 'last_frame' }, { url: 'R', role: 'reference_image' }],
+    image_with_roles: [{ url: 'A', role: 'first_frame' }, { url: 'B', role: 'last_frame' }],
   });
-  // References alone stay as they were.
-  assert.deepEqual(toProviderBody(v25, { prompt: 'p', aspect_ratio: '16:9', image_urls: ['R'] }), { prompt: 'p', size: '16:9', image_urls: ['R'] });
+  assert.deepEqual(toProviderBody(r25, { prompt: 'p', aspect_ratio: '16:9', image_urls: ['R'] }), { prompt: 'p', size: '16:9', image_urls: ['R'] });
   assert.throws(() => toProviderBody(v25, { prompt: 'p', last_frame_image: 'B' }), BodyError);
   // 2.0: frames or references, not both.
   const v20 = i2v('seedance-2.0');
   assert.deepEqual(toProviderBody(v20, { prompt: 'p', first_frame_image: 'A' }).image_with_roles, [{ url: 'A', role: 'first_frame' }]);
-  assert.throws(() => toProviderBody(v20, { prompt: 'p', first_frame_image: 'A', image_urls: ['R'] }), BodyError);
+  assert.ok(!v20.model.inputs.image_urls, 'frames endpoint has no references');
   // 1.5: no references at all, only frames.
   const v15 = i2v('seedance-1-5-pro');
   assert.ok(!v15.model.inputs.image_urls);
@@ -241,9 +243,12 @@ test('Typed lists: a total limit, no audio alone; Wan 3.0 at APIMart sets genera
   assert.throws(() => toProviderBody(v, { prompt: 'p', refers__audio: ['S'] }), BodyError);
   assert.throws(() => toProviderBody(v, { prompt: 'p' }), BodyError);
   const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
-  const wan = buildApimartVariants({ id: 'wan3.0-video', capability_tags: ['image-to-video'] }, OV['wan3.0-video'], { usd: 0.1, unit: 'second' }).find((x) => x.mode === 'i2v');
-  assert.equal(toProviderBody(wan, { prompt: 'p', image_urls: ['R'] }).generation_type, 'reference');
-  assert.equal(toProviderBody(wan, { prompt: 'p', first_frame_image: 'A' }).generation_type, 'frame');
+  const wans = buildApimartVariants({ id: 'wan3.0-video', capability_tags: ['image-to-video'] }, OV['wan3.0-video'], { usd: 0.1, unit: 'second' }).filter((x) => x.mode === 'i2v');
+  const wanRefs = wans.find((x) => x.key.endsWith('?m=i2vref'));
+  const wanFrames = wans.find((x) => x.key.endsWith('?m=i2v'));
+  assert.deepEqual(toProviderBody(wanRefs, { prompt: 'p', image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
+  assert.equal(toProviderBody(wanRefs, { prompt: 'p', image_urls: ['R'] }).generation_type, 'reference');
+  assert.equal(toProviderBody(wanFrames, { prompt: 'p', first_frame_image: 'A' }).generation_type, 'frame');
   const gem = buildApimartVariants({ id: 'gemini-omni-1.2-flash', capability_tags: ['video-to-video'] }, OV['gemini-omni-1.2-flash'], { usd: 0.02, unit: 'second' }).find((x) => x.mode === 'v2v');
   assert.deepEqual(toProviderBody(gem, { prompt: 'p', video_urls: ['V'], image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
 });

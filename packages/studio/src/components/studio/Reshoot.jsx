@@ -57,7 +57,11 @@ export function useReshoot(engine) {
   const sStart = sigOf(start);
   const sEnd = sigOf(end);
   const needs = (url, s) => Boolean(url && s && want !== MODERN && s !== want);
-  const roles = [["first", start, sStart], ["last", end, sEnd]].filter(([, url, s]) => needs(url, s)).map(([r]) => r);
+  // Phone (§5.1) widens the frame by canvas extension: start frame only, and never with an end frame
+  // (a wider start and an unchanged end would turn the clip into a push-in nobody asked for).
+  const phone = want.startsWith("phone|");
+  const phoneBlocked = phone && Boolean(end);
+  const roles = phoneBlocked ? [] : [["first", start, sStart], ...(phone ? [] : [["last", end, sEnd]])].filter(([, url, s]) => needs(url, s)).map(([r]) => r);
   const taken = Boolean(start && want !== MODERN && sStart === want);
   // §4: start and end frames from different cameras (two uploads: nothing to compare).
   const mismatch = Boolean(start && end && sStart && sEnd && sStart !== sEnd && !(sStart === "unknown" && sEnd === "unknown"));
@@ -132,16 +136,17 @@ export function useReshoot(engine) {
   };
   const keep = (role) => setJobs((j) => { const { [role]: _x, ...rest } = j; return rest; });
 
-  return { want, roles, taken, mismatch, model, price, jobs, run, use, keep, start, end };
+  return { want, roles, taken, mismatch, model, price, jobs, run, use, keep, start, end, phone, phoneBlocked: phoneBlocked && (needs(start, sStart) || needs(end, sEnd) || mismatch) };
 }
 
 const money = (v) => (v == null ? "" : v < 0.1 ? `$${v.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}` : `$${v.toFixed(2)}`);
+export const PHONE_END_TEXT = "Phone re-shoot widens the frame and works with a start frame only. Remove the end frame to use it.";
 export const MISMATCH_TEXT = "Start and end frames look different. The look will drift during the clip.";
 
 // The camera panel's part (§4–§5): "Taken from frame", the re-shoot button, old and new side by side.
 export function ReshootBlock({ r }) {
-  if (!r || (!r.taken && !r.roles.length && !r.mismatch && !Object.keys(r.jobs).length)) return null;
-  const both = r.mismatch ? ["first", "last"] : r.roles;
+  if (!r || (!r.taken && !r.roles.length && !r.mismatch && !r.phoneBlocked && !Object.keys(r.jobs).length)) return null;
+  const both = r.phone ? r.roles : r.mismatch ? ["first", "last"] : r.roles;
   const active = Object.keys(r.jobs);
   const runnable = both.filter((role) => !r.jobs[role] || r.jobs[role].state === "error");
   return (
@@ -150,8 +155,9 @@ export function ReshootBlock({ r }) {
         <p className="flex items-center gap-2 text-sm"><CheckCircle size={16} className="text-success" />Taken from frame — the start frame was made with this camera.</p>
       )}
       {r.mismatch && <p className="flex items-start gap-2 text-sm text-warning"><Warning size={16} className="mt-0.5 shrink-0" />{MISMATCH_TEXT}</p>}
+      {r.phoneBlocked && <p className="text-sm text-muted-foreground">{PHONE_END_TEXT}</p>}
       {r.roles.length > 0 && !r.mismatch && (
-        <p className="text-sm text-muted-foreground">The {r.roles.map((x) => ROLE_NAME[x]).join(" and ")} {r.roles.length > 1 ? "were" : "was"} not made with this camera. The video keeps the look of its frames, so re-shoot {r.roles.length > 1 ? "them" : "it"} with this camera first.</p>
+        <p className="text-sm text-muted-foreground">The {r.roles.map((x) => ROLE_NAME[x]).join(" and ")} {r.roles.length > 1 ? "were" : "was"} not made with this camera. {r.phone ? "Re-shooting for Phone widens the frame: the picture is extended on all sides around it." : `The video keeps the look of its frames, so re-shoot ${r.roles.length > 1 ? "them" : "it"} with this camera first.`}</p>
       )}
       {runnable.length > 0 && r.model && (
         <Button variant="secondary" className="h-9 gap-2 rounded-lg" onClick={() => runnable.forEach((role) => r.run(role))}>
@@ -186,6 +192,24 @@ export function ReshootBlock({ r }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Phone without a start frame (§7, decided by Denis): 9:16 reads as phone footage much more strongly.
+// A suggestion only — never switches by itself; hidden with a start frame (the video takes its shape).
+export function PhoneRatioHint({ engine }) {
+  const { kind, look, attached, params, values, setValue } = engine;
+  if (kind !== "video" || !look || look.on === false || look.camera !== "phone" || attached?.first?.length) return null;
+  const all = [...(params?.main || []), ...(params?.advanced || [])];
+  const p = all.find((x) => ["aspect_ratio", "ratio"].includes(x.key) && (x.enum || []).map(String).includes("9:16"));
+  if (!p) return null;
+  const now = String(values?.[p.key] ?? p.default ?? "");
+  if (now === "9:16") return null;
+  return (
+    <div className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-sm">
+      <span className="text-muted-foreground">Phone footage reads best in 9:16.</span>
+      <Button variant="secondary" className="h-8 rounded-lg" onClick={() => setValue(p.key, "9:16")}>Switch to 9:16</Button>
     </div>
   );
 }

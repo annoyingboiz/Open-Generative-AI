@@ -26,7 +26,7 @@ import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList, PickerHereContext, pickerStartFor } from "./studio/Library.jsx";
 import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
-import { useReshoot, ReshootBlock } from "./studio/Reshoot.jsx";
+import { useReshoot, ReshootBlock, PhoneRatioHint } from "./studio/Reshoot.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
 import { dzPictureDragStart, dzPictureDragEnd, useDzPictureDrag } from "../dzDrop.js";
 import { DzPosterVideo, dzMediaInfo } from "./DzPosterVideo.jsx";
@@ -1539,7 +1539,7 @@ export default function DzStudio(props) {
         onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) takeFiles(f); }} />
 
       <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")}
-        extra={kind === "video" ? <ReshootBlock r={reshoot} /> : null} />
+        extra={kind === "video" ? <><PhoneRatioHint engine={engine} /><ReshootBlock r={reshoot} /></> : null} />
       <MovePanel open={panel === "move"} onClose={() => setPanel(null)} move={move} setMove={setMove} hints={adviceFor("move")} />
       <LookPanel open={panel === "look"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} />
       <ComposerPanels engine={engine} cp={cp} panel={panel} setPanel={setPanel} onAdaptUse={(t) => { setPrompt(t); setPanel(null); requestAnimationFrame(() => engine.promptRef.current?.focus()); }} />

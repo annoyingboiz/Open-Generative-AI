@@ -34,7 +34,9 @@ import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
 import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
-import { cleanLook, renderLook, lookHints, lookAdvice, cameraOf, textureOf, reshootPrompt } from './look.js';
+import { cleanLook, renderLook, lookHints, lookAdvice, cameraOf, textureOf, reshootPrompt, isCanvasCamera, CANVAS_SCALE } from './look.js';
+import { makeCanvas, centreSsim, compositeBack, DRIFT_SSIM } from './canvas.js';
+import { Readable } from 'node:stream';
 import { applyTexture, TEXTURE_DEFAULT } from './texture.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
 import { EditError, sweepTemp, frameOf } from './edit.js';
@@ -143,6 +145,10 @@ export async function buildApp(config, { logger = true } = {}) {
     const t = meta?.texture || {};
     return { preset, on: t.on !== false, strength: Number.isFinite(Number(t.strength)) ? Math.max(0, Math.min(100, Math.round(Number(t.strength)))) : TEXTURE_DEFAULT };
   };
+  const canvasOf = (row) => {
+    if (row.kind !== 'image') return null;
+    try { return JSON.parse(row.meta_json || '{}').canvas || null; } catch { return null; }
+  };
   async function texturize(out, want, v) {
     const clean = out.clean || out.path;
     let file = clean;
@@ -162,8 +168,23 @@ export async function buildApp(config, { logger = true } = {}) {
     return old;
   }
   generations.setAfterDownload({
-    wants: (row) => (row.studio === 'upscale' && row.kind === 'video' && Boolean(audioFileOf(row))) || Boolean(textureWanted(row)),
+    wants: (row) => (row.studio === 'upscale' && row.kind === 'video' && Boolean(audioFileOf(row))) || Boolean(textureWanted(row)) || Boolean(canvasOf(row)),
     run: async (row, saved) => {
+      // Phone canvas extension (§5.1): the middle must still be the source; if it drifted, put the source back.
+      const cv = canvasOf(row);
+      if (cv) {
+        const src = generations.mediaFileForUrl({ id: row.user_id, role: 'user' }, cv.source);
+        for (const out of saved) {
+          if (!src?.path || !/^image\//.test(out.mime || '')) continue;
+          try {
+            const score = await centreSsim(src.path, out.path);
+            const composited = score < DRIFT_SSIM;
+            if (composited) { await compositeBack(src.path, out.path); out.bytes = fs.statSync(out.path).size; }
+            out.canvasCheck = { ssim: Math.round(score * 1000) / 1000, composited };
+            app.log.info({ gen: row.id, ssim: out.canvasCheck.ssim, composited }, 'phone canvas centre check');
+          } catch (error) { app.log.warn(`canvas check ${row.id}: ${error.message}`); }
+        }
+      }
       // The sound back into an upscale first, so the clean original keeps it for every re-render.
       const audio = audioFileOf(row);
       if (audio && fs.existsSync(audio)) {
@@ -994,7 +1015,17 @@ export async function buildApp(config, { logger = true } = {}) {
         if (!prompt) return reply.code(400).send({ detail: 'Choose a camera, lens or aperture to re-shoot the frame with.' });
         requestBody.prompt = prompt;
         typedPrompt = prompt; // the history shows the re-shoot prompt, not a placeholder
-        if (meta) { meta.look = look; meta.reshootOf = String(dz.reshoot.frame || '').slice(0, 500); }
+        const frameUrl = String(dz.reshoot.frame || '').slice(0, 500);
+        if (meta) { meta.look = look; meta.reshootOf = frameUrl; }
+        // Phone (§5.1): the model gets the frame shrunk to 70 % on a grey canvas, not the frame itself.
+        if (isCanvasCamera(look)) {
+          const src = generations.mediaFileForUrl(req.user, frameUrl);
+          if (!src?.path || !/^image\//.test(src.mime || '')) return reply.code(400).send({ detail: 'The start frame could not be read.' });
+          const saved = await generations.saveUpload(req.user, { stream: Readable.from(await makeCanvas(src.path)), mime: 'image/png', filename: 'phone-canvas.png', projectId, folderId });
+          const swap = (v) => (v === frameUrl ? saved.url : Array.isArray(v) ? v.map(swap) : v);
+          for (const k of Object.keys(requestBody)) requestBody[k] = swap(requestBody[k]);
+          if (meta) meta.canvas = { source: frameUrl, canvas: saved.url, scale: CANVAS_SCALE };
+        }
       } else if (dz?.look && !resolved.tool) {
         const built = finalPrompt(resolved, typedPrompt || '', dz.look, requestBody);
         if (built.look) {

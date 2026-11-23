@@ -45,8 +45,14 @@ export const CAMERAS = [
     shot: 'Casual video filmed on a modern smartphone main camera',
     look: 'wide-angle phone lens held close, everything in sharp focus, computational HDR with bright lifted shadows, over-sharpened crisp detail, vivid colours, clean picture with no grain, no background blur',
     // Kling (§7): tested as one block; never "stretching at the frame edges" (gives fisheye).
-    kling: 'Casual horizontal video filmed by a friend on a modern smartphone main camera. Wide-angle phone lens held close, everything in sharp focus, computational HDR with bright lifted shadows, over-sharpened crisp detail, vivid colours, clean picture with no grain. Not cinematic, no background blur.',
-    reshoot: { camera: 'as if it was filmed on a modern smartphone', look: 'Wide-angle phone lens held close, so more of the place is visible; everything in sharp focus from foreground to background; computational HDR with bright lifted shadows; crisp over-sharpened detail; vivid colours; no background blur, no film grain' } },
+    // "horizontal" only at 16:9; any other ratio drops the orientation word ("vertical" is not tested).
+    kling: 'Casual {orient}video filmed by a friend on a modern smartphone main camera. Wide-angle phone lens held close, everything in sharp focus, computational HDR with bright lifted shadows, over-sharpened crisp detail, vivid colours, clean picture with no grain. Not cinematic, no background blur.',
+    // §7 (23.11): how a phone moves, and no phone in the picture (Seedance drew one on the table).
+    // Tested once on Kling and Seedance; untested on Wan and the other models. "phone" names the camera only.
+    behaviour: 'Handheld phone video - small natural hand shake and slow drift, casual slightly off-centre framing, the exposure adjusts once, one brief autofocus breath. No phone or other device is visible in the picture',
+    klingOnly: 'One continuous shot, no cuts',
+    // No re-shoot wording: Phone widens the frame by canvas extension instead (§5.1, canvasPrompt).
+  },
   // Cameras from before 23.11: kept as stored (settings, storyboards, history), shown and sent as Modern.
   { id: 'digital', label: 'Digital Cinema', as: 'modern', hidden: true },
   { id: 'large-format', label: 'Large Format', as: 'modern', hidden: true, sensor: 'large' },
@@ -291,14 +297,16 @@ export function cameraLines(look, { kind = 'video', family = null, ratio = null 
   const c = look && look.on !== false ? cameraOf(look.camera) : null;
   if (!c?.shot) return null;
   const keep = c.keep ? dot(c.keep) : '';
+  // Phone in a video: the handheld behaviour and "no device in the picture" go with the look (§7).
+  const extra = kind === 'video' && c.behaviour ? dot(c.behaviour) : '';
   if (kind === 'video' && family === 'kling') {
-    if (c.kling) return { lines: [['Visual style', c.kling]] };
+    if (c.kling) return { lines: [['Visual style', [c.kling.replace('{orient}', String(ratio) === '16:9' ? 'horizontal ' : ''), extra, dot(c.klingOnly)].filter(Boolean).join(' ')]] };
     if (c.toneOnly) return { lines: [['Camera tone', dot(c.look)]] };
     return { lines: [['Visual style', dot(c.shot)], ['Camera tone', [dot(c.look), keep].filter(Boolean).join(' ')]] };
   }
-  if (kind === 'video' && family === 'seedance') return { header: ['[Overall style]', [dot(c.shot), dot(c.look), keep, fillLine(ratio, true)].filter(Boolean).join(' ')] };
-  if (kind === 'video' && family === 'wan') return { lead: dot(c.shot), lines: [['Style', [dot(c.look), keep, fillLine(ratio, false)].filter(Boolean).join(' ')]] };
-  return { sentence: [dot(`${c.shot}: ${c.look}`), keep].filter(Boolean).join(' ') };
+  if (kind === 'video' && family === 'seedance') return { header: ['[Overall style]', [dot(c.shot), dot(c.look), extra, keep, fillLine(ratio, true)].filter(Boolean).join(' ')] };
+  if (kind === 'video' && family === 'wan') return { lead: dot(c.shot), lines: [['Style', [dot(c.look), extra, keep, fillLine(ratio, false)].filter(Boolean).join(' ')]] };
+  return { sentence: [dot(`${c.shot}: ${c.look}`), extra, keep].filter(Boolean).join(' ') };
 }
 
 // Where the look goes, per model (from its memo, see prompt-memos frontmatter
@@ -324,7 +332,18 @@ function intoBlock(prompt, label, text) {
 // model turns them into real objects; the filter adds them (§5, hard rule).
 const RESHOOT_LENS = { anamorphic: true, 'vintage-anamorphic': true };
 const RESHOOT_ANAMORPHIC = 'Long thin horizontal blue lens flares stretch sideways from small light sources; faces stay clear of flares. Out-of-focus background lights are vertical ovals';
+// Phone (§5.1): not a re-shoot — the frame is shrunk to 70 % on a grey canvas (canvas.js) and the
+// image model fills the grey around it. The prompt is the same for every scene; only the ratio changes.
+// Lens and aperture are ignored here: the extension keeps the look of the source.
+export const CANVAS_SCALE = 0.7;
+export function canvasPrompt({ ratio = null, ref = '@img1' } = {}) {
+  const shape = /^\d+(\.\d+)?:\d+(\.\d+)?$/.test(String(ratio || '')) ? `${ratio} ` : '';
+  return `${ref} is a photo placed in the middle of a larger plain grey canvas. Fill the grey area by extending the photo outward so the result is one seamless photo of the same place seen from further back, with more of the scene visible on all four sides. Do not change the photo in the middle: everything in it stays exactly as it is, at the same size and position. No grey left, no visible seam, no frame or border. Same light, colours and sharpness everywhere. The picture fills the whole ${shape}frame.`;
+}
+export const isCanvasCamera = (look) => look?.on !== false && cameraOf(look?.camera)?.id === 'phone';
+
 export function reshootPrompt(look, { ratio = null, ref = '@img1', subject = null } = {}) {
+  if (isCanvasCamera(look)) return canvasPrompt({ ratio, ref });
   const c = look && look.on !== false ? cameraOf(look.camera) : null;
   const ap = APERTURES.find((a) => a.f === look?.aperture);
   const lens = look?.on !== false && RESHOOT_LENS[look?.lens];

@@ -117,9 +117,17 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
     assert.match(k, /^Camera tone: /m);
     assert.doesNotMatch(k, /VHS|Super 8|home recording|home movie|sprocket/i);
   }
-  const kp = renderLook('A woman walks.', cleanLook({ on: true, camera: 'phone' }), { kind: 'video', memo: memos.kling });
+  const kp = renderLook('A woman walks.', cleanLook({ on: true, camera: 'phone' }), { kind: 'video', memo: memos.kling, ratio: '16:9' });
   assert.match(kp, /^Visual style: Casual horizontal video filmed by a friend/m);
   assert.doesNotMatch(kp, /stretching at the frame edges/);
+  // §7 (23.11): handheld behaviour and no device in the picture; Kling also one continuous shot.
+  assert.match(kp, /Handheld phone video - small natural hand shake.*No phone or other device is visible in the picture\. One continuous shot, no cuts\.$/m);
+  const kv = renderLook('A woman walks.', cleanLook({ on: true, camera: 'phone' }), { kind: 'video', memo: memos.kling, ratio: '9:16' });
+  assert.match(kv, /^Visual style: Casual video filmed by a friend/m, 'no orientation word away from 16:9');
+  assert.doesNotMatch(kv, /vertical/);
+  const sp = renderLook('A woman walks.', cleanLook({ on: true, camera: 'phone' }), { kind: 'video', memo: memos.seedance, ratio: '16:9' });
+  assert.match(sp, /No phone or other device is visible in the picture/);
+  assert.doesNotMatch(sp, /continuous shot/, 'Kling only');
   // Wan: the camera sentence right after "Generate single shot.", look and fill-frame in Style.
   const wan = renderLook('Generate single shot. A woman walks.', cleanLook({ on: true, camera: 'dv' }), { kind: 'video', memo: memos.wan, ratio: '16:9' });
   assert.match(wan, /^Generate single shot\. Amateur home video from the year 2000.*\. A woman walks\./);
@@ -134,14 +142,18 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
   const BAD = /dust|scratch|hair|light leak|tracking|grain(?!s? *$)|timestamp(?! *$)/i;
   for (const c of CAMERAS.filter((x) => x.shot)) {
     assert.doesNotMatch(`${c.shot} ${c.look}`, /dust|scratch|light leak|tracking band/i, c.id);
-    assert.doesNotMatch(`${c.reshoot.camera} ${c.reshoot.look}`, /dust|scratch|light leak|tracking band/i, c.id);
+    if (c.reshoot) assert.doesNotMatch(`${c.reshoot.camera} ${c.reshoot.look}`, /dust|scratch|light leak|tracking band/i, c.id);
   }
   assert.ok(BAD);
   // §5: the re-shoot prompt.
   const r = reshootPrompt(cleanLook({ on: true, camera: 'super-8' }), { ratio: '16:9' });
   assert.match(r, /^Re-shoot the scene in @img1 as a frame of a Super 8 home movie: the same people, clothes, objects and place, same faces, same moment and pose\. Soft blurry detail.*No rounded corners, no sprocket holes\. The picture fills the whole 16:9 frame, no black bars, no border\.$/);
   assert.doesNotMatch(r, /dust|scratch|light leak/i, 'check 6');
-  const ra = reshootPrompt(cleanLook({ on: true, camera: 'phone', lens: 'anamorphic', aperture: 'f/16' }), { ratio: '9:16', ref: '@image1' });
-  assert.match(ra, /^Re-shoot the scene in @image1 as if it was filmed on a modern smartphone through an anamorphic lens:/);
+  const ra = reshootPrompt(cleanLook({ on: true, camera: 'film-35', lens: 'anamorphic', aperture: 'f/16' }), { ratio: '9:16', ref: '@image1' });
+  assert.match(ra, /^Re-shoot the scene in @image1 on 35mm motion-picture colour negative film with a spherical cinema lens through an anamorphic lens:/);
   assert.match(ra, /Long thin horizontal blue lens flares.*Everything is sharp from the nearest object/);
+  // Phone (§5.1): canvas extension, the generic prompt, lens and aperture ignored.
+  const rp = reshootPrompt(cleanLook({ on: true, camera: 'phone', lens: 'anamorphic', aperture: 'f/1.4' }), { ratio: '16:9' });
+  assert.match(rp, /^@img1 is a photo placed in the middle of a larger plain grey canvas\..*The picture fills the whole 16:9 frame\.$/);
+  assert.doesNotMatch(rp, /anamorphic|depth of field|flare/i);
 });

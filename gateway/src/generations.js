@@ -738,7 +738,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     const failed = [];
     for (const id of list) {
       const up = q.upload.get(id);
-      if (!up || !canSee(user, up)) { failed.push({ id, error: 'Not found.' }); continue; }
+      // A job file (Phone canvas, its source copy) is removed by the server when the job ends.
+      if (!up || !canSee(user, up) || up.transient === 1) { failed.push({ id, error: 'Not found.' }); continue; }
       const mayDelete = up.user_id === user.id || (up.project_id && projects?.roleIn(user.id, up.project_id) === 'owner');
       if (!mayDelete) { failed.push({ id, error: 'Only the person who uploaded it (or the project owner) can delete it.' }); continue; }
       const ref = `/media/u/${up.id}.`;

@@ -320,6 +320,9 @@ test('Phone job files (transient uploads): hidden from the list, removed by the 
   const listed = res.json().items.map((i) => i.url);
   assert.ok(listed.includes(own), 'the user file is listed');
   assert.ok(!listed.includes(job.url), 'the job file is not');
+  // The user cannot delete a job file (the server does, when the job ends).
+  res = await app.inject({ method: 'POST', url: '/api/v1/uploads/delete', headers: { cookie: adminCookie }, payload: { ids: [job.id] } });
+  assert.deepEqual(res.json().done, []);
   // The sweep and a job's own clean-up touch only job files.
   assert.equal(gens.dropTransient([own, job.url]), 1);
   assert.ok(gens.mediaFileForUrl(admin, own), 'the user file is still there');

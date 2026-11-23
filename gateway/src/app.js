@@ -860,6 +860,14 @@ export async function buildApp(config, { logger = true } = {}) {
   async function priceFor(user, resolved, providerId, modelId, providerBody) {
     if (resolved.tool) return toolQuote(user, modelId, providerBody);
     if (providerId === 'local') return { usd: 0, exact: true, source: 'quote' };
+    // "duration: -1" = as long as the video to edit (APIMart video edit): priced by that video's length.
+    if (Number(providerBody?.duration) < 0) {
+      const src = [providerBody.video_url, ...[].concat(providerBody.video_urls || [])].find((u) => typeof u === 'string' && u);
+      const file = src ? generations.mediaFileForUrl(user, src) : null;
+      const info = file?.path ? await videoInfo(file.path).catch(() => null) : null;
+      if (!info?.duration) return null; // unknown length: no price rather than a negative one
+      providerBody = { ...providerBody, duration: Math.ceil(info.duration) };
+    }
     return quoter.quote({ providerId, modelId, providerBody, variant: resolved.variant });
   }
 

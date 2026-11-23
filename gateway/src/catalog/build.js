@@ -666,7 +666,10 @@ export function estimateCost(variant, body) {
   if (!p || p.from) return null;
   const res = String(body?.resolution || '').toLowerCase();
   const unitPrice = (p.byResolution && (p.byResolution[res] ?? p.byResolution[res.replace(/p$/, 'p')])) ?? p.usd;
-  if (p.unit === 'second') return unitPrice * (Number(body?.duration) || 5);
+  if (p.unit === 'second') {
+    const sec = Number(body?.duration) || 5;
+    return sec > 0 ? unitPrice * sec : null; // -1 = the source video's length: priced by the caller, never negative
+  }
   if (p.unit === 'chars') return unitPrice * Math.max(1, String(body?.text ?? body?.input ?? body?.prompt ?? '').length / p.perChars);
   const n = Number(body?.n || body?.num_images || 1) || 1;
   return unitPrice * n;

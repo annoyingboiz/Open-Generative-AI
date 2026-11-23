@@ -444,9 +444,9 @@ function unsentWords(text, alias) {
     .replace(/(^|\n)[ \t]*[.;,](?=[ \t]|$)[ \t]*/g, "$1")
     .replace(/([.!?])([ \t]+[.!?])+(?=\s|$)/g, "$1")
     // a label left with nothing after it ("Characters: ." once its definition went)
-    .replace(/(^|\n|[.!?][ \t]+)[^\n.!?:]{1,40}:[ \t]*[.;,][ \t]*/gu, "$1")
+    .replace(/(^|\n|[.!?][ \t]+)[^\n.!?:]{1,40}:[ \t]*[.;,](?=\s|$)[ \t]*/gu, "$1")
     .replace(/(\S)[ \t]{2,}/g, "$1 ")
-    .replace(/(\S)[ \t]+([,.;:!?])/g, "$1$2")
+    .replace(/(\S)[ \t]+([,.;:!?])(?=\s|$)/g, "$1$2")
     .replace(/[,;][ \t]*([.!?])/g, "$1");
   if (!/^\s/.test(text)) out = out.replace(/^[ \t]+/, "");
   return { text: out, lost: [...lost] };

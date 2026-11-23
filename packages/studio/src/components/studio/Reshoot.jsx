@@ -163,8 +163,10 @@ export function ReshootBlock({ r }) {
   const nodes = useRef({});
   const running = Object.entries(r?.jobs || {}).filter(([, j]) => j.state === "running");
   const runKey = running.map(([, j]) => j.token).join("|");
-  // The pair that started last (a retry of one frame while the other's result is still shown).
-  const newest = running.reduce((a, b) => ((b[1].started || 0) > (a?.[1].started || 0) ? b : a), null)?.[0] || null;
+  // The pair that started last (a retry of one frame while the other's result is still shown); two
+  // started together ("Re-shoot both") → the upper one, so the lower one follows it into view.
+  const last = Math.max(0, ...running.map(([, j]) => j.started || 0));
+  const newest = running.find(([, j]) => (j.started || 0) >= last - 1000)?.[0] || null;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!runKey) return undefined;

@@ -51,6 +51,8 @@ test('review x57: no tidy without a rewrite, other languages, a comma without a 
   assert.equal(translateTags('@img1 is the woman,@img2 is the shop. @img2 glows.', tags), 'The shop glows.');
   // A label whose only content was a definition goes with it.
   assert.equal(translateTags('Characters: @img1 is the woman. Action: @img1 waves.', tags), 'Action: the woman waves.');
+  // A label with real content is kept, even one that starts with punctuation.
+  assert.equal(translateTags('@img1 is the woman. Camera: .5x zoom. Camera: static.', tags), 'Camera: .5x zoom. Camera: static.');
   // An opening quote does not hide the sentence start.
   assert.equal(translateTags('@img1 is the woman. "@img1 walks."', tags), '"The woman walks."');
   // "is" with no article is not a definition (a verb follows): reported, not guessed.

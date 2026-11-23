@@ -87,9 +87,19 @@ export function elementsSpec(prop = {}) {
 
 // Builds studio inputs + media capability fields from a JSON schema.
 // Returns null if the model needs something our UI cannot provide.
+// An array of { url, type } where type names media kinds: those kinds, else null.
+function typedListOf(prop) {
+  if (prop?.type !== 'array' || prop.items?.type !== 'object') return null;
+  const p = prop.items.properties || {};
+  if (!p.url || !Array.isArray(p.type?.enum)) return null;
+  const kinds = p.type.enum.filter((t) => t === 'image' || t === 'video' || t === 'audio');
+  return kinds.length ? kinds : null;
+}
+
 export function studioFieldsFromSchema(properties = {}, required = [], { renames = {} } = {}) {
   const inputs = {};
   const media = { image: [], video: [], audio: [] };
+  const typedLists = [];
   for (const name of required) if (UNSUPPORTED_FIELDS.has(name)) return null;
 
   for (const [rawName, prop] of Object.entries(properties)) {
@@ -99,6 +109,18 @@ export function studioFieldsFromSchema(properties = {}, required = [], { renames
     const subject = rawName === 'elements' && elementsSpec(prop);
     if (subject) { inputs.elements = subject; continue; }
     if (UNSUPPORTED_FIELDS.has(rawName)) continue;
+    // One list of typed files ({ url, type: image | video | audio }, Wan 3.0 at Atlas "refers"):
+    // the studio fills one field per type, the server joins them back (toProviderBody).
+    const typed = typedListOf(prop);
+    if (typed) {
+      for (const t of typed) {
+        const name = `${rawName}__${t}`;
+        media[t].push({ name, prop: { type: 'array', maxItems: prop.maxItems } });
+        inputs[name] = clean({ name, title: titleOf(rawName, prop), type: 'array', field: t, maxItems: prop.maxItems, items: { type: 'string' } });
+      }
+      typedLists.push({ field: rawName, types: typed });
+      continue;
+    }
     const name = renames[rawName] || rawName;
     const type = mediaTypeOf(rawName, prop);
     if (type) {
@@ -135,6 +157,7 @@ export function studioFieldsFromSchema(properties = {}, required = [], { renames
   return {
     inputs,
     ...fields,
+    ...(typedLists.length ? { typedLists } : {}),
     hasPrompt,
     promptRequired: hasPrompt && required.includes(promptRaw),
     required: required.filter((n) => !HIDDEN_FIELDS.has(n)).map((n) => renames[n] || n),

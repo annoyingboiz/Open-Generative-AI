@@ -45,7 +45,8 @@ async function getJson(url) {
 }
 
 // One page of a tab, with "Load more".
-export function usePaged(tab, type, where, accept, ctx, refreshKey) {
+// `search`: words for the server (generations: prompt and model), so older pages are found too.
+export function usePaged(tab, type, where, accept, ctx, refreshKey, search = "") {
   const [state, setState] = useState({ items: [], cursor: null, loading: true });
   const seq = useRef(0);
   const query = useMemo(() => {
@@ -61,10 +62,11 @@ export function usePaged(tab, type, where, accept, ctx, refreshKey) {
       if (kind) p.set("kind", kind);
       if (tab === "liked") p.set("liked", "1");
       if (where === "project" && ctx.project) p.set("project", ctx.project.id);
+      if (search.trim()) p.set("q", search.trim());
       return `/api/v1/history?${p}`;
     }
     return null;
-  }, [tab, type, where, accept, ctx.project]);
+  }, [tab, type, where, accept, ctx.project, search]);
   const load = useCallback(async (cursor) => {
     if (!query) return;
     const mine = cursor ? seq.current : ++seq.current;

@@ -2964,8 +2964,11 @@
           "enum": [
             "1:1",
             "4:3",
+            "3:4",
             "16:9",
-            "3:2"
+            "9:16",
+            "3:2",
+            "2:3"
           ],
           "default": "1:1"
         },
@@ -3023,8 +3026,11 @@
           "enum": [
             "1:1",
             "4:3",
+            "3:4",
             "16:9",
-            "3:2"
+            "9:16",
+            "3:2",
+            "2:3"
           ],
           "default": "1:1"
         },
@@ -4561,9 +4567,16 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "first_frame_image",
-            "max": 1,
-            "last": "last_frame_image"
+            "field": "image_urls",
+            "max": 10,
+            "first": "first_frame_image",
+            "last": "last_frame_image",
+            "roles": {
+              "field": "image_with_roles",
+              "refs": "roles",
+              "refRole": "reference",
+              "always": true
+            }
           }
         }
       },
@@ -4575,8 +4588,8 @@
             "max": 1
           },
           "image": {
-            "field": "first_frame_image",
-            "max": 1
+            "field": "image_urls",
+            "max": 10
           }
         }
       }
@@ -4725,9 +4738,16 @@
         "inputs": {},
         "media": {
           "image": {
-            "field": "first_frame_image",
-            "max": 1,
-            "last": "last_frame_image"
+            "field": "image_urls",
+            "max": 10,
+            "first": "first_frame_image",
+            "last": "last_frame_image",
+            "roles": {
+              "field": "image_with_roles",
+              "refs": "roles",
+              "refRole": "reference_image",
+              "always": true
+            }
           }
         }
       },
@@ -4742,8 +4762,8 @@
             "max": 1
           },
           "image": {
-            "field": "first_frame_image",
-            "max": 1
+            "field": "image_urls",
+            "max": 10
           }
         }
       }
@@ -4871,7 +4891,12 @@
           "type": "string",
           "enum": [
             "1:1",
-            "4:3"
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3"
           ],
           "default": "1:1"
         },
@@ -4916,7 +4941,12 @@
           "type": "string",
           "enum": [
             "1:1",
-            "4:3"
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3"
           ],
           "default": "1:1"
         },
@@ -5531,7 +5561,8 @@
           }
         }
       }
-    }
+    },
+    "refSyntax": "ImageN"
   },
   "kling-v4": {
     "source": "videos__kling-v4__generation.md",
@@ -5607,7 +5638,8 @@
         },
         "promptRequired": true
       }
-    }
+    },
+    "refSyntax": "ImageN"
   },
   "kling-video-o1": {
     "source": "videos__kling-video-o1__generation.md",
@@ -7324,7 +7356,8 @@
           }
         }
       }
-    }
+    },
+    "refSyntax": "imageN"
   },
   "skyreels-v4-std": {
     "source": "videos__skyreels-v4__generation.md",
@@ -7393,7 +7426,8 @@
           }
         }
       }
-    }
+    },
+    "refSyntax": "imageN"
   },
   "ref_videos": {
     "source": "videos__skyreels-v4__generation.md",
@@ -7462,7 +7496,8 @@
           }
         }
       }
-    }
+    },
+    "refSyntax": "imageN"
   },
   "veo3.1-fast-official": {
     "source": "videos__veo3__generation-official.md",
@@ -8717,7 +8752,12 @@
           "type": "string",
           "enum": [
             "adaptive",
-            "21:9"
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
           ],
           "default": "adaptive"
         },
@@ -8780,7 +8820,14 @@
         "media": {
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 4,
+            "first": "first_frame_image",
+            "last": "last_frame_image",
+            "roles": {
+              "field": "image_with_roles",
+              "refs": "alone",
+              "always": true
+            }
           }
         }
       },
@@ -8814,7 +8861,12 @@
           "type": "string",
           "enum": [
             "adaptive",
-            "21:9"
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
           ],
           "default": "adaptive"
         },
@@ -8877,7 +8929,14 @@
         "media": {
           "image": {
             "field": "image_urls",
-            "max": 4
+            "max": 4,
+            "first": "first_frame_image",
+            "last": "last_frame_image",
+            "roles": {
+              "field": "image_with_roles",
+              "refs": "alone",
+              "always": true
+            }
           }
         }
       },

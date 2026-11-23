@@ -615,7 +615,21 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const adaptiveKey = ["aspect_ratio", "ratio"].find((k) => String(values?.[k] || "").toLowerCase() === "adaptive");
   const shapePending = Boolean(adaptiveKey && startUrl && startShape == null);
   const canRun = canRunNow && !shapePending;
+  // A ratio the model picks itself ("adaptive", "auto") with a camera look and no start frame:
+  // the model takes the format from the look words (smartphone → vertical, anamorphic →
+  // extra wide; look test round 1). A fixed ratio goes instead: 16:9, or the nearest landscape one.
+  const freeKey = ["aspect_ratio", "ratio"].find((k) => /^(adaptive|auto)$/i.test(String(values?.[k] || "")));
+  const lookSet = Boolean(look && (look.on || look.filter || look.era || look.light || look.palette || look.genre));
+  const ratioFixed = useMemo(() => {
+    if (!freeKey || startUrl || kind !== "video" || !lookSet) return null;
+    const p = [...(params?.main || []), ...(params?.advanced || [])].find((x) => x.key === freeKey);
+    const opts = (p?.enum || []).map(String);
+    const num = (o) => { const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(o); return m ? Number(m[1]) / Number(m[2]) : null; };
+    const to = opts.includes("16:9") ? "16:9" : opts.filter((o) => num(o) > 1).sort((a, b) => Math.abs(Math.log(num(a) / (16 / 9))) - Math.abs(Math.log(num(b) / (16 / 9))))[0];
+    return to ? { key: freeKey, from: String(values[freeKey]), to } : null;
+  }, [freeKey, startUrl, kind, lookSet, params, values]);
   const bodyValues = useMemo(() => {
+    if (ratioFixed) return { ...values, [ratioFixed.key]: ratioFixed.to };
     const key = adaptiveKey;
     if (!key || !startShape || Math.abs(Math.log(startShape)) < Math.log(1.15)) return values;
     const p = [...(params?.main || []), ...(params?.advanced || [])].find((x) => x.key === key);
@@ -624,7 +638,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (!side.length) return values;
     const best = side.reduce((a, o) => (Math.abs(Math.log(num(o) / startShape)) < Math.abs(Math.log(num(a) / startShape)) ? o : a), side[0]);
     return { ...values, [key]: best };
-  }, [values, startShape, params, adaptiveKey]);
+  }, [values, startShape, params, adaptiveKey, ratioFixed]);
   // Generate waits the moment it takes to read the start picture's shape.
   const body = variant && canRun ? buildBody(variant, { prompt: finalPrompt, values: bodyValues, attached: merged.attached, elements: elementSpec ? activeElements : [] }) : null;
   // The price shows as soon as the model and files are set — not only after the prompt is typed.
@@ -1033,7 +1047,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
+  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {

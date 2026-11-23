@@ -57,7 +57,11 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
   const fileInput = useRef(null);
   useEffect(() => { setWhere(ctx.project ? "project" : "library"); }, [ctx.project?.id]);
   const accept = group?.kind || "image";
-  const paged = usePaged(source, "all", where, accept, ctx, refresh);
+  // Generations are searched on the server (all pages, not only the loaded ones), a moment after typing.
+  const [serverQ, setServerQ] = useState("");
+  useEffect(() => { const t = setTimeout(() => setServerQ(q.trim().replace(/^@/, "")), 300); return () => clearTimeout(t); }, [q]);
+  const searchesServer = source === "generations" || source === "liked";
+  const paged = usePaged(source, "all", where, accept, ctx, refresh, searchesServer ? serverQ : "");
   const els = useDzElements();
   // Elements (S2): the elements first; inside one, its views (or videos) with their labels.
   const elementList = useMemo(() => {
@@ -75,7 +79,7 @@ function Browser({ group, attached, setAttached, columns = 8, onError, onUploadi
   const hereAll = useMemo(() => (here ? ofKind(here.all) : []), [here, accept]); // eslint-disable-line react-hooks/exhaustive-deps
   const all = source === "elements" ? elementItems : source === "moodboard" ? boardItems : source === "here" ? hereAll : paged.items;
   const needle = q.trim().toLowerCase().replace(/^@/, "");
-  const items = needle ? all.filter((i) => `${i.name || ""} ${i.prompt || ""} ${i.model || ""}`.toLowerCase().includes(needle)) : all;
+  const items = needle && !searchesServer ? all.filter((i) => `${i.name || ""} ${i.prompt || ""} ${i.model || ""}`.toLowerCase().includes(needle)) : all;
   // Package 04: only files that are on count as chosen; a dimmed file never fills a slot.
   const inGroup = group ? groupItems(attached, group).map((x) => ({ ...x, off: st?.stateOf(x) || null })) : [];
   const chosen = inGroup.filter((x) => !x.off);

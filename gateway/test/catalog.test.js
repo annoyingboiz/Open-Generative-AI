@@ -205,3 +205,26 @@ test('APIMart Seedance: start / end frames go as image_with_roles, references by
   assert.ok(!v15.model.inputs.image_urls);
   assert.deepEqual(toProviderBody(v15, { prompt: 'p', first_frame_image: 'A' }), { prompt: 'p', image_with_roles: [{ url: 'A', role: 'first_frame' }] });
 });
+
+test('Atlas: a model without categories takes its mode from tags / id; typed reference lists', async () => {
+  const { buildAtlasVariant, atlasModeOf } = await import('../src/catalog/build.js');
+  assert.equal(atlasModeOf({ model: 'google/gemini-omni-1.2-flash/reference-to-video', categories: null, tags: ['REFERENCE-TO-VIDEO', 'NEW'] }), 'i2v');
+  assert.equal(atlasModeOf({ model: 'x/y/video-edit', categories: null, tags: [] }), 'v2v');
+  // Wan 3.0 "refers": [{ url, type }] → one studio field per type, joined back for Atlas.
+  const schema = { components: { schemas: { Input: { required: ['model', 'prompt'], properties: {
+    model: { type: 'string' }, prompt: { type: 'string' },
+    refers: { type: 'array', maxItems: 20, items: { type: 'object', properties: { url: { type: 'string' }, type: { type: 'string', enum: ['image', 'video', 'audio'] } }, required: ['url', 'type'] } },
+  } } } } };
+  const v = buildAtlasVariant({ model: 'alibaba/wan-3.0/reference-to-video', categories: null, tags: [], type: 'Video', displayName: 'Wan 3.0 Reference-to-Video', price: { actual: { base_price: '0.1', unit: 'second' } } }, schema);
+  assert.ok(v && v.model.inputs.refers__image && v.model.inputs.refers__video && v.model.inputs.refers__audio);
+  assert.deepEqual(toProviderBody(v, { prompt: 'p', refers__image: ['A', 'B'], refers__audio: ['S'] }).refers, [{ url: 'A', type: 'image' }, { url: 'B', type: 'image' }, { url: 'S', type: 'audio' }]);
+});
+
+test('APIMart Gemini Omni: one reference is never read as a start frame', async () => {
+  const OV = (await import('../src/catalog/apimart-overrides.json', { with: { type: 'json' } })).default;
+  const v = buildApimartVariants({ id: 'gemini-omni-1.2-flash', capability_tags: ['image-to-video'] }, OV['gemini-omni-1.2-flash'], { usd: 0.02, unit: 'second' }).find((x) => x.mode === 'i2v');
+  assert.deepEqual(toProviderBody(v, { prompt: 'p', image_urls: ['R'] }).image_with_roles, [{ url: 'R', role: 'reference_image' }]);
+  const both = toProviderBody(v, { prompt: 'p', first_frame_image: 'A', image_urls: ['R', 'Q'] });
+  assert.deepEqual(both.image_with_roles.map((x) => x.role), ['first_frame', 'reference_image', 'reference_image']);
+  assert.equal(both.image_urls, undefined);
+});

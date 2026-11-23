@@ -518,9 +518,9 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     if (liked === '1' || liked === true) where.push('liked_at IS NOT NULL');
     if (status === 'completed' || status === 'failed') { where.push('status = ?'); args.push(status); }
     if (status === 'processing') where.push("status IN ('submitting','submitted','processing','downloading')");
-    // Words in the prompt (each one must be there), case-insensitive.
-    const words = String(search || '').toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
-    for (const w of words) { where.push("dz_fold(prompt) LIKE ? ESCAPE '\\'"); args.push(`%${w.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`)}%`); }
+    // Words in the prompt or the model (each one must be there), case-insensitive.
+    const words = String(search || '').toLowerCase().replace(/^@/, '').split(/\s+/).filter(Boolean).slice(0, 6);
+    for (const w of words) { where.push("dz_fold(coalesce(prompt, '') || ' ' || endpoint || ' ' || provider_model) LIKE ? ESCAPE '\\'"); args.push(`%${w.slice(0, 60).replace(/[\\%_]/g, (c) => `\\${c}`)}%`); }
     return { where, args };
   }
 

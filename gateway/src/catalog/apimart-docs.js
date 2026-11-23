@@ -56,7 +56,8 @@ function enumOf(p, otherNames) {
   if (!candidates.length) {
     candidates = body.split('\n')
       .filter((l) => /^\s*[*-]\s+(`|[A-Za-z ]+:\s*`)/.test(l))
-      .flatMap((l) => (/^\s*[*-]\s+[A-Za-z ]+:\s*`/.test(l) ? ticks(l) : [ticks(l)[0]]))
+      // "* `21:9` / `16:9` / `4:3`": a bullet of values only gives them all (Wan 3.0 sizes).
+      .flatMap((l) => (/^\s*[*-]\s+[A-Za-z ]+:\s*`/.test(l) || /^\s*[*-]\s+(`[^`]+`\s*(\/|,|or)?\s*){2,}$/.test(l) ? ticks(l) : [ticks(l)[0]]))
       .filter(Boolean);
   }
   if (!candidates.length) {
@@ -141,19 +142,36 @@ function buildOverride(text) {
   if (params.negative_prompt && !inputs.negative_prompt) inputs.negative_prompt = { name: 'negative_prompt', title: 'Negative Prompt', type: 'string' };
 
   const media = {};
-  if (params.first_frame_image) {
+  // Frame roles only where the docs were read and the request checked (Seedance, Gemini Omni,
+  // Wan 3.0): other docs mention `first_frame` with other meanings (Wan 2.7: one bare picture
+  // is the start frame; Wan 2.7 R2V: references only).
+  const rolesChecked = ids.some((id) => /seedance|gemini-omni|wan3\.0/i.test(id));
+  // Gemini Omni at APIMart: one bare picture in `image_urls` is a start frame, several are
+  // subject references. Frames and references all go through `image_with_roles`, so one
+  // reference is never read as a start frame (toProviderBody → withRoles, `always`).
+  if (rolesChecked && params.first_frame_image && params.image_urls && params.image_with_roles && /multiple images[^\n]*references/i.test(text)) {
+    const refRole = /`reference`\s*:/.test(text) ? 'reference' : 'reference_image';
+    media.image = {
+      field: 'image_urls', max: maxItemsOf(params.image_urls) || 10, first: 'first_frame_image',
+      ...(params.last_frame_image ? { last: 'last_frame_image' } : {}),
+      roles: { field: 'image_with_roles', refs: 'roles', refRole, always: true },
+    };
+  } else if (params.first_frame_image) {
     media.image = { field: 'first_frame_image', max: 1, ...(params.last_frame_image ? { last: 'last_frame_image' } : {}) };
-  } else if (params.image_with_roles && /`first_frame`/.test(text)) {
+  } else if (rolesChecked && params.image_with_roles && /`first_frame`/.test(text)) {
     // Seedance at APIMart: start and end frames only through `image_with_roles`
     // ({ url, role: first_frame | last_frame | reference_image }); `image_urls` are
     // references (2.0, 2.5) or frames by count (1.5). The studio sends its usual
     // start / end frame fields; toProviderBody turns them into roles.
     const urlsText = params.image_urls ? params.image_urls.body.join('\n') : '';
     const refs = !params.image_urls || /1 image\s*=\s*first frame/i.test(urlsText) ? 'never'
-      : /cannot be used (simultaneously|together)/i.test(text) ? 'alone'
+      : /cannot be used (simultaneously|together)|mutual exclusion rules|reference mode is mutually exclusive/i.test(text) ? 'alone'
         : 'roles';
     const adaptive = /first[ /–-]*(last )?frame[^\n]*(`size`|aspect)[^\n]*adaptive/i.test(text);
-    const roles = { field: 'image_with_roles', refs, ...(adaptive ? { adaptive: true } : {}) };
+    // Wan 3.0: one bare picture counts as a start frame (`generation_type` decides otherwise),
+    // so references always go with their role.
+    const always = Boolean(params.generation_type);
+    const roles = { field: 'image_with_roles', refs, ...(adaptive ? { adaptive: true } : {}), ...(always ? { always: true } : {}) };
     media.image = refs === 'never'
       ? { field: 'first_frame_image', max: 1, last: 'last_frame_image', roles }
       : { field: 'image_urls', max: maxItemsOf(params.image_urls) || 4, first: 'first_frame_image', last: 'last_frame_image', roles };
@@ -162,7 +180,9 @@ function buildOverride(text) {
   }
   const video = params.video_urls ? { field: 'video_urls', max: maxItemsOf(params.video_urls) || 1 } : params.video_url ? { field: 'video_url', max: 1 } : null;
   const audio = params.audio_urls ? { field: 'audio_urls', max: maxItemsOf(params.audio_urls) || 1 } : params.audio_url ? { field: 'audio_url', max: 1 } : null;
-  return { ids, inputs, rename, media, video, audio, omniEdit: Boolean(params.omni_reference_task_type), title: (/^#\s+(.+)$/m.exec(text) || [])[1] };
+  // How the prompt names references ("use `@Image1`, `@Video1`…"): the studio writes tags that way.
+  const refSyntax = /`@Image1`/.test(text) ? 'ImageN' : /`@image_1`/.test(text) ? 'image_N' : /`@image1`/.test(text) ? 'imageN' : null;
+  return { ids, inputs, rename, media, video, audio, refSyntax, omniEdit: Boolean(params.omni_reference_task_type), title: (/^#\s+(.+)$/m.exec(text) || [])[1] };
 }
 
 
@@ -188,7 +208,7 @@ export function buildApimartOverrides(docs) {
           };
       const score = Object.keys(o.inputs).length + Object.keys(modes).length;
       if (out[id] && out[id].score >= score) continue; // keep the most complete page (e.g. not "remix")
-      out[id] = { source: url, docTitle: o.title, score, rename: o.rename, common, modes };
+      out[id] = { source: url, docTitle: o.title, score, rename: o.rename, common, modes, ...(o.refSyntax ? { refSyntax: o.refSyntax } : {}) };
     }
   }
   return out;

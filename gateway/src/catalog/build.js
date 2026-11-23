@@ -94,8 +94,19 @@ export function atlasPrice(entry) {
   return { usd, unit };
 }
 
+// When Atlas lists a model without categories (Gemini Omni 1.2 Flash reference-to-video):
+// its tags, then the mode in its id.
+const ATLAS_TAG_MODE = { ...ATLAS_MODE, 'REFERENCE-TO-VIDEO': 'i2v' };
+const ATLAS_ID_MODE = { 'text-to-image': 't2i', 'image-to-image': 'i2i', 'text-to-video': 't2v', 'image-to-video': 'i2v', 'reference-to-video': 'i2v', 'start-end-frame-to-video': 'i2v', 'video-to-video': 'v2v', 'video-edit': 'v2v' };
+export function atlasModeOf(entry) {
+  return (entry.categories || []).map((c) => ATLAS_MODE[c]).find(Boolean)
+    || (entry.tags || []).map((c) => ATLAS_TAG_MODE[c]).find(Boolean)
+    || ATLAS_ID_MODE[atlasParts(entry.model || '').mode]
+    || null;
+}
+
 export function buildAtlasVariant(entry, schemaDoc) {
-  const mode = (entry.categories || []).map((c) => ATLAS_MODE[c]).find(Boolean);
+  const mode = atlasModeOf(entry);
   if (!mode) return null;
   if (mode === 't2a' && NOT_STUDIO_AUDIO.test(entry.model)) return null;
   const input = schemaDoc?.components?.schemas?.Input;
@@ -139,7 +150,13 @@ export function buildAtlasVariant(entry, schemaDoc) {
       vendor: (entry.logo || entry.avatar) ? `/dz/thumb?u=${encodeURIComponent(entry.logo || entry.avatar)}` : null,
       model: (entry.logo || entry.avatar) ? `/dz/thumb?u=${encodeURIComponent(entry.logo || entry.avatar)}` : null,
     },
-    server: { rename: toProvider, allowed, fixed: {}, price },
+    server: {
+      rename: toProvider,
+      // Typed lists are filled through one field per type (refers__image…): allowed too.
+      allowed: [...allowed, ...(fields.typedLists || []).flatMap((l) => l.types.map((t) => `${l.field}__${t}`))],
+      fixed: {}, price,
+      ...(fields.typedLists ? { typedLists: fields.typedLists } : {}),
+    },
   };
 }
 
@@ -225,11 +242,12 @@ export function buildApimartVariants(model, override, price) {
       mode,
       kind,
       family,
-      model: studioModel({
+      model: Object.assign(studioModel({
         provider: 'apimart', mode, slug: model.id.toLowerCase().replace(/[^a-z0-9.]+/g, '-'), endpoint, family, familyName,
         vendorId: override?.vendor || model.id, fields, price, basic: !spec,
         description: override?.description,
-      }),
+        // How the prompt names attached files, from APIMart's own docs (Kling: @Image1).
+      }), override?.refSyntax ? { dzRefSyntax: override.refSyntax } : {}),
       server: {
         rename,
         // Audio specs are complete: nothing else goes to APIMart (e.g. Suno's
@@ -491,6 +509,14 @@ export function toProviderBody(variant, body) {
     out[target] = value;
   }
   if (variant.server.roles) withRoles(out, variant.server.roles);
+  for (const list of variant.server.typedLists || []) {
+    const items = list.types.flatMap((t) => {
+      const v = out[`${list.field}__${t}`];
+      delete out[`${list.field}__${t}`];
+      return [].concat(v || []).filter(Boolean).map((url) => ({ url, type: t }));
+    });
+    if (items.length) out[list.field] = items;
+  }
   return { ...out, ...fixed };
 }
 
@@ -506,7 +532,14 @@ function withRoles(out, roles) {
   const last = one(out[roles.last]);
   delete out[roles.last];
   if (roles.first !== roles.refsField) delete out[roles.first];
-  if (!first && !last) return;
+  const refRole = roles.refRole || 'reference_image';
+  if (!first && !last) {
+    // A provider that reads one bare picture as a start frame (Gemini Omni at APIMart):
+    // references always go with an explicit role.
+    const solo = roles.always && roles.refsField ? [].concat(out[roles.refsField] || []).filter(Boolean) : [];
+    if (solo.length) { delete out[roles.refsField]; out[roles.field] = solo.map((url) => ({ url, role: refRole })); }
+    return;
+  }
   if (!first) throw new BodyError('An end frame needs a start frame with this model. Add a start frame or remove the end frame.');
   const refs = roles.refsField ? [].concat(out[roles.refsField] || []).filter(Boolean) : [];
   if (refs.length && roles.refs === 'alone') throw new BodyError('This model takes frames or reference images, not both. Remove the references or the frames.');
@@ -514,7 +547,7 @@ function withRoles(out, roles) {
   out[roles.field] = [
     { url: first, role: 'first_frame' },
     ...(last ? [{ url: last, role: 'last_frame' }] : []),
-    ...refs.map((url) => ({ url, role: 'reference_image' })),
+    ...refs.map((url) => ({ url, role: refRole })),
   ];
   if (roles.adaptive) out[roles.size] = 'adaptive';
 }

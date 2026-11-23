@@ -183,6 +183,35 @@ export default function PromptEditor({ value, onChange, tags, modelName, inputRe
   }, [value, chipKey, tagMap]);
 
   const emit = (next) => { emitted.current = next; onChange(next); };
+  // The whole field, chips included (⌘A and triple-click; package 16 / look round 1, item 4:
+  // the browser stopped at a chip, so typing added to the old prompt instead of replacing it).
+  const selectAll = () => { const el = root.current; if (el) setOffset(el, 0, serialize(el).length); };
+  // Typing over a selection that holds a chip: replaced here, so nothing of it stays behind
+  // (a non-editable chip can make the browser keep part of the selection).
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return undefined;
+    const before = (e) => {
+      if (composing.current || e.isComposing) return;
+      if (e.inputType !== "insertText" && e.inputType !== "insertReplacementText") return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      if (![...el.querySelectorAll("[data-tag]")].some((chip) => range.intersectsNode(chip))) return;
+      e.preventDefault();
+      const v = serialize(el);
+      const off = getOffset(el);
+      if (!off) return;
+      const text = e.data ?? "";
+      const next = v.slice(0, off.start) + text + v.slice(off.end);
+      inputs.current += 1;
+      render(el, next, tagMap, modelName);
+      setOffset(el, off.start + text.length);
+      emit(next);
+    };
+    el.addEventListener("beforeinput", before);
+    return () => el.removeEventListener("beforeinput", before);
+  }); // every render: the handler reads the current tags
   // Typed edits go through the browser (so ⌘Z undoes them); the rest redraws.
   const insertNative = (text) => (typeof document !== "undefined" && document.execCommand ? document.execCommand("insertText", false, text) : false);
   const replaceSelection = (text) => {
@@ -236,9 +265,10 @@ export default function PromptEditor({ value, onChange, tags, modelName, inputRe
         onKeyDown?.(e);
         if (e.defaultPrevented) return;
         if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); replaceSelection("\n"); }
+        if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "a") { e.preventDefault(); selectAll(); }
       }}
       onKeyUp={onKeyUp}
-      onMouseDown={() => { wanted.current = null; }}
+      onMouseDown={(e) => { wanted.current = null; if (e.detail >= 3) { e.preventDefault(); selectAll(); } }}
       onClick={onClick}
       onFocus={onFocus}
       onBlur={onBlur}

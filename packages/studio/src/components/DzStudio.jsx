@@ -806,7 +806,7 @@ function ElementsWindow({ open, onClose, engine, anchor }) {
 // Ratio, resolution and length (§5.7; package 03 §3.2): the model's own list. Values
 // the same model has at another provider are listed dimmed, with the reason on the
 // right (`others`); a locked chip (ratio with a start frame) opens on a dimmed list.
-function ParamMenu({ p, value, onChange, title, icon, render, caption, modelName, note, others = [], right, locked = null }) {
+function ParamMenu({ p, value, onChange, title, icon, render, caption, modelName, note, others = [], right, locked = null, chipTitle }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef(null);
   if (!p) return null;
@@ -817,7 +817,7 @@ function ParamMenu({ p, value, onChange, title, icon, render, caption, modelName
   const current = locked ? locked.value : value ?? p.default ?? own[0];
   return (
     <div className="relative" ref={anchor}>
-      <Chip icon={icon} active={open} onClick={() => setOpen((v) => !v)} aria-haspopup="dialog" aria-expanded={open} title={locked ? locked.note : undefined}>
+      <Chip icon={icon} active={open} onClick={() => setOpen((v) => !v)} aria-haspopup="dialog" aria-expanded={open} title={locked ? locked.note : chipTitle}>
         {render(current)}{locked && <LockSimple size={12} className="text-muted-foreground" aria-label="Locked" />}
       </Chip>
       <ChipMenu open={open} onClose={() => setOpen(false)} anchor={anchor} className="w-[260px] p-1.5">
@@ -973,7 +973,9 @@ export function ComposerRow({ engine, cp, light, kindSwitch = false, pop, setPop
       ) : (
         <ParamMenu p={ratioP || ratioFallback} value={values[ratioP?.key]} onChange={(v) => setValue(ratioP.key, v)} title="Aspect ratio" icon={Rectangle} modelName={entry?.familyName}
           others={ratioOthers} locked={ratioLock}
-          render={(v, row) => (row ? <><RatioIcon v={v} /><span className="w-12 tabular-nums">{String(v)}</span><span className="text-muted-foreground">{shapeWord(v)}</span></> : String(v))} />
+          // "adaptive" with a camera look goes as a fixed ratio (look test round 1): the chip says so.
+          chipTitle={engine.ratioSent && ratioP?.key === engine.ratioSent.key ? `With a camera look the model would pick the format from the look words, so ${engine.ratioSent.to} is sent. Choose a ratio to change it.` : undefined}
+          render={(v, row) => (row ? <><RatioIcon v={v} /><span className="w-12 tabular-nums">{String(v)}</span><span className="text-muted-foreground">{shapeWord(v)}</span></> : engine.ratioSent && ratioP?.key === engine.ratioSent.key ? `${String(v)} → ${engine.ratioSent.to}` : String(v))} />
       )}
       <ParamMenu p={resP} value={values[resP?.key]} onChange={(v) => setValue(resP.key, v)} title="Resolution" icon={Monitor} modelName={entry?.familyName}
         others={resOthers} right={(v) => PX[String(v).toLowerCase()] || ""}

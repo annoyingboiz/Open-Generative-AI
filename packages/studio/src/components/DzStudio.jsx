@@ -24,7 +24,7 @@ import { groupsFor, groupItems, addToGroup, removeFromGroup, GROUPS } from "./st
 import ModelMenu from "./studio/ModelMenu.jsx";
 import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList, PickerHereContext, pickerStartFor } from "./studio/Library.jsx";
-import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory, checkBadges, hasColourSource, colourLine } from "./studio/actions.js";
+import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory, checkBadges, hasColourSource, colourLine, colourChip } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
 import { useReshoot, ReshootBlock, PhoneRatioHint, MISMATCH_TEXT } from "./studio/Reshoot.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
@@ -166,6 +166,36 @@ const Row = ({ icon: Icon, children, onSelect, danger }) => (
   <DropdownMenuItem onSelect={onSelect} className={cn("h-8 gap-2.5 px-2.5", danger && "text-destructive focus:text-destructive")}><Icon size={16} />{children}</DropdownMenuItem>
 );
 
+// The colour chip on a picture's tile (docs/ux/research, the badge): "Colour shifted from source" is itself
+// the button (one press matches); afterwards a quiet "Colour matched · Show original". Author only.
+function ColourChip({ item, act }) {
+  const chip = colourChip(item);
+  const [busy, setBusy] = useState(false);
+  if (!chip) return null;
+  const mine = item.mine !== false && act.setColour;
+  const press = (e) => {
+    e.stopPropagation();
+    if (!mine || busy) return;
+    setBusy(true);
+    Promise.resolve(act.setColour(item, chip.to)).finally(() => setBusy(false));
+  };
+  const base = "flex items-center gap-1 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground";
+  if (chip.state === "shifted") {
+    return mine ? (
+      <button type="button" onClick={press} disabled={busy} title={`${chip.note} compared with the first picture of the chain. Press to remove it; the original stays in Versions.`}
+        className={cn(base, "hover:bg-overlay/80 disabled:opacity-60")}>
+        {busy ? <Spinner className="h-3 w-3 border" /> : <span className="h-1.5 w-1.5 rounded-full bg-warning" />}{chip.text}<span className="ml-0.5 font-semibold underline decoration-overlay-foreground/40 underline-offset-2">{busy ? "Matching…" : chip.action}</span>
+      </button>
+    ) : <span title={chip.note} className={base}><span className="h-1.5 w-1.5 rounded-full bg-warning" />{chip.text}</span>;
+  }
+  return (
+    <span className={base}>
+      {chip.text}
+      {mine && <button type="button" onClick={press} disabled={busy} className="ml-0.5 font-semibold underline decoration-overlay-foreground/40 underline-offset-2 hover:text-overlay-foreground disabled:opacity-60">{busy ? "…" : chip.action}</button>}
+    </span>
+  );
+}
+
 // Tile menus (package 03, §5): pictures and videos have their own lists; the same in every tab.
 function TileMenu({ item, act, open, setOpen, timeOf }) {
   const isVideo = item.kind === "video";
@@ -302,10 +332,11 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
       {done && (item.studio === "upscale" || duration > 0) && (
         <span className={cn("pointer-events-none absolute bottom-2 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium tabular-nums text-overlay-foreground transition-opacity duration-state", selecting ? "left-2" : "right-2")}>{item.studio === "upscale" ? "Upscaled" : fmtDur(duration)}</span>
       )}
-      {done && !selecting && checkBadges(item).some((b) => b.tile) && (
+      {done && !selecting && (checkBadges(item).some((b) => b.tile) || colourChip(item)) && (
         <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-1 transition-[bottom] duration-state group-hover:bottom-11 group-focus-within:bottom-11">
+          <ColourChip item={item} act={act} />
           {checkBadges(item).filter((b) => b.tile).map((b) => <span key={b.id} title={b.note} className="flex items-center gap-1 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground">{!b.quiet && <span className="h-1.5 w-1.5 rounded-full bg-warning" />}{b.text}</span>)}
-          {act.again && item.meta?.entryKey && item.mine !== false && checkBadges(item).some((b) => b.tile && !b.quiet) && (
+          {act.again && item.meta?.entryKey && item.mine !== false && checkBadges(item).some((b) => b.tile && !b.quiet && !b.noRetry) && (
             <button type="button" onClick={(e) => { e.stopPropagation(); act.again(item); }}
               className="rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground opacity-0 transition-opacity duration-state hover:bg-overlay/80 group-hover:opacity-100 focus:opacity-100">Retry</button>
           )}
@@ -1293,6 +1324,10 @@ export default function DzStudio(props) {
     trash: (it) => history.trash(it.id).catch(fail("Trash")),
     trashStrict: (it) => history.trash(it.id),
     cancel: (it) => dzLibrary.cancel(it.id).catch(fail("Cancel")),
+    // The tile's colour chip: match, or switch between matched and the provider's original.
+    setColour: (it, to) => dzLibrary.setColour(it.id, to)
+      .then((r) => { if (r.state === "no-shift") notify({ type: "notice", title: "No colour shift found", message: "The picture already matches its source. Nothing was changed." }); })
+      .catch((e) => notify({ type: "error", title: "Colour not changed", message: e?.message || "Try again." })),
     // "Match colour to source" from the tile menu: the answer as a notice (the viewer shows more).
     matchColour: (it) => dzLibrary.setColour(it.id, "match")
       .then((r) => notify({ type: "notice", title: r.state === "no-shift" ? "No colour shift found" : "Colour matched", message: colourLine(r) }))

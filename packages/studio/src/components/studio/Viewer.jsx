@@ -647,7 +647,7 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
                   <div key={b.id} className="flex items-start gap-2 text-sm">
                     <span className={cn("mt-[7px] h-1.5 w-1.5 flex-shrink-0 rounded-full", b.quiet ? "bg-muted-foreground/40" : "bg-warning")} />
                     <span><span className="font-semibold">{b.text}.</span> <span className="text-muted-foreground">{b.note}</span>
-                      {!b.quiet && act.again && meta.entryKey && item.mine !== false && <button type="button" onClick={() => { onClose(); act.again(item); }} className="ml-1.5 font-semibold underline decoration-input underline-offset-[3px]">Retry</button>}
+                      {!b.quiet && !b.noRetry && act.again && meta.entryKey && item.mine !== false && <button type="button" onClick={() => { onClose(); act.again(item); }} className="ml-1.5 font-semibold underline decoration-input underline-offset-[3px]">Retry</button>}
                     </span>
                   </div>
                 ))}

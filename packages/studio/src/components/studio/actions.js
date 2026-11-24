@@ -107,7 +107,30 @@ export function checkBadges(item) {
     out.push({ id: "shot", text: `Came out: ${SHOT_NAMES[c.shot.id]}${differs ? ` · asked for ${SHOT_NAMES[c.shot.asked]}` : ""}`, quiet: !differs, tile: Boolean(c.shot.asked),
       note: differs ? "The model framed the shot differently from the shot size in the prompt. Shot size is a target, not a guarantee." : "Measured from the face in the picture." });
   }
+  // Colour shifted from the chain's first picture (measured after the picture arrived), not matched yet.
+  // The tile has its own one-press chip (colourChip); here it is the viewer's line.
+  const cc = c?.colour;
+  if (cc?.state === "shifted" && !item?.colour) {
+    out.push({ id: "colour", tile: false, noRetry: true, text: "Colour shifted from source", note: `${shiftText(cc.da, cc.db)} compared with the first picture of the chain. Match colour removes it; nothing is changed until then.` });
+  }
   return out;
+}
+
+// "magenta +2.3, blue +1.8" (as the server words it).
+export function shiftText(da, db) {
+  const p = [];
+  if (Math.abs(da) >= 0.3) p.push(`${da > 0 ? "magenta" : "green"} +${Math.abs(da).toFixed(1)}`);
+  if (Math.abs(db) >= 0.3) p.push(`${db > 0 ? "yellow" : "blue"} +${Math.abs(db).toFixed(1)}`);
+  return p.join(", ") || "A slight tint";
+}
+// The tile's colour chip (docs/ux/research, the badge): shifted → one press matches; matched → a quiet
+// note with Show original; original shown → a quiet note with Use matched. null: nothing to show.
+export function colourChip(item) {
+  if (!item || item.kind !== "image") return null;
+  if (item.colour) return item.colour.on ? { state: "matched", text: "Colour matched", action: "Show original", to: "original" } : { state: "original", text: "Original colour", action: "Use matched", to: "matched" };
+  const cc = item.checks?.colour;
+  if (cc?.state === "shifted") return { state: "shifted", text: "Colour shifted from source", action: "Match", to: "match", note: shiftText(cc.da, cc.db) };
+  return null;
 }
 
 // A picture made from a source picture (Image to Edit, Advanced Editor base, canvas extension):

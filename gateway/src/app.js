@@ -122,6 +122,9 @@ export async function buildApp(config, { logger = true } = {}) {
   const storyboards = createStoryboards({ db, projects, generations, log: app.log });
   generations.setOnCompleted(async (row) => {
     try { storyboards.attachGenerated(row); } catch (error) { app.log.warn(`storyboard ${row?.id}: ${error.message}`); }
+    // A picture made from a source picture: its colour is measured against the chain's first picture
+    // (free, in the background); a shift shows as a badge on the tile. Nothing is corrected here.
+    if (row?.kind === 'image') colourCheckSoon();
     await elements.attachGenerated(row);
   });
   // Most video upscalers drop the sound: put the original's back in. The sound
@@ -1238,6 +1241,33 @@ export async function buildApp(config, { logger = true } = {}) {
     if (m.shift < COLOR_MIN_SHIFT) return { state: 'no-shift', ...base };
     return { state: 'ready', ...base };
   }
+  // The badge's measurement: the newest unchecked pictures with a source first, one at a time.
+  let colourChecking = false;
+  let colourAgain = false;
+  async function colourCheckBacklog() {
+    if (colourChecking) { colourAgain = true; return; }
+    colourChecking = true;
+    try {
+      for (const row of generations.uncheckedColour(7 * 86_400_000, 3)) {
+        const owner = { id: row.user_id, role: 'user' };
+        const o = JSON.parse(row.outputs_json || '[]')[0];
+        const measured = o?.color?.raw?.path || o?.path;
+        let value;
+        try {
+          const m = await colourMeasure(owner, row);
+          value = m.state === 'none' ? { v: 1, state: 'none' }
+            : m.state === 'unavailable' ? { v: 1, state: 'unavailable', reason: m.reason }
+              : { v: 1, state: m.state === 'no-shift' ? 'none' : 'shifted', da: m.da, db: m.db, shift: m.shift, anchor: m.anchor, algo: COLOR_ALGO };
+        } catch (error) { value = { v: 1, state: 'unavailable', reason: COLOUR_REASON.unreadable }; app.log.warn(`colour check ${row.id}: ${error.message}`); }
+        if (measured) generations.setColourCheck(row.id, measured, value);
+      }
+    } finally {
+      colourChecking = false;
+      if (colourAgain) { colourAgain = false; colourCheckSoon(); }
+    }
+  }
+  function colourCheckSoon() { setTimeout(() => { colourCheckBacklog().catch((error) => app.log.warn(`colour checks: ${error.message}`)); }, 500).unref?.(); }
+  if (config.startWorkers !== false) setInterval(colourCheckSoon, 60_000).unref?.();
   const colourView = (c) => {
     const { anchorPath: _p, ok: _o, ...rest } = c;
     return { ...rest, ...(c.da != null ? { words: shiftWords(c.da, c.db) } : {}) };

@@ -58,6 +58,11 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     pollRetry: db.prepare('UPDATE generations SET next_poll_at = ?, updated_at = ? WHERE id = ?'),
     setOutputs: db.prepare('UPDATE generations SET outputs_json = ?, updated_at = ? WHERE id = ?'),
     // Finished videos made before the cut check (docs/ux/44 b), newest first; "nochecks" marks an unreadable one.
+    // Pictures made from a source picture that have no colour check yet (docs/ux/research: the badge).
+    uncheckedColour: db.prepare(`SELECT * FROM generations WHERE status = 'completed' AND kind = 'image' AND purged_at IS NULL AND deleted_at IS NULL
+      AND created_at > ? AND json_extract(outputs_json, '$[0].checks.colour') IS NULL
+      AND (json_extract(meta_json, '$.attached.edit[0].url') IS NOT NULL OR json_extract(meta_json, '$.editor.source') IS NOT NULL OR json_extract(meta_json, '$.canvas.source') IS NOT NULL)
+      ORDER BY created_at DESC LIMIT ?`),
     uncheckedVideos: db.prepare(`SELECT id, outputs_json FROM generations WHERE status = 'completed' AND kind = 'video' AND purged_at IS NULL
       AND outputs_json LIKE '[{%' AND outputs_json NOT LIKE '%"checks":{"v":3%' ORDER BY created_at DESC LIMIT ?`),
     setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, settle_next_at = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
@@ -926,6 +931,19 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       return true;
     },
     editableRow: (user, id) => editable(user, id),
+    // The colour check of a picture (the badge): written only onto the file it was measured on (the
+    // provider's file); updated_at kept, a measurement is not a change to the item.
+    setColourCheck(id, measuredPath, value) {
+      const cur = q.byId.get(id);
+      if (!cur || cur.status !== 'completed' || cur.purged_at != null) return false;
+      const outs = JSON.parse(cur.outputs_json || '[]');
+      const o = outs[0];
+      if (!o || (o.color?.raw?.path || o.path) !== measuredPath) return false;
+      o.checks = { ...(o.checks || {}), colour: value };
+      q.setOutputs.run(JSON.stringify(outs), cur.updated_at, id);
+      return true;
+    },
+    uncheckedColour: (sinceMs, limit = 3) => q.uncheckedColour.all(now() - sinceMs, limit),
     setAfterDownload(fn) { afterDownload = fn; },
     providerUrl,
     cachedProviderUrl,

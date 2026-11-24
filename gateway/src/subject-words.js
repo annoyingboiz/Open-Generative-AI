@@ -23,21 +23,48 @@ export const PERSON_WORDS = [
 export const OBJECT_WORDS = [
   'glass', 'tumbler', 'bottle', 'cup', 'mug', 'jar', 'product', 'package', 'packaging', 'box', 'perfume', 'shoe',
   'sneaker', 'handbag', 'plate', 'bowl', 'dish', 'burger', 'pizza', 'cake', 'cocktail', 'coffee', 'ramen', 'car',
-  'ring', 'necklace', 'lipstick', 'cosmetics', 'cream', 'phone', 'smartphone', 'headphones', 'lamp',
+  'ring', 'necklace', 'lipstick', 'cosmetics', 'cream', 'phone', 'smartphone', 'headphones', 'camera', 'lamp',
   'chair', 'vase', 'candle', 'teapot', 'kettle', 'knife', 'device', 'gadget',
 ];
 
 const wordsRe = (list) => new RegExp(`\\b(${list.join('|')})\\b`, 'i');
+// The studio keeps a copy of everything below in packages/studio/src/dzCreate.js (lookSubject): keep in step.
+// "her glass", "his knife": a determiner, not a person (Codex x69). "follows her", "her." stay a person.
+export const HER_NOT_DET = /^(?:\s*$|\s*[.,;:!?)]|\s+(?:and|as|at|in|on|with|from|to|while|into|through|across|toward|towards|for|the|a|an|again|now|closely)\b)/i;
+// "The camera pushes in": a camera direction, not a camera in the picture.
+export const CAMERA_DIRECTION = /^\s*(?:slowly\s+|gently\s+)?(?:moves?|push(?:es)?|pulls?|follows?|tracks?|pans?|tilts?|orbits?|dollies|dolly|zooms?|holds?|stays?|locks?|circles?|rises?|cranes?|is|never|starts?|ends?|shakes?|drifts?|glides?|remains?|stops?|frames?)\b/i;
 const allRe = (list) => new RegExp(`\\b(${list.join('|')})\\b(['’]s\\b)?`, 'gi');
 const PERSON_ALL = allRe(PERSON_WORDS);
+const OBJECT_ALL = allRe(OBJECT_WORDS);
 
-// Where the text first names a person (not as a possessive: "a bartender's hand") and an object.
+// A JSON prompt: its string values, not its keys ("model" is a key, not a person).
+export function proseOf(prompt) {
+  const s = String(prompt || '');
+  if (!/^\s*[[{]/.test(s)) return s;
+  try {
+    const out = [];
+    const walk = (v) => { if (typeof v === 'string') out.push(v); else if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
+    walk(JSON.parse(s));
+    return out.join('. ');
+  } catch { return s; }
+}
+
+// Where the text first names a person (not as a possessive: "a bartender's hand", "her glass") and an object.
 export function firstMentions(text) {
   const s = String(text || '');
   let person = -1;
-  for (const m of s.matchAll(PERSON_ALL)) { if (!m[2]) { person = m.index; break; } }
-  const o = s.search(OBJECT_RE);
-  return { person, object: o };
+  for (const m of s.matchAll(PERSON_ALL)) {
+    if (m[2]) continue;
+    const w = m[1].toLowerCase();
+    if (w === 'his' || (w === 'her' && !HER_NOT_DET.test(s.slice(m.index + m[0].length)))) continue;
+    person = m.index; break;
+  }
+  let object = -1;
+  for (const m of s.matchAll(OBJECT_ALL)) {
+    if (m[1].toLowerCase() === 'camera' && (m[1] === 'CAMERA' || CAMERA_DIRECTION.test(s.slice(m.index + m[0].length)))) continue;
+    object = m.index; break;
+  }
+  return { person, object };
 }
 export function subjectFromText(text) {
   const { person, object } = firstMentions(text);
@@ -77,5 +104,5 @@ export function subjectOf(prompt, elementKinds = []) {
   if (char && !obj) return 'person';
   if (obj && !char) return 'object';
   if (char && obj) return 'none';
-  return subjectFromText(prompt);
+  return subjectFromText(proseOf(prompt));
 }

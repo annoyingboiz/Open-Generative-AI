@@ -13,6 +13,8 @@ test('studio lookSubject matches the gateway rules; the Look panel says what was
       ['A woman at a bar.', []], ['Her face.', []], ["A bartender's hand pours amber cocktail into the glass.", []],
       ['The woman sits at the wooden counter of the ramen shop with the bowl in front of her.', []], ['A glass of whisky; a woman reaches for it.', []],
       ['The camera pushes in on a woman.', []], ["The chef’s knife on the board.", []],
+      ['Her glass catches the light.', []], ['His knife rests on the board.', []], ['The camera follows her.', []], ['A vintage camera sits on a table.', []],
+      ['{"model": "flux", "prompt": "a glass on the counter"}', []], ['CAMERA Slow push-in.\n\nA woman at the bar.', []],
       ['A hand pours into the glass on the counter.', []], ['A quiet street at night.', []], ['A rocks glass with ice.', []],
       ['SCENE Bar.\n\nOBJECTS\nThe @Image1 rocks glass with ice.\n\nACTION A woman pours.', []],
       ['SCENE Bar.\n\nOBJECTS\nA woman in a yellow coat.\n\nBACKGROUND Bottles.', []],
@@ -22,6 +24,10 @@ test('studio lookSubject matches the gateway rules; the Look panel says what was
     for (const [p, k] of cases) assert.equal(lookSubject(p, k), subjectOf(p, k), p);
     assert.equal(lookSubject("A bartender's hand pours a cocktail into the glass."), 'object');
     assert.equal(lookSubject('The woman sits at the wooden counter of the ramen shop with the bowl in front of her.'), 'person');
+    assert.equal(lookSubject('Her glass catches the light.'), 'object');
+    assert.equal(lookSubject('The camera follows her.'), 'person');
+    assert.equal(lookSubject('A vintage camera sits on a table.'), 'object');
+    assert.equal(lookSubject('{"model": "flux", "prompt": "a glass on the counter"}'), 'object');
     assert.equal(focalShotText(85, 'person'), '85mm → head and shoulders (person)');
     assert.equal(focalShotText(85, 'object'), '85mm → about three quarters of the frame (object)');
     assert.equal(focalShotText(85, 'none'), '85mm — shot size not set');

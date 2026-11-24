@@ -802,18 +802,25 @@ export function normalizeCamera(c, { auto = false } = {}) {
 // (keep the two in step); the word lists come from there through the catalog (look.subjectWords).
 // STOPGAP: the lasting fix is Adapt writing an OBJECTS block, whose first line decides (rule 1).
 export function lookSubject(prompt, elementKinds = []) {
-  const w = lookData().subjectWords || { person: [], object: [] };
-  const re = (list) => (list.length ? new RegExp(`\\b(${list.join("|")})\\b`, "i") : null);
-  const P = re(w.person || []), O = re(w.object || []);
-  const says = (t) => ({ person: Boolean(P && P.test(String(t || ""))), object: Boolean(O && O.test(String(t || ""))) });
+  const w = lookData().subjectWords;
+  if (!w?.person?.length || !w?.object?.length) return null; // lists not loaded yet: the server's old default (person)
+  const re = (list) => new RegExp(`\\b(${list.join("|")})\\b`, "i");
+  const all = (list) => new RegExp(`\\b(${list.join("|")})\\b(['’]s\\b)?`, "gi");
+  const P = re(w.person), O = re(w.object);
+  const says = (t) => ({ person: P.test(String(t || "")), object: O.test(String(t || "")) });
   const s = String(prompt || "");
   let first = null;
+  let prose = s;
   if (/^\s*[[{]/.test(s)) {
     try {
       const j = JSON.parse(s);
       const v = j && typeof j === "object" ? (j.objects ?? j.OBJECTS ?? j.Objects) : null;
       const f = Array.isArray(v) ? v[0] : v;
       first = (typeof f === "string" ? f : f && typeof f === "object" ? JSON.stringify(f) : "").trim() || null;
+      const out = [];
+      const walk = (x) => { if (typeof x === "string") out.push(x); else if (Array.isArray(x)) x.forEach(walk); else if (x && typeof x === "object") Object.values(x).forEach(walk); };
+      walk(j);
+      prose = out.join(". ");
     } catch { first = null; }
   } else {
     const m = s.match(/(?:^|\n)\s*OBJECTS\b[:\s]*([\s\S]*?)(?=\n\s*[A-Z][A-Z ]{2,}\b|$)/);
@@ -825,11 +832,23 @@ export function lookSubject(prompt, elementKinds = []) {
   if (char && !obj) return "person";
   if (obj && !char) return "object";
   if (char && obj) return "none";
-  // Neither kind attached (docs/ux/53, option b): the person named first (not as a possessive) → person;
-  // an object word first, or with the person only as a possessive or not at all → object; else not set.
+  // Neither kind attached (docs/ux/53, option b): the person named first (not as a possessive: "a bartender's
+  // hand", "her glass") → person; an object word first, or with the person only as a possessive or not at
+  // all → object; else not set. Same as gateway/src/subject-words.js firstMentions (keep in step).
+  const herNotDet = /^(?:\s*$|\s*[.,;:!?)]|\s+(?:and|as|at|in|on|with|from|to|while|into|through|across|toward|towards|for|the|a|an|again|now|closely)\b)/i;
+  const cameraDirection = /^\s*(?:slowly\s+|gently\s+)?(?:moves?|push(?:es)?|pulls?|follows?|tracks?|pans?|tilts?|orbits?|dollies|dolly|zooms?|holds?|stays?|locks?|circles?|rises?|cranes?|is|never|starts?|ends?|shakes?|drifts?|glides?|remains?|stops?|frames?)\b/i;
   let person = -1;
-  if (w.person?.length) for (const m of s.matchAll(new RegExp(`\\b(${w.person.join("|")})\\b(['’]s\\b)?`, "gi"))) { if (!m[2]) { person = m.index; break; } }
-  const object = O ? s.search(O) : -1;
+  for (const m of prose.matchAll(all(w.person))) {
+    if (m[2]) continue;
+    const word = m[1].toLowerCase();
+    if (word === "his" || (word === "her" && !herNotDet.test(prose.slice(m.index + m[0].length)))) continue;
+    person = m.index; break;
+  }
+  let object = -1;
+  for (const m of prose.matchAll(all(w.object))) {
+    if (m[1].toLowerCase() === "camera" && (m[1] === "CAMERA" || cameraDirection.test(prose.slice(m.index + m[0].length)))) continue;
+    object = m.index; break;
+  }
   if (person >= 0 && (object < 0 || person < object)) return "person";
   if (object >= 0) return "object";
   return "none";

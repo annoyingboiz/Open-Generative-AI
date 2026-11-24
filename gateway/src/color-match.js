@@ -17,9 +17,12 @@ import sharp from 'sharp';
 export const COLOR_ALGO = 'lab-median-ab-v1';
 export const COLOR_MIN_SHIFT = 1.0;   // √(Δa*² + Δb*²) below this: "No colour shift found"
 export const COLOR_MIN_COVERAGE = 0.4; // share of unchanged cells needed to trust the measurement
-const SMALL_W = 640;
+const SMALL = 640;      // the longer side of the measuring copy
 const CELL = 8;
-const DL_MAX = 8;
+const DL_MAX = 8;        // mean ΔL* of a cell: more is changed content
+const DL_ABS_MAX = 10;   // mean |ΔL*| per pixel of a cell: more is changed structure (same average, other content)
+const CHROMA_OUT = 4;    // a cell's Δa*/Δb* this far from the first median: an outlier (a recoloured object)
+export const COLOR_MAX_PIXELS = 50_000_000; // a bigger picture is refused (memory: two RGB copies in RAM)
 
 // ── sRGB ↔ CIELAB (D65) ─────────────────────────────────────────────
 const TO_LIN = new Float64Array(256);
@@ -41,12 +44,12 @@ function labOf(r8, g8, b8, out) {
 }
 
 async function smallRgb(path, w, h) {
-  const { data } = await sharp(path, { limitInputPixels: false }).rotate().removeAlpha().toColourspace('srgb')
+  const { data } = await sharp(path, { limitInputPixels: COLOR_MAX_PIXELS }).rotate().removeAlpha().toColourspace('srgb')
     .resize(w, h, { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true });
   return data;
 }
 async function sizeOf(path) {
-  const m = await sharp(path, { limitInputPixels: false }).rotate().metadata();
+  const m = await sharp(path, { limitInputPixels: COLOR_MAX_PIXELS }).metadata();
   // EXIF orientations 5–8 swap width and height.
   return m.orientation >= 5 ? { w: m.height, h: m.width } : { w: m.width, h: m.height };
 }
@@ -54,32 +57,45 @@ const median = (arr) => { const s = Float64Array.from(arr).sort(); const n = s.l
 
 // { ok, reason?, dL, da, db, shift, coverage, cells }
 export async function measureColorShift(anchorPath, resultPath) {
-  const [A, R] = await Promise.all([sizeOf(anchorPath), sizeOf(resultPath)]);
-  if (!A.w || !R.w) return { ok: false, reason: 'unreadable' };
-  if (Math.abs(A.w / A.h - R.w / R.h) / (A.w / A.h) > 0.01) return { ok: false, reason: 'view' };
-  const w = SMALL_W, h = Math.max(CELL, Math.round((SMALL_W * A.h) / A.w / CELL) * CELL);
-  const [a, r] = await Promise.all([smallRgb(anchorPath, w, h), smallRgb(resultPath, w, h)]);
+  let A, R, a, r, w, h;
+  try {
+    [A, R] = await Promise.all([sizeOf(anchorPath), sizeOf(resultPath)]);
+    if (!A.w || !R.w || A.w * A.h > COLOR_MAX_PIXELS || R.w * R.h > COLOR_MAX_PIXELS) return { ok: false, reason: 'unreadable' };
+    if (Math.abs(A.w / A.h - R.w / R.h) / (A.w / A.h) > 0.01) return { ok: false, reason: 'view' };
+    // The longer side to 640 px, both sides whole cells (Codex x70: a tall picture stays small too).
+    const k = SMALL / Math.max(A.w, A.h);
+    w = Math.max(CELL, Math.round((A.w * k) / CELL) * CELL); h = Math.max(CELL, Math.round((A.h * k) / CELL) * CELL);
+    [a, r] = await Promise.all([smallRgb(anchorPath, w, h), smallRgb(resultPath, w, h)]);
+  } catch { return { ok: false, reason: 'unreadable' }; }
   const cw = w / CELL, ch = h / CELL, n = cw * ch;
-  const sa = new Float64Array(n * 3), sr = new Float64Array(n * 3);
+  const sa = new Float64Array(n * 3), sr = new Float64Array(n * 3), adL = new Float64Array(n);
   const la = [0, 0, 0], lr = [0, 0, 0];
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
       const i = (y * w + x) * 3, c = ((y / CELL) | 0) * cw + ((x / CELL) | 0);
       labOf(a[i], a[i + 1], a[i + 2], la); labOf(r[i], r[i + 1], r[i + 2], lr);
       for (let k = 0; k < 3; k += 1) { sa[c * 3 + k] += la[k]; sr[c * 3 + k] += lr[k]; }
+      adL[c] += Math.abs(lr[0] - la[0]);
     }
+    if (y % 64 === 63) await new Promise((resolve) => setImmediate(resolve));
   }
   const per = CELL * CELL;
-  const dL = [], da = [], db = [];
+  let cells = [];
   for (let c = 0; c < n; c += 1) {
     const L0 = sa[c * 3] / per, L1 = sr[c * 3] / per;
-    if (L0 < 4 || L0 > 97 || Math.abs(L1 - L0) > DL_MAX) continue; // near black, clipped, or changed
-    dL.push(L1 - L0); da.push((sr[c * 3 + 1] - sa[c * 3 + 1]) / per); db.push((sr[c * 3 + 2] - sa[c * 3 + 2]) / per);
+    // Near black or clipped on either side, or changed: the mean or the structure of its lightness.
+    if (L0 < 4 || L0 > 97 || L1 < 4 || L1 > 97 || Math.abs(L1 - L0) > DL_MAX || adL[c] / per > DL_ABS_MAX) continue;
+    cells.push([L1 - L0, (sr[c * 3 + 1] - sa[c * 3 + 1]) / per, (sr[c * 3 + 2] - sa[c * 3 + 2]) / per]);
   }
-  const coverage = da.length / n;
-  const out = { cells: da.length, coverage: Math.round(coverage * 1000) / 1000 };
+  // A recoloured object with the same lightness: far from the common shift, dropped (one pass).
+  if (cells.length) {
+    const ma = median(cells.map((x) => x[1])), mb = median(cells.map((x) => x[2]));
+    cells = cells.filter((x) => Math.hypot(x[1] - ma, x[2] - mb) <= CHROMA_OUT);
+  }
+  const coverage = cells.length / n;
+  const out = { cells: cells.length, coverage: Math.round(coverage * 1000) / 1000 };
   if (coverage < COLOR_MIN_COVERAGE) return { ok: false, reason: 'changed', ...out };
-  const m = { dL: median(dL), da: median(da), db: median(db) };
+  const m = { dL: median(cells.map((x) => x[0])), da: median(cells.map((x) => x[1])), db: median(cells.map((x) => x[2])) };
   const r2 = (v) => Math.round(v * 100) / 100;
   return { ok: true, dL: r2(m.dL), da: r2(m.da), db: r2(m.db), shift: r2(Math.hypot(m.da, m.db)), ...out };
 }
@@ -87,10 +103,11 @@ export async function measureColorShift(anchorPath, resultPath) {
 // The result with a*/b* moved back by (da, db), written to `outPath` (format by its extension: .png or .jpg).
 // Works row band by row band and yields between bands (a 4K picture is ~17 M pixels).
 export async function applyColorShift(resultPath, outPath, da, db) {
-  const { data, info } = await sharp(resultPath, { limitInputPixels: false }).rotate().removeAlpha().toColourspace('srgb')
+  const { data, info } = await sharp(resultPath, { limitInputPixels: COLOR_MAX_PIXELS }).rotate().toColourspace('srgb')
     .raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H } = info;
-  const out = Buffer.allocUnsafe(W * H * 3);
+  const C = info.channels; // 4: a transparent PNG keeps its alpha unchanged (Codex x70)
+  const out = Buffer.allocUnsafe(W * H * C);
   const dfx = -da / 500, dfz = db / 200; // a = 500 (fx − fy), b = 200 (fy − fz); fy (L*) unchanged
   let reduced = 0;
   const lin = [0, 0, 0];
@@ -103,8 +120,9 @@ export async function applyColorShift(resultPath, outPath, da, db) {
   };
   const BAND = 64;
   for (let y0 = 0; y0 < H; y0 += BAND) {
-    const end = Math.min(H, y0 + BAND) * W * 3;
-    for (let i = y0 * W * 3; i < end; i += 3) {
+    const end = Math.min(H, y0 + BAND) * W * C;
+    for (let i = y0 * W * C; i < end; i += C) {
+      if (C === 4) out[i + 3] = data[i + 3];
       const r = TO_LIN[data[i]], g = TO_LIN[data[i + 1]], b = TO_LIN[data[i + 2]];
       const fx = f((0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / XN);
       const fy = f(0.2126729 * r + 0.7151522 * g + 0.072175 * b);
@@ -125,8 +143,8 @@ export async function applyColorShift(resultPath, outPath, da, db) {
     await new Promise((resolve) => setImmediate(resolve));
   }
   // No metadata: the provider's C2PA manifest would be invalid for changed pixels; lineage is in our record.
-  const img = sharp(out, { raw: { width: W, height: H, channels: 3 }, limitInputPixels: false });
-  await (/\.png$/i.test(outPath) ? img.png({ compressionLevel: 6 }) : img.jpeg({ quality: 100, chromaSubsampling: '4:4:4', mozjpeg: false })).toFile(outPath);
+  const img = sharp(out, { raw: { width: W, height: H, channels: C }, limitInputPixels: false });
+  await (/\.png$/i.test(outPath) || C === 4 ? img.png({ compressionLevel: 6 }) : img.jpeg({ quality: 100, chromaSubsampling: '4:4:4', mozjpeg: false })).toFile(outPath);
   return { width: W, height: H, reducedShare: Math.round((reduced / (W * H)) * 1e5) / 1e5 };
 }
 

@@ -402,7 +402,12 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
 
   // Files go, the row stays (as a tombstone): it still counts for spending.
   function removeFiles(row) {
-    for (const o of JSON.parse(row.outputs_json || '[]')) { storage.remove(o.path); if (o.clean && o.clean !== o.path) storage.remove(o.clean); }
+    for (const o of JSON.parse(row.outputs_json || '[]')) {
+      storage.remove(o.path);
+      if (o.clean && o.clean !== o.path) storage.remove(o.clean);
+      // A colour-matched picture: both the provider's file and the matched one.
+      for (const p of [o.color?.raw?.path, o.color?.file?.path]) if (p && p !== o.path) storage.remove(p);
+    }
     q.tombstone.run(now(), now(), row.id);
   }
   function purgeTrash() {
@@ -728,7 +733,9 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     try {
       for (let i = 0; i < outputs.length; i += 1) {
         const f = await storage.copyResult({ userId: user.id, generationId: newGen, index: i, from: outputs[i].path, ext: outputs[i].ext });
-        saved.push({ ...outputs[i], path: f.path, bytes: f.bytes });
+        // A colour-matched picture is copied as it is shown, without its versions (they are the original's files).
+        const { color: _color, ...plain } = outputs[i];
+        saved.push({ ...plain, path: f.path, bytes: f.bytes });
         // A filtered video keeps its clean original next to it (the copy can be re-rendered too).
         if (outputs[i].clean && outputs[i].clean !== outputs[i].path) {
           const c = await storage.copyResult({ userId: user.id, generationId: `${newGen}-clean`, index: i, from: outputs[i].clean, ext: outputs[i].ext });

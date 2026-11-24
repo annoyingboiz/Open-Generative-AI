@@ -1253,7 +1253,9 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/dz/api/generations/:id/colour', async (req, reply) => {
     const id = req.params.id;
     try {
-      const row = generations.editableRow(req.user, id);
+      const row = generations.visibleRow(req.user, id);
+      // The author only, as in the studio (Codex x70).
+      if (row.user_id !== req.user.id) return reply.code(403).send({ detail: 'Only the author can change this picture.' });
       if (row.kind !== 'image' || row.status !== 'completed') return reply.code(409).send({ detail: 'Only a finished picture can be matched.' });
       if (colourBusy.has(id)) return reply.code(409).send({ detail: 'Colour matching is still running.' });
       const to = ['match', 'original', 'matched'].includes(req.body?.to) ? req.body.to : 'match';
@@ -1270,7 +1272,11 @@ export async function buildApp(config, { logger = true } = {}) {
         const fresh = generations.visibleRow(req.user, id);
         return { ...colourView(await colourMeasure(req.user, fresh)), url: generations.result(req.user, id).url };
       }
+      // One full-size match at a time on this server (two 4K RGB copies in memory each).
+      if (colourBusy.size >= 1) return reply.code(429).send({ detail: 'Another picture is being matched. Try again in a few seconds.' });
       colourBusy.add(id);
+      let file = null;
+      let committed = false;
       try {
         const m = await colourMeasure(req.user, row);
         if (m.state === 'matched') return { ...colourView(m), url: generations.result(req.user, id).url };
@@ -1280,7 +1286,8 @@ export async function buildApp(config, { logger = true } = {}) {
         if (m.state === 'no-shift') return colourView(m);
         const raw = { path: o.path, ext: o.ext, mime: o.mime, bytes: o.bytes };
         const ext = matchedExt(raw.mime);
-        const file = raw.path.replace(/(\.[a-z0-9]+)$/i, `-c.${ext}`);
+        // Its own name per match: a stale attempt can never remove a file another one committed.
+        file = raw.path.replace(/(\.[a-z0-9]+)$/i, `-c${Date.now().toString(36)}.${ext}`);
         const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp.${ext}`;
         let applied;
         try {
@@ -1291,14 +1298,15 @@ export async function buildApp(config, { logger = true } = {}) {
         const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
         outputs[0] = { ...o, path: file, ext, mime, bytes,
           color: { on: true, v: 1, raw, file: { path: file, ext, mime, bytes }, anchor: m.anchor, da: m.da, db: m.db, dL: m.dL, shift: m.shift, coverage: m.coverage, cells: m.cells, reducedShare: applied.reducedShare, algo: COLOR_ALGO, at: Date.now() } };
-        if (!generations.setOutputs(id, outputs, row.outputs_json)) {
-          fs.rmSync(file, { force: true });
-          return reply.code(409).send({ detail: 'This picture changed meanwhile. Try again.' });
-        }
+        if (!generations.setOutputs(id, outputs, row.outputs_json)) return reply.code(409).send({ detail: 'This picture changed meanwhile. Try again.' });
+        committed = true;
         app.log.info({ gen: id, anchor: m.anchor, da: m.da, db: m.db, coverage: m.coverage }, 'colour matched');
         const fresh = generations.visibleRow(req.user, id);
         return { ...colourView(await colourMeasure(req.user, fresh)), url: generations.result(req.user, id).url };
-      } finally { colourBusy.delete(id); }
+      } finally {
+        colourBusy.delete(id);
+        if (file && !committed) fs.rmSync(file, { force: true });
+      }
     } catch (error) { return sendGenError(reply, error); }
   });
 
@@ -1733,7 +1741,8 @@ export async function buildApp(config, { logger = true } = {}) {
     const tv = /^\d+-t(\d+)\./.exec(req.params.file);
     // The same for a colour-matched picture (-c<n>): an old link goes on to the current version.
     const cv = /^\d+-c(\d+)\./.exec(req.params.file);
-    if ((cv && f.colorV && Number(cv[1]) !== Number(f.colorV)) || (cv && !f.colorV)) {
+    // A link without a version to a matched picture goes on to the current one too (Codex x70).
+    if ((cv && f.colorV && Number(cv[1]) !== Number(f.colorV)) || (cv && !f.colorV) || (!cv && !tv && f.colorV)) {
       const q = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
       const n = Number.parseInt(req.params.file, 10) || 0;
       return reply.code(302).header('cache-control', 'no-store').header('location', `/media/g/${req.params.id}/${n}${f.colorV ? `-c${f.colorV}` : ''}.${f.ext || req.params.file.split('.').pop()}${q}`).send();

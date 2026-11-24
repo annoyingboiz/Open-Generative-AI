@@ -10,9 +10,10 @@
 //     and no object word → person; anything else → object.
 //  2. A character Element attached and no object Element → person.
 //  3. An object Element attached and no character Element → object.
-//  4. Otherwise (both kinds, or neither): from the text. A person word and no object word → person;
-//     else not set. "A bartender's hand pours into the glass" names a person, but the subject is the
-//     glass: the object word wins, so it is not set (no default shot size; the Look panel says so).
+//  4. Neither kind attached: from the text (docs/ux/53, option b). A person named before the first object
+//     word → person ("The woman sits at the counter with the bowl in front of her"). An object word with
+//     the person only as a possessive or not at all, or the object word first → object ("A bartender's
+//     hand pours a cocktail into the glass"). Nothing of either → not set. Both kinds attached → not set.
 export const PERSON_WORDS = [
   'woman', 'women', 'man', 'men', 'girl', 'girls', 'boy', 'boys', 'person', 'people', 'lady', 'guy', 'child', 'kid',
   'she', 'her', 'he', 'him', 'his', 'face', 'portrait', 'actor', 'actress', 'model', 'bartender', 'chef', 'waiter',
@@ -22,11 +23,28 @@ export const PERSON_WORDS = [
 export const OBJECT_WORDS = [
   'glass', 'tumbler', 'bottle', 'cup', 'mug', 'jar', 'product', 'package', 'packaging', 'box', 'perfume', 'shoe',
   'sneaker', 'handbag', 'plate', 'bowl', 'dish', 'burger', 'pizza', 'cake', 'cocktail', 'coffee', 'ramen', 'car',
-  'ring', 'necklace', 'lipstick', 'cosmetics', 'cream', 'phone', 'smartphone', 'headphones', 'camera', 'lamp',
+  'ring', 'necklace', 'lipstick', 'cosmetics', 'cream', 'phone', 'smartphone', 'headphones', 'lamp',
   'chair', 'vase', 'candle', 'teapot', 'kettle', 'knife', 'device', 'gadget',
 ];
 
 const wordsRe = (list) => new RegExp(`\\b(${list.join('|')})\\b`, 'i');
+const allRe = (list) => new RegExp(`\\b(${list.join('|')})\\b(['’]s\\b)?`, 'gi');
+const PERSON_ALL = allRe(PERSON_WORDS);
+
+// Where the text first names a person (not as a possessive: "a bartender's hand") and an object.
+export function firstMentions(text) {
+  const s = String(text || '');
+  let person = -1;
+  for (const m of s.matchAll(PERSON_ALL)) { if (!m[2]) { person = m.index; break; } }
+  const o = s.search(OBJECT_RE);
+  return { person, object: o };
+}
+export function subjectFromText(text) {
+  const { person, object } = firstMentions(text);
+  if (person >= 0 && (object < 0 || person < object)) return 'person';
+  if (object >= 0) return 'object';
+  return 'none';
+}
 const PERSON_RE = wordsRe(PERSON_WORDS);
 const OBJECT_RE = wordsRe(OBJECT_WORDS);
 
@@ -59,6 +77,5 @@ export function subjectOf(prompt, elementKinds = []) {
   if (char && !obj) return 'person';
   if (obj && !char) return 'object';
   if (char && obj) return 'none';
-  const t = textSays(prompt);
-  return t.person && !t.object ? 'person' : 'none';
+  return subjectFromText(prompt);
 }

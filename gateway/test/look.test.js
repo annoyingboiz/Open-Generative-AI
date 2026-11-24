@@ -262,10 +262,13 @@ test('person / object / not set (docs/ux/50 §4, 51 §3): focal default follows 
   // Rules.
   assert.equal(subjectOf('A woman at a bar.'), 'person');
   assert.equal(subjectOf('Her face.'), 'person');
-  assert.equal(subjectOf("A bartender's hand pours amber cocktail into the glass."), 'none', 'helper\'s hand + object word: not a person subject');
-  assert.equal(subjectOf('A hand pours into the glass on the counter.'), 'none');
+  assert.equal(subjectOf("A bartender's hand pours a cocktail into the glass."), 'object', 'docs/ux/53: a possessive person + object word → object');
+  assert.equal(subjectOf('A hand pours into the glass on the counter.'), 'object');
+  assert.equal(subjectOf('The woman sits at the wooden counter of the ramen shop with the bowl in front of her. She lifts noodles from the bowl with chopsticks.'), 'person', 'docs/ux/53: person first, then a prop');
+  assert.equal(subjectOf('A glass of whisky stands on the counter; a woman reaches for it.'), 'object', 'object word first');
+  assert.equal(subjectOf('The camera pushes in on a woman at the bar.'), 'person', '"camera" is not an object word');
   assert.equal(subjectOf('A quiet street at night.'), 'none');
-  assert.equal(subjectOf('A rocks glass with ice on the counter.'), 'none', 'object words alone: not set, no typed Element');
+  assert.equal(subjectOf('A rocks glass with ice on the counter.'), 'object', 'object words alone: object');
   assert.equal(subjectOf('SCENE Bar.\n\nOBJECTS\nThe @Image1 rocks glass with one large ice cube.\n\nACTION A woman pours.'), 'object', 'rule 1: OBJECTS first line');
   assert.equal(subjectOf('SCENE Bar.\n\nOBJECTS\nA woman in a yellow coat.\n\nBACKGROUND Bottles.'), 'person');
   assert.equal(subjectOf('{"objects": ["a perfume bottle"], "scene": "a woman holds it"}'), 'object');

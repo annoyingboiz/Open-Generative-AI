@@ -11,6 +11,8 @@ test('studio lookSubject matches the gateway rules; the Look panel says what was
     const { lookSubject, focalShotText, lookOf, lookLabel } = await import('../../packages/studio/src/dzCreate.js');
     const cases = [
       ['A woman at a bar.', []], ['Her face.', []], ["A bartender's hand pours amber cocktail into the glass.", []],
+      ['The woman sits at the wooden counter of the ramen shop with the bowl in front of her.', []], ['A glass of whisky; a woman reaches for it.', []],
+      ['The camera pushes in on a woman.', []], ["The chef’s knife on the board.", []],
       ['A hand pours into the glass on the counter.', []], ['A quiet street at night.', []], ['A rocks glass with ice.', []],
       ['SCENE Bar.\n\nOBJECTS\nThe @Image1 rocks glass with ice.\n\nACTION A woman pours.', []],
       ['SCENE Bar.\n\nOBJECTS\nA woman in a yellow coat.\n\nBACKGROUND Bottles.', []],
@@ -18,7 +20,8 @@ test('studio lookSubject matches the gateway rules; the Look panel says what was
       ['She pours.', ['character']], ['She pours into the glass.', ['object']], ['A woman holds the glass.', ['character', 'object']], ['A woman.', ['place']],
     ];
     for (const [p, k] of cases) assert.equal(lookSubject(p, k), subjectOf(p, k), p);
-    assert.equal(lookSubject("A bartender's hand pours amber cocktail into the glass."), 'none');
+    assert.equal(lookSubject("A bartender's hand pours a cocktail into the glass."), 'object');
+    assert.equal(lookSubject('The woman sits at the wooden counter of the ramen shop with the bowl in front of her.'), 'person');
     assert.equal(focalShotText(85, 'person'), '85mm → head and shoulders (person)');
     assert.equal(focalShotText(85, 'object'), '85mm → about three quarters of the frame (object)');
     assert.equal(focalShotText(85, 'none'), '85mm — shot size not set');

@@ -825,8 +825,14 @@ export function lookSubject(prompt, elementKinds = []) {
   if (char && !obj) return "person";
   if (obj && !char) return "object";
   if (char && obj) return "none";
-  const t = says(s);
-  return t.person && !t.object ? "person" : "none";
+  // Neither kind attached (docs/ux/53, option b): the person named first (not as a possessive) → person;
+  // an object word first, or with the person only as a possessive or not at all → object; else not set.
+  let person = -1;
+  if (w.person?.length) for (const m of s.matchAll(new RegExp(`\\b(${w.person.join("|")})\\b(['’]s\\b)?`, "gi"))) { if (!m[2]) { person = m.index; break; } }
+  const object = O ? s.search(O) : -1;
+  if (person >= 0 && (object < 0 || person < object)) return "person";
+  if (object >= 0) return "object";
+  return "none";
 }
 // "85mm → head and shoulders (person)" / "→ about three quarters of the frame (object)" / "— shot size not set".
 // null while the model's FRAMING is off (the server sends no maps then).

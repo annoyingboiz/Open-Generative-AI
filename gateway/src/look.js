@@ -125,7 +125,10 @@ export const shotOf = (v) => SHOTS.find((x) => x.id === v)?.id || STORYBOARD_SHO
 const FOCUS_STEPS = [
   { max: 2.8, text: 'Subject critically sharp. Background fully defocused: lights become large soft glowing discs, background details unreadable.' },
   { max: 5.6, text: 'Subject sharp. Background slightly soft: background objects still readable, their edges gently softened.' },
-  { max: Infinity, text: 'Deep focus. Everything sharp from the foreground to the far background. No background blur.' },
+  // Stage 16 (docs/ux/39, measured in REPORT-shot-size): "equally sharp … not blurred at all", as its own
+  // FOCUS block, lifted Seedance's background sharpness 2.3× (to Kling's level). The tested line named the
+  // scene's own objects; this is the same wording without them.
+  { max: Infinity, text: 'Deep focus. Everything in the frame is equally sharp, from the subject to the far background. The background is not blurred at all.' },
 ];
 
 export const ERAS = [
@@ -266,7 +269,9 @@ export function lookHints(look, opts = {}) {
 }
 
 // Data the studio needs to draw the controls (labels and ranges, no prompt words).
-export function lookForClient() {
+// `framing`: some model's memo turns FRAMING on (block mode); only then the panel shows
+// "85mm → head and shoulders" (held until the place-anchor question is answered, docs/ux/45).
+export function lookForClient({ framing = false } = {}) {
   const pick = (list, keys) => list.map((x) => Object.fromEntries(keys.filter((k) => x[k] !== undefined).map((k) => [k, x[k]])));
   return {
     cameras: pick(CAMERAS.filter((c) => !c.hidden), ['id', 'label', 'note', 'sensor', 'texture']),
@@ -274,7 +279,7 @@ export function lookForClient() {
     filters: pick(FILTERS, ['id', 'label', 'note']),
     focals: FOCALS.map((f) => f.mm),
     // "85 mm → head and shoulders" in the Look panel (block mode, doc 44 §C).
-    focalShots: Object.fromEntries(Object.entries(FOCAL_SHOT).map(([mm, id]) => [mm, SHOTS.find((x) => x.id === id).label])),
+    focalShots: framing ? Object.fromEntries(Object.entries(FOCAL_SHOT).map(([mm, id]) => [mm, SHOTS.find((x) => x.id === id).label])) : {},
     apertures: APERTURES.map((a) => a.f),
     eras: pick(ERAS, ['id', 'label']),
     lights: pick(LIGHTS, ['id', 'label']),
@@ -579,24 +584,4 @@ function intoLabeledBlock(text, label, t) {
   const onLabelOnly = end === at && new RegExp(`^\\s*${label}\\s*:?$`, 'i').test(line);
   lines[end] = onLabelOnly ? `${line} ${t}` : `${/[.!?]$/.test(line) ? line : `${line}.`} ${t}`;
   return lines.join('\n');
-}
-
-// ── Location view for a shot size (docs/ux/44, decision a; server part only) ──
-// Kling uses a location reference as a fixed background plate, so the plate must already
-// match the shot size. An image model makes that view from the user's location picture.
-// Pattern from stage 15 (doc 39): say what is visible and what share of the frame it takes,
-// not a camera distance. The stage-15 prompts named the ramen shop's own objects; these
-// are the same pattern with the scene left out (untested as written — the design chat's
-// UI step shows the view for approval before it is ever used). Full body needs no view:
-// the user's wide picture is the plate.
-const VIEW_FOR_SHOT = {
-  knees: 'This is the background plate for a knees-up portrait. The frame shows the central two thirds of what image 1 shows, so everything in it looks about one and a half times larger than in image 1.',
-  waist: 'This is the background plate for a waist-up portrait. The frame shows only the central half of what image 1 shows, so everything in it looks about twice as large as in image 1. The floor and the ceiling are outside the frame.',
-  'head-shoulders': 'This is the background plate for a head-and-shoulders portrait. The frame shows only the central third of what image 1 shows, so the objects in it look about three times as large as in image 1. Only a section of the back wall and a few objects on it are visible.',
-  face: 'This is the background plate for a face close-up: an extreme close view of a small detail of the place. One or two objects from the middle of image 1 fill the frame, each about half of the frame height. Nothing else is in the frame.',
-};
-export function locationViewPrompt(shot) {
-  const id = shotOf(shot);
-  if (!id || !VIEW_FOR_SHOT[id]) return null;
-  return `The same place as image 1, photographed from a closer camera position. Same objects, same materials, same light and colours. No people. ${VIEW_FOR_SHOT[id]} Everything sharp from front to back, no background blur. Photorealistic.`;
 }

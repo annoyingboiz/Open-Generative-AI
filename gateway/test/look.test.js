@@ -25,8 +25,10 @@ test('look: each model gets it in its place', () => {
   assert.match(seed, /^TECH Shot on 35mm motion-picture colour negative film\. The picture fills the whole 16:9 frame edge to edge, no black bars, no border, square corners\.$/m);
   assert.doesNotMatch(seed, /FRAMING/, 'Seedance: no FRAMING until its ladder is measured');
   const kling = renderLook('A woman walks.', look, { kind: 'video', memo: memos.kling });
-  assert.match(kling, /^A woman walks\.\n\nFRAMING Waist-up shot\. Top edge of the frame just above the head, bottom edge at the waist\./);
-  assert.ok(kling.indexOf('FRAMING') < kling.indexOf('FOCUS') && kling.indexOf('FOCUS') < kling.indexOf('CAMERA') && kling.indexOf('CAMERA') < kling.indexOf('STYLE') && kling.indexOf('STYLE') < kling.indexOf('TECH'));
+  // FRAMING is held on every model until the place anchor is settled (docs/ux/45 §5C).
+  assert.match(kling, /^A woman walks\.\n\nFOCUS /);
+  assert.doesNotMatch(kling, /FRAMING/);
+  assert.ok(kling.indexOf('FOCUS') < kling.indexOf('CAMERA') && kling.indexOf('CAMERA') < kling.indexOf('STYLE') && kling.indexOf('STYLE') < kling.indexOf('TECH'));
   for (const p of [seed, kling]) {
     const ours = p.replace(/^(Subject|Camera|A woman)[^\n]*\n?/gm, '');
     assert.doesNotMatch(ours, /\blens\b|\b\d+\s?mm\b(?! motion-picture)/i, 'no "lens", no mm value (film gauge excepted)');
@@ -187,7 +189,10 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
 test('block mode (docs/ux/43 §3, 44 §C): FRAMING from shot size or focal, user blocks kept, no lens words', async () => {
   const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
   const { SHOTS, FOCAL_SHOT } = await import('../src/look.js');
-  const k = (p, l) => renderLook(p, cleanLook(l), { kind: 'video', memo: memos.kling, ratio: '16:9' });
+  // FRAMING is held in the real memos (docs/ux/45); these check the block code with it switched on.
+  const klingF = { ...memos.kling, look: { ...memos.kling.look, framing: true } };
+  assert.doesNotMatch(renderLook('A woman.', cleanLook({ on: true, focal: 85 }), { kind: 'video', memo: memos.kling }), /FRAMING/);
+  const k = (p, l) => renderLook(p, cleanLook(l), { kind: 'video', memo: klingF, ratio: '16:9' });
   // Focal → default shot size; a shot size set elsewhere (storyboard names too) wins; Auto focal → no FRAMING.
   assert.match(k('A woman.', { on: true, focal: 85 }), /^FRAMING Head-and-shoulders shot\./m);
   assert.match(k('A woman.', { on: true, focal: 135 }), /^FRAMING Face close-up\./m);
@@ -217,17 +222,8 @@ test('block mode (docs/ux/43 §3, 44 §C): FRAMING from shot size or focal, user
   // Wan and others: unchanged.
   assert.doesNotMatch(renderLook('A.', cleanLook({ on: true, focal: 85 }), { kind: 'video', memo: memos.wan }), /FRAMING/);
   // The panel line "85 mm → head and shoulders".
-  assert.equal(lookForClient().focalShots['85'], 'head and shoulders');
-});
-
-test('location view prompt for a shot size (server part of docs/ux/44 a)', async () => {
-  const { locationViewPrompt } = await import('../src/look.js');
-  assert.equal(locationViewPrompt('full'), null, 'the wide picture is the plate');
-  assert.equal(locationViewPrompt('nope'), null);
-  const w = locationViewPrompt('waist');
-  assert.match(w, /^The same place as image 1, photographed from a closer camera position\..*No people\..*waist-up.*central half.*no background blur\. Photorealistic\.$/);
-  assert.match(locationViewPrompt('close-up'), /face close-up/, 'storyboard names map too');
-  for (const s of ['knees', 'waist', 'head-shoulders', 'face']) assert.doesNotMatch(locationViewPrompt(s), /\bmetres?\b|\blens\b|\d+\s?mm/);
+  assert.equal(lookForClient({ framing: true }).focalShots['85'], 'head and shoulders');
+  assert.deepEqual(lookForClient().focalShots, {}, 'FRAMING held: no shot-size line in the panel');
 });
 
 test('block mode: title-case labels end a block; a shot size alone is enough for FRAMING', async () => {
@@ -236,6 +232,7 @@ test('block mode: title-case labels end a block; a shot size alone is enough for
   assert.match(p, /^Camera: locked\. Camera orbits around the subject in a smooth arc\.\nSound: room tone\.$/);
   const note = renderLook('CAMERA Static.\nNote: she smiles.\n\nSCENE Shop.', cleanLook({ move: 'orbit' }), { kind: 'video', memo: memos.kling });
   assert.match(note, /^CAMERA Static\.\nNote: she smiles\. Camera orbits around the subject in a smooth arc\.\n\nSCENE Shop\.$/);
-  assert.match(renderLook('A woman.', cleanLook({ shot: 'close-up' }), { kind: 'video', memo: memos.kling }), /^FRAMING Face close-up\./m);
-  assert.equal(renderLook('A cup.', cleanLook({ shot: 'insert' }), { kind: 'video', memo: memos.kling }), 'A cup.');
+  const klingF = { ...memos.kling, look: { ...memos.kling.look, framing: true } };
+  assert.match(renderLook('A woman.', cleanLook({ shot: 'close-up' }), { kind: 'video', memo: klingF }), /^FRAMING Face close-up\./m);
+  assert.equal(renderLook('A cup.', cleanLook({ shot: 'insert' }), { kind: 'video', memo: klingF }), 'A cup.');
 });

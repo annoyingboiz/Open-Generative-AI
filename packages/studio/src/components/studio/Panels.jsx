@@ -61,8 +61,8 @@ function Wheel({ title, options, value, onChange, icon: Icon, auto = { id: null,
 }
 
 // Block mode (docs/ux/44 §C): on Kling the focal length sets the shot size (FRAMING).
-const FOCAL_SHOTS_FALLBACK = { 24: "full body", 35: "knees up", 50: "waist up", 85: "head and shoulders", 135: "face" };
-const shotOf = (mm) => (lookData().focalShots || FOCAL_SHOTS_FALLBACK)[mm] || null;
+// Shown only while a model's FRAMING is on (the server sends the map then; empty while held).
+const shotOf = (mm) => (lookData().focalShots || {})[mm] || null;
 
 function FocalTrack({ value, onChange }) {
   const i = Math.max(0, FOCAL_STOPS.indexOf(value ?? null));

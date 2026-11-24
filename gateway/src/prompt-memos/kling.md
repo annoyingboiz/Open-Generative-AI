@@ -8,7 +8,7 @@ sources:
   - https://www.krea.ai/models/kling-4/prompt-guide (summary of Kling's 14 Oct 2026 guide)
 blocks: [References, Scene, Beats, Camera, Sound]
 look: labeled
-look_framing: true
+look_framing: false
 look_camera: Camera
 look_style: Camera
 ---

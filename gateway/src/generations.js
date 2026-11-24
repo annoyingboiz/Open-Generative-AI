@@ -418,17 +418,24 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     let meta = null;
     try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
     // A camera move was asked for: the drift is the move, not a fault.
-    const moved = Boolean(meta?.move);
+    const move = meta?.move || meta?.look?.move || '';
+    const moved = Boolean(move) && move !== 'static';
     let out = c;
     if (asked && c?.shot) out = { ...out, shot: { ...c.shot, asked } };
     if (moved && c?.drift) out = { ...out, drift: { ...c.drift, asked: true } };
     return out;
   }
   let backlogBusy = false;
+  let backlogAgain = false;
   async function checkBacklog(limit = 4) {
-    if (!media?.checkVideo || backlogBusy) return 0;
+    if (!media?.checkVideo) return 0;
+    // Busy: run once more right after, so a clip that just finished is not left for the next 20 s tick.
+    if (backlogBusy) { backlogAgain = true; return 0; }
     backlogBusy = true;
-    try { return await checkBacklogOnce(limit); } finally { backlogBusy = false; }
+    try { return await checkBacklogOnce(limit); } finally {
+      backlogBusy = false;
+      if (backlogAgain) { backlogAgain = false; setTimeout(() => { checkBacklog().catch(() => {}); }, 0).unref?.(); }
+    }
   }
   async function checkBacklogOnce(limit) {
     let n = 0;

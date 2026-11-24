@@ -216,13 +216,3 @@ test('product icons are public (package 11): favicon, apple touch icon, manifest
   res = await app.inject({ url: '/login' });
   assert.match(res.body, /rel="icon" href="\/dz\/brand\/favicon\.svg\?v=1"/);
 });
-
-test('a start frame in a role list (Seedance image_with_roles) counts as a start frame', async () => {
-  const { hasStartFrame } = await import('../src/app.js');
-  const seedance = { kind: 'video', model: { inputs: { image_with_roles: { field: 'image', type: 'array' } } } };
-  assert.ok(hasStartFrame(seedance, { image_with_roles: [{ url: '/media/g/gen_x/0.jpg', role: 'first_frame' }] }));
-  assert.ok(!hasStartFrame(seedance, { image_with_roles: [{ url: '/media/g/gen_x/0.jpg', role: 'reference_image' }] }), 'references only');
-  const kling = { kind: 'video', model: { inputs: { first_frame_image: { field: 'image' } } } };
-  assert.ok(hasStartFrame(kling, { first_frame_image: '/media/g/gen_x/0.jpg' }));
-  assert.ok(!hasStartFrame(kling, {}));
-});

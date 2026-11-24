@@ -57,21 +57,6 @@ const PUBLIC_PATHS = new Set(['/login', '/setup', '/healthz', '/favicon.ico', '/
 // The product's icons (package 11): needed on the sign-in page too.
 const BRAND_FILES = { 'favicon.svg': 'image/svg+xml', 'favicon.ico': 'image/x-icon', 'favicon-16.png': 'image/png', 'favicon-32.png': 'image/png', 'favicon-48.png': 'image/png', 'apple-touch-icon.png': 'image/png', 'icon-192.png': 'image/png', 'icon-512.png': 'image/png', 'director-mark.svg': 'image/svg+xml', 'app-icon.svg': 'image/svg+xml' };
 
-// A video request from a start frame (§4): a single first-frame image field, or a role list.
-const FIRST_FIELD = /^(first_frame|first_frame_image|start_image|start_frame|start_image_url|first_frame_url)$/;
-export function hasStartFrame(variant, body) {
-  for (const [name, input] of Object.entries(variant?.model?.inputs || {})) {
-    if (input?.field !== 'image' || input.type === 'array') continue;
-    const first = FIRST_FIELD.test(name) || (variant.kind === 'video' && /^(image|image_url|img|input_image)$/.test(name));
-    if (first && typeof body?.[name] === 'string' && body[name]) return true;
-  }
-  // Seedance (and other role lists): [{ url, role: 'first_frame' }, …] in one array field.
-  for (const value of Object.values(body || {})) {
-    if (Array.isArray(value) && value.some((x) => x && typeof x === 'object' && /^(first_frame|start_frame|first)$/i.test(String(x.role || '')) && (x.url || x.image_url))) return true;
-  }
-  return false;
-}
-
 export async function buildApp(config, { logger = true } = {}) {
   process.umask(0o077); // database, keys and files readable by this user only
   const db = openDatabase(config.dataDir);
@@ -822,6 +807,15 @@ export async function buildApp(config, { logger = true } = {}) {
   // lens, focal, aperture, filter, era, light, move) in this model's words and
   // place (src/look.js, memo frontmatter "look").
   // A start frame in the studio body (the same roles as the studio's dzCreate.js roleOf).
+  const FIRST_FIELD = /^(first_frame|first_frame_image|start_image|start_frame|start_image_url|first_frame_url)$/;
+  function hasStartFrame(variant, body) {
+    for (const [name, input] of Object.entries(variant?.model?.inputs || {})) {
+      if (input?.field !== 'image' || input.type === 'array') continue;
+      const first = FIRST_FIELD.test(name) || (variant.kind === 'video' && /^(image|image_url|img|input_image)$/.test(name));
+      if (first && typeof body?.[name] === 'string' && body[name]) return true;
+    }
+    return false;
+  }
   // §4 rule 2 (handoff 17): a camera other than Modern and no start frame — never
   // "adaptive"/"auto" (the model changes the format together with the look): 16:9,
   // or the nearest landscape ratio the model takes. Changes `body` in place.

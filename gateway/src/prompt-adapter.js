@@ -12,6 +12,8 @@ const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'prompt-memo
 const TAG_RE = /(^|[^\p{L}\p{N}_@])@([a-z][a-z0-9_]*)(?![\p{L}\p{N}_])/giu;
 const MAX_PROMPT = 12_000;
 
+const MAX_REF_IMAGES = 2;
+
 export class AdaptError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
@@ -85,6 +87,7 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     const untagged = Number(ctx.untaggedReferences) || 0;
     if (untagged > 0) out.untagged_reference_images = `${Math.min(untagged, 20)} attached without tags — refer to them in words (the first reference image…), never as @tags`;
     out.tags_in_prompt = tags.map((t) => `@${t}`);
+    if (Array.isArray(ctx.imageLabels) && ctx.imageLabels.length) out.reference_images = ctx.imageLabels.slice(0, MAX_REF_IMAGES).map((x) => clean(x, 80));
     out.prompt_format = json ? 'json' : 'text';
     return out;
   }
@@ -103,7 +106,10 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       '5. Numeric settings (duration, resolution, aspect-ratio numbers) are set by the app: don\'t write them into the prompt; words about format and composition are fine. If camera_added_by_app is given, don\'t contradict it.',
       '6. Follow the length guidance in the notes.',
       '',
-      'Answer ONLY with a JSON object: {"prompt": "<the rewritten prompt>", "changes": ["short note", "..."]} — 1 to 4 very short notes in English about what you changed.',
+      '7. If pictures are attached to this message, they are the user\'s reference images (a place, an object…), in the order of reference_images in the context. Use what you see in them to name real details (where in the place the subject is), never to invent new subjects.',
+      '8. If the chosen shot size leaves something the user wrote outside the frame, drop it or rewrite it as seen from inside the frame (a hand pouring from above becomes "a thin stream pours from above the top edge of the frame"), and list each such thing in "left_out" in a few words.',
+      '',
+      'Answer ONLY with a JSON object: {"prompt": "<the rewritten prompt>", "changes": ["short note", "..."], "left_out": ["the bartender\'s hand", "..."]} — 1 to 4 very short notes in English about what you changed; "left_out" is empty when nothing was dropped or rewritten for the shot size.',
       '',
       `--- Prompting notes: ${memo.name} ---`,
       memo.body,
@@ -117,9 +123,10 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     let obj = tryParse(t);
     if (!obj) { const i = t.indexOf('{'); const j = t.lastIndexOf('}'); if (i >= 0 && j > i) obj = tryParse(t.slice(i, j + 1)); }
     if (obj && (typeof obj.prompt === 'string' || (obj.prompt && typeof obj.prompt === 'object'))) {
-      return { prompt: typeof obj.prompt === 'string' ? obj.prompt : JSON.stringify(obj.prompt, null, 2), changes: Array.isArray(obj.changes) ? obj.changes.map(String).slice(0, 4) : [] };
+      return { prompt: typeof obj.prompt === 'string' ? obj.prompt : JSON.stringify(obj.prompt, null, 2), changes: Array.isArray(obj.changes) ? obj.changes.map(String).slice(0, 4) : [],
+        leftOut: Array.isArray(obj.left_out) ? obj.left_out.map((x) => clean(x, 60)).filter(Boolean).slice(0, 6) : [] };
     }
-    return t ? { prompt: t, changes: [] } : null;
+    return t ? { prompt: t, changes: [], leftOut: [] } : null;
   }
 
   // The one JSON object in a text: as is, inside a ```json fence, or with words before / after it.
@@ -161,7 +168,30 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     const json = body.as === 'json' ? true : body.as === 'text' ? false : original != null;
     const system = systemPrompt({ memo, modelName, kind, json });
     const userMsg = (extra = '') => `PROMPT:\n${prompt}\n\nCONTEXT (data):\n${JSON.stringify(contextBlock(ctx, tags, json), null, 2)}${extra}`;
-    const ask = (extra = '') => llm.chat(user, { model: body.llm || undefined, system, prompt: userMsg(extra), purpose: 'adapt-prompt', maxTokens: 2500, temperature: 0.3 });
+    // Reference pictures (docs/ux/48 §1, 51 §2): up to 2 that are not a @char element, chosen by the studio.
+    // Only to a text model that sees pictures; otherwise Adapt works from the names and says so.
+    const wanted = (Array.isArray(ctx.images) ? ctx.images : []).filter((u) => typeof u === 'string' && /^\/media\//.test(u)).slice(0, MAX_REF_IMAGES);
+    let images = [];
+    let imagesNote = '';
+    if (wanted.length) {
+      const listed = llm.cachedList ? llm.cachedList(user) : null;
+      const id = body.llm || listed?.default || '';
+      const model = listed?.models?.find((m) => m.id === id);
+      if (model?.vision) images = wanted;
+      else if (model) imagesNote = 'This text model cannot see pictures: the place and objects are described by their names only.';
+      else imagesNote = 'The pictures were not sent (the list of text models is still loading): the place and objects are described by their names only.';
+    }
+    const chat = (extra, imgs) => llm.chat(user, { model: body.llm || undefined, system, prompt: userMsg(extra), purpose: 'adapt-prompt', maxTokens: 2500, temperature: 0.3, ...(imgs.length ? { images: imgs } : {}) });
+    // A picture that can't be read (or a model that refuses pictures after all): once more by names only.
+    const ask = async (extra = '') => {
+      if (!images.length) return chat(extra, []);
+      try { return await chat(extra, images); } catch (error) {
+        if (error?.status === 402 || error?.status === 429) throw error;
+        images = [];
+        imagesNote = 'The pictures could not be sent: the place and objects are described by their names only.';
+        return chat(extra, []);
+      }
+    };
     let r = await ask();
     let out = parseAnswer(r.text);
     let lost = out ? tags.filter((t) => !tagsIn(out.prompt).includes(t)) : tags;
@@ -195,6 +225,9 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       prompt: out.prompt.trim(),
       changes: out.changes,
       lostTags: lost.map((t) => `@${t}`),
+      leftOut: out.leftOut || [],
+      imagesSeen: images.length,
+      ...(imagesNote ? { imagesNote } : {}),
       format: json ? 'json' : 'text',
       memo: { id: memo.id, name: memo.name, generic: memo.generic, blocks: memo.blocks },
       llm: r.model, costUsd: r.costUsd == null ? null : Math.round(cost * 1e6) / 1e6, ms,

@@ -130,3 +130,30 @@ test('JSON adapt puts only the object into the prompt: fenced answers and traili
   a = createPromptAdapter({ llm: fakeLlm([JSON.stringify({ prompt: '{"scene": "a bar at night", "camera": ', changes: [] })]) });
   await assert.rejects(a.adapt({ id: 1 }, { prompt: 'a bar at night', model: { family: 'dz-kling-4', kind: 'video' }, as: 'json' }), /broke the JSON/);
 });
+
+test('reference pictures go to a text model that sees them; "left out for this shot size" comes back (docs/ux/48 §1, 51 §2)', async () => {
+  const answer = JSON.stringify({ prompt: 'FRAMING The @img1 glass on the left end of the @img2 counter. A thin stream pours from above the top edge of the frame.', changes: ['Anchor'], left_out: ["the bartender's hand", 'the stools'] });
+  const models = [{ id: 'apimart:vision-1', vision: true }, { id: 'local:text-only', vision: false }];
+  const mk = (extra = {}) => Object.assign(fakeLlm([answer]), { cachedList: () => ({ default: 'apimart:vision-1', models }) }, extra);
+  const body = (llmId) => ({ prompt: 'A bartender pours into @img1 at the counter of @img2.', model: { family: 'dz-kling-4', kind: 'video' }, llm: llmId,
+    context: { tags: [{ tag: 'img1', label: 'Reference' }, { tag: 'img2', label: 'Reference' }], images: ['/media/u1/glass.jpg', '/media/u1/bar.jpg', '/media/u1/third.jpg', 'https://evil.example/x.jpg'], imageLabels: ['@img1', '@img2'] } });
+  let llm = mk();
+  let r = await createPromptAdapter({ llm }).adapt({ id: 1 }, body(undefined));
+  assert.deepEqual(llm.calls[0].images, ['/media/u1/glass.jpg', '/media/u1/bar.jpg'], 'at most 2, own media only');
+  assert.match(llm.calls[0].system, /reference images/);
+  assert.match(llm.calls[0].prompt, /"reference_images"/);
+  assert.equal(r.imagesSeen, 2);
+  assert.deepEqual(r.leftOut, ["the bartender's hand", 'the stools']);
+  // A text model without vision: names only, said in one line.
+  llm = mk();
+  r = await createPromptAdapter({ llm }).adapt({ id: 1 }, body('local:text-only'));
+  assert.equal(llm.calls[0].images, undefined);
+  assert.match(r.imagesNote, /cannot see pictures/);
+  // A picture that fails: once more without pictures.
+  let n = 0;
+  llm = mk({ async chat(user, b) { n += 1; if (b.images) throw Object.assign(new Error('A picture is not available'), { status: 404 }); return { text: answer, model: 'x', costUsd: 0, ms: 1 }; } });
+  r = await createPromptAdapter({ llm }).adapt({ id: 1 }, body(undefined));
+  assert.equal(n, 2);
+  assert.equal(r.imagesSeen, 0);
+  assert.match(r.imagesNote, /could not be sent/);
+});

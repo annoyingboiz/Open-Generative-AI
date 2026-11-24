@@ -941,7 +941,12 @@ export async function buildApp(config, { logger = true } = {}) {
       body: JSON.stringify(sent).length <= 120_000 ? sent : { note: 'Request too large to show.' },
       model: { provider: providerId, id: variant.providerModel, family: variant.family },
       rules: built.memo ? { memo: built.memo.id, name: built.memo.name, generic: built.memo.generic, place: built.memo.look?.place || 'end', camera: built.memo.look?.camera || null, style: built.memo.look?.style || null } : null,
-      hints: built.look ? lookHints(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],
+      hints: [
+        ...(built.look ? lookHints(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : []),
+        // Focal set, FRAMING on, but no main subject decided (docs/ux/50 §4): no default shot size was added.
+        ...(built.memo?.look?.framing && built.look?.on && built.look.focal && built.look.subject === 'none' && !built.look.shot
+          ? [`${built.look.focal}mm — shot size not set: the prompt names no main subject. Add one, or use Adapt.`] : []),
+      ],
       advice: built.look ? lookAdvice(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],
     };
   });

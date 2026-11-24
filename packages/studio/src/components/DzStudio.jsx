@@ -17,7 +17,7 @@ import { useDzSelection } from "./DzSelection.jsx";
 import StudioViewer from "./studio/Viewer.jsx";
 import DzSentPanel from "./DzSentPanel.jsx";
 import PictureEditor from "./editor/PictureEditor.jsx";
-import { lookData, autoLook, elementTags, elementFits, TAG_RE, buildBody, paramsOf, splitEdit } from "../dzCreate.js";
+import { lookData, autoLook, elementTags, elementFits, TAG_RE, buildBody, paramsOf, splitEdit, PLACE_HINT } from "../dzCreate.js";
 import { DropdownMenuParts, Spinner, SegSwitch, Tip, cn } from "../ui/index.js";
 import { Overline, Chip, ChipMenu, MenuRow, useEscLayer, fmtDur } from "./studio/ui.jsx";
 import { groupsFor, groupItems, addToGroup, removeFromGroup, GROUPS } from "./studio/attachments.js";
@@ -1085,6 +1085,7 @@ export default function DzStudio(props) {
   // Real errors (package 04, §2.5): one line inside the composer, above the bottom row;
   // it goes away on the next action. Set by Generate, uploads and what Generate needs.
   const [err, setErr] = useState(null); // { head, text, retry? }
+  const [placeHidden, setPlaceHidden] = useState(null); // the prompt the place hint was hidden for
   const engine = useDzCreateEngine({ ...props, mode, onGenerationError: (m, info) => setErr(info?.status === 402
     // Monthly limit (A10): stays until dismissed; trying again can't help.
     ? { head: "Not generated.", text: plainSentence(m), sticky: true }
@@ -1577,6 +1578,14 @@ export default function DzStudio(props) {
                     </span>
                   </div>
                 )}
+                {!light && engine.placeHint && placeHidden !== engine.prompt && (
+                  <div role="status" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-muted-foreground">
+                    <Info size={14} className="mt-[3px] flex-shrink-0" />
+                    <span className="min-w-0 text-foreground">{PLACE_HINT}
+                      <button type="button" onClick={() => setPlaceHidden(engine.prompt)} className="ml-1.5 whitespace-nowrap font-semibold text-foreground underline decoration-input underline-offset-[3px]">Hide for this prompt</button>
+                    </span>
+                  </div>
+                )}
                 {!light && kind === "video" && reshoot.mismatch && (
                   <div role="status" className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-warning">
                     <WarningCircle size={14} className="mt-[3px] flex-shrink-0" />
@@ -1597,7 +1606,7 @@ export default function DzStudio(props) {
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm" multiple className="hidden"
         onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) takeFiles(f); }} />
 
-      <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")}
+      <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")} subject={engine.subject}
         extra={kind === "video" ? <><PhoneRatioHint engine={engine} /><ReshootBlock r={reshoot} /></> : null} />
       <MovePanel open={panel === "move"} onClose={() => setPanel(null)} move={move} setMove={setMove} hints={adviceFor("move")} />
       <LookPanel open={panel === "look"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} />

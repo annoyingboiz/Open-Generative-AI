@@ -798,22 +798,62 @@ export function normalizeCamera(c, { auto = false } = {}) {
   };
 }
 // What goes to the server: null when nothing is chosen.
-export function lookOf(camera, move = "") {
+// Person / object / not set (docs/ux/50 §4, 51 §3). The same rules as gateway/src/subject-words.js
+// (keep the two in step); the word lists come from there through the catalog (look.subjectWords).
+// STOPGAP: the lasting fix is Adapt writing an OBJECTS block, whose first line decides (rule 1).
+export function lookSubject(prompt, elementKinds = []) {
+  const w = lookData().subjectWords || { person: [], object: [] };
+  const re = (list) => (list.length ? new RegExp(`\\b(${list.join("|")})\\b`, "i") : null);
+  const P = re(w.person || []), O = re(w.object || []);
+  const says = (t) => ({ person: Boolean(P && P.test(String(t || ""))), object: Boolean(O && O.test(String(t || ""))) });
+  const s = String(prompt || "");
+  let first = null;
+  if (/^\s*[[{]/.test(s)) {
+    try {
+      const j = JSON.parse(s);
+      const v = j && typeof j === "object" ? (j.objects ?? j.OBJECTS ?? j.Objects) : null;
+      const f = Array.isArray(v) ? v[0] : v;
+      first = (typeof f === "string" ? f : f && typeof f === "object" ? JSON.stringify(f) : "").trim() || null;
+    } catch { first = null; }
+  } else {
+    const m = s.match(/(?:^|\n)\s*OBJECTS\b[:\s]*([\s\S]*?)(?=\n\s*[A-Z][A-Z ]{2,}\b|$)/);
+    if (m) first = m[1].split("\n").map((x) => x.trim()).find(Boolean) || null;
+  }
+  if (first) { const t = says(first); return t.person && !t.object ? "person" : "object"; }
+  const kinds = new Set(elementKinds);
+  const char = kinds.has("character"), obj = kinds.has("object");
+  if (char && !obj) return "person";
+  if (obj && !char) return "object";
+  if (char && obj) return "none";
+  const t = says(s);
+  return t.person && !t.object ? "person" : "none";
+}
+// "85mm → head and shoulders (person)" / "→ about three quarters of the frame (object)" / "— shot size not set".
+// null while the model's FRAMING is off (the server sends no maps then).
+export function focalShotText(mm, subject) {
+  const d = lookData();
+  if (!mm || !d.focalShots?.[mm]) return null;
+  if (subject === "object" && d.focalObjects?.[mm]) return `${mm}mm → ${d.focalObjects[mm]} (object)`;
+  if (subject === "none") return `${mm}mm — shot size not set`;
+  return `${mm}mm → ${d.focalShots[mm]} (person)`;
+}
+export function lookOf(camera, move = "", { subject = null } = {}) {
   if (camera?.auto) {
     const a = autoLook(camera);
     const look = { on: Boolean(a.camera || a.lens || a.focal || a.aperture), camera: a.camera, lens: a.lens, focal: a.focal, aperture: a.aperture, filter: a.filter,
-      era: a.era, light: a.light, palette: a.palette, genre: a.genre, move: move || null };
+      era: a.era, light: a.light, palette: a.palette, genre: a.genre, move: move || null, ...(subject && a.focal ? { subject } : {}) };
     return look.on || look.filter || look.era || look.light || look.palette || look.genre || look.move ? look : null;
   }
   const c = normalizeCamera(camera);
-  const look = { ...(c.on ? { on: true, camera: c.camera, lens: c.lens, focal: c.focal, aperture: c.aperture } : { on: false }), filter: c.filter, era: c.era, light: c.light, move: move || null };
+  const look = { ...(c.on ? { on: true, camera: c.camera, lens: c.lens, focal: c.focal, aperture: c.aperture, ...(subject && c.focal ? { subject } : {}) } : { on: false }), filter: c.filter, era: c.era, light: c.light, move: move || null };
   return look.on || look.filter || look.era || look.light || look.move ? look : null;
 }
 // Short label for buttons ("35mm Film · 50mm · f/2").
-export function lookLabel(camera, { shotForFocal = false } = {}) {
+export function lookLabel(camera, { shotForFocal = false, subject = "person" } = {}) {
   const d = lookData();
   const name = (list, id) => (list || []).find((x) => x.id === id)?.label || "";
-  const focalText = (mm) => (shotForFocal ? (d.focalShots?.[mm] ? `shot size: ${d.focalShots[mm]}` : "") : `${mm}mm`);
+  const shotFor = (mm) => (subject === "none" ? "" : subject === "object" ? (d.focalObjects?.[mm] ? `shot size: the main object takes ${d.focalObjects[mm]}` : "") : d.focalShots?.[mm] ? `shot size: ${d.focalShots[mm]}` : "");
+  const focalText = (mm) => (shotForFocal ? shotFor(mm) : `${mm}mm`);
   if (camera?.auto) {
     const a = autoLook(camera);
     return [name(d.cameras, a.camera), name(d.lenses, a.lens), a.focal ? focalText(a.focal) : "", a.aperture || "", name(d.palettes, a.palette), name(d.lights, a.light), name(d.genres, a.genre), name(d.eras, a.era)].filter(Boolean).join(" · ");
@@ -966,4 +1006,25 @@ export function acceptsOf(entry) {
   const out = uniq(kept.sort((a, b) => rank(a.media) - rank(b.media)).map((v) => phrase(v.media)).filter(Boolean));
   if (entry.canEdit && !out.length) out.push("Edits a picture");
   return out.length ? out.join(" or ") : entry.textOnly ? "Text only" : "";
+}
+
+// Reference pictures for Adapt (docs/ux/48 §1, 51 §2): the first 2 references that are not a character
+// Element, so Adapt can name real details of the place or the object. Start and end frames are not references.
+export function adaptPictures(tags = []) {
+  return tags.filter((t) => !t.unused && typeof t.url === "string" && t.url.startsWith("/media/")
+    && ((t.kind === "file" && t.role === "reference") || (t.kind === "element" && t.element?.kind !== "character"))).slice(0, 2);
+}
+
+// The hint above Generate (docs/ux/48 §1, 50 §3, 51 §2): waist up or tighter, a reference that is not a
+// character attached, no FRAMING of the user's own, no start frame. Quiet: one line, never blocks.
+export const PLACE_HINT = "Shot size may come out wider: the prompt has no FRAMING block that says where in the scene the subject and the camera are. Adapt can add it.";
+const TIGHT_FOCAL = 50;
+export function placeHintNeeded({ prompt = "", look = null, tags = [], startFrame = false }) {
+  if (startFrame || !look || look.on === false || !look.focal || look.focal < TIGHT_FOCAL) return false;
+  if (look.subject === "none") return false; // no default shot size at all: the Look panel says so instead
+  if (!adaptPictures(tags).length) return false;
+  const s = String(prompt || "");
+  if (/(^|\n)\s*(?:FRAMING\b|Framing\s*:)/.test(s)) return false; // the label as the server reads it (look.js)
+  if (/^\s*[[{]/.test(s)) { try { const j = JSON.parse(s); if (j && typeof j === "object" && Object.keys(j).some((k) => /^framing$/i.test(k))) return false; } catch { /* text */ } }
+  return true;
 }

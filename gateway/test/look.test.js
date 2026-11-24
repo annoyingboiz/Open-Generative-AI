@@ -254,3 +254,39 @@ test('close shots hold the framing (docs/ux/46 §9)', async () => {
   assert.doesNotMatch(renderLook('FRAMING Medium shot.', cleanLook({ on: true, focal: 135 }), { kind: 'video', memo: memos.kling }), /never moves back/, 'not with the user\'s own FRAMING');
   assert.doesNotMatch(k({ on: true, focal: 50 }), /never moves back/);
 });
+
+test('person / object / not set (docs/ux/50 §4, 51 §3): focal default follows the subject', async () => {
+  const { subjectOf, objectsFirstLine } = await import('../src/subject-words.js');
+  const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
+  const k = (p, l) => renderLook(p, cleanLook(l), { kind: 'video', memo: memos.kling, ratio: '16:9' });
+  // Rules.
+  assert.equal(subjectOf('A woman at a bar.'), 'person');
+  assert.equal(subjectOf('Her face.'), 'person');
+  assert.equal(subjectOf("A bartender's hand pours amber cocktail into the glass."), 'none', 'helper\'s hand + object word: not a person subject');
+  assert.equal(subjectOf('A hand pours into the glass on the counter.'), 'none');
+  assert.equal(subjectOf('A quiet street at night.'), 'none');
+  assert.equal(subjectOf('A rocks glass with ice on the counter.'), 'none', 'object words alone: not set, no typed Element');
+  assert.equal(subjectOf('SCENE Bar.\n\nOBJECTS\nThe @Image1 rocks glass with one large ice cube.\n\nACTION A woman pours.'), 'object', 'rule 1: OBJECTS first line');
+  assert.equal(subjectOf('SCENE Bar.\n\nOBJECTS\nA woman in a yellow coat.\n\nBACKGROUND Bottles.'), 'person');
+  assert.equal(subjectOf('{"objects": ["a perfume bottle"], "scene": "a woman holds it"}'), 'object');
+  assert.equal(objectsFirstLine('OBJECTS A red mug.\nSTYLE Soft.'), 'A red mug.');
+  assert.equal(subjectOf('She pours.', ['character']), 'person', 'rule 2');
+  assert.equal(subjectOf('She pours into the glass.', ['object']), 'object', 'rule 3');
+  assert.equal(subjectOf('A woman holds the glass.', ['character', 'object']), 'none', 'both kinds');
+  assert.equal(subjectOf('A woman.', ['place']), 'person', 'a place Element is not a subject');
+  // Prompt words.
+  assert.match(k('A woman.', { on: true, focal: 85, subject: 'person' }), /^FRAMING Head-and-shoulders shot\./m);
+  assert.match(k('A woman.', { on: true, focal: 85 }), /^FRAMING Head-and-shoulders shot\./m, 'no subject sent (older clients): person');
+  const obj = k('The glass.', { on: true, focal: 85, subject: 'object' });
+  assert.match(obj, /^FRAMING Close product shot of the main object\. It takes three quarters of the frame height\./m);
+  assert.match(obj, /never moves back/, 'hold line on a close object shot');
+  assert.match(k('The glass.', { on: true, focal: 50, subject: 'object' }), /^FRAMING The main object takes about half of the frame height\./m);
+  assert.doesNotMatch(k('The glass.', { on: true, focal: 50, subject: 'object' }), /never moves back/);
+  const none = k('A hand pours into the glass.', { on: true, focal: 85, subject: 'none' });
+  assert.doesNotMatch(none, /FRAMING|never moves back/);
+  assert.match(k('X.', { on: true, focal: 85, subject: 'none', shot: 'waist' }), /^FRAMING Waist-up shot\./m, 'a shot size set elsewhere still wins');
+  assert.equal(cleanLook({ on: true, focal: 85, subject: 'robot' }).subject, null);
+  const client = lookForClient({ framing: true });
+  assert.equal(client.focalObjects[85], 'about three quarters of the frame');
+  assert.ok(client.subjectWords.person.includes('woman') && client.subjectWords.object.includes('glass'));
+});

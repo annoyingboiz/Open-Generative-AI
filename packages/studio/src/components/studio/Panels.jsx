@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Aperture, CircleDashed, MagnifyingGlass, ArrowsClockwise, BookOpen, CaretRight, CheckCircle } from "@phosphor-icons/react";
 import { Switch, Slider, Input, Spinner, cn, SelectParts } from "../../ui/index.js";
-import { lookData, autoLook, AUTO_LOOK } from "../../dzCreate.js";
+import { lookData, autoLook, AUTO_LOOK, focalShotText } from "../../dzCreate.js";
 import { useAdaptModels, LLM_KEY, useAdaptResult } from "../DzAdapt.jsx";
 import { RequestView } from "../DzSentPanel.jsx";
 import { StudioPanel, Overline, ChipMenu, MenuRow } from "./ui.jsx";
@@ -62,9 +62,9 @@ function Wheel({ title, options, value, onChange, icon: Icon, auto = { id: null,
 
 // Block mode (docs/ux/44 §C): on Kling the focal length sets the shot size (FRAMING).
 // Shown only while a model's FRAMING is on (the server sends the map then; empty while held).
-const shotOf = (mm) => (lookData().focalShots || {})[mm] || null;
-
-function FocalTrack({ value, onChange }) {
+// What it frames follows the subject the studio decided (docs/ux/51 §3): person, object or not set.
+function FocalTrack({ value, onChange, subject = "person" }) {
+  const shotText = focalShotText(value, subject);
   const i = Math.max(0, FOCAL_STOPS.indexOf(value ?? null));
   const ref = useRef(null);
   const dragging = useRef(false);
@@ -75,7 +75,7 @@ function FocalTrack({ value, onChange }) {
   };
   return (
     <div className="space-y-3">
-      <Overline>Focal length · {value ? `${value}mm${shotOf(value) ? ` → ${shotOf(value)}` : ""}` : "Auto"}</Overline>
+      <Overline>Focal length · {value ? shotText || `${value}mm` : "Auto"}</Overline>
       <div ref={ref} role="slider" tabIndex={0} aria-label="Focal length" aria-valuetext={value ? `${value} mm` : "Auto"}
         className="relative h-6 cursor-pointer touch-none"
         onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); setFrom(e); }}
@@ -97,12 +97,14 @@ function FocalTrack({ value, onChange }) {
             style={{ left: `${(k / (FOCAL_STOPS.length - 1)) * 100}%` }}>{f ?? "Auto"}</button>
         ))}
       </div>
-      {value && shotOf(value) && <p className="text-xs text-muted-foreground">On Kling this also sets the shot size: a target, not a guarantee.</p>}
+      {value && shotText && (subject === "none"
+        ? <p className="text-xs text-muted-foreground">{value}mm — shot size not set: the prompt names no main subject. Add one, or use Adapt.</p>
+        : <p className="text-xs text-muted-foreground">On Kling and Seedance this also sets the shot size: a target, not a guarantee. Person or object is guessed from the prompt and attached elements.</p>)}
     </div>
   );
 }
 
-export function CameraLookPanel({ open, onClose, look, setLook, hints = [], extra = null }) {
+export function CameraLookPanel({ open, onClose, look, setLook, hints = [], extra = null, subject = "person" }) {
   const d = lookData();
   const a = autoLook(look);
   const set = (k, v) => setLook((prev) => ({ ...autoLook(prev), [k]: v }));
@@ -117,7 +119,7 @@ export function CameraLookPanel({ open, onClose, look, setLook, hints = [], extr
         <Wheel title="Lens" icon={Aperture} options={d.lenses.map((o) => ({ ...o, image: lookPicture("lens", o.id) }))} value={a.lens} onChange={(v) => set("lens", v)} />
         <Wheel title="Aperture" icon={CircleDashed} options={(d.apertures || []).map((f) => ({ id: f, label: f, image: lookPicture("aperture", f) }))} value={a.aperture} onChange={(v) => set("aperture", v)} />
       </div>
-      <div className="mt-6"><FocalTrack value={a.focal} onChange={(v) => set("focal", v)} /></div>
+      <div className="mt-6"><FocalTrack value={a.focal} onChange={(v) => set("focal", v)} subject={subject} /></div>
       {(d.filters || []).map((f) => (
         <label key={f.id} className="mt-5 flex items-center justify-between gap-3">
           <span><span className="text-base font-medium">{f.label}</span> <span className="text-sm text-muted-foreground">· {f.note}</span></span>

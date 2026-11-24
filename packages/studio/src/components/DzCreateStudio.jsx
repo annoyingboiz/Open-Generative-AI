@@ -23,7 +23,7 @@ import { Viewer } from "./DzLibrary.jsx";
 import {
   createEntries, chooseVariant, planAttachments, bothAtOther, withEditFirst, splitEdit, missingFor, buildBody, keepValues, paramsOf, refSyntaxFor, composePrompt,
   parseJsonPrompt, promptTags, translateTags, unsentMentions, elementTags, elementFits, TAG_RE, mergeElements, elementsInputOf, entryTakesElements, klingElementPairs,
-  ROLE_INFO, ROLE_ORDER, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookLabel, migrateTags, resolveInsertTags,
+  ROLE_INFO, ROLE_ORDER, DEFAULT_CAMERA, lookData, normalizeCamera, lookOf, lookSubject, adaptPictures, placeHintNeeded, lookLabel, migrateTags, resolveInsertTags,
 } from "../dzCreate.js";
 import {
   Button, Segmented, ScrollTabs, Switch, Slider, Textarea, Input, Logo, Spinner, InfoTip, Tip, cn,
@@ -571,8 +571,15 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
   const unsent = unsentMentions(prompt, tags);
   // The look goes to the server, which writes it into the prompt for this model.
   // Camera look and Move live in Studio; the light tabs (Image, Video) send none (package 03, §8).
-  const look = useMemo(() => (mode === "create" ? lookOf(camera, kind === "video" ? move : "") : null), [camera, kind, move, mode]);
+  // Person / object / not set (docs/ux/51 §3): decided once here, sent with the look and shown in the
+  // Look panel, so the panel, the prompt preview and the server agree.
+  const subject = useMemo(() => lookSubject(prompt, activeElements.map((e) => e.kind)), [prompt, activeElements]);
+  const look = useMemo(() => (mode === "create" ? lookOf(camera, kind === "video" ? move : "", { subject }) : null), [camera, kind, move, mode, subject]);
+  // The quiet hint above Generate (docs/ux/51 §2): only on models whose FRAMING is on (Kling, Seedance).
+  const framingModel = /(^|[-_ ])(kling|seedance)([-_ .]|$)/i.test(String(entry?.family || ""));
   const texturePreset = texturePresetOf(look, kind);
+  const placeHint = useMemo(() => framingModel && kind === "video" && placeHintNeeded({ prompt, look, tags, startFrame: (merged.attached?.first || []).length > 0 }),
+    [framingModel, kind, prompt, look, tags, merged.attached]); // eslint-disable-line react-hooks/exhaustive-deps
   const usedTags = useMemo(() => {
     const names = new Set([...String(prompt).matchAll(TAG_RE)].map((m) => m[2].toLowerCase()));
     return tags.filter((t) => names.has(t.tag.toLowerCase()) && !(t.kind === "file" && t.unused));
@@ -590,14 +597,17 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     const moveLabel = kind === "video" && move ? lookData().moves.find((m) => m.id === move)?.label : "";
     // Kling and Seedance get no focal mm value (doc 42, answer 3): Adapt is told the shot size instead.
     const noMm = /(^|[-_ ])(kling|seedance)([-_ .]|$)/i.test(String(entry?.family || ""));
-    const label = noMm ? lookLabel(camera, { shotForFocal: true }) : lookLabel(camera);
+    const label = noMm ? lookLabel(camera, { shotForFocal: true, subject }) : lookLabel(camera);
     const cameraText = [label, moveLabel ? `move: ${moveLabel}` : ""].filter(Boolean).join(", ");
     return {
       mode, duration: values.duration, aspect: values.aspect_ratio || values.ratio, audio,
       camera: cameraText || undefined,
       tags: tags.filter((t) => !(t.kind === "file" && t.unused)).map((t) => ({ tag: t.tag, label: `${t.label || t.kind}${t.to ? ` (sent to the model as ${t.to})` : ""}` })),
+      // Up to 2 reference pictures that are not a character (docs/ux/51 §2): Adapt looks at them to name
+      // real details of the place or object. Plain picks are untyped; Adapt decides what they show.
+      ...(() => { const pics = adaptPictures(tags); return pics.length ? { images: pics.map((t) => t.url), imageLabels: pics.map((t) => `@${t.tag}`) } : {}; })(),
     };
-  }, [merged.attached, kind, values, camera, move, tags, elementsUsed, entry?.family]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [merged.attached, kind, values, camera, move, tags, elementsUsed, entry?.family, subject]); // eslint-disable-line react-hooks/exhaustive-deps
   // Adapt keeps its results per composer (package 07, F2): a tool tab, or one shot / group.
   // A composer that is emptied starts with no result.
   const adaptScope = editor ? `editor:${target?.key || mode}` : target ? `board:${target.board || ""}:${target.kind || ""}:${target.id || ""}` : `tab:${mode}`;
@@ -1087,7 +1097,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); generate(); }
   };
 
-  return { cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, texture, setTexture, texturePreset, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, unsent, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, bothHint, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
+  return { subject, placeHint, cfg, fixedKind, saved, kindState, setKind, kind, modelByKind, setModelByKind, valuesByKind, setValuesByKind, prompt, setPrompt, camera, setCamera, move, setMove, count, setCount, texture, setTexture, texturePreset, attached, setAttached, uploadingRole, setUploadingRole, elements, setElements, elementLists, uploads, setUploads, elementMaxRef, busy, setBusy, drawOpen, setDrawOpen, promptRef, attachedRef, catalogReady, setCatalogReady, entries, entry, storedValues, slotRoles, plan, used, unusedCount, nativeElements, canUseElements, activeElements, merged, variant, elementSpec, elementPairs, elementFilesUsed, elementsUsed, elementMax, params, values, syntax, missing, tags, nativeDropped, trimmed, finalPrompt, unsent, look, usedTags, jsonPrompt, adaptModel, adaptContext, adaptScope, needsPrompt, canRun, body, quoteBody, price, priceLoading, quoteFor, bothHint, ratioSent: ratioFixed, sentOpen, setSentOpen, sentPreview, setValue, pickModel, ctx, kindFilter, setKindFilter, viewing, setViewing, showKind, history, sel, addFiles, addUrls, removeFile, insertAtCursor, generate, applyResult, reuse, mention, setMention, mentionOptions, readMention, pickMention, onPromptKey, mode, openForEdit, focusSeq, sendable, touched, touch, bringOn, addr, target };
 }
 
 export default function DzCreateStudio({ apiKey, onGenerationStart, onGenerationEnd, onGenerationComplete, onGenerationError, droppedFiles, onFilesHandled, mode = "create" }) {

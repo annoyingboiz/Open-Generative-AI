@@ -16,6 +16,8 @@
 // toneOnly: Kling draws a 4:3 picture with rounded corners when the medium is named,
 // so it gets the colour and tone words only (§7).
 // sensor: 'small' formats rarely blur the background much; 'large' do it easily.
+import { PERSON_WORDS, OBJECT_WORDS } from './subject-words.js';
+
 export const CAMERAS = [
   { id: 'modern', label: 'Modern', note: 'Clean modern picture, nothing added' },
   { id: 'film-35', label: '35mm Film', note: 'Soft highlights, film colour, fine grain', texture: '35mm',
@@ -118,6 +120,18 @@ export const SHOTS = [
 export const HOLD_CLOSE = 'The camera never moves back and never zooms out. The framing is identical from the first frame to the last.';
 // Focal length → default shot size (doc 42, answer 3). A shot size set elsewhere wins.
 export const FOCAL_SHOT = { 12: 'full', 16: 'full', 24: 'full', 35: 'knees', 50: 'waist', 85: 'head-shoulders', 135: 'face', 200: 'face' };
+// Object as the main subject (docs/ux/50 §2, 51 §3): the share of the frame the object takes, by focal
+// length. 50 and 85 are tested (H1, G3 in REPORT-shot-size); 24, 35 and 135 are untested.
+export const OBJECT_SHOTS = [
+  { id: 'obj-small', label: 'object small in the scene', framing: 'The main object is small in the frame, with plenty of the scene around it.' },
+  { id: 'obj-third', label: 'about one third of the frame', framing: 'The main object takes about one third of the frame height, with the scene around it.' },
+  { id: 'obj-half', label: 'about half of the frame', framing: 'The main object takes about half of the frame height. Top edge of the frame well above the object, bottom edge a little below its base.' },
+  { id: 'obj-three-quarters', label: 'about three quarters of the frame', framing: 'Close product shot of the main object. It takes three quarters of the frame height. Top edge of the frame is just above its top, bottom edge just below its base.' },
+  { id: 'obj-detail', label: 'a detail fills the frame', framing: 'Macro shot. A detail of the main object fills the frame.' },
+];
+export const FOCAL_OBJECT = { 12: 'obj-small', 16: 'obj-small', 24: 'obj-small', 35: 'obj-third', 50: 'obj-half', 85: 'obj-three-quarters', 135: 'obj-detail', 200: 'obj-detail' };
+const CLOSE_OBJECT = new Set(['obj-three-quarters', 'obj-detail']);
+export const SUBJECTS = ['person', 'object', 'none'];
 // Storyboard shot sizes (dzDirector.js SHOT_SIZES) → ours.
 const STORYBOARD_SHOT = { 'extreme wide': 'full', wide: 'full', full: 'full', 'medium wide': 'knees', medium: 'waist', 'medium close-up': 'head-shoulders', 'close-up': 'face', 'extreme close-up': 'face', insert: null };
 // "insert" (a detail of an object) has no person to frame: no FRAMING.
@@ -241,6 +255,9 @@ export function cleanLook(input) {
     move: byId(MOVES, raw.move)?.id || null,
     // Shot size for FRAMING (block mode): a Shot size setting or the storyboard's; else from the focal.
     shot: shotOf(idOf(raw.shot)),
+    // Person / object / not set, decided by the studio (docs/ux/51 §3). Missing (older clients, Director):
+    // the person wording as before.
+    subject: SUBJECTS.includes(raw.subject) ? raw.subject : null,
   };
   return out.on || out.filter || out.era || out.light || out.palette || out.genre || out.move || out.shot ? out : null;
 }
@@ -282,6 +299,9 @@ export function lookForClient({ framing = false } = {}) {
     focals: FOCALS.map((f) => f.mm),
     // "85 mm → head and shoulders" in the Look panel (block mode, doc 44 §C).
     focalShots: framing ? Object.fromEntries(Object.entries(FOCAL_SHOT).map(([mm, id]) => [mm, SHOTS.find((x) => x.id === id).label])) : {},
+    focalObjects: framing ? Object.fromEntries(Object.entries(FOCAL_OBJECT).map(([mm, id]) => [mm, OBJECT_SHOTS.find((x) => x.id === id).label])) : {},
+    // The stopgap word lists (src/subject-words.js), so the studio decides with the same lists.
+    subjectWords: { person: PERSON_WORDS, object: OBJECT_WORDS },
     apertures: APERTURES.map((a) => a.f),
     eras: pick(ERAS, ['id', 'label']),
     lights: pick(LIGHTS, ['id', 'label']),
@@ -538,11 +558,16 @@ export function lookBlocks(look, { family = null, framing = false, framed = fals
     b.CAMERA.push(motionLine ? PHONE_FROM_FRAME : '', w?.move);
     b.TECH.push(KEEP_FRAME_BLOCKS);
   } else {
-    const shot = look.shot || (on && look.focal ? FOCAL_SHOT[look.focal] : null);
+    // The focal default follows the subject (docs/ux/51 §3): person wording, object wording, or none.
+    const subject = look.subject || 'person';
+    const shot = look.shot || (on && look.focal && subject === 'person' ? FOCAL_SHOT[look.focal] : null);
+    const objShot = !look.shot && on && look.focal && subject === 'object' ? FOCAL_OBJECT[look.focal] : null;
     if (framing && shot) b.FRAMING.push(SHOTS.find((x) => x.id === shot)?.framing);
+    if (framing && objShot) b.FRAMING.push(OBJECT_SHOTS.find((x) => x.id === objShot)?.framing);
     // Close shots (docs/ux/46 §9, stages 21–22): Kling otherwise pulls back during the clip (T4a: −44 %).
     // Not with a camera move: it would contradict it.
-    if (framing && (shot === 'face' || shot === 'head-shoulders') && (!look.move || look.move === 'static')) b.CAMERA.push(HOLD_CLOSE);
+    const close = shot === 'face' || shot === 'head-shoulders' || CLOSE_OBJECT.has(objShot);
+    if (framing && close && (!look.move || look.move === 'static')) b.CAMERA.push(HOLD_CLOSE);
     const ap = on ? APERTURES.find((a) => a.f === look.aperture) : null;
     if (ap) b.FOCUS.push(FOCUS_STEPS.find((s) => ap.n <= s.max).text);
     b.CAMERA.push(w?.move);

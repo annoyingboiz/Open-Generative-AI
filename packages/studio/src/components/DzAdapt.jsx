@@ -266,6 +266,8 @@ function AdaptDialog({ prompt, model, context, look, request, scope, onClose, on
               </div>
               <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={Math.min(16, Math.max(6, Math.ceil(text.length / 80)))} className="rounded-xl text-base" spellCheck />
               {r.lostTags?.length > 0 && <p className="text-warning">The rewrite lost {r.lostTags.join(", ")} — add them back before using it, or try again.</p>}
+              {r.leftOut?.length > 0 && <p className="text-muted-foreground">Left out for this shot size: {r.leftOut.join(", ")}.</p>}
+              {r.imagesNote && <p className="text-muted-foreground">{r.imagesNote}</p>}
               {r.changes?.length > 0 && (
                 <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">{r.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
               )}

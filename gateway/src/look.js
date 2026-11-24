@@ -114,6 +114,7 @@ export const SHOTS = [
   { id: 'head-shoulders', label: 'head and shoulders', framing: 'Head-and-shoulders shot. Top edge of the frame just above the head, bottom edge at mid-chest. Waist, hands and legs are outside the frame.' },
   { id: 'face', label: 'face', framing: 'Face close-up. Top edge of the frame at the hairline, bottom edge just below the chin. The face fills the frame; shoulders are outside the frame.' },
 ];
+export const HOLD_CLOSE = 'The camera never moves back and never zooms out. The framing is identical from the first frame to the last.';
 // Focal length → default shot size (doc 42, answer 3). A shot size set elsewhere wins.
 export const FOCAL_SHOT = { 12: 'full', 16: 'full', 24: 'full', 35: 'knees', 50: 'waist', 85: 'head-shoulders', 135: 'face', 200: 'face' };
 // Storyboard shot sizes (dzDirector.js SHOT_SIZES) → ours.
@@ -432,6 +433,7 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
       if (labeledJson) {
         const blocks = lookBlocks(look, { family, framing: rule.framing, framed: fromFrame, ratio, words: w, motionLine });
         const hasFraming = Object.keys(out).some((x) => x.toLowerCase() === 'framing');
+        if (hasFraming && blocks.CAMERA) blocks.CAMERA = blocks.CAMERA.replace(HOLD_CLOSE, '').replace(/\s{2,}/g, ' ').trim();
         for (const label of BLOCK_ORDER) if (blocks[label] && !(label === 'FRAMING' && hasFraming)) put(label.toLowerCase(), blocks[label]);
         // Phone from a start frame (docs/ux/46 §7): a new camera key goes first, before the user's keys.
         const camKey = Object.keys(out).find((x) => x.toLowerCase() === 'camera');
@@ -535,6 +537,9 @@ export function lookBlocks(look, { family = null, framing = false, framed = fals
   } else {
     const shot = look.shot || (on && look.focal ? FOCAL_SHOT[look.focal] : null);
     if (framing && shot) b.FRAMING.push(SHOTS.find((x) => x.id === shot)?.framing);
+    // Close shots (docs/ux/46 §9, stages 21–22): Kling otherwise pulls back during the clip (T4a: −44 %).
+    // Not with a camera move: it would contradict it.
+    if (framing && (shot === 'face' || shot === 'head-shoulders') && (!look.move || look.move === 'static')) b.CAMERA.push(HOLD_CLOSE);
     const ap = on ? APERTURES.find((a) => a.f === look.aperture) : null;
     if (ap) b.FOCUS.push(FOCUS_STEPS.find((s) => ap.n <= s.max).text);
     b.CAMERA.push(w?.move);
@@ -573,7 +578,11 @@ function labeledLook(text, look, opts) {
     const t = blocks[label];
     if (!t) continue;
     // The user's own FRAMING wins: two shot sizes in one block contradict each other.
-    if (label === 'FRAMING' && intoLabeledBlock(out, label, '') !== null) continue;
+    if (label === 'FRAMING' && intoLabeledBlock(out, label, '') !== null) {
+      // Their framing, not ours: the "hold the close framing" line was for ours.
+      if (blocks.CAMERA) blocks.CAMERA = blocks.CAMERA.replace(HOLD_CLOSE, '').replace(/\s{2,}/g, ' ').trim();
+      continue;
+    }
     const merged = intoLabeledBlock(out, label, t);
     if (merged === null) extra.push(`${label} ${t}`);
     else out = merged;

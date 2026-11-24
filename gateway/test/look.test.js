@@ -243,3 +243,12 @@ test('Phone from a start frame, JSON prompt: the camera key comes first', async 
   const own = JSON.parse(renderLook('{"scene":"a woman","camera":"static"}', cleanLook({ camera: 'phone' }), { kind: 'video', memo: memos.kling, framed: true }));
   assert.deepEqual(Object.keys(own), ['scene', 'camera', 'tech'], 'the user\'s own camera key stays where it is');
 });
+
+test('close shots hold the framing (docs/ux/46 §9)', async () => {
+  const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
+  const k = (l) => renderLook('A woman.', cleanLook(l), { kind: 'video', memo: memos.kling });
+  assert.match(k({ on: true, focal: 135 }), /^CAMERA The camera never moves back and never zooms out\. The framing is identical from the first frame to the last\.$/m);
+  assert.doesNotMatch(k({ on: true, focal: 85, move: 'push-in' }), /never moves back/, 'not with a camera move');
+  assert.doesNotMatch(renderLook('FRAMING Medium shot.', cleanLook({ on: true, focal: 135 }), { kind: 'video', memo: memos.kling }), /never moves back/, 'not with the user\'s own FRAMING');
+  assert.doesNotMatch(k({ on: true, focal: 50 }), /never moves back/);
+});

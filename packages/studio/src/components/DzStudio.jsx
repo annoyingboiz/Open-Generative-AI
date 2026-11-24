@@ -1606,7 +1606,7 @@ export default function DzStudio(props) {
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm" multiple className="hidden"
         onChange={(e) => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) takeFiles(f); }} />
 
-      <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")} subject={engine.subject}
+      <CameraLookPanel open={panel === "camera"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} hints={adviceFor("camera")} subject={engine.subject} framed={kind === "video" && Boolean(cp.startUrl)}
         extra={kind === "video" ? <><PhoneRatioHint engine={engine} /><ReshootBlock r={reshoot} /></> : null} />
       <MovePanel open={panel === "move"} onClose={() => setPanel(null)} move={move} setMove={setMove} hints={adviceFor("move")} />
       <LookPanel open={panel === "look"} onClose={() => setPanel(null)} look={camera} setLook={setCamera} />

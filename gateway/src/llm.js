@@ -377,7 +377,8 @@ export function createLlm({ db, providers, generations, config, log, chatgpt = n
     const [, source, model] = m;
     if (source === 'chatgpt' && !chatgpt) throw new LlmError('The ChatGPT account is not connected yet.', 409);
     const msgs = cleanMessages(body);
-    const images = await imagesOf(user, body.images);
+    // A picture that can't be used fails here, before anything is sent or booked: callers may retry without it.
+    const images = await imagesOf(user, body.images).catch((error) => { error.beforeSend = true; throw error; });
     const maxTokens = Math.min(16_000, Math.max(64, Number(body.maxTokens) || DEFAULT_MAX_TOKENS));
     const temperature = body.temperature == null ? null : Math.min(2, Math.max(0, Number(body.temperature)));
     const purpose = String(body.purpose || 'chat').slice(0, 40);

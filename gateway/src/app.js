@@ -944,7 +944,7 @@ export async function buildApp(config, { logger = true } = {}) {
       hints: [
         ...(built.look ? lookHints(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : []),
         // Focal set, FRAMING on, but no main subject decided (docs/ux/50 §4): no default shot size was added.
-        ...(built.memo?.look?.framing && built.look?.on && built.look.focal && built.look.subject === 'none' && !built.look.shot
+        ...(built.memo?.look?.framing && !built.framed && built.look?.on && built.look.focal && built.look.subject === 'none' && !built.look.shot
           ? [`${built.look.focal}mm — shot size not set: the prompt names no main subject. Add one, or use Adapt.`] : []),
       ],
       advice: built.look ? lookAdvice(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],

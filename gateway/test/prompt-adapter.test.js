@@ -151,9 +151,18 @@ test('reference pictures go to a text model that sees them; "left out for this s
   assert.match(r.imagesNote, /cannot see pictures/);
   // A picture that fails: once more without pictures.
   let n = 0;
-  llm = mk({ async chat(user, b) { n += 1; if (b.images) throw Object.assign(new Error('A picture is not available'), { status: 404 }); return { text: answer, model: 'x', costUsd: 0, ms: 1 }; } });
+  llm = mk({ async chat(user, b) { n += 1; if (b.images) throw Object.assign(new Error('A picture is not available'), { status: 404, beforeSend: true }); return { text: answer, model: 'x', costUsd: 0, ms: 1 }; } });
   r = await createPromptAdapter({ llm }).adapt({ id: 1 }, body(undefined));
   assert.equal(n, 2);
   assert.equal(r.imagesSeen, 0);
   assert.match(r.imagesNote, /could not be sent/);
+  // A provider error after sending: no second (possibly paid) call.
+  n = 0;
+  llm = mk({ async chat() { n += 1; throw Object.assign(new Error('provider failed'), { status: 424 }); } });
+  await assert.rejects(createPromptAdapter({ llm }).adapt({ id: 1 }, body(undefined)), /provider failed/);
+  assert.equal(n, 1);
+  // The person's own list (quickList, with their ChatGPT models) decides vision when there is one.
+  llm = mk({ quickList: async () => ({ default: 'chatgpt:gpt-x', models: [{ id: 'chatgpt:gpt-x', vision: true }] }) });
+  r = await createPromptAdapter({ llm }).adapt({ id: 1 }, body(undefined));
+  assert.equal(r.imagesSeen, 2);
 });

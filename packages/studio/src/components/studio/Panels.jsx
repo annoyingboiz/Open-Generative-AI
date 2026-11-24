@@ -63,8 +63,10 @@ function Wheel({ title, options, value, onChange, icon: Icon, auto = { id: null,
 // Block mode (docs/ux/44 §C): on Kling the focal length sets the shot size (FRAMING).
 // Shown only while a model's FRAMING is on (the server sends the map then; empty while held).
 // What it frames follows the subject the studio decided (docs/ux/51 §3): person, object or not set.
-function FocalTrack({ value, onChange, subject = "person" }) {
-  const shotText = focalShotText(value, subject);
+function FocalTrack({ value, onChange, subject = "person", framed = false }) {
+  // With a start frame the server writes no FRAMING (the frame decides): no shot size claimed (Codex x68).
+  const shotText = framed ? null : focalShotText(value, subject);
+  const framingOn = Boolean(value && (lookData().focalShots || {})[value]);
   const i = Math.max(0, FOCAL_STOPS.indexOf(value ?? null));
   const ref = useRef(null);
   const dragging = useRef(false);
@@ -97,6 +99,7 @@ function FocalTrack({ value, onChange, subject = "person" }) {
             style={{ left: `${(k / (FOCAL_STOPS.length - 1)) * 100}%` }}>{f ?? "Auto"}</button>
         ))}
       </div>
+      {framed && framingOn && <p className="text-xs text-muted-foreground">With a start frame the frame sets the shot size.</p>}
       {value && shotText && (subject === "none"
         ? <p className="text-xs text-muted-foreground">{value}mm — shot size not set: the prompt names no main subject. Add one, or use Adapt.</p>
         : <p className="text-xs text-muted-foreground">On Kling and Seedance this also sets the shot size: a target, not a guarantee. Person or object is guessed from the prompt and attached elements.</p>)}
@@ -104,7 +107,7 @@ function FocalTrack({ value, onChange, subject = "person" }) {
   );
 }
 
-export function CameraLookPanel({ open, onClose, look, setLook, hints = [], extra = null, subject = "person" }) {
+export function CameraLookPanel({ open, onClose, look, setLook, hints = [], extra = null, subject = "person", framed = false }) {
   const d = lookData();
   const a = autoLook(look);
   const set = (k, v) => setLook((prev) => ({ ...autoLook(prev), [k]: v }));
@@ -119,7 +122,7 @@ export function CameraLookPanel({ open, onClose, look, setLook, hints = [], extr
         <Wheel title="Lens" icon={Aperture} options={d.lenses.map((o) => ({ ...o, image: lookPicture("lens", o.id) }))} value={a.lens} onChange={(v) => set("lens", v)} />
         <Wheel title="Aperture" icon={CircleDashed} options={(d.apertures || []).map((f) => ({ id: f, label: f, image: lookPicture("aperture", f) }))} value={a.aperture} onChange={(v) => set("aperture", v)} />
       </div>
-      <div className="mt-6"><FocalTrack value={a.focal} onChange={(v) => set("focal", v)} subject={subject} /></div>
+      <div className="mt-6"><FocalTrack value={a.focal} onChange={(v) => set("focal", v)} subject={subject} framed={framed} /></div>
       {(d.filters || []).map((f) => (
         <label key={f.id} className="mt-5 flex items-center justify-between gap-3">
           <span><span className="text-base font-medium">{f.label}</span> <span className="text-sm text-muted-foreground">· {f.note}</span></span>

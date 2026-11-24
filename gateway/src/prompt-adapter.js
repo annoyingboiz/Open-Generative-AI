@@ -174,7 +174,8 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
     let images = [];
     let imagesNote = '';
     if (wanted.length) {
-      const listed = llm.cachedList ? llm.cachedList(user) : null;
+      // The same list the person's Settings show (provider lists from memory plus their own ChatGPT models).
+      const listed = llm.quickList ? await llm.quickList(user).catch(() => null) : llm.cachedList ? llm.cachedList(user) : null;
       const id = body.llm || listed?.default || '';
       const model = listed?.models?.find((m) => m.id === id);
       if (model?.vision) images = wanted;
@@ -182,11 +183,12 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       else imagesNote = 'The pictures were not sent (the list of text models is still loading): the place and objects are described by their names only.';
     }
     const chat = (extra, imgs) => llm.chat(user, { model: body.llm || undefined, system, prompt: userMsg(extra), purpose: 'adapt-prompt', maxTokens: 2500, temperature: 0.3, ...(imgs.length ? { images: imgs } : {}) });
-    // A picture that can't be read (or a model that refuses pictures after all): once more by names only.
+    // A picture that can't be read: once more by names only. Only when it failed before anything was sent
+    // (Codex x68: a retry after a provider error could charge twice).
     const ask = async (extra = '') => {
       if (!images.length) return chat(extra, []);
       try { return await chat(extra, images); } catch (error) {
-        if (error?.status === 402 || error?.status === 429) throw error;
+        if (!error?.beforeSend) throw error;
         images = [];
         imagesNote = 'The pictures could not be sent: the place and objects are described by their names only.';
         return chat(extra, []);
@@ -215,10 +217,12 @@ export function createPromptAdapter({ llm, log, dir = DIR, familyName = () => nu
       // Rebuilt by the model's blocks: still JSON, not empty, roughly as rich as yours.
       const size = (v) => JSON.stringify(v).length;
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.keys(parsed).length) throw new AdaptError('The text model returned empty JSON. Try again or pick another text model.', 424);
-      if (original != null && size(parsed) < size(original) * 0.6) throw new AdaptError('The text model left out part of your JSON. Try again or pick another text model.', 424);
+      // Things left out for the shot size (rule 8) make it shorter on purpose: a lower bar then.
+      const keep = out.leftOut?.length ? 0.3 : 0.6;
+      if (original != null && size(parsed) < size(original) * keep) throw new AdaptError('The text model left out part of your JSON. Try again or pick another text model.', 424);
       // Text → JSON: the values together should still carry most of what you wrote.
       const words = (v) => (typeof v === 'string' ? v.length : v && typeof v === 'object' ? Object.values(v).reduce((n, x) => n + words(x), 0) : 0);
-      if (original == null && typed.length > 200 && words(parsed) < typed.length * 0.4) throw new AdaptError('The text model left out part of your prompt. Try again or pick another text model.', 424);
+      if (original == null && typed.length > 200 && words(parsed) < typed.length * (out.leftOut?.length ? 0.2 : 0.4)) throw new AdaptError('The text model left out part of your prompt. Try again or pick another text model.', 424);
       out.prompt = JSON.stringify(parsed, null, 2);
     }
     return {

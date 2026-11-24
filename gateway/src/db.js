@@ -285,6 +285,11 @@ const MIGRATIONS = [
   `
   ALTER TABLE uploads ADD COLUMN transient INTEGER NOT NULL DEFAULT 0;
   `,
+  // 20: the colour badge's background check reads only recent finished pictures (Codex x71): a partial
+  // index, so the minute's query does not parse every row's JSON.
+  `
+  CREATE INDEX generations_recent_images ON generations(created_at DESC) WHERE kind = 'image' AND status = 'completed' AND purged_at IS NULL;
+  `,
 ];
 
 export function openDatabase(dataDir) {

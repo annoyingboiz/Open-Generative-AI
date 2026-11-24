@@ -1250,8 +1250,9 @@ export async function buildApp(config, { logger = true } = {}) {
     try {
       for (const row of generations.uncheckedColour(7 * 86_400_000, 3)) {
         const owner = { id: row.user_id, role: 'user' };
-        const o = JSON.parse(row.outputs_json || '[]')[0];
-        const measured = o?.color?.raw?.path || o?.path;
+        let o = null;
+        try { o = JSON.parse(row.outputs_json || '[]')[0] || null; } catch { o = null; }
+        const measured = o?.color?.raw?.path || o?.path || null;
         let value;
         try {
           const m = await colourMeasure(owner, row);
@@ -1259,7 +1260,7 @@ export async function buildApp(config, { logger = true } = {}) {
             : m.state === 'unavailable' ? { v: 1, state: 'unavailable', reason: m.reason }
               : { v: 1, state: m.state === 'no-shift' ? 'none' : 'shifted', da: m.da, db: m.db, shift: m.shift, anchor: m.anchor, algo: COLOR_ALGO };
         } catch (error) { value = { v: 1, state: 'unavailable', reason: COLOUR_REASON.unreadable }; app.log.warn(`colour check ${row.id}: ${error.message}`); }
-        if (measured) generations.setColourCheck(row.id, measured, value);
+        try { generations.setColourCheck(row.id, measured, value); } catch (error) { app.log.warn(`colour check ${row.id}: ${error.message}`); }
       }
     } finally {
       colourChecking = false;

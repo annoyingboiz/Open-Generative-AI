@@ -60,7 +60,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     // Finished videos made before the cut check (docs/ux/44 b), newest first; "nochecks" marks an unreadable one.
     // Pictures made from a source picture that have no colour check yet (docs/ux/research: the badge).
     uncheckedColour: db.prepare(`SELECT * FROM generations WHERE status = 'completed' AND kind = 'image' AND purged_at IS NULL AND deleted_at IS NULL
-      AND created_at > ? AND json_extract(outputs_json, '$[0].checks.colour') IS NULL
+      AND created_at > ? AND json_extract(outputs_json, '$[0].path') IS NOT NULL AND json_extract(outputs_json, '$[0].checks.colour') IS NULL
       AND (json_extract(meta_json, '$.attached.edit[0].url') IS NOT NULL OR json_extract(meta_json, '$.editor.source') IS NOT NULL OR json_extract(meta_json, '$.canvas.source') IS NOT NULL)
       ORDER BY created_at DESC LIMIT ?`),
     uncheckedVideos: db.prepare(`SELECT id, outputs_json FROM generations WHERE status = 'completed' AND kind = 'video' AND purged_at IS NULL
@@ -926,7 +926,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       const files = (json) => { try { return JSON.stringify(JSON.parse(json || '[]').map(({ checks: _c, ...o }) => o)); } catch { return json; } };
       if (!row || row.purged_at != null || row.status !== 'completed' || (before != null && files(row.outputs_json) !== files(before))) return false;
       const had = JSON.parse(row.outputs_json || '[]');
-      const next = outputs.map((o, i) => (o && !o.checks && had[i]?.checks ? { ...o, checks: had[i].checks } : o));
+      // Field by field, the row's current checks winning (a check written meanwhile is kept — Codex x71).
+      const next = outputs.map((o, i) => (o && had[i]?.checks ? { ...o, checks: { ...(o.checks || {}), ...had[i].checks } } : o));
       q.setOutputs.run(JSON.stringify(next), now(), id);
       return true;
     },

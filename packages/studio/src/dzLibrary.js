@@ -114,8 +114,12 @@ export function useDzHistory(filter = {}, { limit = 60 } = {}) {
     window.addEventListener("focus", later);
     return () => { clearTimeout(timer); window.removeEventListener("dz:history", onHistory); window.removeEventListener("focus", later); };
   }, [refresh, key]);
-  // While something runs, check every few seconds — only while the page is visible.
-  const running = items.some((i) => i.status === "processing");
+  // While something runs, check every few seconds — only while the page is visible. Also for two minutes
+  // after a picture made from a source arrives, until its colour check (the badge) is in.
+  const colourPending = (i) => i.kind === "image" && i.status === "completed" && !i.checks?.colour
+    && Boolean(i.meta?.attached?.edit?.[0]?.url || i.meta?.editor?.source || i.meta?.canvas?.source)
+    && Date.now() - (Number(i.completed_at) || 0) < 120_000;
+  const running = items.some((i) => i.status === "processing" || colourPending(i));
   useEffect(() => {
     if (!running) return undefined;
     const timer = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 4000);

@@ -433,6 +433,12 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
         const blocks = lookBlocks(look, { family, framing: rule.framing, framed: fromFrame, ratio, words: w, motionLine });
         const hasFraming = Object.keys(out).some((x) => x.toLowerCase() === 'framing');
         for (const label of BLOCK_ORDER) if (blocks[label] && !(label === 'FRAMING' && hasFraming)) put(label.toLowerCase(), blocks[label]);
+        // Phone from a start frame (docs/ux/46 §7): a new camera key goes first, before the user's keys.
+        const camKey = Object.keys(out).find((x) => x.toLowerCase() === 'camera');
+        if (fromFrame && blocks.CAMERA?.startsWith('Handheld.') && camKey && !Object.keys(value).some((x) => x.toLowerCase() === 'camera')) {
+          const { [camKey]: cam, ...rest } = out;
+          return JSON.stringify({ [camKey]: cam, ...rest }, null, 2);
+        }
         return JSON.stringify(out, null, 2);
       }
       if (rule.camera) put(rule.camera, [camOne, w.camera, w.move].filter(Boolean).join(', '));

@@ -236,3 +236,12 @@ test('block mode: title-case labels end a block; a shot size alone is enough for
   assert.match(renderLook('A woman.', cleanLook({ shot: 'close-up' }), { kind: 'video', memo: klingF }), /^FRAMING Face close-up\./m);
   assert.equal(renderLook('A cup.', cleanLook({ shot: 'insert' }), { kind: 'video', memo: klingF }), 'A cup.');
 });
+
+test('Phone from a start frame, JSON prompt: the camera key comes first', async () => {
+  const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
+  const j = JSON.parse(renderLook('{"scene":"a woman"}', cleanLook({ camera: 'phone' }), { kind: 'video', memo: memos.kling, framed: true }));
+  assert.deepEqual(Object.keys(j), ['camera', 'scene', 'tech']);
+  assert.match(j.camera, /^Handheld\. The video is filmed on a phone/);
+  const own = JSON.parse(renderLook('{"scene":"a woman","camera":"static"}', cleanLook({ camera: 'phone' }), { kind: 'video', memo: memos.kling, framed: true }));
+  assert.deepEqual(Object.keys(own), ['scene', 'camera', 'tech'], 'the user\'s own camera key stays where it is');
+});

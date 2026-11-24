@@ -117,7 +117,7 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
     assert.doesNotMatch(p, /smartphone|phone lens|anamorphic|24mm|f\/2|depth of field|Pro-Mist|Overall style|Visual style/i, id);
     assert.match(p, id === 'kling' ? /very slight slow move closer/i : /push-in/i, id);
     // Doc 42, answer 1: Phone keeps its handheld behaviour line (motion, not look).
-    assert.match(p, blocks ? /^CAMERA .*Handheld phone video - small natural hand shake.*No phone or other device is visible in the picture\.$/m
+    assert.match(p, blocks ? /^CAMERA Handheld\. The video is filmed on a phone held in one hand\..*horizon tilts a little to the left and to the right\. No phone or other device is visible in the picture\.(?: (?:Very slight slow move closer|Fast push-in)[^\n]*)?\n\nA woman walks\./is
       : /\nHandheld phone video - small natural hand shake.*No phone or other device is visible in the picture\.\n/, id);
     assert.doesNotMatch(p, /continuous shot|Not cinematic|computational HDR/, id);
     // Block mode from a start frame (doc 43 §3.5): only CAMERA and the keep line; no FRAMING, FOCUS, STYLE, light.

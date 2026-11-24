@@ -522,8 +522,9 @@ export function lookBlocks(look, { family = null, framing = false, framed = fals
   const on = look.on !== false;
   const cam = on ? cameraOf(look.camera) : null;
   if (framed) {
-    // Only the move, the Phone behaviour line and the keep line (doc 43 §3.5).
-    b.CAMERA.push(w?.move, motionLine);
+    // Only the move, the Phone line and the keep line (doc 43 §3.5). Phone (docs/ux/46 §7, Denis's
+    // pick P1 from stage 17): what is seen in the picture, as a CAMERA block placed first.
+    b.CAMERA.push(motionLine ? PHONE_FROM_FRAME : '', w?.move);
     b.TECH.push(KEEP_FRAME_BLOCKS);
   } else {
     const shot = look.shot || (on && look.focal ? FOCAL_SHOT[look.focal] : null);
@@ -548,10 +549,20 @@ export function lookBlocks(look, { family = null, framing = false, framed = fals
   return Object.fromEntries(Object.entries(b).map(([k, xs]) => [k, noLens(join(...xs.filter(Boolean)))]).filter(([, t]) => t));
 }
 
+// Phone from a start frame (docs/ux/46 §7). Stage 17: a CAMERA block at the start describing what is
+// seen moved the picture 42 px over 4 s (light shake, jitter 0.5 px RMS); the line at the end, 5 px.
+// The tested P1 also named where the person stands and a drift to the right; this general form is untested.
+export const PHONE_FROM_FRAME = 'Handheld. The video is filmed on a phone held in one hand. The whole picture shakes slightly all the time: small quick jitters up, down, left and right. The frame is never still, and the horizon tilts a little to the left and to the right. No phone or other device is visible in the picture.';
+
 function labeledLook(text, look, opts) {
   const blocks = lookBlocks(look, opts);
   let out = String(text || '').replace(/\s+$/, '');
   const extra = [];
+  // From a start frame with Phone: CAMERA goes first (before the user's text) unless the user has one.
+  if (opts.framed && blocks.CAMERA?.startsWith('Handheld.') && intoLabeledBlock(out, 'CAMERA', '') === null) {
+    out = `CAMERA ${blocks.CAMERA}${out ? `\n\n${out}` : ''}`;
+    delete blocks.CAMERA;
+  }
   for (const label of BLOCK_ORDER) {
     const t = blocks[label];
     if (!t) continue;

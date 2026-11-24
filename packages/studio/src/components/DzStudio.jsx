@@ -302,7 +302,7 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
         <span className={cn("pointer-events-none absolute bottom-2 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium tabular-nums text-overlay-foreground transition-opacity duration-state", selecting ? "left-2" : "right-2")}>{item.studio === "upscale" ? "Upscaled" : fmtDur(duration)}</span>
       )}
       {done && !selecting && checkBadges(item).length > 0 && (
-        <span className="absolute bottom-2 left-2 flex items-center gap-1">
+        <span className="absolute bottom-2 left-2 flex items-center gap-1 transition-[bottom] duration-state group-hover:bottom-11 group-focus-within:bottom-11">
           {checkBadges(item).map((b) => <span key={b.id} title={b.note} className="flex items-center gap-1 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground"><span className="h-1.5 w-1.5 rounded-full bg-warning" />{b.text}</span>)}
           {act.again && item.meta?.entryKey && item.mine !== false && (
             <button type="button" onClick={(e) => { e.stopPropagation(); act.again(item); }}

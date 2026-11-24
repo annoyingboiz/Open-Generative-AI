@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import { providerById } from './providers/index.js';
 import { newId, mimeForExt } from './storage.js';
 import { now } from './db.js';
+import { SHOTS } from './look.js';
 
 const ACTIVE = ['submitted', 'processing', 'downloading'];
 const POLL_MS = { image: 2500, video: 5000, audio: 4000 };
@@ -56,7 +57,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     setOutputs: db.prepare('UPDATE generations SET outputs_json = ?, updated_at = ? WHERE id = ?'),
     // Finished videos made before the cut check (docs/ux/44 b), newest first; "nochecks" marks an unreadable one.
     uncheckedVideos: db.prepare(`SELECT id, outputs_json FROM generations WHERE status = 'completed' AND kind = 'video' AND purged_at IS NULL
-      AND outputs_json LIKE '[{%' AND outputs_json NOT LIKE '%"checks":%' ORDER BY created_at DESC LIMIT ?`),
+      AND outputs_json LIKE '[{%' AND outputs_json NOT LIKE '%"checks":{"v":3%' ORDER BY created_at DESC LIMIT ?`),
     setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, settle_next_at = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     settleDue: db.prepare('SELECT * FROM generations WHERE settle_next_at IS NOT NULL AND settle_next_at <= ? ORDER BY settle_next_at LIMIT 10'),
     settleLater: db.prepare('UPDATE generations SET settle_attempts = settle_attempts + 1, settle_next_at = ? WHERE id = ?'),
@@ -291,7 +292,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
         try { if (await media.prepare(f.path)) f.bytes = fs.statSync(f.path).size; } catch (error) { log?.warn(`prepare ${row.id}: ${error.message}`); }
         // Cut check (docs/ux/44 b): flagged on the tile, never rejected or hidden.
         // On the clean original when a texture filter made a new file (its grain and flicker are not cuts).
-        if (media.checkVideo && /^video\//.test(f.mime || '')) { const c = await media.checkVideo(f.clean && fs.existsSync(f.clean) ? f.clean : f.path); if (c) f.checks = c; }
+        if (media.checkVideo && /^video\//.test(f.mime || '')) { const c = await media.checkVideo(f.clean && fs.existsSync(f.clean) ? f.clean : f.path); if (c) f.checks = withAsked(c, row); }
       }
     };
     // Fix-ups on the files before they show up (e.g. the sound back into an
@@ -408,6 +409,13 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
 
   // Videos finished before the cut check existed get it in the background, a few at a time.
   // The result is merged into the row as it is now (a texture re-render may have changed it).
+  // The shot size the prompt asked for: our FRAMING sentence in the prompt that was sent (block mode).
+  function withAsked(c, row) {
+    let prompt = '';
+    try { const p = JSON.parse(row.params_json || '{}'); prompt = typeof p.prompt === 'string' ? p.prompt : JSON.stringify(p.prompt || ''); } catch { prompt = ''; }
+    const asked = SHOTS.find((x) => prompt.includes(x.framing.slice(0, 60)))?.id || null;
+    return asked && c?.shot ? { ...c, shot: { ...c.shot, asked } } : c;
+  }
   let backlogBusy = false;
   async function checkBacklog(limit = 4) {
     if (!media?.checkVideo || backlogBusy) return 0;
@@ -421,11 +429,11 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       if (!first?.path) continue;
       // The clean original when a texture filter made a new file (its grain and flicker are not cuts).
       const src = first.clean && fs.existsSync(first.clean) ? first.clean : first.path;
-      const c = (fs.existsSync(src) ? await media.checkVideo(src, { background: true }) : null) || { v: 2, cut: null, cuts: [], unreadable: true };
+      const c = (fs.existsSync(src) ? await media.checkVideo(src, { background: true }) : null) || { v: 3, cut: null, cuts: [], unreadable: true };
       const cur = q.byId.get(row.id);
       const outs = cur ? JSON.parse(cur.outputs_json || '[]') : [];
-      if (!outs[0] || outs[0].path !== first.path || outs[0].checks) continue;
-      outs[0].checks = c;
+      if (!outs[0] || outs[0].path !== first.path || outs[0].checks?.v === 3) continue;
+      outs[0].checks = withAsked(c, cur);
       q.setOutputs.run(JSON.stringify(outs), cur.updated_at, row.id); // updated_at kept: a measurement is not a change to the item
       n += 1;
     }

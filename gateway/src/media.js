@@ -136,6 +136,67 @@ export function cutScore(buf, { w = CUT_W, h = CUT_H } = {}) {
   return { frames: n, cuts, max: Math.round(max * 100) / 100, p90: Math.round(p90 * 100) / 100, cut: cuts.length > 0 };
 }
 
+// ── Camera drift (docs/ux/46 §6.4): from the picture itself, so it works without a face ──
+// Frames every 0.25 s as 192×108 grey; each pair is matched by a scale about the centre and a
+// shift (coarse at half size, then fine), and the scales are chained. → zoom of the last frame
+// against the first (0.56 = the picture shrank to 56 %: the camera pulled back 44 %).
+export const DRIFT_W = 192;
+export const DRIFT_H = 108;
+function half(img, w, h) {
+  const w2 = w >> 1; const h2 = h >> 1; const o = new Float32Array(w2 * h2);
+  for (let y = 0; y < h2; y += 1) for (let x = 0; x < w2; x += 1) {
+    const i = 2 * y * w + 2 * x; o[y * w2 + x] = (img[i] + img[i + 1] + img[i + w] + img[i + w + 1]) / 4;
+  }
+  return o;
+}
+// Mean |B − A warped| over the central part: B(p) ≈ A(c + (p − c) / s − t).
+function cost(A, B, w, h, s, tx, ty) {
+  const cx = w / 2; const cy = h / 2; let sum = 0; let n = 0;
+  const x0 = Math.round(w * 0.15); const x1 = Math.round(w * 0.85); const y0 = Math.round(h * 0.15); const y1 = Math.round(h * 0.85);
+  for (let y = y0; y < y1; y += 1) {
+    const sy = cy + (y - cy) / s - ty; const iy = Math.floor(sy); if (iy < 0 || iy >= h - 1) continue; const fy = sy - iy;
+    for (let x = x0; x < x1; x += 1) {
+      const sx = cx + (x - cx) / s - tx; const ix = Math.floor(sx); if (ix < 0 || ix >= w - 1) continue; const fx = sx - ix;
+      const i = iy * w + ix;
+      const a = (A[i] * (1 - fx) + A[i + 1] * fx) * (1 - fy) + (A[i + w] * (1 - fx) + A[i + w + 1] * fx) * fy;
+      sum += Math.abs(B[y * w + x] - a); n += 1;
+    }
+  }
+  return n ? sum / n : Infinity;
+}
+export function pairZoom(A, B, w = DRIFT_W, h = DRIFT_H) {
+  const a2 = half(A, w, h); const b2 = half(B, w, h); const w2 = w >> 1; const h2 = h >> 1;
+  let best = { c: Infinity, s: 1, tx: 0, ty: 0 };
+  for (let s = 0.86; s <= 1.1401; s += 0.02) for (let ty = -4; ty <= 4; ty += 1) for (let tx = -4; tx <= 4; tx += 1) {
+    const c = cost(a2, b2, w2, h2, s, tx, ty); if (c < best.c) best = { c, s, tx, ty };
+  }
+  const fine = { c: Infinity, s: best.s, tx: best.tx * 2, ty: best.ty * 2 };
+  const A1 = Float32Array.from(A); const B1 = Float32Array.from(B);
+  for (let s = best.s - 0.02; s <= best.s + 0.0201; s += 0.004) for (let ty = best.ty * 2 - 2; ty <= best.ty * 2 + 2; ty += 1) for (let tx = best.tx * 2 - 2; tx <= best.tx * 2 + 2; tx += 1) {
+    const c = cost(A1, B1, w, h, s, tx, ty); if (c < fine.c) Object.assign(fine, { c, s, tx, ty });
+  }
+  return fine.s;
+}
+// buf: n frames of 192×108 grey → { zoom, steps } (zoom of the last frame against the first).
+export function driftZoom(buf, { w = DRIFT_W, h = DRIFT_H } = {}) {
+  const size = w * h; const n = Math.floor(buf.length / size);
+  if (n < 2) return { zoom: 1, steps: 0 };
+  let zoom = 1;
+  for (let i = 1; i < n; i += 1) zoom *= pairZoom(buf.subarray((i - 1) * size, i * size), buf.subarray(i * size, (i + 1) * size), w, h);
+  return { zoom: Math.round(zoom * 1000) / 1000, steps: n - 1 };
+}
+export const DRIFT_MIN = 0.15; // "more than 15 %" (docs/ux/44 b)
+
+// ── Shot size from the face (docs/ux/46 §6.4: only when a face is found) ──
+// YuNet's box is the face without hair. Fitted on 136 measured frames (REPORT-shot-size, stages
+// 13–20): head units from the top of the head to the bottom edge = 0.591 × face units + 0.493
+// (median error 0.06). The cut points are those of the shot-size report.
+export function shotFromFace(faceTop, faceH, frameH) {
+  const u = 0.591 * ((frameH - faceTop) / faceH) + 0.493;
+  const id = u <= 1.4 ? 'face' : u <= 2.4 ? 'head-shoulders' : u <= 3.3 ? 'waist' : u <= 5.9 ? 'knees' : 'full';
+  return { id, headUnits: Math.round(u * 100) / 100 };
+}
+
 // Generated clips are seconds long; anything over this is not checked (its frames would not fit).
 export const CUT_MAX_SECONDS = 120;
 
@@ -283,26 +344,54 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
   // can't be read. `background`: the backlog of older videos waits in its own line, one at a
   // time, so a new clip is never held up behind it.
   let backlogChain = Promise.resolve();
+  const ffRaw = (args, cap) => new Promise((resolve) => {
+    const p = spawn('nice', ['-n', '10', ffmpegPath, '-hide_banner', '-loglevel', 'error', '-threads', '1', ...args, 'pipe:1'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const parts = []; let bytes = 0; let over = false;
+    const timer = setTimeout(() => p.kill('SIGKILL'), 30_000);
+    p.stdout.on('data', (c) => { bytes += c.length; if (bytes <= cap) parts.push(c); else if (!over) { over = true; p.kill('SIGKILL'); } });
+    p.on('error', () => { clearTimeout(timer); resolve(null); });
+    p.on('close', (code) => { clearTimeout(timer); resolve(code === 0 && !over ? Buffer.concat(parts) : null); });
+  });
+  // v3: cuts, camera drift (picture scale), shot size from the face (first, middle, last frame).
   async function scanVideo(file) {
     const info = await videoInfo(file);
-    if (info?.duration > CUT_MAX_SECONDS) return { v: 2, cut: null, cuts: [], skipped: 'long' };
-    const buf = await new Promise((resolve) => {
-      const p = spawn('nice', ['-n', '10', ffmpegPath, '-hide_banner', '-loglevel', 'error', '-threads', '1', '-i', file, '-an',
-        '-vf', `scale=${CUT_W}:${CUT_H}:flags=area,format=gray`, '-f', 'rawvideo', 'pipe:1'], { stdio: ['ignore', 'pipe', 'ignore'] });
-      const parts = [];
-      let bytes = 0;
-      let over = false;
-      const timer = setTimeout(() => p.kill('SIGKILL'), 30_000);
-      p.stdout.on('data', (c) => { bytes += c.length; if (bytes <= 64 * 1024 * 1024) parts.push(c); else if (!over) { over = true; p.kill('SIGKILL'); } });
-      p.on('error', () => { clearTimeout(timer); resolve(null); });
-      p.on('close', (code) => { clearTimeout(timer); resolve(code === 0 && !over ? Buffer.concat(parts) : null); });
-    });
+    if (info?.duration > CUT_MAX_SECONDS) return { v: 3, cut: null, cuts: [], skipped: 'long' };
+    const buf = await ffRaw(['-i', file, '-an', '-vf', `scale=${CUT_W}:${CUT_H}:flags=area,format=gray`, '-f', 'rawvideo'], 64 * 1024 * 1024);
     if (!buf) return null;
     const r = cutScore(buf);
     if (r.frames < 3) return null;
     const fps = info?.duration ? r.frames / info.duration : 24;
     const cuts = r.cuts.map((frame) => ({ at: Math.round((frame / fps) * 10) / 10, frame }));
-    return { v: 2, cut: cuts[0] || null, cuts };
+    const out = { v: 3, cut: cuts[0] || null, cuts, drift: null, shot: null };
+    // Drift: meaningless across a cut (another camera position), so only without one.
+    if (!cuts.length) {
+      const g = await ffRaw(['-i', file, '-an', '-vf', `fps=4,scale=${DRIFT_W}:${DRIFT_H}:flags=area,format=gray`, '-f', 'rawvideo'], 8 * 1024 * 1024);
+      if (g) {
+        const d = driftZoom(g);
+        out.drift = { zoom: d.zoom };
+        if (Math.abs(d.zoom - 1) > DRIFT_MIN) out.drift.move = d.zoom < 1 ? 'pull' : 'push';
+      }
+    }
+    // Shot size: the face on the first, middle and last frame (the median of what is found).
+    try {
+      const pick = [0, Math.floor(r.frames / 2), r.frames - 1];
+      const rgb = await ffRaw(['-i', file, '-an', '-vf', `select=${pick.map((n) => `eq(n\\,${n})`).join('+')},scale=640:-2:flags=area`, '-vsync', '0', '-pix_fmt', 'rgb24', '-f', 'rawvideo'], 8 * 1024 * 1024);
+      const fw = 640; const guess = info?.width && info?.height ? Math.round((640 * info.height) / info.width) : 360;
+      const fh = [0, -1, 1, -2, 2].map((d) => guess + d).find((hh) => hh > 0 && rgb && rgb.length % (fw * hh * 3) === 0 && rgb.length / (fw * hh * 3) <= 3);
+      if (rgb && fh && fh <= 640) {
+        const { detectFaces } = await import('./faces.js');
+        const units = [];
+        for (let k = 0; k * fw * fh * 3 < rgb.length && k < 3; k += 1) {
+          const faces = await detectFaces(rgb.subarray(k * fw * fh * 3, (k + 1) * fw * fh * 3), fw, fh);
+          if (faces[0]) units.push(shotFromFace(faces[0].y, faces[0].h, fh));
+        }
+        if (units.length) {
+          units.sort((a, b) => a.headUnits - b.headUnits);
+          out.shot = units[Math.floor(units.length / 2)];
+        }
+      }
+    } catch (error) { log?.warn?.(`shot check ${path.basename(file)}: ${error.message}`); }
+    return out;
   }
   function checkVideo(file, { background = false } = {}) {
     if (!VIDEO_EXT.test(file) && !/\.webm$/i.test(file)) return Promise.resolve(null);

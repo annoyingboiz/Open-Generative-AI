@@ -86,8 +86,24 @@ export function checkBadges(item) {
   const cuts = Array.isArray(c?.cuts) && c.cuts.length ? c.cuts : c?.cut ? [c.cut] : [];
   const at = cuts.map((x) => Number(x.at)).filter(Number.isFinite);
   if (at.length) {
-    out.push({ id: "cut", text: at.length === 1 ? `Cut at ${at[0].toFixed(1)} s` : `${at.length} cuts: ${at.map((t) => `${t.toFixed(1)} s`).join(", ")}`,
+    out.push({ id: "cut", tile: true, text: at.length === 1 ? `Cut at ${at[0].toFixed(1)} s` : `${at.length} cuts: ${at.map((t) => `${t.toFixed(1)} s`).join(", ")}`,
       note: `The clip jumps to another camera position ${at.length === 1 ? "here" : "at these moments"}, although it was asked as one continuous shot.` });
+  }
+  // Camera drift from the picture's scale (docs/ux/44 b, 46 §6.4): more than 15 % first to last frame.
+  const z = Number(c?.drift?.zoom);
+  if (c?.drift?.move && Number.isFinite(z)) {
+    const pct = Math.round(Math.abs(z - 1) * 100);
+    out.push(c.drift.move === "pull"
+      ? { id: "drift", tile: true, text: `Camera pulls back ${pct} %`, note: "The picture gets smaller during the clip, as if the camera moved away, although no move was asked for." }
+      : { id: "drift", tile: true, text: `Camera pushes in ${pct} %`, note: "The picture gets larger during the clip, as if the camera moved closer, although no move was asked for." });
+  }
+  // Measured shot size, only when a face was found (docs/ux/44 c): a target, not a guarantee.
+  const SHOT_NAMES = { full: "full body", knees: "knees up", waist: "waist up", "head-shoulders": "head and shoulders", face: "face" };
+  if (c?.shot?.id && SHOT_NAMES[c.shot.id]) {
+    const differs = c.shot.asked && c.shot.asked !== c.shot.id && SHOT_NAMES[c.shot.asked];
+    // On the tile only when the prompt asked for a shot size (our FRAMING was sent); always in the viewer.
+    out.push({ id: "shot", text: `Came out: ${SHOT_NAMES[c.shot.id]}${differs ? ` · asked for ${SHOT_NAMES[c.shot.asked]}` : ""}`, quiet: !differs, tile: Boolean(c.shot.asked),
+      note: differs ? "The model framed the shot differently from the shot size in the prompt. Shot size is a target, not a guarantee." : "Measured from the face in the picture." });
   }
   return out;
 }

@@ -4,7 +4,10 @@ ENV NODE_ENV=production
 # ffmpeg: the first frame of a video for grid previews.
 RUN apk add --no-cache ffmpeg
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+RUN npm ci --omit=dev --no-audit --no-fund \
+  # onnxruntime-web (face check, docs/ux/46 §6.4): Node needs one build of the engine; the browser, WebGPU and
+  # debug builds are 125 MB more.
+  && find node_modules/onnxruntime-web/dist -type f ! -name 'ort.node.min.mjs' ! -name 'ort.node.min.js' ! -name 'ort-wasm-simd-threaded.wasm' ! -name 'ort-wasm-simd-threaded.mjs' -delete
 COPY src ./src
 COPY assets ./assets
 RUN mkdir -p /data && chown node:node /data

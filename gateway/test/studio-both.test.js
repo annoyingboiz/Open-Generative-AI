@@ -41,3 +41,18 @@ test('check badges: a cut shows its time; nothing else shows yet', async () => {
   assert.deepEqual(checkBadges({ status: 'completed', url: 'x', checks: { v: 1, cut: null } }), []);
   assert.deepEqual(checkBadges({ status: 'completed', url: 'x' }), []);
 });
+
+test('check badges v3: drift over 15 %, measured shot size with and without a request', async () => {
+  const { checkBadges } = await import('../../packages/studio/src/components/studio/actions.js');
+  const b = (checks) => checkBadges({ status: 'completed', url: 'x', checks });
+  assert.deepEqual(b({ v: 3, cuts: [], drift: { zoom: 0.56, move: 'pull' } }).map((x) => x.text), ['Camera pulls back 44 %']);
+  assert.deepEqual(b({ v: 3, cuts: [], drift: { zoom: 1.3, move: 'push' } }).map((x) => x.text), ['Camera pushes in 30 %']);
+  assert.deepEqual(b({ v: 3, cuts: [], drift: { zoom: 1.05 } }), []);
+  const asked = b({ v: 3, cuts: [], shot: { id: 'knees', asked: 'waist' } })[0];
+  assert.equal(asked.text, 'Came out: knees up · asked for waist up');
+  assert.equal(asked.tile, true); assert.equal(asked.quiet, false);
+  const same = b({ v: 3, cuts: [], shot: { id: 'waist', asked: 'waist' } })[0];
+  assert.equal(same.text, 'Came out: waist up'); assert.equal(same.quiet, true);
+  const none = b({ v: 3, cuts: [], shot: { id: 'face' } })[0];
+  assert.equal(none.tile, false, 'no request: viewer only');
+});

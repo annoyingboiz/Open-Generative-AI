@@ -301,10 +301,10 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
       {done && (item.studio === "upscale" || duration > 0) && (
         <span className={cn("pointer-events-none absolute bottom-2 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium tabular-nums text-overlay-foreground transition-opacity duration-state", selecting ? "left-2" : "right-2")}>{item.studio === "upscale" ? "Upscaled" : fmtDur(duration)}</span>
       )}
-      {done && !selecting && checkBadges(item).length > 0 && (
-        <span className="absolute bottom-2 left-2 flex items-center gap-1 transition-[bottom] duration-state group-hover:bottom-11 group-focus-within:bottom-11">
-          {checkBadges(item).map((b) => <span key={b.id} title={b.note} className="flex items-center gap-1 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground"><span className="h-1.5 w-1.5 rounded-full bg-warning" />{b.text}</span>)}
-          {act.again && item.meta?.entryKey && item.mine !== false && (
+      {done && !selecting && checkBadges(item).some((b) => b.tile) && (
+        <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-1 transition-[bottom] duration-state group-hover:bottom-11 group-focus-within:bottom-11">
+          {checkBadges(item).filter((b) => b.tile).map((b) => <span key={b.id} title={b.note} className="flex items-center gap-1 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground">{!b.quiet && <span className="h-1.5 w-1.5 rounded-full bg-warning" />}{b.text}</span>)}
+          {act.again && item.meta?.entryKey && item.mine !== false && checkBadges(item).some((b) => b.tile && !b.quiet) && (
             <button type="button" onClick={(e) => { e.stopPropagation(); act.again(item); }}
               className="rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground opacity-0 transition-opacity duration-state hover:bg-overlay/80 group-hover:opacity-100 focus:opacity-100">Retry</button>
           )}

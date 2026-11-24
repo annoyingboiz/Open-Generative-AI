@@ -95,6 +95,34 @@ function probe(file, ffprobePath) {
   });
 }
 
+// ── Cut check (docs/ux/44, decision b) ──────────────────────────────────────
+// A hard cut inside a clip made as "one continuous shot". The clip is read as small grey
+// frames (96×54) and neighbouring frames are compared. Measured on 37 clips
+// (REPORT-shot-size.md): the two real cuts jump by 45–56, everything else stays at 5 or
+// below; a cut is also far above the next-largest change in its clip (34–188×, others ≤1.5×).
+export const CUT_W = 96;
+export const CUT_H = 54;
+export const CUT_MIN = 8;
+export const CUT_RATIO = 4;
+// frames: Uint8Array of n×96×54 grey pixels → { frames, at_frame, max, second, cut }.
+export function cutScore(buf, { w = CUT_W, h = CUT_H } = {}) {
+  const size = w * h;
+  const n = Math.floor(buf.length / size);
+  if (n < 3) return { frames: n, cut: false };
+  let max = 0;
+  let second = 0;
+  let at = 0;
+  for (let i = 1; i < n; i += 1) {
+    let sum = 0;
+    const a = (i - 1) * size;
+    const b = i * size;
+    for (let k = 0; k < size; k += 1) sum += Math.abs(buf[b + k] - buf[a + k]);
+    const d = sum / size;
+    if (d > max) { second = max; max = d; at = i; } else if (d > second) second = d;
+  }
+  return { frames: n, at_frame: at, max: Math.round(max * 100) / 100, second: Math.round(second * 100) / 100, cut: max > CUT_MIN && max >= CUT_RATIO * Math.max(second, 0.01) };
+}
+
 export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath = 'ffprobe' }) {
   const dir = path.join(dataDir, 'thumbs'); // pruned with the previews: an unused copy is made again on demand
   fs.mkdirSync(dir, { recursive: true });
@@ -235,5 +263,32 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
     const out = playbackPath(file);
     return out && /^[0-9a-f]{16}$/.test(String(key)) && path.basename(out).startsWith(key) && fs.existsSync(out) ? out : null;
   }
-  return { prepare, playbackFor, playbackKey, playbackByKey, stripFor, isHeavy, videoInfo };
+  // → { v, cut: null | { at: seconds, frame } } for a finished video; null when it can't be read.
+  // One at a time, low priority: a 4–10 s clip takes well under a second.
+  let checkChain = Promise.resolve();
+  function checkVideo(file) {
+    if (!VIDEO_EXT.test(file) && !/\.webm$/i.test(file)) return Promise.resolve(null);
+    const job = checkChain.then(async () => {
+      const info = await videoInfo(file);
+      const buf = await new Promise((resolve) => {
+        const p = spawn('nice', ['-n', '10', ffmpegPath, '-hide_banner', '-loglevel', 'error', '-threads', '1', '-i', file, '-an',
+          '-vf', `scale=${CUT_W}:${CUT_H}:flags=area,format=gray`, '-f', 'rawvideo', 'pipe:1'], { stdio: ['ignore', 'pipe', 'ignore'] });
+        const parts = [];
+        let bytes = 0;
+        const timer = setTimeout(() => p.kill('SIGKILL'), 60_000);
+        p.stdout.on('data', (c) => { if (bytes < 64 * 1024 * 1024) { parts.push(c); bytes += c.length; } });
+        p.on('error', () => { clearTimeout(timer); resolve(null); });
+        p.on('close', (code) => { clearTimeout(timer); resolve(code === 0 ? Buffer.concat(parts) : null); });
+      });
+      if (!buf) return null;
+      const r = cutScore(buf);
+      if (r.frames < 3) return null;
+      const fps = info?.duration ? r.frames / info.duration : 24;
+      return { v: 1, cut: r.cut ? { at: Math.round((r.at_frame / fps) * 10) / 10, frame: r.at_frame } : null };
+    });
+    checkChain = job.catch(() => {});
+    return job.catch((error) => { log?.warn?.(`cut check ${path.basename(file)}: ${error.message}`); return null; });
+  }
+
+  return { prepare, playbackFor, playbackKey, playbackByKey, stripFor, isHeavy, videoInfo, checkVideo };
 }

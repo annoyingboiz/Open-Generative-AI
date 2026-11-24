@@ -24,7 +24,7 @@ import { groupsFor, groupItems, addToGroup, removeFromGroup, GROUPS } from "./st
 import ModelMenu from "./studio/ModelMenu.jsx";
 import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList, PickerHereContext, pickerStartFor } from "./studio/Library.jsx";
-import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory } from "./studio/actions.js";
+import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory, checkBadges } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
 import { useReshoot, ReshootBlock, PhoneRatioHint, MISMATCH_TEXT } from "./studio/Reshoot.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
@@ -300,6 +300,15 @@ function Tile({ item, items, width, height, onMeasure, sel, act, isNew, markSeen
       {badge && !selecting && <span className="pointer-events-none absolute left-2 top-2">{badge}</span>}
       {done && (item.studio === "upscale" || duration > 0) && (
         <span className={cn("pointer-events-none absolute bottom-2 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium tabular-nums text-overlay-foreground transition-opacity duration-state", selecting ? "left-2" : "right-2")}>{item.studio === "upscale" ? "Upscaled" : fmtDur(duration)}</span>
+      )}
+      {done && !selecting && checkBadges(item).length > 0 && (
+        <span className="absolute bottom-2 left-2 flex items-center gap-1">
+          {checkBadges(item).map((b) => <span key={b.id} title={b.note} className="flex items-center gap-1 rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground"><span className="h-1.5 w-1.5 rounded-full bg-warning" />{b.text}</span>)}
+          {act.again && item.meta?.entryKey && item.mine !== false && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); act.again(item); }}
+              className="rounded-xs bg-overlay/60 px-1.5 text-xs font-medium leading-5 text-overlay-foreground opacity-0 transition-opacity duration-state hover:bg-overlay/80 group-hover:opacity-100 focus:opacity-100">Retry</button>
+          )}
+        </span>
       )}
       {done && item.kind === "video" && progress > 0 && <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-overlay-foreground/20"><span className="block h-full bg-signal" style={{ width: `${progress * 100}%` }} /></span>}
       {selecting && done && (
@@ -1307,6 +1316,12 @@ export default function DzStudio(props) {
     },
     reuse: (it) => { engine.reuse(it); focusPrompt(); },
     editPrompt: (it) => { engine.reuse(it); focusPrompt(); },
+    // Retry next to a check badge (docs/ux/44): the clip is paid for and stays; the same
+    // settings go back into the composer and the user presses Generate (sees the price).
+    again: (it) => {
+      engine.reuse(it); focusPrompt();
+      notify({ type: "notice", title: "Retry", message: "The same settings are in the composer. Press Generate to make it again; this clip stays." });
+    },
     retry: async (it) => {
       try {
         await dzRetry(it.id);

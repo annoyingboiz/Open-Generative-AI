@@ -77,3 +77,14 @@ export function usualMinutes(items, item) {
   const mid = sorted[Math.floor(sorted.length / 2)];
   return Math.max(1, Math.round(mid / 60000));
 }
+
+// What the server measured on a finished video (docs/ux/44, decision b): flags, never a rejection.
+// → [{ id, text, note }]. Drift and the measured shot size join this list later.
+export function checkBadges(item) {
+  const c = item?.status === "completed" || item?.url ? item?.checks : null;
+  const out = [];
+  if (c?.cut && Number.isFinite(c.cut.at)) {
+    out.push({ id: "cut", text: `Cut at ${c.cut.at.toFixed(1)} s`, note: "The clip jumps to another camera position here, although it was asked as one continuous shot." });
+  }
+  return out;
+}

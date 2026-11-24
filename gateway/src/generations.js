@@ -54,6 +54,9 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     setFailedIfActive: db.prepare("UPDATE generations SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE id = ? AND status IN ('submitted', 'processing')"),
     pollRetry: db.prepare('UPDATE generations SET next_poll_at = ?, updated_at = ? WHERE id = ?'),
     setOutputs: db.prepare('UPDATE generations SET outputs_json = ?, updated_at = ? WHERE id = ?'),
+    // Finished videos made before the cut check (docs/ux/44 b), newest first; "nochecks" marks an unreadable one.
+    uncheckedVideos: db.prepare(`SELECT id, outputs_json FROM generations WHERE status = 'completed' AND kind = 'video' AND purged_at IS NULL
+      AND outputs_json LIKE '[{%' AND outputs_json NOT LIKE '%"checks":%' ORDER BY created_at DESC LIMIT ?`),
     setCompleted: db.prepare("UPDATE generations SET status = 'completed', outputs_json = ?, settle_next_at = ?, updated_at = ?, completed_at = ? WHERE id = ?"),
     settleDue: db.prepare('SELECT * FROM generations WHERE settle_next_at IS NOT NULL AND settle_next_at <= ? ORDER BY settle_next_at LIMIT 10'),
     settleLater: db.prepare('UPDATE generations SET settle_attempts = settle_attempts + 1, settle_next_at = ? WHERE id = ?'),
@@ -286,6 +289,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       if (!media) return;
       for (const f of saved) {
         try { if (await media.prepare(f.path)) f.bytes = fs.statSync(f.path).size; } catch (error) { log?.warn(`prepare ${row.id}: ${error.message}`); }
+        // Cut check (docs/ux/44 b): flagged on the tile, never rejected or hidden.
+        if (media.checkVideo && /^video\//.test(f.mime || '')) { const c = await media.checkVideo(f.path); if (c) f.checks = c; }
       }
     };
     // Fix-ups on the files before they show up (e.g. the sound back into an
@@ -400,6 +405,27 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     q.staleSubmitting.run(now(), now(), now() - 10 * 60_000);
   }
 
+  // Videos finished before the cut check existed get it in the background, a few at a time.
+  // The result is merged into the row as it is now (a texture re-render may have changed it).
+  async function checkBacklog(limit = 4) {
+    if (!media?.checkVideo) return 0;
+    let n = 0;
+    for (const row of q.uncheckedVideos.all(limit)) {
+      const first = JSON.parse(row.outputs_json || '[]')[0];
+      if (!first?.path) continue;
+      // The clean original when a texture filter made a new file (its grain and flicker are not cuts).
+      const src = first.clean && fs.existsSync(first.clean) ? first.clean : first.path;
+      const c = (fs.existsSync(src) ? await media.checkVideo(src) : null) || { v: 1, cut: null, unreadable: true };
+      const cur = q.byId.get(row.id);
+      const outs = cur ? JSON.parse(cur.outputs_json || '[]') : [];
+      if (!outs[0] || outs[0].path !== first.path || outs[0].checks) continue;
+      outs[0].checks = c;
+      q.setOutputs.run(JSON.stringify(outs), cur.updated_at, row.id); // updated_at kept: a measurement is not a change to the item
+      n += 1;
+    }
+    return n;
+  }
+
   // ── Read side (in the shape the studio expects) ───────────────
   // A video with the texture filter: its link carries the version, so a re-render is never served from a cache.
   const outputUrls = (row) => JSON.parse(row.outputs_json || '[]').map((o, i) => `/media/g/${row.id}/${i}${o.tex ? `-t${o.tex.v}` : ''}.${o.ext}`);
@@ -440,6 +466,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       url: outputs[0] || null,
       outputs,
       texture: textureState(row),
+      // What the server measured on the finished video (docs/ux/44 b): { cut: { at } | null }.
+      checks: row.status === 'completed' ? JSON.parse(row.outputs_json || '[]')[0]?.checks || null : null,
       prompt: row.prompt,
       model: row.endpoint,
       provider: row.provider,
@@ -854,9 +882,11 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
         timer = setInterval(tick, 2000);
         timer.unref?.();
         setInterval(purgeTrash, 3_600_000).unref?.();
+        if (media?.checkVideo) setInterval(() => { checkBacklog().catch((error) => log?.warn(`cut check backlog: ${error.message}`)); }, 20_000).unref?.();
       }
     },
     stop() { clearInterval(timer); timer = null; },
     tick,
+    checkBacklog,
   };
 }

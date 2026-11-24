@@ -19,6 +19,7 @@ import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
 import { dzLibrary } from "../../dzLibrary.js";
 import { TextureControl } from "./Texture.jsx";
+import { checkBadges } from "./actions.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
@@ -610,6 +611,19 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
                     </button>
                   ))}
                 </div>
+              </section>
+            )}
+            {checkBadges(item).length > 0 && (
+              <section>
+                <Overline className="mb-2 block">Checked after generation</Overline>
+                {checkBadges(item).map((b) => (
+                  <div key={b.id} className="flex items-start gap-2 text-sm">
+                    <span className="mt-[7px] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-warning" />
+                    <span><span className="font-semibold">{b.text}.</span> <span className="text-muted-foreground">{b.note}</span>
+                      {act.again && meta.entryKey && item.mine !== false && <button type="button" onClick={() => { onClose(); act.again(item); }} className="ml-1.5 font-semibold underline decoration-input underline-offset-[3px]">Retry</button>}
+                    </span>
+                  </div>
+                ))}
               </section>
             )}
             {isVideo && item.texture && item.mine !== false && (

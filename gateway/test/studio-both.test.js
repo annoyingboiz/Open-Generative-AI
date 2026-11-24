@@ -34,3 +34,10 @@ test('a failed task with an automatic refund does not read as an empty account',
   assert.match(plainError('Credit balance exhausted.'), /out of credit/);
   assert.match(plainError('The task failed because the account has insufficient balance.'), /out of credit/);
 });
+
+test('check badges: a cut shows its time; nothing else shows yet', async () => {
+  const { checkBadges } = await import('../../packages/studio/src/components/studio/actions.js');
+  assert.deepEqual(checkBadges({ status: 'completed', url: 'x', checks: { v: 1, cut: { at: 2, frame: 49 } } }).map((b) => b.text), ['Cut at 2.0 s']);
+  assert.deepEqual(checkBadges({ status: 'completed', url: 'x', checks: { v: 1, cut: null } }), []);
+  assert.deepEqual(checkBadges({ status: 'completed', url: 'x' }), []);
+});

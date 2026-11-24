@@ -810,15 +810,16 @@ export function lookOf(camera, move = "") {
   return look.on || look.filter || look.era || look.light || look.move ? look : null;
 }
 // Short label for buttons ("35mm Film · 50mm · f/2").
-export function lookLabel(camera) {
+export function lookLabel(camera, { shotForFocal = false } = {}) {
   const d = lookData();
   const name = (list, id) => (list || []).find((x) => x.id === id)?.label || "";
+  const focalText = (mm) => (shotForFocal ? (d.focalShots?.[mm] ? `shot size: ${d.focalShots[mm]}` : "") : `${mm}mm`);
   if (camera?.auto) {
     const a = autoLook(camera);
-    return [name(d.cameras, a.camera), name(d.lenses, a.lens), a.focal ? `${a.focal}mm` : "", a.aperture || "", name(d.palettes, a.palette), name(d.lights, a.light), name(d.genres, a.genre), name(d.eras, a.era)].filter(Boolean).join(" · ");
+    return [name(d.cameras, a.camera), name(d.lenses, a.lens), a.focal ? focalText(a.focal) : "", a.aperture || "", name(d.palettes, a.palette), name(d.lights, a.light), name(d.genres, a.genre), name(d.eras, a.era)].filter(Boolean).join(" · ");
   }
   const c = normalizeCamera(camera);
-  return [c.on ? name(d.cameras, c.camera) : "", c.on ? `${c.focal}mm` : "", c.on ? c.aperture : "", name(d.eras, c.era), name(d.lights, c.light)].filter(Boolean).join(" · ");
+  return [c.on ? name(d.cameras, c.camera) : "", c.on ? focalText(c.focal) : "", c.on ? c.aperture : "", name(d.eras, c.era), name(d.lights, c.light)].filter(Boolean).join(" · ");
 }
 
 // The final prompt: what the user wrote, plus camera look and movement.

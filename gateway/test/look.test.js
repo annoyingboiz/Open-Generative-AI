@@ -38,8 +38,14 @@ test('look: each model gets it in its place', () => {
   assert.match(json.Lighting, /^mine; warm low golden-hour/, 'added to the user key, any letter case');
   assert.match(json.camera, /35mm motion-picture/);
   const sj = JSON.parse(renderLook('{"subject":"woman","camera":"medium shot"}', look, { kind: 'video', memo: memos.seedance }));
-  assert.match(sj.camera, /^medium shot; Shot on 35mm motion-picture.*dolly-in/, 'a JSON prompt keeps its keys (no block mode)');
-  assert.match(sj.style, /golden-hour.*1970s/);
+  // Block mode with a JSON prompt: the blocks as keys, added to the user's own; no "lens", no mm.
+  assert.match(sj.camera, /^medium shot; Slow dolly-in toward the subject\.$/);
+  assert.match(sj.style, /Oval out-of-focus highlights.*Warm low golden-hour.*1970s period/);
+  assert.match(sj.tech, /^Shot on 35mm motion-picture colour negative film\./);
+  assert.doesNotMatch(JSON.stringify(sj), /\blens\b|50\s?mm/i);
+  const kj = JSON.parse(renderLook('{"scene":"woman"}', look, { kind: 'video', memo: memos.kling, framed: true }));
+  assert.match(kj.tech, /^Keep the focus, colour and image texture of the first frame/);
+  assert.doesNotMatch(JSON.stringify(kj), /\blens\b|framing|golden/i);
   const vj = JSON.parse(renderLook('{"subject":"woman"}', look, { kind: 'video', memo: memos.veo }));
   assert.ok(vj.cinematography && vj.style, 'Veo JSON keys');
   const vo = JSON.parse(renderLook('{"Cinematography":{"shot":"wide"}}', look, { kind: 'video', memo: memos.veo }));
@@ -222,4 +228,12 @@ test('location view prompt for a shot size (server part of docs/ux/44 a)', async
   assert.match(w, /^The same place as image 1, photographed from a closer camera position\..*No people\..*waist-up.*central half.*no background blur\. Photorealistic\.$/);
   assert.match(locationViewPrompt('close-up'), /face close-up/, 'storyboard names map too');
   for (const s of ['knees', 'waist', 'head-shoulders', 'face']) assert.doesNotMatch(locationViewPrompt(s), /\bmetres?\b|\blens\b|\d+\s?mm/);
+});
+
+test('block mode: title-case labels end a block; a shot size alone is enough for FRAMING', async () => {
+  const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
+  const p = renderLook('Camera: locked.\nSound: room tone.', cleanLook({ move: 'orbit' }), { kind: 'video', memo: memos.kling });
+  assert.match(p, /^Camera: locked\. Camera orbits around the subject in a smooth arc\.\nSound: room tone\.$/);
+  assert.match(renderLook('A woman.', cleanLook({ shot: 'close-up' }), { kind: 'video', memo: memos.kling }), /^FRAMING Face close-up\./m);
+  assert.equal(renderLook('A cup.', cleanLook({ shot: 'insert' }), { kind: 'video', memo: memos.kling }), 'A cup.');
 });

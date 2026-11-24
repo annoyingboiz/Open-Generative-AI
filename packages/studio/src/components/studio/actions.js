@@ -83,8 +83,11 @@ export function usualMinutes(items, item) {
 export function checkBadges(item) {
   const c = item?.status === "completed" || item?.url ? item?.checks : null;
   const out = [];
-  if (c?.cut && Number.isFinite(c.cut.at)) {
-    out.push({ id: "cut", text: `Cut at ${c.cut.at.toFixed(1)} s`, note: "The clip jumps to another camera position here, although it was asked as one continuous shot." });
+  const cuts = Array.isArray(c?.cuts) && c.cuts.length ? c.cuts : c?.cut ? [c.cut] : [];
+  const at = cuts.map((x) => Number(x.at)).filter(Number.isFinite);
+  if (at.length) {
+    out.push({ id: "cut", text: at.length === 1 ? `Cut at ${at[0].toFixed(1)} s` : `${at.length} cuts: ${at.map((t) => `${t.toFixed(1)} s`).join(", ")}`,
+      note: `The clip jumps to another camera position ${at.length === 1 ? "here" : "at these moments"}, although it was asked as one continuous shot.` });
   }
   return out;
 }

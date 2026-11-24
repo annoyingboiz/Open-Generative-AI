@@ -951,7 +951,8 @@ export async function buildApp(config, { logger = true } = {}) {
   // the user approves the picture before it is used as a reference. No UI yet.
   app.post('/dz/api/location-view/request', async (req, reply) => {
     const url = String(req.body?.url || '');
-    if (!/^\/media\/[ug]\/[\w./-]+$/.test(url) || !generations.mediaFileForUrl(req.user, url)) return reply.code(400).send({ error: 'Choose a location picture.' });
+    const file = /^\/media\/[ug]\/[\w./-]+$/.test(url) ? generations.mediaFileForUrl(req.user, url) : null;
+    if (!file || !/^image\//.test(file.mime || '')) return reply.code(400).send({ error: 'Choose a location picture.' });
     const shot = shotOf(req.body?.shot);
     if (shot === 'full') return { shot, view: null, note: 'Full body needs no new view: the location picture itself is the background.' };
     const prompt = locationViewPrompt(shot);

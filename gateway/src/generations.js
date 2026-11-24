@@ -290,7 +290,8 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       for (const f of saved) {
         try { if (await media.prepare(f.path)) f.bytes = fs.statSync(f.path).size; } catch (error) { log?.warn(`prepare ${row.id}: ${error.message}`); }
         // Cut check (docs/ux/44 b): flagged on the tile, never rejected or hidden.
-        if (media.checkVideo && /^video\//.test(f.mime || '')) { const c = await media.checkVideo(f.path); if (c) f.checks = c; }
+        // On the clean original when a texture filter made a new file (its grain and flicker are not cuts).
+        if (media.checkVideo && /^video\//.test(f.mime || '')) { const c = await media.checkVideo(f.clean && fs.existsSync(f.clean) ? f.clean : f.path); if (c) f.checks = c; }
       }
     };
     // Fix-ups on the files before they show up (e.g. the sound back into an
@@ -407,15 +408,20 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
 
   // Videos finished before the cut check existed get it in the background, a few at a time.
   // The result is merged into the row as it is now (a texture re-render may have changed it).
+  let backlogBusy = false;
   async function checkBacklog(limit = 4) {
-    if (!media?.checkVideo) return 0;
+    if (!media?.checkVideo || backlogBusy) return 0;
+    backlogBusy = true;
+    try { return await checkBacklogOnce(limit); } finally { backlogBusy = false; }
+  }
+  async function checkBacklogOnce(limit) {
     let n = 0;
     for (const row of q.uncheckedVideos.all(limit)) {
       const first = JSON.parse(row.outputs_json || '[]')[0];
       if (!first?.path) continue;
       // The clean original when a texture filter made a new file (its grain and flicker are not cuts).
       const src = first.clean && fs.existsSync(first.clean) ? first.clean : first.path;
-      const c = (fs.existsSync(src) ? await media.checkVideo(src) : null) || { v: 1, cut: null, unreadable: true };
+      const c = (fs.existsSync(src) ? await media.checkVideo(src, { background: true }) : null) || { v: 2, cut: null, cuts: [], unreadable: true };
       const cur = q.byId.get(row.id);
       const outs = cur ? JSON.parse(cur.outputs_json || '[]') : [];
       if (!outs[0] || outs[0].path !== first.path || outs[0].checks) continue;

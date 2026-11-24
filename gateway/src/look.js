@@ -117,7 +117,8 @@ export const SHOTS = [
 // Focal length → default shot size (doc 42, answer 3). A shot size set elsewhere wins.
 export const FOCAL_SHOT = { 12: 'full', 16: 'full', 24: 'full', 35: 'knees', 50: 'waist', 85: 'head-shoulders', 135: 'face', 200: 'face' };
 // Storyboard shot sizes (dzDirector.js SHOT_SIZES) → ours.
-const STORYBOARD_SHOT = { 'extreme wide': 'full', wide: 'full', full: 'full', 'medium wide': 'knees', medium: 'waist', 'medium close-up': 'head-shoulders', 'close-up': 'face', 'extreme close-up': 'face' };
+const STORYBOARD_SHOT = { 'extreme wide': 'full', wide: 'full', full: 'full', 'medium wide': 'knees', medium: 'waist', 'medium close-up': 'head-shoulders', 'close-up': 'face', 'extreme close-up': 'face', insert: null };
+// "insert" (a detail of an object) has no person to frame: no FRAMING.
 export const shotOf = (v) => SHOTS.find((x) => x.id === v)?.id || STORYBOARD_SHOT[String(v || '').toLowerCase()] || null;
 // FOCUS from the aperture: only the three steps tested in stage 9 (REPORT7 §8). The middle
 // step is measurably softer but looks almost like the deep one; Kling may move closer on the shallow one.
@@ -399,7 +400,7 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
   // words. It describes motion; without it the clip stands still like a tripod shot.
   const cam = look.on !== false ? cameraOf(look.camera) : null;
   const motionLine = fromFrame && cam?.behaviour ? dot(cam.behaviour) : '';
-  const parts = [w.camera, w.move, w.light, w.palette, w.genre, w.era, keepLine, camText];
+  const parts = [w.camera, w.move, w.light, w.palette, w.genre, w.era, keepLine, camText, look.shot];
   if (!parts.some(Boolean)) return raw;
   const camOne = camText ? [camText.lead, camText.header?.[1], ...(camText.lines || []).map(([, t]) => t), camText.sentence].filter(Boolean).join(' ') : '';
 
@@ -412,6 +413,7 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
       const value = JSON.parse(text);
       if (Array.isArray(value) || !value || typeof value !== 'object') return raw; // a list has no place for keys
       const out = { ...value };
+      const labeledJson = rule.place === 'labeled' && kind === 'video';
       const put = (name, t) => {
         if (!t) return;
         const k = Object.keys(out).find((x) => x.toLowerCase() === name.toLowerCase());
@@ -421,6 +423,13 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
         else if (out[k] && typeof out[k] === 'object') out[k] = { ...out[k], look: [out[k].look, t].filter((x) => typeof x === 'string' && x).join('; ') };
         else out[k] = t;
       };
+      // Block mode (Kling, Seedance): the same blocks as for plain text, as keys; no "lens", no mm.
+      if (labeledJson) {
+        const blocks = lookBlocks(look, { family, framing: rule.framing, framed: fromFrame, ratio, words: w, motionLine });
+        const hasFraming = Object.keys(out).some((x) => x.toLowerCase() === 'framing');
+        for (const label of BLOCK_ORDER) if (blocks[label] && !(label === 'FRAMING' && hasFraming)) put(label.toLowerCase(), blocks[label]);
+        return JSON.stringify(out, null, 2);
+      }
       if (rule.camera) put(rule.camera, [camOne, w.camera, w.move].filter(Boolean).join(', '));
       else { put('camera', [camOne, w.camera].filter(Boolean).join(' ')); put('camera_movement', w.move); }
       if (rule.style) put(rule.style, [w.light, w.palette, w.genre, w.era].filter(Boolean).join(', '));
@@ -560,7 +569,7 @@ function intoLabeledBlock(text, label, t) {
   if (at < 0) return null;
   let end = at;
   for (let i = at + 1; i < lines.length; i += 1) {
-    if (!lines[i].trim() || /^\s*[A-Z]{3,}\b(?:\s|:|$)/.test(lines[i])) break;
+    if (!lines[i].trim() || /^\s*(?:[A-Z]{3,}\b(?:\s|:|$)|\[?[A-Z][A-Za-z]*(?: [A-Za-z]+){0,2}\]?\s*:)/.test(lines[i])) break;
     end = i;
   }
   const line = lines[end].replace(/\s+$/, '');

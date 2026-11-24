@@ -588,13 +588,16 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
       : (has("reference") || elementsUsed ? "image with reference images / editing" : "text-to-image");
     const audio = [values.generate_audio, values.audio, values.sound, values.enable_audio].find((v) => typeof v === "boolean");
     const moveLabel = kind === "video" && move ? lookData().moves.find((m) => m.id === move)?.label : "";
-    const cameraText = [lookLabel(camera), moveLabel ? `move: ${moveLabel}` : ""].filter(Boolean).join(", ");
+    // Kling and Seedance get no focal mm value (doc 42, answer 3): Adapt is told the shot size instead.
+    const noMm = /^(kling|seedance)/i.test(String(entry?.family || ""));
+    const label = noMm ? lookLabel(camera, { shotForFocal: true }) : lookLabel(camera);
+    const cameraText = [label, moveLabel ? `move: ${moveLabel}` : ""].filter(Boolean).join(", ");
     return {
       mode, duration: values.duration, aspect: values.aspect_ratio || values.ratio, audio,
       camera: cameraText || undefined,
       tags: tags.filter((t) => !(t.kind === "file" && t.unused)).map((t) => ({ tag: t.tag, label: `${t.label || t.kind}${t.to ? ` (sent to the model as ${t.to})` : ""}` })),
     };
-  }, [merged.attached, kind, values, camera, move, tags, elementsUsed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [merged.attached, kind, values, camera, move, tags, elementsUsed, entry?.family]); // eslint-disable-line react-hooks/exhaustive-deps
   // Adapt keeps its results per composer (package 07, F2): a tool tab, or one shot / group.
   // A composer that is emptied starts with no result.
   const adaptScope = editor ? `editor:${target?.key || mode}` : target ? `board:${target.board || ""}:${target.kind || ""}:${target.id || ""}` : `tab:${mode}`;

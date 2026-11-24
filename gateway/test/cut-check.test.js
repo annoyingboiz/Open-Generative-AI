@@ -19,8 +19,12 @@ function clip(n, { at = -1, jump = 0, noise = 0.6 } = {}) {
 test('a hard cut is found at its frame; a slow drift or a steady clip is not a cut', () => {
   const cut = cutScore(clip(97, { at: 49, jump: 60 }));
   assert.equal(cut.cut, true);
-  assert.equal(cut.at_frame, 49);
-  assert.ok(cut.max > 8 && cut.max / cut.second > 4);
+  assert.deepEqual(cut.cuts, [49]);
+  assert.ok(cut.max > 8 && cut.max / cut.p90 > 4);
+  // Two cuts: both reported (the rule compares with the clip's usual change, not the second-largest).
+  const two = clip(97, { at: 49, jump: 60 });
+  for (let f = 73; f < 97; f += 1) for (let k = 0; k < size; k += 1) two[f * size + k] = (two[f * size + k] + 90) % 256;
+  assert.deepEqual(cutScore(two).cuts, [49, 73]);
   assert.equal(cutScore(clip(97)).cut, false);
   // A strong but even change on every frame (fast camera move): large, but not 4× the next one.
   assert.equal(cutScore(clip(97, { noise: 12 })).cut, false);

@@ -105,14 +105,15 @@ export const APERTURES = [
 ];
 
 // Block mode (docs/ux/43 §3, 44 §C): shot size for FRAMING. The wording states the target
-// itself through the frame edges (stage 13/15 wording, measured in REPORT-shot-size.md).
+// itself through the frame edges (stage 13/15 wording, measured in REPORT-shot-size.md). Nothing outside the
+// frame is named, not even as "outside the frame": it pulls the shot wider (docs/ux/46 §9, stages 21–22).
 // "knees" is untested. A target, not a guarantee: runs differ by about ×1.3.
 export const SHOTS = [
   { id: 'full', label: 'full body', framing: 'Full-body shot. Top edge of the frame just above the head, bottom edge just below the feet. The whole body from head to feet is visible, with floor under the feet.' },
-  { id: 'knees', label: 'knees up', framing: 'Knees-up shot. Top edge of the frame just above the head, bottom edge at the knees. Lower legs and feet are outside the frame.' },
-  { id: 'waist', label: 'waist up', framing: 'Waist-up shot. Top edge of the frame just above the head, bottom edge at the waist. Hips, legs and feet are outside the frame.' },
-  { id: 'head-shoulders', label: 'head and shoulders', framing: 'Head-and-shoulders shot. Top edge of the frame just above the head, bottom edge at mid-chest. Waist, hands and legs are outside the frame.' },
-  { id: 'face', label: 'face', framing: 'Face close-up. Top edge of the frame at the hairline, bottom edge just below the chin. The face fills the frame; shoulders are outside the frame.' },
+  { id: 'knees', label: 'knees up', framing: 'Knees-up shot. Top edge of the frame just above the head, bottom edge at the knees.' },
+  { id: 'waist', label: 'waist up', framing: 'Waist-up shot. Top edge of the frame just above the head, bottom edge at the waist. The head is in the upper third of the frame.' },
+  { id: 'head-shoulders', label: 'head and shoulders', framing: 'Head-and-shoulders shot. Top edge of the frame just above the head, bottom edge at mid-chest.' },
+  { id: 'face', label: 'face', framing: 'Face close-up. Top edge of the frame at the hairline, bottom edge just below the chin. The face fills the frame.' },
 ];
 export const HOLD_CLOSE = 'The camera never moves back and never zooms out. The framing is identical from the first frame to the last.';
 // Focal length → default shot size (doc 42, answer 3). A shot size set elsewhere wins.

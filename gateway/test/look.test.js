@@ -249,6 +249,8 @@ test('close shots hold the framing (docs/ux/46 §9)', async () => {
   const k = (l) => renderLook('A woman.', cleanLook(l), { kind: 'video', memo: memos.kling });
   assert.match(k({ on: true, focal: 135 }), /^CAMERA The camera never moves back and never zooms out\. The framing is identical from the first frame to the last\.$/m);
   assert.doesNotMatch(k({ on: true, focal: 85, move: 'push-in' }), /never moves back/, 'not with a camera move');
+  assert.doesNotMatch(renderLook('CAMERA Slow dolly out.', cleanLook({ on: true, focal: 135 }), { kind: 'video', memo: memos.kling }), /never moves back/, 'not with the user\'s own CAMERA');
+  assert.doesNotMatch(renderLook('{"camera":"slow dolly out"}', cleanLook({ on: true, focal: 135 }), { kind: 'video', memo: memos.kling }), /never moves back/);
   assert.doesNotMatch(renderLook('FRAMING Medium shot.', cleanLook({ on: true, focal: 135 }), { kind: 'video', memo: memos.kling }), /never moves back/, 'not with the user\'s own FRAMING');
   assert.doesNotMatch(k({ on: true, focal: 50 }), /never moves back/);
 });

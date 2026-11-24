@@ -433,7 +433,9 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
       if (labeledJson) {
         const blocks = lookBlocks(look, { family, framing: rule.framing, framed: fromFrame, ratio, words: w, motionLine });
         const hasFraming = Object.keys(out).some((x) => x.toLowerCase() === 'framing');
-        if (hasFraming && blocks.CAMERA) blocks.CAMERA = blocks.CAMERA.replace(HOLD_CLOSE, '').replace(/\s{2,}/g, ' ').trim();
+        // Their own framing or camera: the "hold the close framing" line could contradict it.
+        const hasCamera = Object.keys(value).some((x) => x.toLowerCase() === 'camera');
+        if ((hasFraming || hasCamera) && blocks.CAMERA) blocks.CAMERA = blocks.CAMERA.replace(HOLD_CLOSE, '').replace(/\s{2,}/g, ' ').trim();
         for (const label of BLOCK_ORDER) if (blocks[label] && !(label === 'FRAMING' && hasFraming)) put(label.toLowerCase(), blocks[label]);
         // Phone from a start frame (docs/ux/46 §7): a new camera key goes first, before the user's keys.
         const camKey = Object.keys(out).find((x) => x.toLowerCase() === 'camera');
@@ -569,6 +571,8 @@ function labeledLook(text, look, opts) {
   const blocks = lookBlocks(look, opts);
   let out = String(text || '').replace(/\s+$/, '');
   const extra = [];
+  // The user's own CAMERA block (e.g. "Slow dolly out"): our "never moves back" line could contradict it.
+  if (blocks.CAMERA && intoLabeledBlock(out, 'CAMERA', '') !== null) blocks.CAMERA = blocks.CAMERA.replace(HOLD_CLOSE, '').replace(/\s{2,}/g, ' ').trim();
   // From a start frame with Phone: CAMERA goes first (before the user's text) unless the user has one.
   if (opts.framed && blocks.CAMERA?.startsWith('Handheld.') && intoLabeledBlock(out, 'CAMERA', '') === null) {
     out = `CAMERA ${blocks.CAMERA}${out ? `\n\n${out}` : ''}`;

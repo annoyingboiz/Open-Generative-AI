@@ -59,7 +59,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     setOutputs: db.prepare('UPDATE generations SET outputs_json = ?, updated_at = ? WHERE id = ?'),
     // Finished videos made before the cut check (docs/ux/44 b), newest first; "nochecks" marks an unreadable one.
     // Pictures made from a source picture that have no colour check yet (docs/ux/research: the badge).
-    uncheckedColour: db.prepare(`SELECT * FROM generations WHERE status = 'completed' AND kind = 'image' AND purged_at IS NULL AND deleted_at IS NULL
+    uncheckedColour: db.prepare(`SELECT * FROM generations INDEXED BY generations_recent_images WHERE status = 'completed' AND kind = 'image' AND purged_at IS NULL AND deleted_at IS NULL
       AND created_at > ? AND json_extract(outputs_json, '$[0].path') IS NOT NULL AND json_extract(outputs_json, '$[0].checks.colour') IS NULL
       AND (json_extract(meta_json, '$.attached.edit[0].url') IS NOT NULL OR json_extract(meta_json, '$.editor.source') IS NOT NULL OR json_extract(meta_json, '$.canvas.source') IS NOT NULL)
       ORDER BY created_at DESC LIMIT ?`),

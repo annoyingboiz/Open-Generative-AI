@@ -1248,7 +1248,8 @@ export async function buildApp(config, { logger = true } = {}) {
     if (colourChecking) { colourAgain = true; return; }
     colourChecking = true;
     try {
-      for (const row of generations.uncheckedColour(7 * 86_400_000, 3)) {
+      // Batches of 3 until none is left (at most 60 a run); each measurement yields to other work.
+      for (let run = 0, batch = generations.uncheckedColour(7 * 86_400_000, 3); batch.length && run < 20; run += 1, batch = generations.uncheckedColour(7 * 86_400_000, 3)) for (const row of batch) {
         const owner = { id: row.user_id, role: 'user' };
         let o = null;
         try { o = JSON.parse(row.outputs_json || '[]')[0] || null; } catch { o = null; }

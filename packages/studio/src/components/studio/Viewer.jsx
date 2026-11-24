@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   X, CaretLeft, CaretRight, Heart, DownloadSimple, DotsThree, Copy, ArrowCounterClockwise, ImageSquare, PencilSimple, VideoCamera,
-  ArrowsOutSimple, ArrowLineRight, Flag, Play, Pause, Repeat, SpeakerHigh, SpeakerSlash, CornersOut, FrameCorners, Trash, Shapes, PencilLine, Check, Plus, Minus,
+  ArrowsOutSimple, ArrowLineRight, Drop, Flag, Play, Pause, Repeat, SpeakerHigh, SpeakerSlash, CornersOut, FrameCorners, Trash, Shapes, PencilLine, Check, Plus, Minus,
 } from "@phosphor-icons/react";
 import { DropdownMenuParts, Spinner, cn } from "../../ui/index.js";
 import { dzThumb, dzPlay, dzStrip } from "../../api.js";
@@ -19,7 +19,7 @@ import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
 import { dzLibrary } from "../../dzLibrary.js";
 import { TextureControl } from "./Texture.jsx";
-import { checkBadges } from "./actions.js";
+import { checkBadges, hasColourSource, colourLine } from "./actions.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
@@ -90,8 +90,8 @@ const Btn = ({ label, children, onClick, on }) => (
   <button type="button" aria-label={label} title={label} onClick={onClick}
     className={cn("flex h-8 min-w-8 items-center justify-center rounded-md px-1.5 text-overlay-foreground/80 transition-colors duration-state hover:bg-overlay-foreground/10 hover:text-overlay-foreground", on && "text-overlay-foreground")}>{children}</button>
 );
-const Action = ({ icon: Icon, children, onClick }) => (
-  <button type="button" onClick={onClick} className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent"><Icon size={16} />{children}</button>
+const Action = ({ icon: Icon, children, onClick, disabled = false, title }) => (
+  <button type="button" onClick={onClick} disabled={disabled} title={title} className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-40"><Icon size={16} />{children}</button>
 );
 const IconBtn = ({ label, children, onClick }) => (
   <button type="button" aria-label={label} title={label} onClick={onClick} className="flex h-8 w-8 items-center justify-center rounded-md text-overlay-foreground/80 hover:bg-overlay-foreground/10 hover:text-overlay-foreground">{children}</button>
@@ -428,9 +428,32 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
   const fresh0 = given ? items.find((i) => i.id === given.id) || given : null;
   // A texture re-render (handoff 17, §6) shows here at once, before the gallery reloads.
   const [texHere, setTexHere] = useState({});
-  const fresh = fresh0 && texHere[fresh0.id] && fresh0.url !== texHere[fresh0.id].url ? { ...fresh0, url: texHere[fresh0.id].url, outputs: [texHere[fresh0.id].url], texture: texHere[fresh0.id].texture } : fresh0;
+  // A colour match or a switch back to the original (color-fidelity-answers.md) shows here at once too.
+  const [colHere, setColHere] = useState({});
+  const fresh1 = fresh0 && texHere[fresh0.id] && fresh0.url !== texHere[fresh0.id].url ? { ...fresh0, url: texHere[fresh0.id].url, outputs: [texHere[fresh0.id].url], texture: texHere[fresh0.id].texture } : fresh0;
+  const fresh = fresh1 && colHere[fresh1.id]?.url && fresh1.url !== colHere[fresh1.id].url ? { ...fresh1, url: colHere[fresh1.id].url, outputs: [colHere[fresh1.id].url] } : fresh1;
   const item = fresh && likedHere[fresh.id] !== undefined ? { ...fresh, liked: likedHere[fresh.id] } : fresh;
   const [texBusy, setTexBusy] = useState(false);
+  // "Match colour to source": what the server says about this picture (state, reason, offsets).
+  const [colour, setColour] = useState(null);
+  const [colBusy, setColBusy] = useState(false);
+  const colourable = hasColourSource(given ? items.find((i) => i.id === given.id) || given : null);
+  useEffect(() => {
+    setColour(null);
+    if (!given || !colourable) return undefined;
+    let alive = true;
+    dzLibrary.colour(given.id).then((r) => { if (alive) setColour(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [given?.id, colourable]); // eslint-disable-line react-hooks/exhaustive-deps
+  const setColourTo = (to) => {
+    if (!given || colBusy) return;
+    const id = given.id;
+    setColBusy(true);
+    dzLibrary.setColour(id, to)
+      .then((r) => { setColour(r); if (r.url) setColHere((m) => ({ ...m, [id]: { url: r.url } })); if (r.state === "no-shift") notify({ type: "notice", title: "No colour shift found", message: "The picture already matches its source. Nothing was changed." }); })
+      .catch((e) => notify({ type: "error", title: "Colour not matched", message: e?.message || "Try again." }))
+      .finally(() => setColBusy(false));
+  };
   const retexture = (v) => {
     if (!item || texBusy) return;
     const id = item.id;
@@ -494,8 +517,12 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
   const prompt = meta.prompt || item.prompt || "";
   const attachedList = Object.entries(meta.attached || {}).flatMap(([role, files]) => (Array.isArray(files) ? files.map((f) => ({ ...f, role })) : []));
   const refTitle = isVideo && attachedList.every((f) => ["first", "middle", "last"].includes(f.role)) ? "Frames" : "References";
-  const versions = list.filter((i) => i.id !== item.id && (i.meta?.frameOf === item.id || i.meta?.upscale?.source === item.url || i.params?.image_url === item.url
-    || (i.meta?.attached?.edit || []).some((f) => f.url === item.url)));
+  // Children by the item's own link without its version part (-t<n> / -c<n>), so a texture or colour
+  // version does not hide the edits made from it.
+  const baseOf = (u) => String(u || "").replace(/^(\/media\/g\/[A-Za-z0-9_-]+\/\d+)(?:-[tc]\d+)?\.[a-z0-9]+.*$/i, "$1");
+  const same = (u) => Boolean(u) && baseOf(u) === baseOf(item.url);
+  const versions = list.filter((i) => i.id !== item.id && (i.meta?.frameOf === item.id || same(i.meta?.upscale?.source) || same(i.params?.image_url)
+    || (i.meta?.attached?.edit || []).some((f) => same(f.url))));
   const ratio = item.params?.aspect_ratio || item.params?.ratio || meta.values?.aspect_ratio || meta.values?.ratio;
   const res = item.params?.resolution || meta.values?.resolution || item.params?.quality;
   const duration = Number(item.params?.duration || meta.values?.duration) || 0;
@@ -626,6 +653,15 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
                 ))}
               </section>
             )}
+            {colour && ["matched", "original", "unavailable", "no-shift"].includes(colour.state) && (
+              <section>
+                <Overline className="mb-2 block">Colour</Overline>
+                <p className="text-sm">{colourLine(colour)}
+                  {colour.state === "matched" && item.mine !== false && <button type="button" disabled={colBusy} onClick={() => setColourTo("original")} className="ml-1.5 font-semibold underline decoration-input underline-offset-[3px] disabled:opacity-40">Show original</button>}
+                  {colour.state === "original" && item.mine !== false && <button type="button" disabled={colBusy} onClick={() => setColourTo("matched")} className="ml-1.5 font-semibold underline decoration-input underline-offset-[3px] disabled:opacity-40">Use matched colour</button>}
+                </p>
+              </section>
+            )}
             {isVideo && item.texture && item.mine !== false && (
               <section>
                 <TextureControl preset={item.texture.preset} value={{ on: item.texture.on, strength: item.texture.strength }} busy={texBusy} onCommit={retexture} />
@@ -653,6 +689,9 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
                       <Action icon={PencilSimple} onClick={() => { onClose(); act.edit(item); }}>Edit</Action>
                       <Action icon={VideoCamera} onClick={() => { onClose(); act.makeVideo(item); }}>Make video</Action>
                       {canUp && <Action icon={ArrowsOutSimple} onClick={() => { onClose(); dzOpenUpscale(item.url); }}>Upscale</Action>}
+                      {colourable && item.mine !== false && colour && ["ready", "no-shift", "unavailable"].includes(colour.state) && (
+                        <Action icon={colBusy ? Spinner : Drop} disabled={colBusy || colour.state === "unavailable"} title={colour.state === "unavailable" ? colour.reason : "Remove a colour cast the edit added, measured against the first picture of the chain. The original stays in Versions."} onClick={() => setColourTo("match")}>Match colour to source</Action>
+                      )}
                     </>
                   )}
                 </div>
@@ -661,7 +700,16 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
           </div>
         ) : (
           <div className="flex flex-col gap-2 p-5">
-            {versions.length === 0 && <p className="text-sm text-muted-foreground">No edits, upscales or saved frames of this one in view yet.</p>}
+            {colour && ["matched", "original"].includes(colour.state) && [["matched", "Matched colour", `${colour.words} removed`], ["original", "Provider original", "As the model returned it"]].map(([st, label, sub]) => (
+              <button key={st} type="button" disabled={colBusy || colour.state === st || item.mine === false} onClick={() => setColourTo(st)} className="flex items-center gap-3 rounded-md p-1.5 text-left hover:bg-accent disabled:hover:bg-transparent">
+                <span className={cn("flex h-12 w-12 items-center justify-center rounded-md border", colour.state === st ? "border-foreground" : "border-border")}><Drop size={18} /></span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{label}{colour.state === st ? " · shown" : ""}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{sub}</span>
+                </span>
+              </button>
+            ))}
+            {versions.length === 0 && !(colour && ["matched", "original"].includes(colour.state)) && <p className="text-sm text-muted-foreground">No edits, upscales or saved frames of this one in view yet.</p>}
             {versions.map((v) => (
               <button key={v.id} type="button" onClick={() => onMove(v)} className="flex items-center gap-3 rounded-md p-1.5 text-left hover:bg-accent">
                 <img src={dzThumb(v.url, 96)} alt="" className="h-12 w-12 rounded-md object-cover" />

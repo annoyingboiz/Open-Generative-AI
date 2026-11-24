@@ -19,7 +19,9 @@ const MAX_POLL_ERRORS = 40;
 const SETTLE_DELAYS_MS = [5_000, 20_000, 60_000, 180_000, 900_000];
 const TRASH_KEEP_MS = 7 * 86_400_000;
 // /media/g/<id>/<index>[-t<version>].<ext>: the version changes when the texture filter re-renders a video.
-const LOCAL_MEDIA_RE = /^(?:https?:\/\/[^/]+)?\/media\/(u|g)\/([A-Za-z0-9_-]+)(?:\.[a-z0-9]+)?(?:\/(\d+)(?:-t\d+)?(?:\.[a-z0-9]+)?)?(?:[?#].*)?$/i;
+const LOCAL_MEDIA_RE = /^(?:https?:\/\/[^/]+)?\/media\/(u|g)\/([A-Za-z0-9_-]+)(?:\.[a-z0-9]+)?(?:\/(\d+)(?:-[tc]\d+)?(?:\.[a-z0-9]+)?)?(?:[?#].*)?$/i;
+// The version part of a result's link: a texture re-render (-t<n>) or a colour match (-c<n>).
+export const versionSuffix = (o) => (o?.tex ? `-t${o.tex.v}` : o?.color ? `-c${o.color.v}` : '');
 
 // Money in messages: cents, below 10 cents up to 3 decimals ($0.26, $0.035).
 const money = (usd) => (usd >= 0.1 ? usd.toFixed(2) : usd.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
@@ -462,7 +464,14 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
 
   // ── Read side (in the shape the studio expects) ───────────────
   // A video with the texture filter: its link carries the version, so a re-render is never served from a cache.
-  const outputUrls = (row) => JSON.parse(row.outputs_json || '[]').map((o, i) => `/media/g/${row.id}/${i}${o.tex ? `-t${o.tex.v}` : ''}.${o.ext}`);
+  // A colour-matched picture too (-c<n>): switching between matched and original changes the bytes under it.
+  const outputUrls = (row) => JSON.parse(row.outputs_json || '[]').map((o, i) => `/media/g/${row.id}/${i}${versionSuffix(o)}.${o.ext}`);
+  // "Match colour to source" (color-match.js): { on, v, anchor, da, db, dL, shift, coverage, algo } of output 0.
+  const colourState = (row) => {
+    const o = row.status === 'completed' ? JSON.parse(row.outputs_json || '[]')[0] : null;
+    const c = o?.color;
+    return c ? { on: c.on !== false, anchor: c.anchor, da: c.da, db: c.db, dL: c.dL, shift: c.shift, coverage: c.coverage, algo: c.algo } : null;
+  };
   // The texture filter's state of a finished video (handoff 17, §6), for the Texture control.
   const textureState = (row) => {
     const o = row.status === 'completed' ? JSON.parse(row.outputs_json || '[]')[0] : null;
@@ -500,6 +509,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       url: outputs[0] || null,
       outputs,
       texture: textureState(row),
+      colour: colourState(row),
       // What the server measured on the finished video (docs/ux/44 b): { cut: { at } | null }.
       checks: row.status === 'completed' ? JSON.parse(row.outputs_json || '[]')[0]?.checks || null : null,
       prompt: row.prompt,
@@ -771,7 +781,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     const row = q.byId.get(id);
     if (!canSee(user, row)) return null;
     const o = JSON.parse(row.outputs_json || '[]')[Number(index) || 0];
-    return o ? { path: o.path, mime: o.mime || mimeForExt(o.ext), ...(o.tex ? { tex: o.tex.v, ext: o.ext } : {}) } : null;
+    return o ? { path: o.path, mime: o.mime || mimeForExt(o.ext), ...(o.tex ? { tex: o.tex.v, ext: o.ext } : {}), ...(o.color ? { colorV: o.color.v, ext: o.ext } : {}) } : null;
   }
 
   // The user's own uploaded files (newest first), e.g. to pick one to upscale.

@@ -37,6 +37,7 @@ import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
 import { cleanLook, renderLook, lookHints, lookAdvice, cameraOf, textureOf, reshootPrompt, isCanvasCamera, CANVAS_SCALE } from './look.js';
 import { makeCanvas, uprightPng, centreSsim, compositeBack, DRIFT_SSIM } from './canvas.js';
 import { applyTexture, TEXTURE_DEFAULT } from './texture.js';
+import { measureColorShift, applyColorShift, sourceUrlOf, shiftWords, matchedExt, COLOR_ALGO, COLOR_MIN_SHIFT } from './color-match.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
 import { EditError, sweepTemp, frameOf } from './edit.js';
 import { storyboardPage } from './storyboard-print.js';
@@ -1176,6 +1177,131 @@ export async function buildApp(config, { logger = true } = {}) {
     } catch (error) { return sendGenError(reply, error); }
   });
 
+  // "Match colour to source" (docs/ux/research/color-fidelity-answers.md, version 1): by button only.
+  // The colour anchor is the first picture of the edit chain; the provider's file stays next to the
+  // matched one and is one click away ("Show original"). Never a generation, never a charge.
+  const colourBusy = new Set();
+  const colourCache = new Map(); // `${id}|${raw}|${anchor}|${algo}` -> measurement
+  const COLOUR_REASON = {
+    missing: "Can't match: the source picture is missing.",
+    view: "Can't match: the picture has a different shape than its source.",
+    changed: "Can't match: the picture differs too much from its source.",
+    unreadable: "Can't match: a picture could not be read.",
+  };
+  const rawOf = (o) => (o?.color?.raw ? o.color.raw : o);
+  // Back along the chain to the first picture: { id, path } or { missing } or null (no source at all).
+  function colourAnchor(user, row) {
+    let meta = null;
+    try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
+    let url = sourceUrlOf(meta);
+    if (!url) return null;
+    const seen = new Set([row.id]);
+    for (let step = 0; step < 50; step += 1) {
+      const g = /^\/media\/g\/([A-Za-z0-9_-]+)/.exec(url);
+      if (!g) { // an upload: nothing before it
+        const f = generations.mediaFileForUrl(user, url);
+        return f?.path && fs.existsSync(f.path) ? { id: (/\/media\/u\/([A-Za-z0-9_-]+)/.exec(url) || [])[1] || url, path: f.path } : { missing: true };
+      }
+      if (seen.has(g[1])) return { missing: true };
+      seen.add(g[1]);
+      let parent;
+      try { parent = generations.visibleRow(user, g[1]); } catch { return { missing: true }; }
+      if (parent.status !== 'completed' || parent.deleted_at) return { missing: true };
+      let pm = null;
+      try { pm = parent.meta_json ? JSON.parse(parent.meta_json) : null; } catch { pm = null; }
+      const up = sourceUrlOf(pm);
+      if (!up) {
+        const o = rawOf(JSON.parse(parent.outputs_json || '[]')[0]);
+        return o?.path && fs.existsSync(o.path) ? { id: parent.id, path: o.path } : { missing: true };
+      }
+      url = up;
+    }
+    return { missing: true };
+  }
+  async function colourMeasure(user, row) {
+    const o = JSON.parse(row.outputs_json || '[]')[0];
+    const raw = rawOf(o);
+    if (!raw?.path || !/^image\//.test(raw.mime || '')) return { state: 'none' };
+    const anchor = colourAnchor(user, row);
+    if (!anchor) return { state: 'none' };
+    if (anchor.missing) return { state: 'unavailable', reason: COLOUR_REASON.missing };
+    const key = `${row.id}|${raw.path}|${anchor.path}|${COLOR_ALGO}`;
+    let m = colourCache.get(key);
+    if (!m) {
+      m = await measureColorShift(anchor.path, raw.path);
+      colourCache.set(key, m);
+      if (colourCache.size > 500) colourCache.delete(colourCache.keys().next().value);
+    }
+    const base = { anchor: anchor.id, anchorPath: anchor.path, ...m };
+    if (!m.ok) return { state: 'unavailable', reason: COLOUR_REASON[m.reason] || COLOUR_REASON.changed, ...base };
+    if (o.color) return { state: o.color.on !== false ? 'matched' : 'original', ...base, da: o.color.da, db: o.color.db, shift: o.color.shift };
+    if (m.shift < COLOR_MIN_SHIFT) return { state: 'no-shift', ...base };
+    return { state: 'ready', ...base };
+  }
+  const colourView = (c) => {
+    const { anchorPath: _p, ok: _o, ...rest } = c;
+    return { ...rest, ...(c.da != null ? { words: shiftWords(c.da, c.db) } : {}) };
+  };
+  app.get('/dz/api/generations/:id/colour', async (req, reply) => {
+    try {
+      const row = generations.visibleRow(req.user, req.params.id);
+      if (row.kind !== 'image' || row.status !== 'completed') return { state: 'none' };
+      return colourView(await colourMeasure(req.user, row));
+    } catch (error) { return sendGenError(reply, error); }
+  });
+  // { to: "match" | "original" | "matched" }
+  app.post('/dz/api/generations/:id/colour', async (req, reply) => {
+    const id = req.params.id;
+    try {
+      const row = generations.editableRow(req.user, id);
+      if (row.kind !== 'image' || row.status !== 'completed') return reply.code(409).send({ detail: 'Only a finished picture can be matched.' });
+      if (colourBusy.has(id)) return reply.code(409).send({ detail: 'Colour matching is still running.' });
+      const to = ['match', 'original', 'matched'].includes(req.body?.to) ? req.body.to : 'match';
+      const outputs = JSON.parse(row.outputs_json || '[]');
+      const o = outputs[0];
+      if (to !== 'match') {
+        if (!o?.color?.file) return reply.code(409).send({ detail: 'This picture has no matched colour version.' });
+        const on = to === 'matched';
+        if ((o.color.on !== false) === on) return { ...colourView(await colourMeasure(req.user, row)), url: generations.result(req.user, id).url };
+        const pick = on ? o.color.file : o.color.raw;
+        Object.assign(o, { path: pick.path, ext: pick.ext, mime: pick.mime, bytes: pick.bytes });
+        o.color = { ...o.color, on, v: (Number(o.color.v) || 1) + 1 };
+        if (!generations.setOutputs(id, outputs, row.outputs_json)) return reply.code(409).send({ detail: 'This picture changed meanwhile. Try again.' });
+        const fresh = generations.visibleRow(req.user, id);
+        return { ...colourView(await colourMeasure(req.user, fresh)), url: generations.result(req.user, id).url };
+      }
+      colourBusy.add(id);
+      try {
+        const m = await colourMeasure(req.user, row);
+        if (m.state === 'matched') return { ...colourView(m), url: generations.result(req.user, id).url };
+        if (m.state === 'original') return reply.code(409).send({ detail: 'Already matched: switch to it in Versions.' });
+        if (m.state === 'none') return reply.code(409).send({ detail: 'This picture was not made from a source picture.' });
+        if (m.state === 'unavailable') return reply.code(422).send({ detail: m.reason });
+        if (m.state === 'no-shift') return colourView(m);
+        const raw = { path: o.path, ext: o.ext, mime: o.mime, bytes: o.bytes };
+        const ext = matchedExt(raw.mime);
+        const file = raw.path.replace(/(\.[a-z0-9]+)$/i, `-c.${ext}`);
+        const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp.${ext}`;
+        let applied;
+        try {
+          applied = await applyColorShift(raw.path, tmp, m.da, m.db);
+          fs.renameSync(tmp, file);
+        } finally { fs.rmSync(tmp, { force: true }); }
+        const bytes = fs.statSync(file).size;
+        const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+        outputs[0] = { ...o, path: file, ext, mime, bytes,
+          color: { on: true, v: 1, raw, file: { path: file, ext, mime, bytes }, anchor: m.anchor, da: m.da, db: m.db, dL: m.dL, shift: m.shift, coverage: m.coverage, cells: m.cells, reducedShare: applied.reducedShare, algo: COLOR_ALGO, at: Date.now() } };
+        if (!generations.setOutputs(id, outputs, row.outputs_json)) {
+          fs.rmSync(file, { force: true });
+          return reply.code(409).send({ detail: 'This picture changed meanwhile. Try again.' });
+        }
+        app.log.info({ gen: id, anchor: m.anchor, da: m.da, db: m.db, coverage: m.coverage }, 'colour matched');
+        const fresh = generations.visibleRow(req.user, id);
+        return { ...colourView(await colourMeasure(req.user, fresh)), url: generations.result(req.user, id).url };
+      } finally { colourBusy.delete(id); }
+    } catch (error) { return sendGenError(reply, error); }
+  });
+
   // A frame of a video (package 03, §5–§7): { at: "first" | "last" | seconds, save }.
   // save: a new picture next to the video (marked New in the grid); otherwise an
   // upload, for the Start frame of the next video.
@@ -1605,6 +1731,13 @@ export async function buildApp(config, { logger = true } = {}) {
     if (!f) return reply.code(404).header('cache-control', 'no-store').send({ error: 'Not found' });
     // An older texture version: never other bytes under its link — sent on to the current one.
     const tv = /^\d+-t(\d+)\./.exec(req.params.file);
+    // The same for a colour-matched picture (-c<n>): an old link goes on to the current version.
+    const cv = /^\d+-c(\d+)\./.exec(req.params.file);
+    if ((cv && f.colorV && Number(cv[1]) !== Number(f.colorV)) || (cv && !f.colorV)) {
+      const q = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+      const n = Number.parseInt(req.params.file, 10) || 0;
+      return reply.code(302).header('cache-control', 'no-store').header('location', `/media/g/${req.params.id}/${n}${f.colorV ? `-c${f.colorV}` : ''}.${f.ext || req.params.file.split('.').pop()}${q}`).send();
+    }
     if (tv && f.tex && Number(tv[1]) !== Number(f.tex)) {
       const q = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
       return reply.code(302).header('cache-control', 'no-store').header('location', `/media/g/${req.params.id}/${Number.parseInt(req.params.file, 10) || 0}-t${f.tex}.${f.ext}${q}`).send();

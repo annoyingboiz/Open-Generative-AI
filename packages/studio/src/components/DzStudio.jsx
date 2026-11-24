@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, Minus, At, X, Check, Cube, Rectangle, Monitor, Clock, VideoCamera, Images, MagicWand, Camera, ArrowsOutCardinal, Palette, SlidersHorizontal,
-  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, CaretUp, Info, Warning, WarningCircle, ArrowsClockwise, ArrowElbowDownRight, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, PencilLine, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
+  Heart, DotsThree, ArrowsOut, ArrowSquareUp, DownloadSimple, Shapes, Trash, FolderSimple, Copy, UploadSimple, FilmSlate, ImageSquare, Flag, CaretDown, CaretUp, Info, Warning, WarningCircle, ArrowsClockwise, ArrowElbowDownRight, Drop, ArrowLineRight, ArrowsOutSimple, LockSimple, PencilSimple, PencilLine, ArrowRight, ArrowClockwise, ArrowCounterClockwise, FrameCorners, ArrowUUpLeft,
 } from "@phosphor-icons/react";
 import { dzThumb, dzPlay } from "../api.js";
 import { dzLibrary } from "../dzLibrary.js";
@@ -24,7 +24,7 @@ import { groupsFor, groupItems, addToGroup, removeFromGroup, GROUPS } from "./st
 import ModelMenu from "./studio/ModelMenu.jsx";
 import PromptEditor from "./studio/PromptEditor.jsx";
 import { LibraryWindow, FullList, PickerHereContext, pickerStartFor } from "./studio/Library.jsx";
-import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory, checkBadges } from "./studio/actions.js";
+import { dzRetry, dzFrame, useSeen, plainError, usualMinutes, refreshHistory, checkBadges, hasColourSource, colourLine } from "./studio/actions.js";
 import { CameraLookPanel, MovePanel, LookPanel, SettingsPanel, AdaptPanel } from "./studio/Panels.jsx";
 import { useReshoot, ReshootBlock, PhoneRatioHint, MISMATCH_TEXT } from "./studio/Reshoot.jsx";
 import { dzScrollBoxRef } from "../dzScroll.js";
@@ -194,6 +194,7 @@ function TileMenu({ item, act, open, setOpen, timeOf }) {
             <Row icon={ImageSquare} onSelect={() => act.useRef(item)}>Use as reference</Row>
             <Row icon={PencilSimple} onSelect={() => act.edit(item)}>Edit this picture</Row>
             <Row icon={VideoCamera} onSelect={() => act.makeVideo(item)}>Make video</Row>
+            {act.matchColour && hasColourSource(item) && !item.colour && item.mine !== false && <Row icon={Drop} onSelect={() => act.matchColour(item)}>Match colour to source</Row>}
           </>
         )}
         {canUp && <Row icon={ArrowSquareUp} onSelect={() => act.upscale(item)}>Upscale</Row>}
@@ -1292,6 +1293,10 @@ export default function DzStudio(props) {
     trash: (it) => history.trash(it.id).catch(fail("Trash")),
     trashStrict: (it) => history.trash(it.id),
     cancel: (it) => dzLibrary.cancel(it.id).catch(fail("Cancel")),
+    // "Match colour to source" from the tile menu: the answer as a notice (the viewer shows more).
+    matchColour: (it) => dzLibrary.setColour(it.id, "match")
+      .then((r) => notify({ type: "notice", title: r.state === "no-shift" ? "No colour shift found" : "Colour matched", message: colourLine(r) }))
+      .catch((e) => notify({ type: "error", title: "Colour not matched", message: e?.message || "Try again." })),
     useRef: addRef,
     // Working screen: Make a video switches this composer to Video with the picture in Start (package 05, §4.4).
     makeVideo: (it) => (mode === "create" ? (applyResult(it, "animate"), focusPrompt()) : target ? target.switchTo?.("video", { start: it.url }) : window.dispatchEvent(new CustomEvent(DZ_SEND_EVENT, { detail: { to: "video", url: it.url } }))),

@@ -15,6 +15,7 @@
 //             finishes (its target is in the job's meta), changed by
 //             approve / remove / add. Nothing is approved automatically.
 import { newId } from './storage.js';
+import { versionSuffix } from './generations.js';
 import { now } from './db.js';
 import fs from 'node:fs';
 import { cleanShot, DEFAULT_LOOK } from './director.js';
@@ -512,7 +513,7 @@ export function createStoryboards({ db, projects, generations, log }) {
     const files = outputs.map((o, i) => {
       const mime = String(o?.mime || '');
       if (!mime.startsWith('image/') && !mime.startsWith('video/')) return null;
-      return { url: `/media/g/${gen.id}/${i}${o.tex ? `-t${o.tex.v}` : ''}.${o.ext}`, key: mime.startsWith('video/') ? 'videos' : 'frames' };
+      return { url: `/media/g/${gen.id}/${i}${versionSuffix(o)}.${o.ext}`, key: mime.startsWith('video/') ? 'videos' : 'frames' };
     }).filter(Boolean);
     if (!files.length) return;
     changeMedia(row, t.id, (m) => {

@@ -34,6 +34,9 @@ export const dzLibrary = {
   async cancel(id) { const r = await call("POST", `/api/v1/predictions/${encodeURIComponent(id)}/cancel`); changed(); return r; },
   // Texture filter on a finished video (handoff 17, §6): re-rendered on the server, free.
   async texture(id, { on, strength }) { const r = await call("POST", `/dz/api/generations/${encodeURIComponent(id)}/texture`, { on, strength }); changed(); return r; },
+  // "Match colour to source" (docs/ux/research/color-fidelity-answers.md): free, by button.
+  colour(id) { return call("GET", `/dz/api/generations/${encodeURIComponent(id)}/colour`); },
+  async setColour(id, to) { const r = await call("POST", `/dz/api/generations/${encodeURIComponent(id)}/colour`, { to }); changed(); return r; },
   async restore(id) { const r = await call("POST", `/api/v1/predictions/${encodeURIComponent(id)}/restore`); changed(); return r; },
   // One action on many items: { action: move|copy|trash|restore|purge, ids, project?, folder? } → { done, failed }.
   async batch(action, ids, target = {}) {

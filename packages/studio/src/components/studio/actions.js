@@ -109,3 +109,21 @@ export function checkBadges(item) {
   }
   return out;
 }
+
+// A picture made from a source picture (Image to Edit, Advanced Editor base, canvas extension):
+// "Match colour to source" applies to it (docs/ux/research/color-fidelity-answers.md).
+export function hasColourSource(item) {
+  if (!item || item.kind !== "image" || item.status !== "completed") return false;
+  const m = item.meta || {};
+  const u = m.attached?.edit?.[0]?.url || m.editor?.source || m.canvas?.source;
+  return typeof u === "string" && /^\/media\/(g|u)\//.test(u);
+}
+// The server's answer as one line for the user.
+export function colourLine(r) {
+  if (!r) return "";
+  if (r.state === "matched") return `Colour matched to the source: ${r.words} removed.`;
+  if (r.state === "original") return `Showing the provider's original. Matched colour: ${r.words} removed.`;
+  if (r.state === "no-shift") return "No colour shift found.";
+  if (r.state === "unavailable") return r.reason || "Can't match this picture.";
+  return "";
+}

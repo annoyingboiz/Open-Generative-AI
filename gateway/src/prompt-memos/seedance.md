@@ -7,7 +7,8 @@ sources:
   - Seedance 2.5 Prompt Guide and User Guide (ByteDance / Volcengine / BytePlus)
   - https://kylon.io/blog/seedance-2-5-prompt-guide-2026 (summary of the official guides)
 blocks: [References, Subject, Action, Scene, Style, Camera, Sound]
-look: blocks
+look: labeled
+look_framing: false
 look_camera: Camera
 look_style: Style
 ---

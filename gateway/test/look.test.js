@@ -17,16 +17,20 @@ test('look: each model gets it in its place', () => {
   const veo = renderLook('A woman walks through a market', look, { kind: 'video', memo: memos.veo });
   assert.match(veo, /^Shot on 35mm motion-picture colour negative film.*not digitally sharp\. Anamorphic lens.*slow dolly-in toward the subject\. A woman/);
   assert.match(veo, /A woman walks through a market\. Lighting: warm low golden-hour/);
-  const seed = renderLook('Subject: a woman\nCamera: medium shot', look, { kind: 'video', memo: memos.seedance });
-  // Seedance (handoff 17, §7): the camera in [Overall style] with the fill-frame line; lens and move in Camera.
-  assert.match(seed, /^\[Overall style\] Shot on 35mm motion-picture.*fills the whole frame edge to edge, no black bars, no border, square corners\./);
-  assert.match(seed, /^Camera: medium shot; anamorphic lens.*slow dolly-in/m);
-  assert.match(seed, /^Style: warm low golden-hour.*1970s period/m);
+  // Block mode (docs/ux/43 §3, 44 §C): the user's text stays, the look below in labelled blocks.
+  const seed = renderLook('Subject: a woman\nCamera: medium shot', look, { kind: 'video', memo: memos.seedance, ratio: '16:9' });
+  assert.match(seed, /^Subject: a woman\nCamera: medium shot\. Slow dolly-in toward the subject\.$/m, 'the user\'s Camera: block gets the move');
+  assert.match(seed, /^FOCUS Subject critically sharp\./m);
+  assert.match(seed, /^STYLE Soft highlight roll-off.*Oval out-of-focus highlights, horizontal blue streak flares\. Warm low golden-hour.*1970s period/m);
+  assert.match(seed, /^TECH Shot on 35mm motion-picture colour negative film\. The picture fills the whole 16:9 frame edge to edge, no black bars, no border, square corners\.$/m);
+  assert.doesNotMatch(seed, /FRAMING/, 'Seedance: no FRAMING until its ladder is measured');
   const kling = renderLook('A woman walks.', look, { kind: 'video', memo: memos.kling });
-  assert.match(kling, /^A woman walks\.\n/);
-  assert.match(kling, /^Camera: anamorphic lens/m);
-  assert.match(kling, /^Visual style: Shot on 35mm motion-picture colour negative film with a spherical cinema lens\.$/m);
-  assert.match(kling, /^Camera tone: Soft highlight roll-off/m);
+  assert.match(kling, /^A woman walks\.\n\nFRAMING Waist-up shot\. Top edge of the frame just above the head, bottom edge at the waist\./);
+  assert.ok(kling.indexOf('FRAMING') < kling.indexOf('FOCUS') && kling.indexOf('FOCUS') < kling.indexOf('CAMERA') && kling.indexOf('CAMERA') < kling.indexOf('STYLE') && kling.indexOf('STYLE') < kling.indexOf('TECH'));
+  for (const p of [seed, kling]) {
+    const ours = p.replace(/^(Subject|Camera|A woman)[^\n]*\n?/gm, '');
+    assert.doesNotMatch(ours, /\blens\b|\b\d+\s?mm\b(?! motion-picture)/i, 'no "lens", no mm value (film gauge excepted)');
+  }
   const img = renderLook('A portrait', look, { kind: 'image', memo: memos['nano-banana'] });
   assert.match(img, /^A portrait\. Shot on 35mm motion-picture/);
   assert.doesNotMatch(img, /dolly/, 'no camera move for pictures');
@@ -34,7 +38,7 @@ test('look: each model gets it in its place', () => {
   assert.match(json.Lighting, /^mine; warm low golden-hour/, 'added to the user key, any letter case');
   assert.match(json.camera, /35mm motion-picture/);
   const sj = JSON.parse(renderLook('{"subject":"woman","camera":"medium shot"}', look, { kind: 'video', memo: memos.seedance }));
-  assert.match(sj.camera, /^medium shot; \[Overall style\]|^medium shot; Shot on 35mm motion-picture.*dolly-in/);
+  assert.match(sj.camera, /^medium shot; Shot on 35mm motion-picture.*dolly-in/, 'a JSON prompt keeps its keys (no block mode)');
   assert.match(sj.style, /golden-hour.*1970s/);
   const vj = JSON.parse(renderLook('{"subject":"woman"}', look, { kind: 'video', memo: memos.veo }));
   assert.ok(vj.cinematography && vj.style, 'Veo JSON keys');
@@ -95,17 +99,21 @@ test('palette and genre (Studio Look panel) are cleaned and written into the pro
 
 test('camera pipeline (handoff 17): start frame, old cameras, per-model words, no texture words', async () => {
   const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
-  const { CAMERAS, textureOf, KEEP_FRAME, reshootPrompt } = await import('../src/look.js');
+  const { CAMERAS, textureOf, KEEP_FRAME, KEEP_FRAME_BLOCKS, reshootPrompt } = await import('../src/look.js');
   const full = cleanLook({ on: true, camera: 'phone', lens: 'anamorphic', focal: 24, aperture: 'f/2', filter: 'diffusion', move: 'push-in', light: 'golden-hour' });
   // §4 rule 1: from a start frame no camera, lens or aperture words; the keep line; the move stays.
   for (const id of ['kling', 'seedance', 'wan', 'veo', 'minimax']) {
     const p = renderLook('A woman walks.', full, { kind: 'video', memo: memos[id], framed: true, ratio: '16:9' });
-    assert.ok(p.includes(KEEP_FRAME), id);
+    const blocks = id === 'kling' || id === 'seedance';
+    assert.ok(p.includes(blocks ? KEEP_FRAME_BLOCKS : KEEP_FRAME), id);
     assert.doesNotMatch(p, /smartphone|phone lens|anamorphic|24mm|f\/2|depth of field|Pro-Mist|Overall style|Visual style/i, id);
-    assert.match(p, id === 'kling' ? /very slight slow move closer/ : /push-in/, id);
-    // Doc 42, answer 1: Phone keeps its handheld behaviour line (motion, not look), before the keep line.
-    assert.match(p, /\nHandheld phone video - small natural hand shake.*No phone or other device is visible in the picture\.\n/, id);
+    assert.match(p, id === 'kling' ? /very slight slow move closer/i : /push-in/i, id);
+    // Doc 42, answer 1: Phone keeps its handheld behaviour line (motion, not look).
+    assert.match(p, blocks ? /^CAMERA .*Handheld phone video - small natural hand shake.*No phone or other device is visible in the picture\.$/m
+      : /\nHandheld phone video - small natural hand shake.*No phone or other device is visible in the picture\.\n/, id);
     assert.doesNotMatch(p, /continuous shot|Not cinematic|computational HDR/, id);
+    // Block mode from a start frame (doc 43 §3.5): only CAMERA and the keep line; no FRAMING, FOCUS, STYLE, light.
+    if (blocks) assert.doesNotMatch(p, /FRAMING|FOCUS|STYLE|golden-hour|\blens\b/, id);
   }
   // Another camera from a start frame: no behaviour line.
   assert.doesNotMatch(renderLook('A woman walks.', cleanLook({ on: true, camera: 'vhs' }), { kind: 'video', memo: memos.kling, framed: true }), /Handheld/);
@@ -123,16 +131,19 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
   // Kling: VHS and 8mm get colour and tone only, never the medium (it draws a 4:3 picture).
   for (const camera of ['vhs', 'super-8']) {
     const k = renderLook('A woman walks.', cleanLook({ on: true, camera }), { kind: 'video', memo: memos.kling });
-    assert.match(k, /^Camera tone: /m);
+    assert.match(k, /^STYLE /m);
+    assert.doesNotMatch(k, /^TECH /m);
     assert.doesNotMatch(k, /VHS|Super 8|home recording|home movie|sprocket/i);
   }
   const kp = renderLook('A woman walks.', cleanLook({ on: true, camera: 'phone' }), { kind: 'video', memo: memos.kling, ratio: '16:9' });
-  assert.match(kp, /^Visual style: Casual horizontal video filmed by a friend/m);
+  assert.match(kp, /^TECH Casual horizontal video filmed by a friend.*Wide-angle phone camera held close/m);
+  assert.doesNotMatch(kp, /\blens\b/);
   assert.doesNotMatch(kp, /stretching at the frame edges/);
   // §7 (23.11): handheld behaviour and no device in the picture; Kling also one continuous shot.
-  assert.match(kp, /Handheld phone video - small natural hand shake.*No phone or other device is visible in the picture\. One continuous shot, no cuts\.$/m);
+  assert.match(kp, /^CAMERA Handheld phone video - small natural hand shake.*No phone or other device is visible in the picture\.$/m);
+  assert.match(kp, /^TECH .*One continuous shot, no cuts\.$/m);
   const kv = renderLook('A woman walks.', cleanLook({ on: true, camera: 'phone' }), { kind: 'video', memo: memos.kling, ratio: '9:16' });
-  assert.match(kv, /^Visual style: Casual video filmed by a friend/m, 'no orientation word away from 16:9');
+  assert.match(kv, /^TECH Casual video filmed by a friend/m, 'no orientation word away from 16:9');
   assert.doesNotMatch(kv, /vertical/);
   const sp = renderLook('A woman walks.', cleanLook({ on: true, camera: 'phone' }), { kind: 'video', memo: memos.seedance, ratio: '16:9' });
   assert.match(sp, /No phone or other device is visible in the picture/);
@@ -146,7 +157,7 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
   const wanMulti = renderLook('Shot 1 [0-3s] a woman walks. Shot 2 [3-6s] she sits.', cleanLook({ on: true, camera: 'vhs' }), { kind: 'video', memo: memos.wan });
   assert.doesNotMatch(wanMulti, /Generate single shot/);
   // A start frame with only a move or a light: the keep line too.
-  assert.ok(renderLook('A woman walks.', cleanLook({ move: 'orbit' }), { kind: 'video', memo: memos.kling, framed: true }).includes(KEEP_FRAME));
+  assert.ok(renderLook('A woman walks.', cleanLook({ move: 'orbit' }), { kind: 'video', memo: memos.kling, framed: true }).includes(KEEP_FRAME_BLOCKS));
   // No drawn texture anywhere: grain, dust, scratches, light leaks, tracking bands, timestamps belong to the filter.
   const BAD = /dust|scratch|hair|light leak|tracking|grain(?!s? *$)|timestamp(?! *$)/i;
   for (const c of CAMERAS.filter((x) => x.shot)) {
@@ -165,4 +176,40 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
   const rp = reshootPrompt(cleanLook({ on: true, camera: 'phone', lens: 'anamorphic', aperture: 'f/1.4' }), { ratio: '16:9' });
   assert.match(rp, /^@img1 is a photo placed in the middle of a larger plain grey canvas\..*The picture fills the whole 16:9 frame\.$/);
   assert.doesNotMatch(rp, /anamorphic|depth of field|flare/i);
+});
+
+test('block mode (docs/ux/43 §3, 44 §C): FRAMING from shot size or focal, user blocks kept, no lens words', async () => {
+  const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
+  const { SHOTS, FOCAL_SHOT } = await import('../src/look.js');
+  const k = (p, l) => renderLook(p, cleanLook(l), { kind: 'video', memo: memos.kling, ratio: '16:9' });
+  // Focal → default shot size; a shot size set elsewhere (storyboard names too) wins; Auto focal → no FRAMING.
+  assert.match(k('A woman.', { on: true, focal: 85 }), /^FRAMING Head-and-shoulders shot\./m);
+  assert.match(k('A woman.', { on: true, focal: 135 }), /^FRAMING Face close-up\./m);
+  assert.match(k('A woman.', { on: true, focal: 24, shot: 'close-up' }), /^FRAMING Face close-up\./m, 'storyboard close-up beats 24 mm');
+  assert.match(k('A woman.', { on: true, focal: 85, shot: 'waist' }), /^FRAMING Waist-up shot\./m);
+  assert.doesNotMatch(k('A woman.', { on: true, camera: 'film-35' }), /FRAMING/);
+  assert.deepEqual(Object.keys(FOCAL_SHOT).map(Number), [12, 16, 24, 35, 50, 85, 135, 200]);
+  for (const s of SHOTS) assert.doesNotMatch(s.framing, /\blens\b|\d+\s?mm|one step/i);
+  // FOCUS: three tested steps.
+  assert.match(k('A.', { on: true, aperture: 'f/1.4' }), /^FOCUS Subject critically sharp\. Background fully defocused/m);
+  assert.match(k('A.', { on: true, aperture: 'f/4' }), /^FOCUS Subject sharp\. Background slightly soft/m);
+  assert.match(k('A.', { on: true, aperture: 'f/11' }), /^FOCUS Deep focus\./m);
+  // The user's own blocks: words join them; the user's FRAMING wins over ours.
+  const mine = k('SCENE Shop.\n\nCAMERA Fully static, locked-off.\n\nFRAMING Medium shot. @Image1 woman centered.\n\nTECH One continuous shot', { on: true, focal: 135, aperture: 'f/11', move: 'orbit', camera: 'dv' });
+  assert.match(mine, /^CAMERA Fully static, locked-off\. Camera orbits around the subject in a smooth arc\.$/m);
+  assert.match(mine, /^FRAMING Medium shot\. @Image1 woman centered\.$/m);
+  assert.doesNotMatch(mine, /Face close-up/);
+  assert.match(mine, /^TECH One continuous shot\. Amateur home video from the year 2000/m);
+  assert.match(mine, /\n\nFOCUS Deep focus\..*\n\nSTYLE Standard-definition video/s);
+  assert.equal((mine.match(/^CAMERA/gm) || []).length, 1, 'no second CAMERA block');
+  // A word that only starts like a label is not a block.
+  assert.match(k('Focus on her eyes.', { on: true, aperture: 'f/11' }), /^Focus on her eyes\.\n\nFOCUS Deep focus\./);
+  // Lens choice → its effect in STYLE, never the word "lens".
+  const an = k('A.', { on: true, lens: 'vintage-anamorphic', focal: 50 });
+  assert.match(an, /^STYLE Warm amber streak flares/m);
+  assert.doesNotMatch(an, /\blens\b|50\s?mm/i);
+  // Wan and others: unchanged.
+  assert.doesNotMatch(renderLook('A.', cleanLook({ on: true, focal: 85 }), { kind: 'video', memo: memos.wan }), /FRAMING/);
+  // The panel line "85 mm → head and shoulders".
+  assert.equal(lookForClient().focalShots['85'], 'head and shoulders');
 });

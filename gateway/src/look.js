@@ -68,14 +68,14 @@ export const KEEP_FRAME = 'Keep the lens, focus, colour and image texture of the
 // focal: the range this kind of lens is made in; aperture: the widest f-number where its effect shows.
 export const LENSES = [
   { id: 'clean', label: 'Clean Prime', note: 'Sharp, neutral, modern', text: 'modern spherical prime lens, clinically sharp, neutral rendering' },
-  { id: 'vintage-prime', label: 'Vintage Prime', note: 'Soft contrast, warm flare', text: 'vintage cinema prime lens, soft contrast, warm gentle flares', focal: [16, 135] },
-  { id: 'anamorphic', label: 'Anamorphic', note: 'Oval bokeh, streak flares, widescreen', text: 'anamorphic lens, oval bokeh, horizontal blue streak flares, 2.39:1 widescreen feel', focal: [24, 135], wide: true },
-  { id: 'vintage-anamorphic', label: 'Vintage Anamorphic', note: 'Warm streaks, soft edges', text: 'vintage anamorphic lens, warm amber streak flares, soft edges, oval bokeh', focal: [35, 135], wide: true },
-  { id: 'petzval', label: 'Petzval Swirl', note: 'Swirling bokeh portrait lens', text: 'Petzval portrait lens, swirling bokeh, sharp center falling off to the edges', focal: [50, 85], maxAperture: 2 },
-  { id: 'macro', label: 'Macro', note: 'Extreme close detail', text: 'macro lens, extreme close-up detail', focal: [50, 135] },
-  { id: 'fisheye', label: 'Fisheye', note: 'Strong curved distortion', text: 'fisheye lens, strong barrel distortion, curved horizon', focal: [8, 16] },
-  { id: 'tilt-shift', label: 'Tilt-Shift', note: 'Miniature effect', text: 'tilt-shift lens, miniature effect, narrow tilted plane of focus', focal: [16, 85] },
-  { id: 'vintage-zoom', label: 'Vintage Zoom', note: '70s zoom look', text: '1970s cinema zoom lens look, soft, slight focus breathing' },
+  { id: 'vintage-prime', effect: 'soft contrast, warm gentle flares', label: 'Vintage Prime', note: 'Soft contrast, warm flare', text: 'vintage cinema prime lens, soft contrast, warm gentle flares', focal: [16, 135] },
+  { id: 'anamorphic', effect: 'oval out-of-focus highlights, horizontal blue streak flares', label: 'Anamorphic', note: 'Oval bokeh, streak flares, widescreen', text: 'anamorphic lens, oval bokeh, horizontal blue streak flares, 2.39:1 widescreen feel', focal: [24, 135], wide: true },
+  { id: 'vintage-anamorphic', effect: 'warm amber streak flares, soft edges, oval out-of-focus highlights', label: 'Vintage Anamorphic', note: 'Warm streaks, soft edges', text: 'vintage anamorphic lens, warm amber streak flares, soft edges, oval bokeh', focal: [35, 135], wide: true },
+  { id: 'petzval', effect: 'swirling out-of-focus background, sharp centre falling off to the edges', label: 'Petzval Swirl', note: 'Swirling bokeh portrait lens', text: 'Petzval portrait lens, swirling bokeh, sharp center falling off to the edges', focal: [50, 85], maxAperture: 2 },
+  { id: 'macro', effect: 'extreme close-up detail', label: 'Macro', note: 'Extreme close detail', text: 'macro lens, extreme close-up detail', focal: [50, 135] },
+  { id: 'fisheye', effect: 'strong barrel distortion, curved horizon', label: 'Fisheye', note: 'Strong curved distortion', text: 'fisheye lens, strong barrel distortion, curved horizon', focal: [8, 16] },
+  { id: 'tilt-shift', effect: 'miniature effect, narrow tilted plane of focus', label: 'Tilt-Shift', note: 'Miniature effect', text: 'tilt-shift lens, miniature effect, narrow tilted plane of focus', focal: [16, 85] },
+  { id: 'vintage-zoom', effect: '1970s look, soft, slight focus breathing', label: 'Vintage Zoom', note: '70s zoom look', text: '1970s cinema zoom lens look, soft, slight focus breathing' },
 ];
 
 export const FILTERS = [
@@ -102,6 +102,29 @@ export const APERTURES = [
   { f: 'f/8', n: 8, text: 'deep depth of field' },
   { f: 'f/11', n: 11, text: 'deep focus, sharp foreground to background' },
   { f: 'f/16', n: 16, text: 'everything in sharp focus' },
+];
+
+// Block mode (docs/ux/43 §3, 44 §C): shot size for FRAMING. The wording states the target
+// itself through the frame edges (stage 13/15 wording, measured in REPORT-shot-size.md).
+// "knees" is untested. A target, not a guarantee: runs differ by about ×1.3.
+export const SHOTS = [
+  { id: 'full', label: 'full body', framing: 'Full-body shot. Top edge of the frame just above the head, bottom edge just below the feet. The whole body from head to feet is visible, with floor under the feet.' },
+  { id: 'knees', label: 'knees up', framing: 'Knees-up shot. Top edge of the frame just above the head, bottom edge at the knees. Lower legs and feet are outside the frame.' },
+  { id: 'waist', label: 'waist up', framing: 'Waist-up shot. Top edge of the frame just above the head, bottom edge at the waist. Hips, legs and feet are outside the frame.' },
+  { id: 'head-shoulders', label: 'head and shoulders', framing: 'Head-and-shoulders shot. Top edge of the frame just above the head, bottom edge at mid-chest. Waist, hands and legs are outside the frame.' },
+  { id: 'face', label: 'face', framing: 'Face close-up. Top edge of the frame at the hairline, bottom edge just below the chin. The face fills the frame; shoulders are outside the frame.' },
+];
+// Focal length → default shot size (doc 42, answer 3). A shot size set elsewhere wins.
+export const FOCAL_SHOT = { 12: 'full', 16: 'full', 24: 'full', 35: 'knees', 50: 'waist', 85: 'head-shoulders', 135: 'face', 200: 'face' };
+// Storyboard shot sizes (dzDirector.js SHOT_SIZES) → ours.
+const STORYBOARD_SHOT = { 'extreme wide': 'full', wide: 'full', full: 'full', 'medium wide': 'knees', medium: 'waist', 'medium close-up': 'head-shoulders', 'close-up': 'face', 'extreme close-up': 'face' };
+export const shotOf = (v) => SHOTS.find((x) => x.id === v)?.id || STORYBOARD_SHOT[String(v || '').toLowerCase()] || null;
+// FOCUS from the aperture: only the three steps tested in stage 9 (REPORT7 §8). The middle
+// step is measurably softer but looks almost like the deep one; Kling may move closer on the shallow one.
+const FOCUS_STEPS = [
+  { max: 2.8, text: 'Subject critically sharp. Background fully defocused: lights become large soft glowing discs, background details unreadable.' },
+  { max: 5.6, text: 'Subject sharp. Background slightly soft: background objects still readable, their edges gently softened.' },
+  { max: Infinity, text: 'Deep focus. Everything sharp from the foreground to the far background. No background blur.' },
 ];
 
 export const ERAS = [
@@ -210,8 +233,10 @@ export function cleanLook(input) {
     palette: byId(PALETTES, idOf(raw.palette))?.id || null,
     genre: byId(GENRES, idOf(raw.genre))?.id || null,
     move: byId(MOVES, raw.move)?.id || null,
+    // Shot size for FRAMING (block mode): a Shot size setting or the storyboard's; else from the focal.
+    shot: shotOf(idOf(raw.shot)),
   };
-  return out.on || out.filter || out.era || out.light || out.palette || out.genre || out.move ? out : null;
+  return out.on || out.filter || out.era || out.light || out.palette || out.genre || out.move || out.shot ? out : null;
 }
 
 // "Unusual" combinations: not an error — advice (it may look great or odd).
@@ -247,6 +272,8 @@ export function lookForClient() {
     lenses: pick(LENSES, ['id', 'label', 'note', 'focal', 'maxAperture', 'wide']),
     filters: pick(FILTERS, ['id', 'label', 'note']),
     focals: FOCALS.map((f) => f.mm),
+    // "85 mm → head and shoulders" in the Look panel (block mode, doc 44 §C).
+    focalShots: Object.fromEntries(Object.entries(FOCAL_SHOT).map(([mm, id]) => [mm, SHOTS.find((x) => x.id === id).label])),
     apertures: APERTURES.map((a) => a.f),
     eras: pick(ERAS, ['id', 'label']),
     lights: pick(LIGHTS, ['id', 'label']),
@@ -404,6 +431,9 @@ export function renderLook(prompt, look, { kind = 'video', memo = null, framed =
     } catch { /* not JSON after all: plain text */ }
   }
 
+  // Block mode (Kling, Seedance): the user's text as it is, the look in labelled blocks below.
+  if (rule.place === 'labeled' && kind === 'video') return labeledLook(text, look, { family, framing: rule.framing, framed: fromFrame, ratio, words: w, motionLine });
+
   let out = camText ? placeCamera(text, camText) : text;
   // Any other model: the camera's sentence goes where its camera words go, before the lens and move.
   out = placeRest(out, w, rule, camText?.sentence || '');
@@ -451,4 +481,90 @@ function placeRest(text, w, rule, camSentence = '') {
   const body = text ? (/[.!?"')\]]$/.test(text) ? text : `${text.replace(/[,;:\s]+$/, '')}.`) : '';
   if (rule.place === 'start') return [cameraSentence, body, styleSentence].filter(Boolean).join(' ');
   return [body, cameraSentence, styleSentence].filter(Boolean).join(' ');
+}
+
+// ── Block mode (docs/ux/43 §3, 44 §C) ─────────────────────────────────────────
+// Kling and Seedance: the user's paragraph stays as it is; the look goes below it in
+// labelled blocks, in this order. A block the prompt already has (a line starting with
+// the label in capitals, or the label and a colon) gets the words added to it instead.
+// Never a mm value or the word "lens" in our words (doc 42, answer 3): film gauges
+// ("35mm film") name the camera, not a focal length, and stay.
+export const BLOCK_ORDER = ['FRAMING', 'FOCUS', 'CAMERA', 'STYLE', 'TECH'];
+// A start frame (§4): the frame decides the picture; keep it, without the word "lens".
+export const KEEP_FRAME_BLOCKS = 'Keep the focus, colour and image texture of the first frame unchanged for the whole clip.';
+function noLens(t) {
+  return String(t || '')
+    .replace(/\b(wide-angle phone) lens\b/gi, '$1 camera')
+    .replace(/\s+with a spherical cinema lens\b/gi, '')
+    .replace(/\blens flares?\b/gi, (m) => m.replace(/lens /i, ''))
+    .replace(/\b\d+\s?mm\s+(?:lens|focal length)\b/gi, '')
+    .replace(/\blens(es)?\b/gi, 'camera')
+    .replace(/\s{2,}/g, ' ').trim();
+}
+const join = (...xs) => xs.map((x) => dot(x)).filter(Boolean).join(' ');
+
+export function lookBlocks(look, { family = null, framing = false, framed = false, ratio = null, words: w = null, motionLine = '' } = {}) {
+  const b = Object.fromEntries(BLOCK_ORDER.map((k) => [k, []]));
+  const on = look.on !== false;
+  const cam = on ? cameraOf(look.camera) : null;
+  if (framed) {
+    // Only the move, the Phone behaviour line and the keep line (doc 43 §3.5).
+    b.CAMERA.push(w?.move, motionLine);
+    b.TECH.push(KEEP_FRAME_BLOCKS);
+  } else {
+    const shot = look.shot || (on && look.focal ? FOCAL_SHOT[look.focal] : null);
+    if (framing && shot) b.FRAMING.push(SHOTS.find((x) => x.id === shot)?.framing);
+    const ap = on ? APERTURES.find((a) => a.f === look.aperture) : null;
+    if (ap) b.FOCUS.push(FOCUS_STEPS.find((s) => ap.n <= s.max).text);
+    b.CAMERA.push(w?.move);
+    if (cam?.behaviour) b.CAMERA.push(cam.behaviour);
+    if (cam?.shot) {
+      if (family === 'kling' && cam.kling) b.TECH.push(cam.kling.replace('{orient}', String(ratio) === '16:9' ? 'horizontal ' : ''), cam.klingOnly);
+      else if (family === 'kling' && cam.toneOnly) b.STYLE.push(cam.look);
+      else {
+        b.TECH.push(cam.shot);
+        b.STYLE.push(cam.look, cam.keep);
+      }
+      if (family === 'seedance') b.TECH.push(fillLine(ratio, true));
+    }
+    const lens = on ? byId(LENSES, look.lens) : null;
+    const filter = byId(FILTERS, look.filter);
+    b.STYLE.push(lens?.effect, filter?.text, w?.light, w?.palette, w?.genre, w?.era);
+  }
+  return Object.fromEntries(Object.entries(b).map(([k, xs]) => [k, noLens(join(...xs.filter(Boolean)))]).filter(([, t]) => t));
+}
+
+function labeledLook(text, look, opts) {
+  const blocks = lookBlocks(look, opts);
+  let out = String(text || '').replace(/\s+$/, '');
+  const extra = [];
+  for (const label of BLOCK_ORDER) {
+    const t = blocks[label];
+    if (!t) continue;
+    // The user's own FRAMING wins: two shot sizes in one block contradict each other.
+    if (label === 'FRAMING' && intoLabeledBlock(out, label, '') !== null) continue;
+    const merged = intoLabeledBlock(out, label, t);
+    if (merged === null) extra.push(`${label} ${t}`);
+    else out = merged;
+  }
+  return extra.length ? `${out}${out ? '\n\n' : ''}${extra.join('\n\n')}` : out;
+}
+
+// Adds `t` to the end of the user's own block (`LABEL text…` up to the next blank line or
+// the next capitalised label), or returns null when the prompt has no such block.
+function intoLabeledBlock(text, label, t) {
+  const lines = text.split('\n');
+  const head = new RegExp(`^\\s*(?:${label}\\b(?!-)|${label}\\s*:)`, 'i');
+  const exact = new RegExp(`^\\s*(?:${label}\\b(?!-)|${label[0]}${label.slice(1).toLowerCase()}\\s*:)`);
+  const at = lines.findIndex((l) => exact.test(l) || (head.test(l) && /:/.test(l.slice(0, label.length + 3))));
+  if (at < 0) return null;
+  let end = at;
+  for (let i = at + 1; i < lines.length; i += 1) {
+    if (!lines[i].trim() || /^\s*[A-Z]{3,}\b(?:\s|:|$)/.test(lines[i])) break;
+    end = i;
+  }
+  const line = lines[end].replace(/\s+$/, '');
+  const onLabelOnly = end === at && new RegExp(`^\\s*${label}\\s*:?$`, 'i').test(line);
+  lines[end] = onLabelOnly ? `${line} ${t}` : `${/[.!?]$/.test(line) ? line : `${line}.`} ${t}`;
+  return lines.join('\n');
 }

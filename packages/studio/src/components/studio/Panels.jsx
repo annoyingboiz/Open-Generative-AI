@@ -60,6 +60,10 @@ function Wheel({ title, options, value, onChange, icon: Icon, auto = { id: null,
   );
 }
 
+// Block mode (docs/ux/44 §C): on Kling the focal length sets the shot size (FRAMING).
+const FOCAL_SHOTS_FALLBACK = { 24: "full body", 35: "knees up", 50: "waist up", 85: "head and shoulders", 135: "face" };
+const shotOf = (mm) => (lookData().focalShots || FOCAL_SHOTS_FALLBACK)[mm] || null;
+
 function FocalTrack({ value, onChange }) {
   const i = Math.max(0, FOCAL_STOPS.indexOf(value ?? null));
   const ref = useRef(null);
@@ -71,7 +75,7 @@ function FocalTrack({ value, onChange }) {
   };
   return (
     <div className="space-y-3">
-      <Overline>Focal length · {value ? `${value}mm` : "Auto"}</Overline>
+      <Overline>Focal length · {value ? `${value}mm${shotOf(value) ? ` → ${shotOf(value)}` : ""}` : "Auto"}</Overline>
       <div ref={ref} role="slider" tabIndex={0} aria-label="Focal length" aria-valuetext={value ? `${value} mm` : "Auto"}
         className="relative h-6 cursor-pointer touch-none"
         onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); setFrom(e); }}
@@ -93,6 +97,7 @@ function FocalTrack({ value, onChange }) {
             style={{ left: `${(k / (FOCAL_STOPS.length - 1)) * 100}%` }}>{f ?? "Auto"}</button>
         ))}
       </div>
+      {value && shotOf(value) && <p className="text-xs text-muted-foreground">On Kling this also sets the shot size: a target, not a guarantee.</p>}
     </div>
   );
 }

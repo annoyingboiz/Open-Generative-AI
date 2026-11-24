@@ -40,7 +40,9 @@ function parseMemo(text, file) {
   try { match = meta.match ? new RegExp(meta.match, 'i') : null; } catch { match = null; }
   const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
   // Where the camera look goes in this model's prompt (see src/look.js).
-  const look = { place: ['start', 'blocks'].includes(meta.look) ? meta.look : 'end', camera: typeof meta.look_camera === 'string' ? meta.look_camera : null, style: typeof meta.look_style === 'string' ? meta.look_style : null };
+  const look = { place: ['start', 'blocks', 'labeled'].includes(meta.look) ? meta.look : 'end', camera: typeof meta.look_camera === 'string' ? meta.look_camera : null, style: typeof meta.look_style === 'string' ? meta.look_style : null,
+    // Block mode: FRAMING from the shot size / focal only where measured (Kling now; Seedance later, doc 44 §B3).
+    framing: String(meta.look_framing) === 'true' };
   return { id: meta.id, name: meta.name || meta.id, kind: meta.kind, match, generic: file.startsWith('_'), sources: list(meta.sources), blocks: list(meta.blocks), look, body: m[2].trim() };
 }
 

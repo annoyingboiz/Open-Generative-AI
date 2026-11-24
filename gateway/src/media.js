@@ -375,10 +375,12 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
     // Shot size: the face on the first, middle and last frame (the median of what is found).
     try {
       const pick = [0, Math.floor(r.frames / 2), r.frames - 1];
-      const rgb = await ffRaw(['-i', file, '-an', '-vf', `select=${pick.map((n) => `eq(n\\,${n})`).join('+')},scale=640:-2:flags=area`, '-vsync', '0', '-pix_fmt', 'rgb24', '-f', 'rawvideo'], 8 * 1024 * 1024);
-      const fw = 640; const guess = info?.width && info?.height ? Math.round((640 * info.height) / info.width) : 360;
-      const fh = [0, -1, 1, -2, 2].map((d) => guess + d).find((hh) => hh > 0 && rgb && rgb.length % (fw * hh * 3) === 0 && rgb.length / (fw * hh * 3) <= 3);
-      if (rgb && fh && fh <= 640) {
+      // Fitted inside YuNet's 640×640 (portrait clips too), even sizes set explicitly.
+      const iw = info?.width || 1280; const ih = info?.height || 720;
+      const even = (v) => Math.max(2, 2 * Math.round(v / 2));
+      const fw = iw >= ih ? 640 : even((640 * iw) / ih); const fh = iw >= ih ? even((640 * ih) / iw) : 640;
+      const rgb = await ffRaw(['-i', file, '-an', '-vf', `select=${pick.map((n) => `eq(n\\,${n})`).join('+')},scale=${fw}:${fh}:flags=area`, '-vsync', '0', '-pix_fmt', 'rgb24', '-f', 'rawvideo'], 8 * 1024 * 1024);
+      if (rgb && rgb.length >= fw * fh * 3) {
         const { detectFaces } = await import('./faces.js');
         const units = [];
         for (let k = 0; k * fw * fh * 3 < rgb.length && k < 3; k += 1) {

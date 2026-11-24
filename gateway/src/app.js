@@ -34,7 +34,7 @@ import { createElements, ElementError } from './elements.js';
 import { createLlm, LlmError } from './llm.js';
 import { createChatGpt } from './chatgpt.js';
 import { createPromptAdapter, AdaptError } from './prompt-adapter.js';
-import { cleanLook, renderLook, lookHints, lookAdvice, cameraOf, textureOf, reshootPrompt, isCanvasCamera, CANVAS_SCALE } from './look.js';
+import { cleanLook, renderLook, lookHints, lookAdvice, cameraOf, textureOf, reshootPrompt, isCanvasCamera, CANVAS_SCALE, locationViewPrompt, shotOf } from './look.js';
 import { makeCanvas, uprightPng, centreSsim, compositeBack, DRIFT_SSIM } from './canvas.js';
 import { applyTexture, TEXTURE_DEFAULT } from './texture.js';
 import { createStoryboards, StoryboardError } from './storyboards.js';
@@ -944,6 +944,20 @@ export async function buildApp(config, { logger = true } = {}) {
       hints: built.look ? lookHints(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],
       advice: built.look ? lookAdvice(built.look, { kind: variant.kind, aspect: body.aspect_ratio || body.ratio || body.size || null, size: req.body?.size || null }) : [],
     };
+  });
+
+  // A location view for a shot size (docs/ux/44, decision a): the request only, never sent
+  // from here. The studio sends it through the normal Generate path (price shown first), and
+  // the user approves the picture before it is used as a reference. No UI yet.
+  app.post('/dz/api/location-view/request', async (req, reply) => {
+    const url = String(req.body?.url || '');
+    if (!/^\/media\/[ug]\/[\w./-]+$/.test(url) || !generations.mediaFileForUrl(req.user, url)) return reply.code(400).send({ error: 'Choose a location picture.' });
+    const shot = shotOf(req.body?.shot);
+    if (shot === 'full') return { shot, view: null, note: 'Full body needs no new view: the location picture itself is the background.' };
+    const prompt = locationViewPrompt(shot);
+    if (!prompt) return reply.code(400).send({ error: 'Unknown shot size.' });
+    const ratio = /^\d+:\d+$/.test(String(req.body?.ratio || '')) ? String(req.body.ratio) : '16:9';
+    return { shot, view: { endpoint: 'p/apimart/gemini-3-pro-image-preview?m=i2i', body: { prompt, size: ratio, resolution: '1K', image_urls: [url] } } };
   });
 
   // Price before generating: { usd, exact, source } — shown next to Generate.

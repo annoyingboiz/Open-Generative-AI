@@ -213,3 +213,13 @@ test('block mode (docs/ux/43 §3, 44 §C): FRAMING from shot size or focal, user
   // The panel line "85 mm → head and shoulders".
   assert.equal(lookForClient().focalShots['85'], 'head and shoulders');
 });
+
+test('location view prompt for a shot size (server part of docs/ux/44 a)', async () => {
+  const { locationViewPrompt } = await import('../src/look.js');
+  assert.equal(locationViewPrompt('full'), null, 'the wide picture is the plate');
+  assert.equal(locationViewPrompt('nope'), null);
+  const w = locationViewPrompt('waist');
+  assert.match(w, /^The same place as image 1, photographed from a closer camera position\..*No people\..*waist-up.*central half.*no background blur\. Photorealistic\.$/);
+  assert.match(locationViewPrompt('close-up'), /face close-up/, 'storyboard names map too');
+  for (const s of ['knees', 'waist', 'head-shoulders', 'face']) assert.doesNotMatch(locationViewPrompt(s), /\bmetres?\b|\blens\b|\d+\s?mm/);
+});

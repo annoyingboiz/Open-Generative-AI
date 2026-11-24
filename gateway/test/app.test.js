@@ -216,3 +216,10 @@ test('product icons are public (package 11): favicon, apple touch icon, manifest
   res = await app.inject({ url: '/login' });
   assert.match(res.body, /rel="icon" href="\/dz\/brand\/favicon\.svg\?v=1"/);
 });
+
+test('location view request: never generates, refuses pictures that are not ours', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/api/location-view/request', headers: { cookie: adminCookie }, payload: { url: 'https://evil.example/x.jpg', shot: 'waist' } });
+  assert.equal(res.statusCode, 400);
+  res = await app.inject({ method: 'POST', url: '/dz/api/location-view/request', headers: { cookie: adminCookie }, payload: { url: '/media/g/gen_none/0.jpg', shot: 'waist' } });
+  assert.equal(res.statusCode, 400);
+});

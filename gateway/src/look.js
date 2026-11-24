@@ -568,3 +568,23 @@ function intoLabeledBlock(text, label, t) {
   lines[end] = onLabelOnly ? `${line} ${t}` : `${/[.!?]$/.test(line) ? line : `${line}.`} ${t}`;
   return lines.join('\n');
 }
+
+// ── Location view for a shot size (docs/ux/44, decision a; server part only) ──
+// Kling uses a location reference as a fixed background plate, so the plate must already
+// match the shot size. An image model makes that view from the user's location picture.
+// Pattern from stage 15 (doc 39): say what is visible and what share of the frame it takes,
+// not a camera distance. The stage-15 prompts named the ramen shop's own objects; these
+// are the same pattern with the scene left out (untested as written — the design chat's
+// UI step shows the view for approval before it is ever used). Full body needs no view:
+// the user's wide picture is the plate.
+const VIEW_FOR_SHOT = {
+  knees: 'This is the background plate for a knees-up portrait. The frame shows the central two thirds of what image 1 shows, so everything in it looks about one and a half times larger than in image 1.',
+  waist: 'This is the background plate for a waist-up portrait. The frame shows only the central half of what image 1 shows, so everything in it looks about twice as large as in image 1. The floor and the ceiling are outside the frame.',
+  'head-shoulders': 'This is the background plate for a head-and-shoulders portrait. The frame shows only the central third of what image 1 shows, so the objects in it look about three times as large as in image 1. Only a section of the back wall and a few objects on it are visible.',
+  face: 'This is the background plate for a face close-up: an extreme close view of a small detail of the place. One or two objects from the middle of image 1 fill the frame, each about half of the frame height. Nothing else is in the frame.',
+};
+export function locationViewPrompt(shot) {
+  const id = shotOf(shot);
+  if (!id || !VIEW_FOR_SHOT[id]) return null;
+  return `The same place as image 1, photographed from a closer camera position. Same objects, same materials, same light and colours. No people. ${VIEW_FOR_SHOT[id]} Everything sharp from front to back, no background blur. Photorealistic.`;
+}

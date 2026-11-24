@@ -35,7 +35,7 @@ test('a hard cut is found at its frame; a slow drift or a steady clip is not a c
   assert.equal(cutScore(new Uint8Array(size * 2)).cut, false, 'too short to judge');
 });
 
-test('drift: a synthetic 20 % pull-back is measured; a still picture is 1.0', () => {
+test('drift: a synthetic 20 % pull-back is measured; a still or a black picture is 1.0', async () => {
   const w = DRIFT_W; const h = DRIFT_H; const size = w * h;
   const base = (x, y) => 128 + 60 * Math.sin(x / 7) * Math.cos(y / 5) + 40 * Math.sin((x + y) / 11);
   const frames = (n, zoomAt) => {
@@ -43,8 +43,9 @@ test('drift: a synthetic 20 % pull-back is measured; a still picture is 1.0', ()
     for (let f = 0; f < n; f += 1) { const z = zoomAt(f); for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) buf[f * size + y * w + x] = base(w / 2 + (x - w / 2) / z, h / 2 + (y - h / 2) / z); }
     return buf;
   };
-  assert.ok(Math.abs(driftZoom(frames(9, () => 1)).zoom - 1) < 0.01);
-  const z = driftZoom(frames(9, (f) => 1 - 0.2 * f / 8)).zoom;
+  assert.ok(Math.abs((await driftZoom(frames(9, () => 1))).zoom - 1) < 0.01);
+  assert.equal((await driftZoom(new Uint8Array(20 * size))).zoom, 1, 'black clip: no drift');
+  const z = (await driftZoom(frames(9, (f) => 1 - 0.2 * f / 8))).zoom;
   assert.ok(Math.abs(z - 0.8) < 0.03, String(z));
 });
 

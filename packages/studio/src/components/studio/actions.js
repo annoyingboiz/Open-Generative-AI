@@ -93,7 +93,9 @@ export function checkBadges(item) {
   const z = Number(c?.drift?.zoom);
   if (c?.drift?.move && Number.isFinite(z)) {
     const pct = Math.round(Math.abs(z - 1) * 100);
-    out.push(c.drift.move === "pull"
+    // A move was asked for: say what it did, in the viewer only, no warning.
+    if (c.drift.asked) out.push({ id: "drift", quiet: true, tile: false, text: `Camera ${c.drift.move === "pull" ? "pulls back" : "pushes in"} ${pct} %`, note: "The camera move that was asked for, measured on the picture." });
+    else out.push(c.drift.move === "pull"
       ? { id: "drift", tile: true, text: `Camera pulls back ${pct} %`, note: "The picture gets smaller during the clip, as if the camera moved away, although no move was asked for." }
       : { id: "drift", tile: true, text: `Camera pushes in ${pct} %`, note: "The picture gets larger during the clip, as if the camera moved closer, although no move was asked for." });
   }

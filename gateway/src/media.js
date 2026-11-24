@@ -164,25 +164,34 @@ function cost(A, B, w, h, s, tx, ty) {
   }
   return n ? sum / n : Infinity;
 }
+const spread = (A) => { let m = 0; for (let i = 0; i < A.length; i += 1) m += A[i]; m /= A.length; let v = 0; for (let i = 0; i < A.length; i += 1) v += (A[i] - m) ** 2; return Math.sqrt(v / A.length); };
 export function pairZoom(A, B, w = DRIFT_W, h = DRIFT_H) {
+  // Too little picture to match (black, fog, a flat wall): no scale can be read; count it as none.
+  if (spread(A) < 4 || spread(B) < 4) return 1;
   const a2 = half(A, w, h); const b2 = half(B, w, h); const w2 = w >> 1; const h2 = h >> 1;
-  let best = { c: Infinity, s: 1, tx: 0, ty: 0 };
+  // Unchanged unless another scale is clearly better (ties and near-ties stay at 1).
+  const still = cost(a2, b2, w2, h2, 1, 0, 0);
+  let best = { c: still * 0.98, s: 1, tx: 0, ty: 0 };
   for (let s = 0.86; s <= 1.1401; s += 0.02) for (let ty = -4; ty <= 4; ty += 1) for (let tx = -4; tx <= 4; tx += 1) {
     const c = cost(a2, b2, w2, h2, s, tx, ty); if (c < best.c) best = { c, s, tx, ty };
   }
-  const fine = { c: Infinity, s: best.s, tx: best.tx * 2, ty: best.ty * 2 };
   const A1 = Float32Array.from(A); const B1 = Float32Array.from(B);
+  const fine = { c: cost(A1, B1, w, h, best.s, best.tx * 2, best.ty * 2), s: best.s, tx: best.tx * 2, ty: best.ty * 2 };
   for (let s = best.s - 0.02; s <= best.s + 0.0201; s += 0.004) for (let ty = best.ty * 2 - 2; ty <= best.ty * 2 + 2; ty += 1) for (let tx = best.tx * 2 - 2; tx <= best.tx * 2 + 2; tx += 1) {
-    const c = cost(A1, B1, w, h, s, tx, ty); if (c < fine.c) Object.assign(fine, { c, s, tx, ty });
+    const c = cost(A1, B1, w, h, s, tx, ty); if (c < fine.c * 0.999) Object.assign(fine, { c, s, tx, ty });
   }
   return fine.s;
 }
 // buf: n frames of 192×108 grey → { zoom, steps } (zoom of the last frame against the first).
-export function driftZoom(buf, { w = DRIFT_W, h = DRIFT_H } = {}) {
+// Yields to the event loop between pairs (each pair is a few million pixel reads).
+export async function driftZoom(buf, { w = DRIFT_W, h = DRIFT_H } = {}) {
   const size = w * h; const n = Math.floor(buf.length / size);
   if (n < 2) return { zoom: 1, steps: 0 };
   let zoom = 1;
-  for (let i = 1; i < n; i += 1) zoom *= pairZoom(buf.subarray((i - 1) * size, i * size), buf.subarray(i * size, (i + 1) * size), w, h);
+  for (let i = 1; i < n; i += 1) {
+    zoom *= pairZoom(buf.subarray((i - 1) * size, i * size), buf.subarray(i * size, (i + 1) * size), w, h);
+    await new Promise((r) => setImmediate(r));
+  }
   return { zoom: Math.round(zoom * 1000) / 1000, steps: n - 1 };
 }
 export const DRIFT_MIN = 0.15; // "more than 15 %" (docs/ux/44 b)
@@ -365,9 +374,11 @@ export function createMedia({ dataDir, log, ffmpegPath = 'ffmpeg', ffprobePath =
     const out = { v: 3, cut: cuts[0] || null, cuts, drift: null, shot: null };
     // Drift: meaningless across a cut (another camera position), so only without one.
     if (!cuts.length) {
-      const g = await ffRaw(['-i', file, '-an', '-vf', `fps=4,scale=${DRIFT_W}:${DRIFT_H}:flags=area,format=gray`, '-f', 'rawvideo'], 8 * 1024 * 1024);
+      // 4 samples a second up to 6 s, 2 beyond (a 10 s clip: 20 pairs).
+      const rate = info?.duration > 6 ? 2 : 4;
+      const g = await ffRaw(['-i', file, '-an', '-vf', `fps=${rate},scale=${DRIFT_W}:${DRIFT_H}:flags=area,format=gray`, '-f', 'rawvideo'], 8 * 1024 * 1024);
       if (g) {
-        const d = driftZoom(g);
+        const d = await driftZoom(g);
         out.drift = { zoom: d.zoom };
         if (Math.abs(d.zoom - 1) > DRIFT_MIN) out.drift.move = d.zoom < 1 ? 'pull' : 'push';
       }

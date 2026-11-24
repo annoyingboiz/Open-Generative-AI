@@ -48,9 +48,11 @@ test('check badges v3: drift over 15 %, measured shot size with and without a re
   assert.deepEqual(b({ v: 3, cuts: [], drift: { zoom: 0.56, move: 'pull' } }).map((x) => x.text), ['Camera pulls back 44 %']);
   assert.deepEqual(b({ v: 3, cuts: [], drift: { zoom: 1.3, move: 'push' } }).map((x) => x.text), ['Camera pushes in 30 %']);
   assert.deepEqual(b({ v: 3, cuts: [], drift: { zoom: 1.05 } }), []);
-  const asked = b({ v: 3, cuts: [], shot: { id: 'knees', asked: 'waist' } })[0];
-  assert.equal(asked.text, 'Came out: knees up · asked for waist up');
-  assert.equal(asked.tile, true); assert.equal(asked.quiet, false);
+  const asked = b({ v: 3, cuts: [], drift: { zoom: 1.3, move: 'push', asked: true } })[0];
+  assert.equal(asked.quiet, true); assert.equal(asked.tile, false, 'a move that was asked for is no fault');
+  const askedShot = b({ v: 3, cuts: [], shot: { id: 'knees', asked: 'waist' } })[0];
+  assert.equal(askedShot.text, 'Came out: knees up · asked for waist up');
+  assert.equal(askedShot.tile, true); assert.equal(askedShot.quiet, false);
   const same = b({ v: 3, cuts: [], shot: { id: 'waist', asked: 'waist' } })[0];
   assert.equal(same.text, 'Came out: waist up'); assert.equal(same.quiet, true);
   const none = b({ v: 3, cuts: [], shot: { id: 'face' } })[0];

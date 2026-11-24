@@ -291,8 +291,9 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
       for (const f of saved) {
         try { if (await media.prepare(f.path)) f.bytes = fs.statSync(f.path).size; } catch (error) { log?.warn(`prepare ${row.id}: ${error.message}`); }
         // Cut check (docs/ux/44 b): flagged on the tile, never rejected or hidden.
-        // On the clean original when a texture filter made a new file (its grain and flicker are not cuts).
-        if (media.checkVideo && /^video\//.test(f.mime || '')) { const c = await media.checkVideo(f.clean && fs.existsSync(f.clean) ? f.clean : f.path); if (c) f.checks = withAsked(c, row); }
+        // The checks (cut, drift, shot size) run after the result is shown: the backlog picks the
+        // newest unchecked video first, so it is measured a few seconds later (nothing waits on it).
+        if (media.checkVideo && /^video\//.test(f.mime || '')) setTimeout(() => { checkBacklog().catch(() => {}); }, 1000).unref?.();
       }
     };
     // Fix-ups on the files before they show up (e.g. the sound back into an
@@ -414,7 +415,14 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     let prompt = '';
     try { const p = JSON.parse(row.params_json || '{}'); prompt = typeof p.prompt === 'string' ? p.prompt : JSON.stringify(p.prompt || ''); } catch { prompt = ''; }
     const asked = SHOTS.find((x) => prompt.includes(x.framing.slice(0, 60)))?.id || null;
-    return asked && c?.shot ? { ...c, shot: { ...c.shot, asked } } : c;
+    let meta = null;
+    try { meta = row.meta_json ? JSON.parse(row.meta_json) : null; } catch { meta = null; }
+    // A camera move was asked for: the drift is the move, not a fault.
+    const moved = Boolean(meta?.move);
+    let out = c;
+    if (asked && c?.shot) out = { ...out, shot: { ...c.shot, asked } };
+    if (moved && c?.drift) out = { ...out, drift: { ...c.drift, asked: true } };
+    return out;
   }
   let backlogBusy = false;
   async function checkBacklog(limit = 4) {
@@ -426,7 +434,12 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     let n = 0;
     for (const row of q.uncheckedVideos.all(limit)) {
       const first = JSON.parse(row.outputs_json || '[]')[0];
-      if (!first?.path) continue;
+      if (!first?.path) {
+        // Nothing to read: marked, so it does not hold a place in the queue for ever.
+        const outs = JSON.parse(row.outputs_json || '[]');
+        if (outs[0]) { outs[0].checks = { v: 3, cut: null, cuts: [], unreadable: true }; const cur = q.byId.get(row.id); if (cur) q.setOutputs.run(JSON.stringify(outs), cur.updated_at, row.id); }
+        continue;
+      }
       // The clean original when a texture filter made a new file (its grain and flicker are not cuts).
       const src = first.clean && fs.existsSync(first.clean) ? first.clean : first.path;
       const c = (fs.existsSync(src) ? await media.checkVideo(src, { background: true }) : null) || { v: 3, cut: null, cuts: [], unreadable: true };

@@ -23,12 +23,11 @@ test('look: each model gets it in its place', () => {
   assert.match(seed, /^FOCUS Subject critically sharp\./m);
   assert.match(seed, /^STYLE Soft highlight roll-off.*Oval out-of-focus highlights, horizontal blue streak flares\. Warm low golden-hour.*1970s period/m);
   assert.match(seed, /^TECH Shot on 35mm motion-picture colour negative film\. The picture fills the whole 16:9 frame edge to edge, no black bars, no border, square corners\.$/m);
-  assert.doesNotMatch(seed, /FRAMING/, 'Seedance: no FRAMING until its ladder is measured');
   const kling = renderLook('A woman walks.', look, { kind: 'video', memo: memos.kling });
-  // FRAMING is held on every model until the place anchor is settled (docs/ux/45 §5C).
-  assert.match(kling, /^A woman walks\.\n\nFOCUS /);
-  assert.doesNotMatch(kling, /FRAMING/);
-  assert.ok(kling.indexOf('FOCUS') < kling.indexOf('CAMERA') && kling.indexOf('CAMERA') < kling.indexOf('STYLE') && kling.indexOf('STYLE') < kling.indexOf('TECH'));
+  // FRAMING on for Kling and Seedance (docs/ux/46 §6.1, §8; approved by Denis), target wording.
+  assert.match(kling, /^A woman walks\.\n\nFRAMING Waist-up shot\. Top edge of the frame just above the head, bottom edge at the waist\./);
+  assert.match(seed, /^FRAMING Waist-up shot\./m);
+  assert.ok(kling.indexOf('FRAMING') < kling.indexOf('FOCUS') && kling.indexOf('FOCUS') < kling.indexOf('CAMERA') && kling.indexOf('CAMERA') < kling.indexOf('STYLE') && kling.indexOf('STYLE') < kling.indexOf('TECH'));
   for (const p of [seed, kling]) {
     const ours = p.replace(/^(Subject|Camera|A woman)[^\n]*\n?/gm, '');
     assert.doesNotMatch(ours, /\blens\b|\b\d+\s?mm\b(?! motion-picture)/i, 'no "lens", no mm value (film gauge excepted)');
@@ -189,9 +188,8 @@ test('camera pipeline (handoff 17): start frame, old cameras, per-model words, n
 test('block mode (docs/ux/43 §3, 44 §C): FRAMING from shot size or focal, user blocks kept, no lens words', async () => {
   const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
   const { SHOTS, FOCAL_SHOT } = await import('../src/look.js');
-  // FRAMING is held in the real memos (docs/ux/45); these check the block code with it switched on.
-  const klingF = { ...memos.kling, look: { ...memos.kling.look, framing: true } };
-  assert.doesNotMatch(renderLook('A woman.', cleanLook({ on: true, focal: 85 }), { kind: 'video', memo: memos.kling }), /FRAMING/);
+  const klingF = memos.kling;
+  assert.ok(memos.kling.look.framing && memos.seedance.look.framing, 'FRAMING on for Kling and Seedance (docs/ux/46)');
   const k = (p, l) => renderLook(p, cleanLook(l), { kind: 'video', memo: klingF, ratio: '16:9' });
   // Focal → default shot size; a shot size set elsewhere (storyboard names too) wins; Auto focal → no FRAMING.
   assert.match(k('A woman.', { on: true, focal: 85 }), /^FRAMING Head-and-shoulders shot\./m);

@@ -8,7 +8,7 @@ sources:
   - https://kylon.io/blog/seedance-2-5-prompt-guide-2026 (summary of the official guides)
 blocks: [References, Subject, Action, Scene, Style, Camera, Sound]
 look: labeled
-look_framing: false
+look_framing: true
 look_camera: Camera
 look_style: Style
 ---

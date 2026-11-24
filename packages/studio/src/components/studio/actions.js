@@ -110,7 +110,7 @@ export function checkBadges(item) {
   // Colour shifted from the chain's first picture (measured after the picture arrived), not matched yet.
   // The tile has its own one-press chip (colourChip); here it is the viewer's line.
   const cc = c?.colour;
-  if (cc?.state === "shifted" && !item?.colour) {
+  if (cc?.state === "shifted" && !item?.colour && !colourIntended(item)) {
     out.push({ id: "colour", tile: false, noRetry: true, text: "Colour shifted from source", note: `${shiftText(cc.da, cc.db)} compared with the first picture of the chain. Match colour removes it; nothing is changed until then.` });
   }
   return out;
@@ -123,13 +123,20 @@ export function shiftText(da, db) {
   if (Math.abs(db) >= 0.3) p.push(`${db > 0 ? "yellow" : "blue"} +${Math.abs(db).toFixed(1)}`);
   return p.join(", ") || "A slight tint";
 }
+// Made with a look or camera setting, or a re-shoot: its colour changed on purpose (docs/ux/research/
+// color-badge-review.md §3). No badge on the tile; the viewer keeps the button with a warning line.
+export function colourIntended(item) {
+  const m = item?.meta || {};
+  const l = m.look;
+  return Boolean(m.reshootOf || (l && (l.on || l.filter || l.era || l.light || l.palette || l.genre)));
+}
 // The tile's colour chip (docs/ux/research, the badge): shifted → one press matches; matched → a quiet
 // note with Show original; original shown → a quiet note with Use matched. null: nothing to show.
 export function colourChip(item) {
   if (!item || item.kind !== "image") return null;
   if (item.colour) return item.colour.on ? { state: "matched", text: "Colour matched", action: "Show original", to: "original" } : { state: "original", text: "Original colour", action: "Use matched", to: "matched" };
   const cc = item.checks?.colour;
-  if (cc?.state === "shifted") return { state: "shifted", text: "Colour shifted from source", action: "Match", to: "match", note: shiftText(cc.da, cc.db) };
+  if (cc?.state === "shifted" && !colourIntended(item)) return { state: "shifted", text: "Colour shifted from source", action: "Match", to: "match", note: shiftText(cc.da, cc.db) };
   return null;
 }
 

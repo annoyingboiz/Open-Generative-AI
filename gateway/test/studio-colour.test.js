@@ -18,4 +18,12 @@ test('colour chip and the viewer line follow the measurement and the match', asy
   assert.equal(colourChip({ kind: 'image', checks: { colour: { state: 'unavailable', reason: 'x' } } }), null, 'not matchable: nothing on the tile');
   assert.equal(colourChip({ kind: 'video', checks: { colour: { state: 'shifted' } } }), null);
   assert.equal(shiftText(-1.2, 0.5), 'green +1.2, yellow +0.5');
+  // Made with a look or re-shot: intended colour, no tile badge and no warning line (color-badge-review.md §3).
+  const looked = { ...shifted, meta: { look: { on: true, camera: 'super8' } } };
+  assert.equal(colourChip(looked), null);
+  assert.equal(checkBadges(looked).some((b) => b.id === 'colour'), false);
+  assert.equal(colourChip({ ...shifted, meta: { look: { on: false, filter: 'teal-orange' } } }), null, 'a colour filter alone counts');
+  assert.equal(colourChip({ ...shifted, meta: { reshootOf: '/media/g/gen_a/0.jpg' } }), null);
+  assert.equal(colourChip({ ...shifted, meta: { look: { on: false } } })?.state, 'shifted', 'an empty look does not');
+  assert.equal(colourChip({ ...looked, colour: { on: true } })?.text, 'Colour matched', 'once matched by hand, the note shows');
 });

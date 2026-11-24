@@ -19,7 +19,7 @@ import { dzScrollBoxRef } from "../../dzScroll.js";
 import { dzMediaInfo } from "../DzPosterVideo.jsx";
 import { dzLibrary } from "../../dzLibrary.js";
 import { TextureControl } from "./Texture.jsx";
-import { checkBadges, hasColourSource, colourLine } from "./actions.js";
+import { checkBadges, hasColourSource, colourLine, colourIntended } from "./actions.js";
 
 const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } = DropdownMenuParts;
 const notify = (detail) => window.dispatchEvent(new CustomEvent("dz:notify", { detail }));
@@ -689,6 +689,9 @@ export default function StudioViewer({ item: given, items = [], onClose, onMove,
                       <Action icon={PencilSimple} onClick={() => { onClose(); act.edit(item); }}>Edit</Action>
                       <Action icon={VideoCamera} onClick={() => { onClose(); act.makeVideo(item); }}>Make video</Action>
                       {canUp && <Action icon={ArrowsOutSimple} onClick={() => { onClose(); dzOpenUpscale(item.url); }}>Upscale</Action>}
+                      {colourable && item.mine !== false && colour?.state === "ready" && colourIntended(item) && (
+                        <p className="col-span-2 text-xs text-muted-foreground">This picture was re-shot with a look; matching will remove part of it.</p>
+                      )}
                       {colourable && item.mine !== false && colour && ["ready", "no-shift", "unavailable"].includes(colour.state) && (
                         <Action icon={colBusy ? Spinner : Drop} disabled={colBusy || colour.state === "unavailable"} title={colour.state === "unavailable" ? colour.reason : "Remove a colour cast the edit added, measured against the first picture of the chain. The original stays in Versions."} onClick={() => setColourTo("match")}>Match colour to source</Action>
                       )}

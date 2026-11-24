@@ -5,6 +5,8 @@
 //   DATA_DIR/catalog/apimart-prices.json      APIMart prices per model
 import { lookForClient } from '../look.js';
 import { loadMemos } from '../prompt-adapter.js';
+// Some model's FRAMING switched on in its memo (block mode); a read error counts as off, never a 500.
+const framingOn = () => { try { return loadMemos().some((m) => m.look?.framing); } catch { return false; } };
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -326,7 +328,7 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
     thumbnail,
     clientScript(user = null) {
       const lists = user?.role === 'admin' ? built.listsJson : built.publicListsJson;
-      const json = `{"builtAt":${built.builtAt},"lists":${lists},"tools":${JSON.stringify(currentTools())},"look":${JSON.stringify(lookForClient({ framing: loadMemos().some((m) => m.look?.framing) }))}}`;
+      const json = `{"builtAt":${built.builtAt},"lists":${lists},"tools":${JSON.stringify(currentTools())},"look":${JSON.stringify(lookForClient({ framing: framingOn() }))}}`;
       return `window.__DZ_CATALOG__=${json.replace(/</g, '\\u003c')};\n`;
     },
     stats() {

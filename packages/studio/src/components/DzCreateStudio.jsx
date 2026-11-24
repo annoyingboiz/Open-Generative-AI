@@ -589,7 +589,7 @@ export function useDzCreateEngine({ apiKey, onGenerationStart, onGenerationEnd, 
     const audio = [values.generate_audio, values.audio, values.sound, values.enable_audio].find((v) => typeof v === "boolean");
     const moveLabel = kind === "video" && move ? lookData().moves.find((m) => m.id === move)?.label : "";
     // Kling and Seedance get no focal mm value (doc 42, answer 3): Adapt is told the shot size instead.
-    const noMm = /^(kling|seedance)/i.test(String(entry?.family || ""));
+    const noMm = /(^|[-_ ])(kling|seedance)([-_ .]|$)/i.test(String(entry?.family || ""));
     const label = noMm ? lookLabel(camera, { shotForFocal: true }) : lookLabel(camera);
     const cameraText = [label, moveLabel ? `move: ${moveLabel}` : ""].filter(Boolean).join(", ");
     return {

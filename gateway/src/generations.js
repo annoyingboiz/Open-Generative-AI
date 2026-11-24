@@ -891,8 +891,14 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     // Only onto the files it was made from (`before`: outputs_json then), and never onto a purged row.
     setOutputs(id, outputs, before) {
       const row = q.byId.get(id);
-      if (!row || row.purged_at != null || row.status !== 'completed' || (before != null && row.outputs_json !== before)) return false;
-      q.setOutputs.run(JSON.stringify(outputs), now(), id);
+      // The checks (cut, drift, shot size) may be written in between by the backlog: they are not a
+      // change to the files, so they neither block this write nor get lost (they were measured on
+      // the clean original, which a texture re-render keeps).
+      const files = (json) => { try { return JSON.stringify(JSON.parse(json || '[]').map(({ checks: _c, ...o }) => o)); } catch { return json; } };
+      if (!row || row.purged_at != null || row.status !== 'completed' || (before != null && files(row.outputs_json) !== files(before))) return false;
+      const had = JSON.parse(row.outputs_json || '[]');
+      const next = outputs.map((o, i) => (o && !o.checks && had[i]?.checks ? { ...o, checks: had[i].checks } : o));
+      q.setOutputs.run(JSON.stringify(next), now(), id);
       return true;
     },
     editableRow: (user, id) => editable(user, id),

@@ -234,6 +234,8 @@ test('block mode: title-case labels end a block; a shot size alone is enough for
   const memos = Object.fromEntries(loadMemos().map((m) => [m.id, m]));
   const p = renderLook('Camera: locked.\nSound: room tone.', cleanLook({ move: 'orbit' }), { kind: 'video', memo: memos.kling });
   assert.match(p, /^Camera: locked\. Camera orbits around the subject in a smooth arc\.\nSound: room tone\.$/);
+  const note = renderLook('CAMERA Static.\nNote: she smiles.\n\nSCENE Shop.', cleanLook({ move: 'orbit' }), { kind: 'video', memo: memos.kling });
+  assert.match(note, /^CAMERA Static\.\nNote: she smiles\. Camera orbits around the subject in a smooth arc\.\n\nSCENE Shop\.$/);
   assert.match(renderLook('A woman.', cleanLook({ shot: 'close-up' }), { kind: 'video', memo: memos.kling }), /^FRAMING Face close-up\./m);
   assert.equal(renderLook('A cup.', cleanLook({ shot: 'insert' }), { kind: 'video', memo: memos.kling }), 'A cup.');
 });

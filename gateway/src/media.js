@@ -121,8 +121,17 @@ export function cutScore(buf, { w = CUT_W, h = CUT_H } = {}) {
   }
   const sorted = Array.from(d).sort((x, y) => x - y);
   const p90 = sorted[Math.floor(0.9 * (sorted.length - 1))];
+  // Mean difference between any two frames (for the flash test below).
+  const diff = (x, y) => { let sum = 0; for (let k = 0; k < size; k += 1) sum += Math.abs(buf[y * size + k] - buf[x * size + k]); return sum / size; };
   const cuts = [];
-  for (let i = 0; i < d.length; i += 1) if (d[i] > CUT_MIN && d[i] >= CUT_RATIO * Math.max(p90, 0.01)) cuts.push(i + 1);
+  for (let i = 0; i < d.length; i += 1) {
+    if (!(d[i] > CUT_MIN && d[i] >= CUT_RATIO * Math.max(p90, 0.01))) continue;
+    // A flash (lightning, a camera flash): the picture comes back within 3 frames — not a cut.
+    let back = false;
+    for (let j = i + 2; j <= Math.min(n - 1, i + 4) && !back; j += 1) back = diff(i, j) <= CUT_MIN;
+    if (back) { i += 3; continue; }
+    cuts.push(i + 1);
+  }
   const max = sorted[sorted.length - 1];
   return { frames: n, cuts, max: Math.round(max * 100) / 100, p90: Math.round(p90 * 100) / 100, cut: cuts.length > 0 };
 }

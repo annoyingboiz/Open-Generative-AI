@@ -25,6 +25,10 @@ test('a hard cut is found at its frame; a slow drift or a steady clip is not a c
   const two = clip(97, { at: 49, jump: 60 });
   for (let f = 73; f < 97; f += 1) for (let k = 0; k < size; k += 1) two[f * size + k] = (two[f * size + k] + 90) % 256;
   assert.deepEqual(cutScore(two).cuts, [49, 73]);
+  // A one-frame flash: in and out again — not a cut.
+  const flash = clip(97);
+  for (let k = 0; k < size; k += 1) flash[40 * size + k] = 255;
+  assert.deepEqual(cutScore(flash).cuts, []);
   assert.equal(cutScore(clip(97)).cut, false);
   // A strong but even change on every frame (fast camera move): large, but not 4× the next one.
   assert.equal(cutScore(clip(97, { noise: 12 })).cut, false);

@@ -561,6 +561,9 @@ function labeledLook(text, look, opts) {
 
 // Adds `t` to the end of the user's own block (`LABEL text…` up to the next blank line or
 // the next capitalised label), or returns null when the prompt has no such block.
+// Block names the memos and Adapt write ("Camera:", "[Overall style]"…): a line starting with
+// one ends the block before it. Other "Word:" lines ("Note: she smiles") stay inside it.
+const BLOCK_NAME = /^\s*(?:\[[A-Za-z ]{3,30}\]|(?:references?|subject|action|scene|style|camera|sound|audio|beats|look|lighting|light|mood|dialogue|objects|background|focus|framing|tech|visual style|camera tone|overall style|shot \d+)\s*:)/i;
 function intoLabeledBlock(text, label, t) {
   const lines = text.split('\n');
   const head = new RegExp(`^\\s*(?:${label}\\b(?!-)|${label}\\s*:)`, 'i');
@@ -569,7 +572,7 @@ function intoLabeledBlock(text, label, t) {
   if (at < 0) return null;
   let end = at;
   for (let i = at + 1; i < lines.length; i += 1) {
-    if (!lines[i].trim() || /^\s*(?:[A-Z]{3,}\b(?:\s|:|$)|\[?[A-Z][A-Za-z]*(?: [A-Za-z]+){0,2}\]?\s*:)/.test(lines[i])) break;
+    if (!lines[i].trim() || /^\s*[A-Z]{3,}\b(?:\s|:|$)/.test(lines[i]) || BLOCK_NAME.test(lines[i])) break;
     end = i;
   }
   const line = lines[end].replace(/\s+$/, '');

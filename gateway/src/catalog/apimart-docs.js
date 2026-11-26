@@ -34,9 +34,18 @@ function parseParams(text) {
 }
 
 const ticks = (s) => [...s.matchAll(/`([^`\n]{1,40})`/g)].map((m) => m[1].trim());
+// "`1080p` returns HTTP 400", "`4k` is not supported", "`edit` and `extend` are unsupported":
+// values named only to be refused.
+const refusedIn = (text) => new Set(String(text).split(/(?<=[.;])\s+|\n/).filter((t) => /returns? (HTTP )?4\d\d|not supported|unsupported|not available|is rejected/i.test(t) && !/\bonly\b/i.test(t)).flatMap((t) => ticks(t)));
+// "Alias for `duration`": the same setting under a second name (MAGI-2 `seconds`, `audio`) —
+// never a setting of its own (both sent with different values → HTTP 400).
+const aliasOf = (p, names) => { const m = /^\s*alias for `([a-z0-9_]+)`/im.exec([p.head, ...p.body].join('\n')); return m && names.has(m[1]) ? m[1] : null; };
 
 function defaultOf(p) {
-  const m = /\(default:\s*([^)]+)\)/i.exec(p.head) || /default[^`\n]{0,20}`([^`]+)`/i.exec(p.body.join('\n'));
+  const body = p.body.join('\n');
+  // "(default: 5)" in the head; "`16:9` (default), `9:16` …" (MAGI-2: the value before the word,
+  // not the one after it); "Default `auto`".
+  const m = /\(default:\s*([^)]+)\)/i.exec(p.head) || /`([^`\n]+)`\s*\(default\)/i.exec(body) || /default[^`\n]{0,20}`([^`]+)`/i.exec(body);
   return m ? m[1].replace(/`/g, '').trim() : undefined;
 }
 
@@ -69,8 +78,7 @@ function enumOf(p, otherNames) {
     const inline = /(?:only|one of|either)[^.\n]*?((?:`[^`]+`[,\s/or]*){2,})/i.exec(body);
     if (inline) candidates = ticks(inline[1]);
   }
-  // "`1080p` returns HTTP 400", "`4k` is not supported": named only to be refused.
-  const refused = new Set(body.split(/(?<=[.;])\s+|\n/).filter((t) => /returns? (HTTP )?4\d\d|not supported|unsupported|not available|is rejected/i.test(t) && !/\bonly\b/i.test(t)).flatMap((t) => ticks(t)));
+  const refused = refusedIn(body);
   const valid = VALID[p.name];
   candidates = candidates.filter((v) => !refused.has(v));
   const values = candidates.filter((v) => !STOP.has(v) && !otherNames.has(v) && !/\s|@|\/\/|^-?\d+\s*~/.test(v) && v.length <= 20 && (!valid || valid.test(v)));
@@ -139,7 +147,12 @@ const KEEP = ['resolution', 'duration', 'quality', 'n', 'generate_audio', 'audio
 const FRAME_BY_COUNT = /first image is the (start|first) frame|image-to-video: the first image is the first frame|(one|1|single) image[^.\n]{0,60}(start(ing)?|first)[ -]frame|first image in `image_urls`|1 image\s*=\s*first frame/i;
 const URLS_ARE_REFS = /regardless of count|all treated as `?reference|never auto-mapped to (first|frames)/i;
 const COMBINE = /including (the )?first\/last frames|in total,? including (first|frames)/i;
-const valuesOf = (p) => (p ? ticks([p.head, ...p.body].join('\n')).filter((v) => /^[a-z_]+$/.test(v)) : []);
+const valuesOf = (p) => {
+  if (!p) return [];
+  const text = [p.head, ...p.body].join('\n');
+  const refused = refusedIn(text);
+  return ticks(text).filter((v) => /^[a-z_]+$/.test(v) && !refused.has(v));
+};
 
 function videoReader(params, text, ids) {
   const body = (n) => (params[n] ? params[n].body.join('\n') : '');
@@ -211,7 +224,13 @@ function videoReader(params, text, ids) {
     //  totals: "no more than 15 assets combined" (Kling), "Up to 10 images in total, including first/last frames" (Gemini).
     const assetsTotal = Number((/no more than\s+\**(\d+)\**\s+assets/i.exec(text) || [])[1]) || null;
     const imagesTotal = Number((/(?:up to|no more than)\s+\**(\d+)\**\s+images in total,? including (?:the )?first/i.exec(text) || [])[1]) || null;
+    //  aspect ratio by mode: "use `auto` to follow the first frame's aspect ratio" (only with a
+    //  start frame); "Image-to-video supports the first five ratios, excluding `21:9`" (MAGI-2).
+    const ratioAutoIsFrame = /`auto`[^.\n]*first[ -]frame/i.test(ar);
+    const i2vExcl = /image-to-video[^.\n]*?excluding\s+((?:`[^`]+`[\s,]*(?:and|or)?\s*)+)/i.exec(ar);
+    const i2vRatioExclude = i2vExcl ? ticks(i2vExcl[1]) : [];
     return {
+      ratioAutoIsFrame, i2vRatioExclude,
       modes, omniRef: omni.includes('reference'), typeField: params.generation_type && has('generation_type') ? 'generation_type' : null,
       adaptive: /first[ /–-]*(last )?frame[^\n]*(`size`|aspect)[^\n]*adaptive/i.test(text),
       promptReq, i2vNoRatio, editFixed, audioNeeds, assetsTotal, imagesTotal,
@@ -293,7 +312,7 @@ function buildOverride(text) {
     }
   }
   for (const key of KEEP) {
-    if (!params[key]) continue;
+    if (!params[key] || aliasOf(params[key], names)) continue;
     const input = studioInput(key, params[key], names);
     if (input) inputs[key] = input;
   }
@@ -347,6 +366,21 @@ function buildOverride(text) {
 }
 
 
+// The aspect ratios one mode takes, when the docs narrow them per mode (MAGI-2: `auto` only
+// with a start frame, where it is the default; no `21:9` from a start frame).
+function ratioByMode(ar, modes, read) {
+  if (!ar?.enum || (!read.ratioAutoIsFrame && !read.i2vRatioExclude.length)) return;
+  for (const [mode, spec] of Object.entries(modes)) {
+    const frames = mode === 'i2v' && spec.media?.image?.field === 'first_frame_image';
+    let values = ar.enum;
+    if (read.ratioAutoIsFrame && !frames) values = values.filter((v) => v !== 'auto');
+    if (frames) values = values.filter((v) => !read.i2vRatioExclude.includes(v));
+    if (values.length === ar.enum.length || values.length < 2) continue;
+    const def = frames && values.includes('auto') ? 'auto' : values.includes(ar.default) ? ar.default : values[0];
+    spec.inputs = { ...spec.inputs, aspect_ratio: { ...ar, enum: values, default: def } };
+  }
+}
+
 // [{ url, text }] → { modelId: { source, docTitle, score, rename, common, modes } }
 export function buildApimartOverrides(docs) {
   const out = {};
@@ -365,6 +399,7 @@ export function buildApimartOverrides(docs) {
             t2i: { inputs: {} },
             ...(o.media.image ? { i2i: { inputs: {}, media: { image: o.media.image } } } : {}),
           };
+      if (read) ratioByMode(common.inputs.aspect_ratio, modes, read);
       const score = Object.keys(o.inputs).length + Object.keys(modes).length;
       if (out[id] && out[id].score >= score) continue; // keep the most complete page (e.g. not "remix")
       // Video modes come from the docs alone (APIMart's tags are sometimes wrong: Veo 3.1 Lite
@@ -392,8 +427,10 @@ export async function fetchApimartDocs({ fetchFn = (url) => providerFetch(url, {
         const r = await fetchFn(url);
         if (!r.ok) { failed += 1; continue; }
         const text = await r.text();
-        // A page cut short keeps its title and model id but loses the parameters.
-        if (!Object.keys(parseParams(text)).length) invalid += 1;
+        // A page cut short keeps its title and model id (the examples come first) but loses the
+        // parameters. Pages that name no model are guides or button pages (Midjourney's upscale,
+        // pan, zoom …, added 17.11: 19 of them blocked every docs check for 9 days) — not counted.
+        if (!Object.keys(parseParams(text)).length && modelIdsOf(text, {}).length) invalid += 1;
         docs.push({ url, text });
       } catch { failed += 1; }
     }

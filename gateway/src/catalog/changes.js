@@ -209,8 +209,13 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     // Half-loaded docs must not look like dozens of removed settings.
     if ((total && (failed + invalid) / total > 0.15) || freshCount < Object.keys(active).length * 0.7) {
       log?.warn(`changes: APIMart docs check skipped — ${freshCount} models parsed, ${failed}/${total} pages failed, ${invalid} unreadable`);
+      // A skip that keeps happening means the docs changed shape, not a bad download:
+      // remembered, so the admin sees it (summary().docsStale) instead of one line a day.
+      const m = meta();
+      writeMeta({ docsSkippedSince: m.docsSkippedSince || now(), docsSkips: (m.docsSkips || 0) + 1, docsSkipReason: `${failed} of ${total} pages failed, ${invalid} without parameters, ${freshCount} models read` });
       return record([{ provider: 'apimart', source: 'docs', status: 'info', type: 'check-skipped', detail: `Docs looked incomplete (${freshCount} models, ${failed} of ${total} pages failed, ${invalid} without parameters). Nothing changed.` }]);
     }
+    writeMeta({ docsAppliedAt: now(), docsSkippedSince: null, docsSkips: 0, docsSkipReason: null });
     const prev = previous();
     const bad = refused();
     const out = [];
@@ -302,6 +307,15 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     return record(out);
   }
 
+  const meta = () => readJson(file('changes-meta.json'), {});
+  const writeMeta = (patch) => writeJsonAtomic(file('changes-meta.json'), { ...meta(), ...patch });
+  // Skipped for more than two days in a row: the studio and Settings show a warning.
+  function docsStale() {
+    const m = meta();
+    if (!m.docsSkips || !m.docsSkippedSince || now() - m.docsSkippedSince < 2 * DAY) return null;
+    return { since: m.docsAppliedAt || m.docsSkippedSince, skippedSince: m.docsSkippedSince, skips: m.docsSkips, reason: m.docsSkipReason || '' };
+  }
+
   function markSeen(id) {
     let changed = false;
     for (const e of entries) if (!e.seen && (!id || e.id === id)) { e.seen = true; changed = true; }
@@ -319,9 +333,10 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     list: ({ limit = 200 } = {}) => entries.slice(0, limit),
     summary: () => ({
       unseen: entries.filter((e) => !e.seen).length,
-      lastCheck: readJson(file('changes-meta.json'), {}).lastDocsCheck || null,
+      lastCheck: meta().lastDocsCheck || null,
+      docsStale: docsStale(),
     }),
-    setLastDocsCheck: (at) => writeJsonAtomic(file('changes-meta.json'), { ...readJson(file('changes-meta.json'), {}), lastDocsCheck: at }),
-    lastDocsCheck: () => readJson(file('changes-meta.json'), {}).lastDocsCheck || 0,
+    setLastDocsCheck: (at) => writeMeta({ lastDocsCheck: at }),
+    lastDocsCheck: () => meta().lastDocsCheck || 0,
   };
 }

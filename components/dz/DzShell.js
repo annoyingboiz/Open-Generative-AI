@@ -10,7 +10,7 @@ import { DzCreateStudio, DzStudio, DzStoryboard, DropOverlay, dzActiveDropTarget
   DzProjectsPage, DzElementsPage, ToElementDialog, VideoElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
   DropdownMenuParts, DialogParts, cn } from 'studio';
 import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, SquaresFour, Images, Shapes, Layout, Trash, FolderSimple, Plus,
-  SidebarSimple, MagnifyingGlass, ChatCircle, CaretUpDown, GearSix, Sun, Moon, SignOut, List, X, ArrowRight } from '@phosphor-icons/react';
+  SidebarSimple, MagnifyingGlass, ChatCircle, CaretUpDown, GearSix, Sun, Moon, SignOut, List, X, ArrowRight, Warning } from '@phosphor-icons/react';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
 import { useTheme } from '../ThemeToggle';
 import DirectorMark from './DirectorMark';
@@ -845,13 +845,16 @@ function AccountMenu({ user, balance, changes, collapsed }) {
   const [theme, setTheme] = useTheme();
   const initial = (user.displayName || user.username || '?').trim().charAt(0).toUpperCase();
   const unseen = changes?.unseen || 0;
+  // APIMart docs skipped for days (Settings → Provider changes explains why).
+  const stale = changes?.docsStale || null;
+  const staleDays = stale ? Math.max(1, Math.floor((Date.now() - stale.since) / 86_400_000)) : 0;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button type="button" className={cn('flex w-full items-center rounded-md text-left transition-colors duration-state hover:bg-accent', collapsed ? 'h-10 justify-center' : 'h-11 gap-2.5 px-2')} aria-label="Account menu">
           <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
             {initial}
-            {unseen > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-signal" />}
+            {(unseen > 0 || stale) && <span className={cn('absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full', stale ? 'bg-warning' : 'bg-signal')} />}
           </span>
           {!collapsed && (
             <>
@@ -877,8 +880,16 @@ function AccountMenu({ user, balance, changes, collapsed }) {
             <DropdownMenuSeparator />
           </>
         )}
+        {stale && (
+          <DropdownMenuItem asChild>
+            <a href="/settings/changes" className="h-auto items-start py-1.5 text-warning" title={stale.reason}>
+              <Warning size={16} className="mt-0.5 shrink-0" />
+              <span className="text-sm leading-5">APIMart docs not applied for {staleDays} {staleDays === 1 ? 'day' : 'days'}. New APIMart models have no settings.</span>
+            </a>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
-          <a href={unseen ? '/settings/changes' : '/settings'} className="h-8"><GearSix size={16} /> Settings
+          <a href={unseen || stale ? '/settings/changes' : '/settings'} className="h-8"><GearSix size={16} /> Settings
             {unseen > 0 && <span className="ml-auto rounded-full bg-signal/15 px-1.5 text-xs font-semibold text-signal" title={`${unseen} new provider change(s) — applied automatically`}>{unseen}</span>}
           </a>
         </DropdownMenuItem>

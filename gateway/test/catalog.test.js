@@ -262,3 +262,37 @@ test('APIMart H3: references are bare image_urls (9), reference videos and audio
   assert.throws(() => toProviderBody(a, { prompt: 'p', refers__image: ['A', 'B', 'C'], refers__audio: ['S'] }), BodyError);
   assert.throws(() => toProviderBody(a, { prompt: 'p', refers__audio: ['S'] }), BodyError);
 });
+
+// MAGI-2 at APIMart (26.11.2026 docs page, test/fixtures/apimart-magi-2.md).
+test('APIMart MAGI-2 from its docs: 4–30 s, 16:9 default, one audio switch, frames or references, no edit', async () => {
+  const fs = await import('node:fs');
+  const { buildApimartOverrides, fetchApimartDocs } = await import('../src/catalog/apimart-docs.js');
+  const text = fs.readFileSync(new URL('./fixtures/apimart-magi-2.md', import.meta.url), 'utf8');
+  const o = buildApimartOverrides([{ url: 'https://docs.apimart.ai/en/api-reference/videos/magi-2/generation.md', text }])['magi-2'];
+  assert.deepEqual([o.common.inputs.duration.minValue, o.common.inputs.duration.maxValue, o.common.inputs.duration.default], [4, 30, 5]);
+  assert.equal(o.common.inputs.generate_audio.default, true);
+  assert.equal(o.common.inputs.audio, undefined); // "Alias for `generate_audio`"
+  assert.deepEqual(Object.keys(o.modes).sort(), ['i2v', 'reference', 't2v']); // "`edit` and `extend` are unsupported"
+  assert.equal(o.modes.t2v.inputs.aspect_ratio.default, '16:9'); // "`16:9` (default), `9:16`"
+  assert.ok(!o.modes.t2v.inputs.aspect_ratio.enum.includes('auto'));
+  assert.ok(o.modes.t2v.inputs.aspect_ratio.enum.includes('21:9'));
+  assert.equal(o.modes.i2v.inputs.aspect_ratio.default, 'auto'); // follows the start frame
+  assert.ok(!o.modes.i2v.inputs.aspect_ratio.enum.includes('21:9'));
+  const all = buildApimartVariants({ id: 'magi-2', capability_tags: ['Text to Video', 'Image to Video', 'Video to Video'] }, o, { usd: 0.08, unit: 'second' });
+  const at = (m) => all.find((v) => v.key.endsWith(`?m=${m}`));
+  assert.equal(at('v2v'), undefined);
+  assert.deepEqual(toProviderBody(at('t2v'), { prompt: 'p', duration: 10, aspect_ratio: '21:9', generate_audio: false }), { prompt: 'p', duration: 10, aspect_ratio: '21:9', generate_audio: false });
+  assert.deepEqual(toProviderBody(at('i2v'), { prompt: 'p', first_frame_image: 'A', last_frame_image: 'B', aspect_ratio: 'auto' }), { prompt: 'p', first_frame_image: 'A', last_frame_image: 'B', aspect_ratio: 'auto' });
+  assert.deepEqual(toProviderBody(at('reference'), { prompt: 'p', image_urls: ['R'], reference_videos: ['V'], reference_audios: ['S'] }),
+    { prompt: 'p', image_urls: ['R'], video_urls: ['V'], audio_urls: ['S'], omni_reference_task_type: 'reference' });
+  assert.equal(at('reference').model.inputs.image_urls.maxItems, 10);
+
+  // Guide and button pages without a model (Midjourney's, added 17.11) don't count as unreadable.
+  const mj = fs.readFileSync(new URL('./fixtures/apimart-midjourney-upscale.md', import.meta.url), 'utf8');
+  const index = 'https://docs.apimart.ai/en/api-reference/videos/magi-2/generation.md\nhttps://docs.apimart.ai/en/api-reference/images/midjourney/upscale.md\nhttps://docs.apimart.ai/en/api-reference/videos/cut/generation.md';
+  const pages = { 'magi-2': text, upscale: mj, cut: text.slice(0, text.indexOf('## Generation modes')) };
+  const fetchFn = async (url) => ({ ok: true, text: async () => (url.endsWith('api-manual.txt') ? index : pages[/magi-2/.test(url) ? 'magi-2' : /upscale/.test(url) ? 'upscale' : 'cut']) });
+  const r = await fetchApimartDocs({ fetchFn });
+  assert.equal(r.total, 3);
+  assert.equal(r.invalid, 1); // the page cut short keeps its model id and still counts
+});

@@ -153,3 +153,19 @@ Reference images, up to \`7\`
   assert.equal(o.modes.reference.media.image.max, 7);
   assert.equal(o.modes.i2v, undefined);
 });
+
+test('APIMart docs check: skipped for over two days → docsStale; an applied check clears it', () => {
+  let t = Date.UTC(2026, 10, 17);
+  const changes = createChanges({ dir: tmp(), now: () => t });
+  const bundled = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`m${i}`, ov({ duration: dur([5]) })]));
+  changes.apimartDocsChecked({ m0: ov({ duration: dur([5]) }) }, bundled, { total: 10, failed: 9 });
+  assert.equal(changes.summary().docsStale, null); // one bad download is normal
+  t += 3 * 86_400_000;
+  changes.apimartDocsChecked({ m0: ov({ duration: dur([5]) }) }, bundled, { total: 10, failed: 9 });
+  const stale = changes.summary().docsStale;
+  assert.equal(stale.skips, 2);
+  assert.equal(stale.since, Date.UTC(2026, 10, 17));
+  assert.match(stale.reason, /9 of 10 pages failed/);
+  changes.apimartDocsChecked(bundled, bundled, { total: 10 });
+  assert.equal(changes.summary().docsStale, null);
+});

@@ -199,7 +199,11 @@ function changesSection({ entries, summary, telegram }) {
 </tr>`;
   }).join('');
   const last = summary.lastCheck ? when(summary.lastCheck) : 'not yet';
+  const stale = summary.docsStale;
+  const staleLine = stale ? `<div style="margin-bottom:12px;padding:10px 12px;border:1px solid #fbbf24;border-radius:8px;color:#fbbf24">
+    APIMart docs have not been applied since ${esc(when(stale.since))} UTC: ${esc(String(stale.skips))} check(s) in a row were skipped as incomplete (${esc(stale.reason)}). New APIMart models show without settings, and setting changes are not picked up.</div>` : '';
   return `<div class="section">
+  ${staleLine}
   <p class="muted" style="margin-top:0">Everything here happens by itself — nothing to approve. Checked every day. <b>Atlas</b> publishes machine-readable schemas, so the studio follows it at once. <b>APIMart</b>'s API lists its models and prices but not what each setting accepts, so its docs are re-read and every change is applied. If APIMart then refuses requests over a changed setting, the change is rolled back by itself and that docs version is skipped. Removed models leave the studio on the next refresh.</p>
   <div class="row" style="margin-bottom:12px">
     <span>APIMart docs last checked: ${esc(last)}${telegram ? ' · Telegram alerts on' : ' · Telegram alerts off (set DZ_TELEGRAM_BOT_TOKEN and DZ_TELEGRAM_CHAT_ID)'}</span>

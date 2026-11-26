@@ -169,3 +169,12 @@ test('APIMart docs check: skipped for over two days → docsStale; an applied ch
   changes.apimartDocsChecked(bundled, bundled, { total: 10 });
   assert.equal(changes.summary().docsStale, null);
 });
+
+test('APIMart docs check that fails outright (index unreachable) also turns into docsStale', () => {
+  let t = Date.UTC(2026, 10, 17);
+  const changes = createChanges({ dir: tmp(), now: () => t });
+  changes.apimartDocsFailed('APIMart docs index: HTTP 503');
+  t += 3 * 86_400_000;
+  changes.apimartDocsFailed('APIMart docs index: HTTP 503');
+  assert.match(changes.summary().docsStale.reason, /failed: APIMart docs index: HTTP 503/);
+});

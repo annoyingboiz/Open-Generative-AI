@@ -246,6 +246,7 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
         if (JSON.stringify(changes.liveOverrides()) !== before && !refreshing) rebuild();
       } catch (error) {
         log?.warn(`changes: APIMart docs check failed — ${error.message}`);
+        try { changes.apimartDocsFailed(error.message); } catch { /* meta write: best effort */ }
       } finally {
         docsRunning = null;
       }

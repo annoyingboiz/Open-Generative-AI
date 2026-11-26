@@ -316,6 +316,12 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     return { since: m.docsAppliedAt || m.docsSkippedSince, skippedSince: m.docsSkippedSince, skips: m.docsSkips, reason: m.docsSkipReason || '' };
   }
 
+  // The whole check failed (index unreachable, a parsing error): counts like a skip.
+  function apimartDocsFailed(reason) {
+    const m = meta();
+    writeMeta({ docsSkippedSince: m.docsSkippedSince || now(), docsSkips: (m.docsSkips || 0) + 1, docsSkipReason: `the check failed: ${String(reason || '').slice(0, 160)}` });
+  }
+
   function markSeen(id) {
     let changed = false;
     for (const e of entries) if (!e.seen && (!id || e.id === id)) { e.seen = true; changed = true; }
@@ -326,6 +332,7 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     record,
     catalogChecked,
     apimartDocsChecked,
+    apimartDocsFailed,
     providerRejected,
     markSeen,
     liveOverrides: live,

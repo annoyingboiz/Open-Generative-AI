@@ -296,3 +296,21 @@ test('APIMart MAGI-2 from its docs: 4–30 s, 16:9 default, one audio switch, fr
   assert.equal(r.total, 3);
   assert.equal(r.invalid, 1); // the page cut short keeps its model id and still counts
 });
+
+test('APIMart docs: a sentence about one model on a shared page refuses nothing for the others (Veo 3.1)', async () => {
+  const fs = await import('node:fs');
+  const { buildApimartOverrides, fetchApimartDocs } = await import('../src/catalog/apimart-docs.js');
+  const text = fs.readFileSync(new URL('./fixtures/apimart-veo3.md', import.meta.url), 'utf8');
+  const o = buildApimartOverrides([{ url: 'https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md', text }]);
+  assert.ok(o['veo3.1-fast'].modes.reference); // "`veo3.1-quality` model does not support `reference` mode"
+  assert.equal(o['veo3.1-quality'].modes.reference, undefined);
+  assert.deepEqual(Object.keys(o['veo3.1-lite'].modes), ['t2v']);
+
+  // A page cut inside its parameter list (model and prompt read, the rest lost) counts as unreadable.
+  const cut = text.slice(0, text.indexOf('**generation\\_type**'));
+  const index = 'https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md';
+  const r = await fetchApimartDocs({ fetchFn: async (url) => ({ ok: true, text: async () => (url.endsWith('api-manual.txt') ? index : cut) }) });
+  assert.equal(r.invalid, 1);
+  const whole = await fetchApimartDocs({ fetchFn: async (url) => ({ ok: true, text: async () => (url.endsWith('api-manual.txt') ? index : text) }) });
+  assert.equal(whole.invalid, 0);
+});

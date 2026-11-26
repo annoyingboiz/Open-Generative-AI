@@ -10,6 +10,13 @@ const DOC_URL = /https:\/\/docs\.apimart\.ai\/en\/api-reference\/(images|videos)
 const STOP = new Set(['true', 'false', 'null', 'auto_fix']);
 const PARAM_LINE = /^\*\*([a-z0-9\\_]+)\*\*\s+`([^`]+)`([^\n]*)$/i;
 
+// The parameter list is complete when another section follows it (every APIMart model page,
+// checked 26.11.2026: 85 of 85). A page cut inside the list has none.
+function paramsComplete(text) {
+  const start = text.search(/^##\s+(Request parameters|Request body|Body parameters|Body|Parameters)\s*$/mi);
+  return start >= 0 && /^##\s+\S/m.test(text.slice(start + 5));
+}
+
 // Splits the "Request parameters" part into { name: { type, head, body } }.
 function parseParams(text) {
   const start = text.search(/^##\s+(Request parameters|Request body|Body parameters|Body|Parameters)\s*$/mi);
@@ -36,7 +43,11 @@ function parseParams(text) {
 const ticks = (s) => [...s.matchAll(/`([^`\n]{1,40})`/g)].map((m) => m[1].trim());
 // "`1080p` returns HTTP 400", "`4k` is not supported", "`edit` and `extend` are unsupported":
 // values named only to be refused.
-const refusedIn = (text) => new Set(String(text).split(/(?<=[.;])\s+|\n/).filter((t) => /returns? (HTTP )?4\d\d|not supported|unsupported|not available|is rejected/i.test(t) && !/\bonly\b/i.test(t)).flatMap((t) => ticks(t)));
+// A sentence about one model on a shared page ("`veo3.1-quality` model does not support
+// `reference` mode") refuses nothing for the others: videoReader's noMode / noField read those.
+const refusedIn = (text) => new Set(String(text).split(/(?<=[.;])\s+|\n/)
+  .filter((t) => /returns? (HTTP )?4\d\d|not supported|unsupported|not available|is rejected/i.test(t) && !/\bonly\b/i.test(t) && !/`[^`]+`\s+model\b/i.test(t))
+  .flatMap((t) => ticks(t)));
 // "Alias for `duration`": the same setting under a second name (MAGI-2 `seconds`, `audio`) —
 // never a setting of its own (both sent with different values → HTTP 400).
 const aliasOf = (p, names) => { const m = /^\s*alias for `([a-z0-9_]+)`/im.exec([p.head, ...p.body].join('\n')); return m && names.has(m[1]) ? m[1] : null; };
@@ -430,7 +441,7 @@ export async function fetchApimartDocs({ fetchFn = (url) => providerFetch(url, {
         // A page cut short keeps its title and model id (the examples come first) but loses the
         // parameters. Pages that name no model are guides or button pages (Midjourney's upscale,
         // pan, zoom …, added 17.11: 19 of them blocked every docs check for 9 days) — not counted.
-        if (!Object.keys(parseParams(text)).length && modelIdsOf(text, {}).length) invalid += 1;
+        if ((!Object.keys(parseParams(text)).length || !paramsComplete(text)) && modelIdsOf(text, {}).length) invalid += 1;
         docs.push({ url, text });
       } catch { failed += 1; }
     }

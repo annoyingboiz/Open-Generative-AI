@@ -453,7 +453,7 @@ function ProviderPage({ id, msg, setMsg, go, confirm }) {
         if (error.status === 404 || misses >= 5) {
           setTest({ id: genId, status: "failed", error: error.message });
           try { sessionStorage.removeItem(testKey); } catch { /* optional */ }
-        } else poll(genId, misses + 1, Math.min(30000, wait * 2));
+        } else poll(genId, misses + 1, Math.min(30000, Math.max(3000, wait * 2)));
       }
     }, wait);
   }, [testKey]);

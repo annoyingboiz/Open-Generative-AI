@@ -315,3 +315,17 @@ test('people: a bad new password changes nothing; a deleted owner of a project h
   assert.equal(db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = 1").get(projectId).role, 'owner');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM project_members WHERE user_id = ?').get(id).n, 0);
 });
+
+test('a proxy from .env with a password: the masked value coming back keeps it', async () => {
+  const { createProviderSettings } = await import('../src/providers/index.js');
+  const { openDatabase } = await import('../src/db.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gwp-'));
+  const db = openDatabase(dir);
+  const settings = createProviderSettings({ db, masterKey: Buffer.alloc(32, 3), envDefaults: { apimart: { apiKey: 'env-k', proxy: 'socks5h://al:pw@10.0.0.2:1080' } } });
+  const view = settings.publicView('apimart');
+  assert.equal(view.proxy, 'socks5h://al:••••@10.0.0.2:1080');
+  settings.save('apimart', { proxy: view.proxy, enabled: false });
+  assert.equal(settings.resolve('apimart').proxy, 'socks5h://al:pw@10.0.0.2:1080');
+  db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});

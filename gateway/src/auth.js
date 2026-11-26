@@ -44,6 +44,7 @@ export function createAuth({ db, sessionDays }) {
   }
 
   function validatePassword(password) {
+    if (typeof password !== 'string') return 'Password must be at least 8 characters.';
     if (!password || password.length < 8) return 'Password must be at least 8 characters.';
     if (password.length > MAX_PASSWORD_LENGTH) return 'Password is too long.';
     return null;

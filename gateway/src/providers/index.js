@@ -85,9 +85,10 @@ export function createProviderSettings({ db, masterKey, envDefaults }) {
     let apiKeyEnc = current?.api_key_enc ?? null;
     if (clearKey) apiKeyEnc = null;
     else if (apiKey) apiKeyEnc = encrypt(masterKey, apiKey.trim());
-    const keepProxy = isMaskedProxy(proxy) && current?.proxy_url;
-    // No proxy given (switching Enabled alone): keep the saved one, else the one from .env.
-    upsert.run(id, apiKeyEnc, keepProxy ? current.proxy_url : (proxy ?? current?.proxy_url ?? envDefaults[id]?.proxy ?? ''), enabled ? 1 : 0, now());
+    // The proxy in effect: the saved one, else the one from .env. A masked proxy coming back
+    // (its password shown as ••••) and no proxy given (switching Enabled alone) keep it.
+    const effective = current ? (current.proxy_url || '') : (envDefaults[id]?.proxy || '');
+    upsert.run(id, apiKeyEnc, isMaskedProxy(proxy) || proxy === undefined ? effective : proxy, enabled ? 1 : 0, now());
     if (clearBillingKey) setBilling.run(null, id);
     else if (billingKey) setBilling.run(encrypt(masterKey, billingKey.trim()), id);
   }

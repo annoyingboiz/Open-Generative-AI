@@ -46,6 +46,8 @@ export function createChatGpt({ db, masterKey, config, log }) {
     list: db.prepare("SELECT key, value FROM meta WHERE key LIKE 'chatgpt_creds:%'"),
     userByName: db.prepare('SELECT id, username, display_name, role FROM users WHERE username = ?'),
     userById: db.prepare('SELECT id, username, display_name, role FROM users WHERE id = ?'),
+    // An account that can still sign in (a deleted or blocked one gets no new connection).
+    alive: db.prepare('SELECT 1 AS ok FROM users WHERE id = ? AND disabled = 0 AND deleted_at IS NULL'),
   };
   const proxy = config.openaiProxy || '';
   // Overridable only for tests (a fake OpenAI on localhost).
@@ -210,6 +212,9 @@ export function createChatGpt({ db, masterKey, config, log }) {
     if (!regNow || regNow.client_id !== issued) saveReg(user.id, { client_id: issued, sub: claims.sub, email: claims.email });
     const scopes = String(tok.scope || '').split(/\s+/).filter(Boolean);
     if (!scopes.includes(PLAN_SCOPE)) throw reject('Signed in, but “Use your ChatGPT plan” was not allowed. Press Reconnect and keep it on.');
+    // Checked right before saving: a sign-in that was finishing while the account was deleted
+    // or blocked is revoked, not stored.
+    if (!q.alive.get(user.id)) throw reject('This account can no longer sign in here.');
     const creds = store(q.userById.get(user.id) || user, tok, { clientId: issued, claims, issuer });
     return { ok: true, email: creds.email };
   }

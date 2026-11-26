@@ -11,13 +11,19 @@ import { now } from '../db.js';
 
 export const PROVIDERS = [apimart, atlas, fal, elevenlabs];
 
-// Shows a proxy without its password: socks5h://user:••••@host:port
+// Shows a proxy without its password: socks5h://user:••••@host:port. Written by hand (URL
+// would percent-encode the bullets, and the saved proxy would then not be recognised as
+// unchanged); a proxy that does not parse but has credentials is never shown.
+export const PROXY_MASK = '••••';
+export const isMaskedProxy = (value) => typeof value === 'string' && (value.includes(PROXY_MASK) || /%E2%80%A2/i.test(value));
 function maskProxy(value) {
+  if (!value) return '';
   try {
     const u = new URL(value);
-    if (u.password) u.password = '••••';
-    return u.password || u.username ? u.toString() : value;
-  } catch { return value || ''; }
+    if (!u.username && !u.password) return value;
+    const auth = `${u.username}${u.password ? `:${PROXY_MASK}` : ''}@`;
+    return `${u.protocol}//${auth}${u.host}${u.pathname === '/' ? '' : u.pathname}`;
+  } catch { return value.includes('@') ? PROXY_MASK : value; }
 }
 // "This server" (local ComfyUI through h3-bridge) has no key, balance or catalog
 // to refresh, so it is not in PROVIDERS — but jobs find it by id.
@@ -79,7 +85,7 @@ export function createProviderSettings({ db, masterKey, envDefaults }) {
     let apiKeyEnc = current?.api_key_enc ?? null;
     if (clearKey) apiKeyEnc = null;
     else if (apiKey) apiKeyEnc = encrypt(masterKey, apiKey.trim());
-    const keepProxy = typeof proxy === 'string' && proxy.includes('••••') && current?.proxy_url;
+    const keepProxy = isMaskedProxy(proxy) && current?.proxy_url;
     // No proxy given (switching Enabled alone): keep the saved one, else the one from .env.
     upsert.run(id, apiKeyEnc, keepProxy ? current.proxy_url : (proxy ?? current?.proxy_url ?? envDefaults[id]?.proxy ?? ''), enabled ? 1 : 0, now());
     if (clearBillingKey) setBilling.run(null, id);

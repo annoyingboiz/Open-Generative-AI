@@ -134,7 +134,7 @@ export function DzVideoUpscalePanel({ apiKey, videoUrl, onStart, onDone, onError
         <p className="text-base leading-relaxed text-muted-foreground">
           It uses models on fal.ai and Atlas Cloud. {isAdmin ? "Add a fal.ai or Atlas key in Settings." : "Ask the admin to add a fal.ai or Atlas key in Settings."}
         </p>
-        {isAdmin && <a href="/settings" className={buttonVariants()}>Open Settings</a>}
+        {isAdmin && <a href="/settings/providers" className={buttonVariants()}>Open Settings</a>}
       </div>
     );
   }

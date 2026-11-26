@@ -18,7 +18,7 @@ const require = createRequire(import.meta.url);
 import { openDatabase } from './db.js';
 import { loadMasterKey, newToken } from './crypto.js';
 import { createAuth, createLoginThrottle, publicUser, SESSION_COOKIE, UserError } from './auth.js';
-import { PROVIDERS, providerById, createProviderSettings, fetchBalances, balanceOf } from './providers/index.js';
+import { PROVIDERS, providerById, createProviderSettings, fetchBalances, balanceOf, isMaskedProxy } from './providers/index.js';
 import { local, configureLocal, localConfigured } from './providers/local.js';
 import { apimart, configureApimartFiles } from './providers/apimart.js';
 import { elevenlabs, configureElevenlabsFiles, toSrt } from './providers/elevenlabs.js';
@@ -293,7 +293,7 @@ export async function buildApp(config, { logger = true } = {}) {
     if (PUBLIC_PATHS.has(urlPath) || (urlPath.startsWith('/dz/brand/') && Object.hasOwn(BRAND_FILES, urlPath.slice(10)))) return;
     if (!auth.hasUsers()) return reply.redirect('/setup');
     // Settings: the "This server" sections are for admins only; others land on their account.
-    if (req.user && req.user.role !== 'admin' && req.method === 'GET' && /^\/settings\/(providers|models|changes|text-models|people)(\/|$)/.test(urlPath)) return reply.redirect('/settings/account');
+    if (req.user && req.user.role !== 'admin' && req.method === 'GET' && /^\/settings\/(providers|models|changes|text-models|people|sources|test|accounts|recommended)(\/|$)/.test(urlPath)) return reply.redirect('/settings/account');
     if (req.user) return;
     if (urlPath.startsWith('/api/') || urlPath.startsWith('/dz/api/') || req.method !== 'GET') {
       return reply.code(401).send({ error: 'Sign in required' });
@@ -538,9 +538,12 @@ export async function buildApp(config, { logger = true } = {}) {
     // Provider lists from memory (refreshed in the background) plus this person's ChatGPT models.
     const lists = (await llm.quickList(req.user).catch(() => null)) || llm.cachedList(req.user);
     const isAdmin = req.user.role === 'admin';
+    const st = chatgpt.status(req.user);
+    // A plan shared with everyone: others see whose it is, not its e-mail.
+    const mine = st.shared ? { ...st, shared: { owner: st.shared.owner } } : st;
     return {
       models: lists.models || [], myDefault: lists.myDefault || '', globalDefault: lists.globalDefault || '', default: lists.default || '',
-      chatgpt: chatgpt.status(req.user), username: req.user.username, isAdmin,
+      chatgpt: isAdmin ? st : mine, username: req.user.username, isAdmin,
       ...(isAdmin ? { sources: lists.sources || [], accounts: chatgpt.accounts(), recent: llm.recent(10) } : {}),
     };
   });
@@ -626,15 +629,20 @@ export async function buildApp(config, { logger = true } = {}) {
     const newKey = String(apiKey || '').trim();
     const newBilling = String(billingKey || '').trim();
     const proxyIn = String(proxy ?? '').trim();
-    const proxyError = validateProxyUrl(proxyIn);
+    const proxyError = isMaskedProxy(proxyIn) ? null : validateProxyUrl(proxyIn);
     if (proxyError) return fail(reply, `${provider.name}: ${proxyError}`);
     const current = providers.resolve(provider.id);
-    const nextProxy = proxyIn.includes('••••') ? current.proxy : proxyIn;
-    const changed = !clearKey && Boolean(newKey || newBilling || nextProxy !== current.proxy);
+    const nextProxy = isMaskedProxy(proxyIn) ? current.proxy : proxyIn;
     const candidate = { ...current, apiKey: newKey || current.apiKey, proxy: nextProxy, billingKey: clearBillingKey ? '' : (newBilling || current.billingKey) };
-    if (changed && candidate.apiKey) {
-      try { await provider.balance(candidate); } catch (error) {
-        const what = newKey ? 'this key' : newBilling ? 'this balance key' : 'the key through this proxy';
+    // Each new secret is checked on its own (fal.ai reads the balance with the balance key, so a
+    // good balance key must not let a bad API key through), and a new proxy with the key.
+    const checks = clearKey ? [] : [
+      newKey && ['this key', { ...candidate, billingKey: '' }],
+      newBilling && ['this balance key', { ...candidate, billingKey: newBilling }],
+      !newKey && !newBilling && nextProxy !== current.proxy && candidate.apiKey && ['the key through this proxy', candidate],
+    ].filter(Boolean);
+    for (const [what, cfg] of checks) {
+      try { await provider.balance(cfg); } catch (error) {
         return reply.code(400).send({ error: `${provider.name} did not accept ${what}`, answer: error.message, kept: true });
       }
     }
@@ -760,6 +768,9 @@ export async function buildApp(config, { logger = true } = {}) {
     if (!u) return;
     const { name, role, limit, newPassword } = req.body || {};
     if (newPassword && id === auth.ownerId() && req.user.id !== id) return fail(reply, 'Only the owner can change the owner’s password.', 403);
+    // Checked before anything is saved, so a bad password changes nothing.
+    const pwError = newPassword ? auth.validatePassword(newPassword) : null;
+    if (pwError) return fail(reply, pwError);
     try {
       auth.updateUser(id, { displayName: name, role, monthlyLimitUsd: parseLimit(limit), disabled: Boolean(u.disabled) });
       if (newPassword) {
@@ -788,9 +799,15 @@ export async function buildApp(config, { logger = true } = {}) {
     const u = personOr404(reply, id);
     if (!u) return;
     if (id === req.user.id) return fail(reply, 'You cannot delete your own account.');
+    if (id === auth.ownerId()) return fail(reply, 'The owner of this server cannot be deleted.');
+    // ChatGPT first: its saved access is removed here before the account goes (revoked at
+    // OpenAI where it answers). If that cannot be done now, nothing is deleted.
+    chatgpt.cancelPending(id);
+    let revoked = true;
+    try { revoked = (await chatgpt.disconnect(id)).revoked; } catch (error) { return fail(reply, `Could not remove their ChatGPT connection: ${error.message} Nothing was deleted; try again.`, 503); }
+    llm.dropUnusableDefaults();
     try { auth.deleteUser(id); } catch (error) { return userFail(reply, error); }
-    try { await chatgpt.disconnect(id); llm.dropUnusableDefaults(); } catch (error) { app.log.warn(`delete account: ChatGPT: ${error.message}`); }
-    return { ok: true, notice: `${u.display_name}’s account is deleted. Their pictures and videos stay on the server.` };
+    return { ok: true, notice: `${u.display_name}’s account is deleted. Their pictures and videos stay on the server; their projects now belong to the owner.${revoked ? '' : ' OpenAI did not confirm revoking their ChatGPT access; it is removed here.'}` };
   });
 
   // ── JSON for the studio shell ───────────────────────────────────────────

@@ -436,21 +436,39 @@ function ProviderPage({ id, msg, setMsg, go, confirm }) {
     if (!(await confirm({ title: "Remove the saved balance key?", text: "The balance is read with the API key again where possible.", yes: "Remove", danger: true }))) return;
     save({ apiKey: "", billingKey: "", clearBillingKey: true });
   };
-  // Test generation: one picture; the result shows here when it is ready.
+  // Test generation: one picture; the result shows here when it is ready. The job id is kept
+  // for this tab, so leaving the page or a reload picks the result up again; a failed check
+  // of the status is retried (the job itself goes on on the server).
   const timer = useRef(null);
+  const testKey = `dz_settings_test_${id}`;
   useEffect(() => () => clearTimeout(timer.current), []);
-  const poll = (genId) => {
+  const poll = useCallback((genId, misses = 0, wait = 3000) => {
     timer.current = setTimeout(async () => {
       try {
         const r = await get(`/dz/api/settings/test/${genId}`);
         setTest({ id: genId, ...r });
         if (r.status !== "completed" && r.status !== "failed") poll(genId);
-      } catch (error) { setTest({ id: genId, status: "failed", error: error.message }); }
-    }, 3000);
-  };
+        else { try { sessionStorage.removeItem(testKey); } catch { /* optional */ } }
+      } catch (error) {
+        if (error.status === 404 || misses >= 5) {
+          setTest({ id: genId, status: "failed", error: error.message });
+          try { sessionStorage.removeItem(testKey); } catch { /* optional */ }
+        } else poll(genId, misses + 1, Math.min(30000, wait * 2));
+      }
+    }, wait);
+  }, [testKey]);
+  useEffect(() => {
+    let saved = null;
+    try { saved = sessionStorage.getItem(testKey); } catch { /* optional */ }
+    if (saved) { setTest({ id: saved, status: "processing" }); poll(saved, 0, 0); }
+  }, [testKey, poll]);
   const runTest = async () => {
     const r = await run("test", () => post("/dz/api/settings/test", { provider: id }));
-    if (r?.id) { setTest({ id: r.id, status: "submitted" }); poll(r.id); }
+    if (r?.id) {
+      try { sessionStorage.setItem(testKey, r.id); } catch { /* optional */ }
+      setTest({ id: r.id, status: "submitted" });
+      poll(r.id);
+    }
   };
   if (!p) return <Page title="Provider" msg={msg}><Loading /></Page>;
   const s = providerStatus(p);

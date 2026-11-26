@@ -520,5 +520,8 @@ export function createChatGpt({ db, masterKey, config, log }) {
     } finally { dropLease(key); }
   }
 
-  return { status, accounts, models, chat, importCredentials, startConnect, finishConnect, disconnect, hostId, sharing, setShared, canUse, closeListener: () => { listener?.close(); listener = null; } };
+  // An account being deleted: no sign-in it started may finish later.
+  const cancelPending = (userId) => { for (const [k, p] of pending) if (p.uid === userId) pending.delete(k); };
+
+  return { status, accounts, models, chat, importCredentials, startConnect, finishConnect, disconnect, cancelPending, hostId, sharing, setShared, canUse, closeListener: () => { listener?.close(); listener = null; } };
 }

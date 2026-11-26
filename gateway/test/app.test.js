@@ -278,3 +278,40 @@ test('product icons are public (package 11): favicon, apple touch icon, manifest
   res = await app.inject({ url: '/login' });
   assert.match(res.body, /rel="icon" href="\/dz\/brand\/favicon\.svg\?v=1"/);
 });
+
+test('a proxy with a password: shown masked, kept when the masked value comes back', async () => {
+  const { createProviderSettings } = await import('../src/providers/index.js');
+  const { openDatabase } = await import('../src/db.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gwp-'));
+  const db = openDatabase(dir);
+  const settings = createProviderSettings({ db, masterKey: Buffer.alloc(32, 3), envDefaults: { atlas: { apiKey: '', proxy: '' } } });
+  settings.save('atlas', { apiKey: 'k-1234', proxy: 'socks5h://bob:s3cret@10.0.0.1:1080', enabled: true });
+  const view = settings.publicView('atlas');
+  assert.equal(view.proxy, 'socks5h://bob:••••@10.0.0.1:1080');
+  settings.save('atlas', { proxy: view.proxy, enabled: true });
+  assert.equal(settings.resolve('atlas').proxy, 'socks5h://bob:s3cret@10.0.0.1:1080');
+  settings.save('atlas', { proxy: 'socks5h://bob:%E2%80%A2%E2%80%A2%E2%80%A2%E2%80%A2@10.0.0.1:1080', enabled: true });
+  assert.equal(settings.resolve('atlas').proxy, 'socks5h://bob:s3cret@10.0.0.1:1080');
+  db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('people: a bad new password changes nothing; a deleted owner of a project hands it to the server owner', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/api/settings/people', headers: { cookie: adminCookie }, payload: { username: 'pm', name: 'PM', password: 'pm-pass-1234' } });
+  const id = (await app.inject({ url: '/dz/api/settings/people', headers: { cookie: adminCookie } })).json().people.find((p) => p.username === 'pm').id;
+  res = await app.inject({ method: 'POST', url: `/dz/api/settings/people/${id}`, headers: { cookie: adminCookie }, payload: { name: 'PM', role: 'admin', limit: '', newPassword: 'short' } });
+  assert.equal(res.statusCode, 400);
+  const pm = (await app.inject({ url: '/dz/api/settings/people', headers: { cookie: adminCookie } })).json().people.find((p) => p.id === id);
+  assert.equal(pm.role, 'user', 'nothing saved');
+  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'pm', password: 'pm-pass-1234' } });
+  const pmCookie = cookieOf(res);
+  res = await app.inject({ method: 'POST', url: '/dz/api/projects', headers: { cookie: pmCookie }, payload: { name: 'PM project' } });
+  assert.equal(res.statusCode, 200, res.body);
+  const projectId = res.json().project.id;
+  res = await app.inject({ method: 'DELETE', url: `/dz/api/settings/people/${id}`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200, res.body);
+  const db = app.ctx.db;
+  assert.equal(db.prepare('SELECT owner_id FROM projects WHERE id = ?').get(projectId).owner_id, 1);
+  assert.equal(db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = 1").get(projectId).role, 'owner');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM project_members WHERE user_id = ?').get(id).n, 0);
+});

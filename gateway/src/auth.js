@@ -14,6 +14,12 @@ export function createAuth({ db, sessionDays }) {
     // The owner: the first account, made at setup. It cannot be deleted, blocked or lose admin.
     owner: db.prepare('SELECT MIN(id) AS id FROM users'),
     softDelete: db.prepare('UPDATE users SET username = ?, disabled = 1, deleted_at = ? WHERE id = ?'),
+    // Their projects go to the owner of this server (nothing is left without an owner); they leave the rest.
+    takeProjects: db.prepare('UPDATE projects SET owner_id = ? WHERE owner_id = ?'),
+    ownProjects: db.prepare('SELECT id FROM projects WHERE owner_id = ?'),
+    makeOwner: db.prepare(`INSERT INTO project_members (project_id, user_id, role, added_at, last_used_at) VALUES (?, ?, 'owner', ?, NULL)
+      ON CONFLICT(project_id, user_id) DO UPDATE SET role = 'owner'`),
+    leaveProjects: db.prepare('DELETE FROM project_members WHERE user_id = ?'),
     insert: db.prepare('INSERT INTO users (username, display_name, pw_hash, role, monthly_limit_usd, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
     setPassword: db.prepare('UPDATE users SET pw_hash = ? WHERE id = ?'),
     update: db.prepare('UPDATE users SET display_name = ?, role = ?, monthly_limit_usd = ?, disabled = ? WHERE id = ?'),
@@ -113,12 +119,20 @@ export function createAuth({ db, sessionDays }) {
     if (!user || user.deleted_at) throw new UserError('User not found.');
     if (id === ownerId()) throw new UserError('The owner of this server cannot be deleted.');
     if (user.role === 'admin' && !user.disabled && q.countActiveAdmins.get().n <= 1) throw new UserError('At least one active admin must remain.');
-    q.softDelete.run(`${user.username}~deleted-${id}`, now(), id);
-    q.deleteUserSessions.run(id);
+    const owner = ownerId();
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const p of q.ownProjects.all(id)) q.makeOwner.run(p.id, owner, now());
+      q.takeProjects.run(owner, id);
+      q.leaveProjects.run(id);
+      q.softDelete.run(`${user.username}~deleted-${id}`, now(), id);
+      q.deleteUserSessions.run(id);
+      db.exec('COMMIT');
+    } catch (error) { try { db.exec('ROLLBACK'); } catch { /* closed */ } throw error; }
   }
 
   return {
-    hasUsers, createUser, login, logout, startSession, userFromToken, changePassword, checkPassword, updateUser, deleteUser, ownerId,
+    hasUsers, createUser, login, logout, startSession, userFromToken, changePassword, checkPassword, updateUser, deleteUser, ownerId, validatePassword,
     listUsers: () => q.list.all(),
     getUser: (id) => q.byId.get(id),
   };

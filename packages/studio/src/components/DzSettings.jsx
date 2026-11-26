@@ -102,16 +102,19 @@ function LlmSelect({ models, value, onChange, first }) {
   );
 }
 // One table for all five places: a label row, then 44 px rows with a 1 px line.
-function Table({ cols, head, rows, empty, className }) {
+// In a narrow pane it scrolls sideways instead of squeezing a column to nothing.
+function Table({ cols, head, rows, empty, className, minWidth = 560 }) {
   const grid = { gridTemplateColumns: cols };
   return (
-    <div className={cn("min-w-0", className)}>
-      <div className="grid items-center gap-4 border-b border-border pb-2 text-overline uppercase text-muted-foreground" style={grid}>{head.map((h, i) => <span key={i}>{h}</span>)}</div>
-      {rows.length ? rows.map((r) => (
-        <div key={r.key} className={cn("grid min-h-11 items-center gap-4 border-b border-border py-1.5 text-sm", r.className)} style={grid}>
-          {r.cells.map((c, i) => <span key={i} className="min-w-0">{c}</span>)}
-        </div>
-      )) : <div className="border-b border-border py-3 text-sm text-muted-foreground">{empty}</div>}
+    <div className={cn("min-w-0 overflow-x-auto", className)}>
+      <div style={{ minWidth }}>
+        <div className="grid items-center gap-4 border-b border-border pb-2 text-overline uppercase text-muted-foreground" style={grid}>{head.map((h, i) => <span key={i}>{h}</span>)}</div>
+        {rows.length ? rows.map((r) => (
+          <div key={r.key} className={cn("grid min-h-11 items-center gap-4 border-b border-border py-1.5 text-sm", r.className)} style={grid}>
+            {r.cells.map((c, i) => <span key={i} className="min-w-0">{c}</span>)}
+          </div>
+        )) : <div className="border-b border-border py-3 text-sm text-muted-foreground">{empty}</div>}
+      </div>
     </div>
   );
 }
@@ -291,7 +294,7 @@ function ConnectButton({ fresh = false, children, variant = "default" }) {
 function TerminalWay({ username }) {
   return (
     <details className="text-base">
-      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Other way: from a Mac terminal ›</summary>
+      <summary className="cursor-pointer list-none text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">Other way: from a Mac terminal ›</summary>
       <pre className="mt-2 whitespace-pre-wrap break-all rounded-md border border-border bg-muted px-3 py-2 font-mono text-sm">{`node tools/connect-chatgpt.mjs --server <your ssh host> --user ${username || "USERNAME"}`}</pre>
     </details>
   );
@@ -341,7 +344,7 @@ function TextModelPage({ msg, setMsg, confirm }) {
             <Hint>Disconnect revokes the access at OpenAI and deletes it here.{data.isAdmin ? " Sharing your plan with everyone is in Text models." : ""}</Hint>
             {shared}
             <details open={Boolean(st.lost)} className="flex flex-col gap-4 [&[open]>summary]:mb-4">
-              <summary className="cursor-pointer text-base text-muted-foreground hover:text-foreground">Reconnect or switch account ›</summary>
+              <summary className="cursor-pointer list-none text-base text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">Reconnect or switch account ›</summary>
               <div className="flex flex-col gap-4">
                 <div className="flex gap-2"><ConnectButton>Reconnect</ConnectButton><ConnectButton fresh variant="outline">Connect a different account</ConnectButton></div>
                 <ConnectSteps loopback={st.loopback} onFinish={finish} busy={busy === "finish"} />
@@ -544,7 +547,7 @@ function ModelsPage({ msg, setMsg, confirm }) {
     <Page title="Models" text="These families are shown first in the model lists, in this order. Inside a family the cheapest provider stays the default." msg={msg}>
       {!data ? <Loading /> : (
         <div className="flex max-w-[720px] flex-col gap-4">
-          <Table cols="32px 1fr 90px 150px" head={["#", "Model family", "Kind", ""]} empty="None — the lists use the catalog order."
+          <Table minWidth={460} cols="32px minmax(160px, 1fr) 90px 150px" head={["#", "Model family", "Kind", ""]} empty="None — the lists use the catalog order."
             rows={data.recommended.map((key, i) => {
               const f = byKey.get(key);
               return {
@@ -622,7 +625,7 @@ function ChangesPage({ msg, setMsg, onSeen }) {
               <Dot tone={data.telegram ? "ok" : "wn"} />Telegram alerts {data.telegram ? "on" : "off"}
             </span>
           </div>
-          <Table cols="120px 90px 1fr 210px 80px" head={["When (UTC)", "Provider", "Model", "Change", "Status"]}
+          <Table minWidth={760} cols="120px 90px minmax(160px, 1fr) 210px 80px" head={["When (UTC)", "Provider", "Model", "Change", "Status"]}
             empty="No changes yet. The first check only remembers how things are now."
             rows={data.entries.map((e) => {
               const what = [e.mode, e.param].filter(Boolean).join(" · ");
@@ -697,7 +700,7 @@ function TextModelsPage({ tab, msg, setMsg, go, confirm }) {
             <Hint>Used when a tool does not pick one and a person has no default of their own.</Hint>
             <Row className="pt-0"><Button type="submit" className="h-9" disabled={busy === "everyone" || !everyone}>{busy === "everyone" ? <Spinner /> : "Save"}</Button></Row>
             <Sec>ChatGPT plans connected here</Sec>
-            <Table className="-mt-1" cols="1fr 1.3fr 1fr 220px" head={["Person", "E-mail", "Status", ""]} empty="Nobody has connected a ChatGPT plan here."
+            <Table className="-mt-1" minWidth={660} cols="minmax(100px, 1fr) minmax(140px, 1.3fr) minmax(100px, 1fr) 220px" head={["Person", "E-mail", "Status", ""]} empty="Nobody has connected a ChatGPT plan here."
               rows={(data.accounts || []).map((a) => {
                 const own = a.username === data.username;
                 return {
@@ -737,7 +740,7 @@ function TextModelsPage({ tab, msg, setMsg, go, confirm }) {
           </Form>
           <div className="mt-8 max-w-[860px]">
             <Label className="mb-3">Recent calls</Label>
-            <Table cols="110px 1.4fr 1fr 110px 70px 60px 1fr" head={["When (UTC)", "Model", "For", "Tokens in / out", "Cost", "Time", ""]} empty="No calls yet."
+            <Table minWidth={820} cols="110px minmax(160px, 1.4fr) minmax(100px, 1fr) 110px 70px 60px minmax(60px, 1fr)" head={["When (UTC)", "Model", "For", "Tokens in / out", "Cost", "Time", ""]} empty="No calls yet."
               rows={(data.recent || []).map((c, i) => ({
                 key: `${c.created_at}-${i}`, cells: [
                   <span key="w" className="tabular-nums">{utc(c.created_at)}</span>,
@@ -764,7 +767,7 @@ function PeoplePage({ msg, setMsg, go }) {
     <Page title="People" text="Who can sign in here, their role and monthly limit." msg={msg}
       action={<Button type="button" className="h-9" onClick={() => go("people", "new")}>Add an account</Button>}>
       {!data ? <Loading /> : (
-        <Table className="max-w-[860px]" cols="1.2fr 130px 150px 110px 120px" head={["Person", "Role", "Monthly limit", "Status", ""]} empty="Nobody yet."
+        <Table className="max-w-[860px]" minWidth={700} cols="minmax(160px, 1.2fr) 130px 150px 110px 120px" head={["Person", "Role", "Monthly limit", "Status", ""]} empty="Nobody yet."
           rows={data.people.map((u) => ({
             key: u.id, cells: [
               <span key="n"><b className="font-medium">{u.name}</b> <span className="text-muted-foreground">{u.username}</span>{(u.owner || u.id === data.me) && <Sub>{[u.owner && "owner", u.id === data.me && "you"].filter(Boolean).join(" · ")}</Sub>}</span>,
@@ -831,10 +834,16 @@ function PersonPage({ id, msg, setMsg, go, confirm, onMeChanged }) {
           ? <Field label="Username"><input className={inputCls} value={f.username} onChange={(e) => set("username")(e.target.value)} placeholder="e.g. anna" required {...noFill} /></Field>
           : <Field label="Username"><input className={inputCls} value={f.username} disabled /></Field>}
         {!isNew && <Hint>The username is the sign-in name and cannot be changed.</Hint>}
-        <Field label={isNew ? "Password" : "New password (optional)"}>
-          <input type="password" className={inputCls} value={f.password} onChange={(e) => set("password")(e.target.value)} placeholder={isNew ? "At least 8 characters" : "Leave empty to keep the current one"} autoComplete="new-password" minLength={8} required={isNew} />
-        </Field>
-        {!isNew && <Hint>A new password signs them out everywhere; tell them the new one yourself.</Hint>}
+        {person?.owner && !self ? (
+          <div className="text-sm text-muted-foreground">Only the owner changes the owner’s password, in their Account.</div>
+        ) : (
+          <>
+            <Field label={isNew ? "Password" : "New password (optional)"}>
+              <input type="password" className={inputCls} value={f.password} onChange={(e) => set("password")(e.target.value)} placeholder={isNew ? "At least 8 characters" : "Leave empty to keep the current one"} autoComplete="new-password" minLength={8} required={isNew} />
+            </Field>
+            {!isNew && <Hint>{self ? "Changing it here keeps you signed in on this device." : "A new password signs them out everywhere; tell them the new one yourself."}</Hint>}
+          </>
+        )}
         <Field label="Role">
           <NativeSelect value={f.role} onChange={set("role")} disabled={person?.owner}>
             <option value="user">User</option>
@@ -918,7 +927,7 @@ export default function DzSettings({ user, onChangesSeen, onMeChanged }) {
   );
   return (
     <div className="flex h-full min-w-0">
-      <aside className="flex w-[296px] flex-none flex-col gap-0.5 overflow-y-auto border-r border-border p-3" aria-label="Settings sections">
+      <aside className="flex w-[240px] flex-none xl:w-[296px] flex-col gap-0.5 overflow-y-auto border-r border-border p-3" aria-label="Settings sections">
         <div className="flex h-9 items-center px-2.5 text-lg font-semibold text-foreground">Settings</div>
         <div className="mt-3 flex h-7 items-center px-2.5 text-xs uppercase tracking-[0.06em] text-subtle">You</div>
         {YOU.map(row)}

@@ -58,7 +58,7 @@ before(async () => {
   const setupCode = fs.readFileSync(path.join(dataDir, 'setup-code'), 'utf8').trim();
   let res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'admin', displayName: 'Admin', password: 'admin-pass-1', setupCode } });
   adminCookie = cookieOf(res);
-  await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie }, payload: { username: 'wife', displayName: 'Wife', password: 'wife-pass-12' } });
+  await app.inject({ method: 'POST', url: '/dz/api/settings/people', headers: { cookie: adminCookie }, payload: { username: 'wife', name: 'Wife', password: 'wife-pass-12' } });
   res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'wife', password: 'wife-pass-12' } });
   wifeCookie = cookieOf(res);
   await app.ctx.catalog.refreshAll({ force: true });

@@ -80,7 +80,8 @@ export function createProviderSettings({ db, masterKey, envDefaults }) {
     if (clearKey) apiKeyEnc = null;
     else if (apiKey) apiKeyEnc = encrypt(masterKey, apiKey.trim());
     const keepProxy = typeof proxy === 'string' && proxy.includes('••••') && current?.proxy_url;
-    upsert.run(id, apiKeyEnc, keepProxy ? current.proxy_url : (proxy ?? current?.proxy_url ?? ''), enabled ? 1 : 0, now());
+    // No proxy given (switching Enabled alone): keep the saved one, else the one from .env.
+    upsert.run(id, apiKeyEnc, keepProxy ? current.proxy_url : (proxy ?? current?.proxy_url ?? envDefaults[id]?.proxy ?? ''), enabled ? 1 : 0, now());
     if (clearBillingKey) setBilling.run(null, id);
     else if (billingKey) setBilling.run(encrypt(masterKey, billingKey.trim()), id);
   }
@@ -90,17 +91,20 @@ export function createProviderSettings({ db, masterKey, envDefaults }) {
 
 // Balance of every enabled provider with a key. Errors are reported per provider.
 export async function fetchBalances(settings) {
-  return Promise.all(PROVIDERS.map(async (provider) => {
-    const c = settings.resolve(provider.id);
-    const base = { id: provider.id, name: provider.name, enabled: c.enabled, hasKey: Boolean(c.apiKey) };
-    if (!c.enabled || !c.apiKey) return { ...base, ok: false };
-    try {
-      const b = await provider.balance(c);
-      // ElevenLabs: credits left on your plan, its name and when it renews.
-      const note = b.note || (b.currency === 'CREDITS' ? [b.tier ? `${b.tier} plan` : '', b.limit ? `of ${b.limit.toLocaleString('en-US')}` : '', b.resetsAt ? `renews ${new Date(b.resetsAt).toISOString().slice(0, 10)}` : ''].filter(Boolean).join(' · ') : null);
-      return { ...base, ok: true, amount: b.amount, currency: b.currency, note: note || null };
-    } catch (error) {
-      return { ...base, ok: false, error: error.message };
-    }
-  }));
+  return Promise.all(PROVIDERS.map((provider) => balanceOf(settings, provider)));
+}
+
+// One provider's balance (Settings → Providers after a save or a switch).
+export async function balanceOf(settings, provider) {
+  const c = settings.resolve(provider.id);
+  const base = { id: provider.id, name: provider.name, enabled: c.enabled, hasKey: Boolean(c.apiKey) };
+  if (!c.enabled || !c.apiKey) return { ...base, ok: false };
+  try {
+    const b = await provider.balance(c);
+    // ElevenLabs: credits left on your plan, its name and when it renews.
+    const note = b.note || (b.currency === 'CREDITS' ? [b.tier ? `${b.tier} plan` : '', b.limit ? `of ${b.limit.toLocaleString('en-US')}` : '', b.resetsAt ? `renews ${new Date(b.resetsAt).toISOString().slice(0, 10)}` : ''].filter(Boolean).join(' · ') : null);
+    return { ...base, ok: true, amount: b.amount, currency: b.currency, note: note || null };
+  } catch (error) {
+    return { ...base, ok: false, error: error.message };
+  }
 }

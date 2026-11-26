@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { DzCreateStudio, DzStudio, DzStoryboard, DropOverlay, dzActiveDropTarget, DzTools, DZ_SEND_EVENT, DzUpscaleStudio, DzUpscalePanel, DzLibrary, dzUpscaleSpec, dzIsOwnImage, SidePanel, Button,
   DzChatPanel, DzChatPage, dzGetStudioState, DZ_INSERT_EVENT, dzScrollBoxRef, dzWatchScrollers, useDzTasks, DzTasksPanel,
   DzProjectsPage, DzElementsPage, ToElementDialog, VideoElementDialog, ProjectSwitcher, FolderTree, NewProjectDialog, NameDialog, MoveDialog, dzProjectsApi, dzSetContext,
-  DropdownMenuParts, DialogParts, cn } from 'studio';
+  DzSettings, DropdownMenuParts, DialogParts, cn } from 'studio';
 import { Image as ImageIcon, VideoCamera, Aperture, FilmSlate, ArrowsOut, SquaresFour, Images, Shapes, Layout, Trash, FolderSimple, Plus,
   SidebarSimple, MagnifyingGlass, ChatCircle, CaretUpDown, GearSix, Sun, Moon, SignOut, List, X, ArrowRight, Warning } from '@phosphor-icons/react';
 import { DZ_SESSION_PLACEHOLDER, dzFetchMe, dzFetchBalances, dzFormatBalances } from './session';
@@ -60,6 +60,8 @@ const pathOf = (folders, id) => {
 // /library/<tab> — Library (personal);  /p/<project slug>/<tab> — inside a project.
 const parsePath = (path) => {
   const parts = String(path || '').split('/').filter(Boolean);
+  // /settings/<section>: Settings inside the shell (handoff 21); not a project page.
+  if (parts[0] === 'settings') return { slug: null, tab: 'settings' };
   if (parts[0] === 'p' && parts[1]) return { slug: decodeURIComponent(parts[1]), tab: tabOfSeg(parts[2]) };
   return { slug: null, tab: tabOfSeg(parts[1]) };
 };
@@ -114,7 +116,8 @@ export default function DzShell() {
     setLiked(isLiked() || /\/liked\/?$/.test(window.location.pathname));
     try { setCollapsed(localStorage.getItem('dz_sidebar_collapsed') === '1'); } catch { /* storage is optional */ }
     dzFetchMe().then((u) => u && setUser(u)).catch((err) => console.error(err));
-    const onPop = () => { setActiveTab(tabFromPath(window.location.pathname)); setLiked(isLiked()); loadProjectFromPath(); };
+    // Back and forward inside Settings keep the open project (Settings is not a project page).
+    const onPop = () => { const t = tabFromPath(window.location.pathname); setActiveTab(t); setLiked(isLiked()); if (t !== 'settings') loadProjectFromPath(); };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -278,13 +281,21 @@ export default function DzShell() {
 
   // Provider changes waiting for the admin (Settings → Provider changes).
   const [changes, setChanges] = useState(null);
+  const loadChanges = useCallback(() => fetch('/dz/api/changes/summary', { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)).then(setChanges).catch(() => {}), []);
   useEffect(() => {
     if (user?.role !== 'admin') return undefined;
-    const load = () => fetch('/dz/api/changes/summary', { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)).then(setChanges).catch(() => {});
-    load();
-    const timer = setInterval(load, 600_000);
+    loadChanges();
+    const timer = setInterval(loadChanges, 600_000);
     return () => clearInterval(timer);
-  }, [user?.role]);
+  }, [user?.role, loadChanges]);
+  // Settings inside the shell: /settings/<section>; the page keeps its own place in the address.
+  const openSettings = useCallback((path = '/settings/account') => {
+    window.history.pushState(null, '', path);
+    setActiveTab('settings');
+    window.dispatchEvent(new Event('dz:settings-nav'));
+    setMobileOpen(false);
+  }, []);
+  const reloadMe = useCallback(() => { dzFetchMe().then((u) => u && setUser(u)).catch(() => {}); }, []);
 
   const openTab = useCallback((tabId, { liked: wantLiked = false } = {}) => {
     if (!TAB_IDS.has(tabId)) return;
@@ -668,12 +679,17 @@ export default function DzShell() {
 
           {/* Account row: opens the account menu (balances, settings, theme, sign out) */}
           <div className="border-t border-border p-2">
-            <AccountMenu user={user} balance={balance} changes={changes} collapsed={isCollapsed} />
+            <AccountMenu user={user} balance={balance} changes={changes} collapsed={isCollapsed} onSettings={openSettings} />
           </div>
         </aside>
 
         {/* Studios stay mounted, so running generations survive switching tabs */}
         <main className="flex-1 min-h-0 h-full relative overflow-hidden bg-background" onContextMenu={onContextMenu}>
+          {activeTab === 'settings' && (
+            <div className="h-full w-full">
+              <DzSettings user={user} onChangesSeen={loadChanges} onMeChanged={reloadMe} />
+            </div>
+          )}
           {chatPageSeen && (
             <div className={activeTab === 'chat' ? 'h-full w-full' : 'hidden'}>
               <DzChatPage active={activeTab === 'chat'} activeTab={activeTab} getStudio={dzGetStudioState} insert={chatInsert} apiKey={DZ_SESSION_PLACEHOLDER}
@@ -819,7 +835,7 @@ export default function DzShell() {
         </div>
       )}
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} project={project} projects={activeProjects}
-        onTab={(id, opts) => openTab(id, opts)} onProject={(p) => openProject(p, DEFAULT_TAB)} isAdmin={user.role === 'admin'} />
+        onTab={(id, opts) => openTab(id, opts)} onProject={(p) => openProject(p, DEFAULT_TAB)} isAdmin={user.role === 'admin'} onSettings={openSettings} />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} colors={colors} onCreated={(p) => { reloadProjects(); openProject(p); }} />
       <NameDialog open={Boolean(folderDialog)} onOpenChange={(o) => { if (!o) setFolderDialog(null); }}
         title={folderDialog?.mode === 'rename' ? 'Rename folder' : folderDialog?.parent ? `New folder in “${folderDialog.parent.name}”` : 'New folder'}
@@ -840,7 +856,7 @@ export default function DzShell() {
 }
 
 // Account menu (section 4.1/4.2): provider balances moved here from the header.
-function AccountMenu({ user, balance, changes, collapsed }) {
+function AccountMenu({ user, balance, changes, collapsed, onSettings }) {
   const { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } = DropdownMenuParts;
   const [theme, setTheme] = useTheme();
   const initial = (user.displayName || user.username || '?').trim().charAt(0).toUpperCase();
@@ -882,14 +898,14 @@ function AccountMenu({ user, balance, changes, collapsed }) {
         )}
         {stale && (
           <DropdownMenuItem asChild>
-            <a href="/settings/changes" className="h-auto items-start py-1.5 text-warning" title={stale.reason}>
+            <a href="/settings/changes" onClick={(e) => { if (plainClick(e)) { e.preventDefault(); onSettings?.('/settings/changes'); } }} className="h-auto items-start py-1.5 text-warning" title={stale.reason}>
               <Warning size={16} className="mt-0.5 shrink-0" />
               <span className="text-sm leading-5">APIMart docs not applied for {staleDays} {staleDays === 1 ? 'day' : 'days'}. New APIMart models have no settings.</span>
             </a>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem asChild>
-          <a href={unseen || stale ? '/settings/changes' : '/settings'} className="h-8"><GearSix size={16} /> Settings
+          <a href={unseen || stale ? '/settings/changes' : '/settings/account'} onClick={(e) => { if (plainClick(e)) { e.preventDefault(); onSettings?.(unseen || stale ? '/settings/changes' : '/settings/account'); } }} className="h-8"><GearSix size={16} /> Settings
             {unseen > 0 && <span className="ml-auto rounded-full bg-signal/15 px-1.5 text-xs font-semibold text-signal" title={`${unseen} new provider change(s) — applied automatically`}>{unseen}</span>}
           </a>
         </DropdownMenuItem>
@@ -907,10 +923,10 @@ function AccountMenu({ user, balance, changes, collapsed }) {
 
 // ⌘K: go anywhere — screens, projects, settings, theme.
 const SETTINGS_LINKS = [
-  ['account', 'Settings · My password'], ['text-models', 'Settings · Text models'],
-  ['providers', 'Settings · Providers', true], ['changes', 'Settings · Provider changes', true], ['models', 'Settings · Recommended models', true], ['people', 'Settings · Accounts', true],
+  ['account', 'Settings · Account'], ['text-model', 'Settings · Your text model'],
+  ['providers', 'Settings · Providers', true], ['models', 'Settings · Models', true], ['changes', 'Settings · Provider changes', true], ['text-models', 'Settings · Text models', true], ['people', 'Settings · People', true],
 ];
-function CommandPalette({ open, onOpenChange, project, projects, onTab, onProject, isAdmin }) {
+function CommandPalette({ open, onOpenChange, project, projects, onTab, onProject, isAdmin, onSettings }) {
   const { Dialog, DialogContent, DialogTitle } = DialogParts;
   const [q, setQ] = useState('');
   const [index, setIndex] = useState(0);
@@ -921,7 +937,7 @@ function CommandPalette({ open, onOpenChange, project, projects, onTab, onProjec
     { key: 't-liked', label: 'Liked', hint: 'All work', icon: Images, run: () => onTab('library', { liked: true }) },
     { key: 't-projects', label: project ? 'Project settings' : 'All projects', icon: FolderSimple, run: () => onTab('projects') },
     ...projects.map((p) => ({ key: `p-${p.id}`, label: p.name, hint: 'Project', dot: p.color, run: () => onProject(p) })),
-    ...SETTINGS_LINKS.filter(([, , admin]) => isAdmin || !admin).map(([sec, label]) => ({ key: `s-${sec}`, label, icon: GearSix, run: () => { window.location.href = `/settings/${sec}`; } })),
+    ...SETTINGS_LINKS.filter(([, , admin]) => isAdmin || !admin).map(([sec, label]) => ({ key: `s-${sec}`, label, icon: GearSix, run: () => onSettings(`/settings/${sec}`) })),
     { key: 'theme-dark', label: 'Dark theme', icon: Moon, run: () => setTheme('dark') },
     { key: 'theme-light', label: 'Light theme', icon: Sun, run: () => setTheme('light') },
   ];

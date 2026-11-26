@@ -337,7 +337,8 @@ export function createChanges({ dir, log, notify = null, now = () => Date.now() 
     markSeen,
     liveOverrides: live,
     setOnSpecsChanged: (fn) => { onSpecsChanged = fn; },
-    list: ({ limit = 200 } = {}) => entries.slice(0, limit),
+    list: ({ limit = 200, offset = 0 } = {}) => entries.slice(offset, offset + limit).map((e) => ({ ...e })),
+    count: () => entries.length,
     summary: () => ({
       unseen: entries.filter((e) => !e.seen).length,
       lastCheck: meta().lastDocsCheck || null,

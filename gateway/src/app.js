@@ -18,13 +18,13 @@ const require = createRequire(import.meta.url);
 import { openDatabase } from './db.js';
 import { loadMasterKey, newToken } from './crypto.js';
 import { createAuth, createLoginThrottle, publicUser, SESSION_COOKIE, UserError } from './auth.js';
-import { PROVIDERS, providerById, createProviderSettings, fetchBalances } from './providers/index.js';
+import { PROVIDERS, providerById, createProviderSettings, fetchBalances, balanceOf } from './providers/index.js';
 import { local, configureLocal, localConfigured } from './providers/local.js';
 import { apimart, configureApimartFiles } from './providers/apimart.js';
 import { elevenlabs, configureElevenlabsFiles, toSrt } from './providers/elevenlabs.js';
 import { ProviderHttpError } from './providers/http.js';
 import { validateProxyUrl } from './providers/http.js';
-import { loginPage, setupPage, settingsPage, testResultPage } from './pages.js';
+import { loginPage, setupPage } from './pages.js';
 import { createStorage, sendFile, isAllowedUploadMime } from './storage.js';
 import { createCatalog, DEFAULT_RECOMMENDED, ADMIN_ONLY } from './catalog/index.js';
 import { createChanges } from './catalog/changes.js';
@@ -292,6 +292,8 @@ export async function buildApp(config, { logger = true } = {}) {
     req.user = auth.userFromToken(req.cookies?.[SESSION_COOKIE]);
     if (PUBLIC_PATHS.has(urlPath) || (urlPath.startsWith('/dz/brand/') && Object.hasOwn(BRAND_FILES, urlPath.slice(10)))) return;
     if (!auth.hasUsers()) return reply.redirect('/setup');
+    // Settings: the "This server" sections are for admins only; others land on their account.
+    if (req.user && req.user.role !== 'admin' && req.method === 'GET' && /^\/settings\/(providers|models|changes|text-models|people)(\/|$)/.test(urlPath)) return reply.redirect('/settings/account');
     if (req.user) return;
     if (urlPath.startsWith('/api/') || urlPath.startsWith('/dz/api/') || req.method !== 'GET') {
       return reply.code(401).send({ error: 'Sign in required' });
@@ -421,7 +423,7 @@ export async function buildApp(config, { logger = true } = {}) {
     setupCode = null;
     const session = await auth.login(username, password, req.headers['user-agent']);
     setSessionCookie(req, reply, session.token);
-    return reply.redirect('/settings?notice=welcome');
+    return reply.redirect('/settings/providers?notice=welcome');
   });
 
   // ── Sign in / out ───────────────────────────────────────────────────────
@@ -455,57 +457,12 @@ export async function buildApp(config, { logger = true } = {}) {
     return reply.redirect('/login');
   });
 
-  // ── Settings ────────────────────────────────────────────────────────────
-  const NOTICES = { welcome: 'Admin created. Add provider keys below.', saved: 'Saved.', password: 'Password changed.', user: 'Account saved.', recommended: 'Recommended models saved. Reload the studio to see them.', changes: 'Provider changes updated.', checked: 'Check started. It takes a minute or two — reload this page to see new changes.', llm: 'Default text model saved.' };
-
-  async function renderSettings(req, reply, { error, notice, code = 200, llmTry = null, section = null } = {}) {
-    const isAdmin = req.user.role === 'admin';
-    const balancesP = isAdmin ? fetchBalances(providers) : Promise.resolve([]);
-    // Everyone gets their ChatGPT box and own default; admins also the sources and tests.
-    // The page never waits long for providers: after 4 s it shows what is known.
-    // Provider lists from memory (refreshed in the background) plus this person's
-    // ChatGPT models — so their plan is always in the lists, even when a provider is slow.
-    const lists = await llm.quickList(req.user).catch(() => null);
-    const llmInfo = {
-      ...(lists || llm.cachedList(req.user)), try: llmTry, chatgpt: chatgpt.status(req.user), username: req.user.username, isAdmin,
-      ...(isAdmin ? { recent: llm.recent(10), accounts: chatgpt.accounts() } : {}),
-    };
-    return html(reply, settingsPage({
-      user: req.user,
-      providers: isAdmin ? PROVIDERS.map((p) => providers.publicView(p.id)) : [],
-      balances: await balancesP,
-      users: isAdmin ? auth.listUsers() : [],
-      recommended: isAdmin ? getRecommended() : [],
-      families: isAdmin ? catalog.families() : [],
-      changes: isAdmin ? { entries: changes.list({ limit: 150 }), summary: changes.summary(), telegram: Boolean(config.telegram?.botToken && config.telegram?.chatId) } : null,
-      llm: llmInfo,
-      error,
-      notice: notice ?? NOTICES[req.query?.notice],
-      section,
-    }), code);
-  }
-  const renderSettingsSeen = async (req, reply, opts) => {
-    const out = await renderSettings(req, reply, opts);
-    if (req.user.role === 'admin') changes.markSeen(); // the admin has seen the list
-    return out;
-  };
+  // Settings moved into the studio (/settings/<section>, handoff 21); the JSON is further down.
   const requireAdmin = (req, reply) => {
     if (req.user.role !== 'admin') { reply.code(403).send({ error: 'Admin only' }); return false; }
     return true;
   };
-
-  // Settings live at /settings/<section> (redesign package 01); the old address redirects.
-  const SETTINGS_SECTIONS = { account: 'account', 'text-models': 'llm', providers: 'providers', changes: 'changes', models: 'recommended', sources: 'llm-admin', test: 'test', people: 'accounts' };
-  app.get('/settings', (req, reply) => renderSettingsSeen(req, reply));
-  app.get('/settings/:section', (req, reply) => {
-    const section = SETTINGS_SECTIONS[req.params.section];
-    if (!section) return reply.redirect('/settings');
-    return renderSettingsSeen(req, reply, { section });
-  });
-  app.get('/dz/settings', (req, reply) => {
-    const q = req.url.indexOf('?');
-    return reply.redirect(`/settings${q >= 0 ? req.url.slice(q) : ''}`);
-  });
+  app.get('/dz/settings', (req, reply) => reply.redirect('/settings/account'));
 
   // ── Text models (LLM) ───────────────────────────────────────────────────
   const llmError = (reply, error) => {
@@ -538,60 +495,9 @@ export async function buildApp(config, { logger = true } = {}) {
   app.post('/dz/api/llm/chat', async (req, reply) => {
     try { return await llm.chat(req.user, req.body || {}); } catch (error) { return llmError(reply, error); }
   });
-  app.post('/dz/settings/llm/default', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    try { llm.setDefault(req.body?.model); return reply.redirect('/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
-  });
-  // ChatGPT, each person their own. Connect: the server makes the sign-in link
-  // (opens in a new tab); finish: the address the browser landed on.
-  const chatgptError = (req, reply, error) => {
-    if (error?.status && error.message) return renderSettings(req, reply, { error: error.message, code: error.status >= 500 ? 424 : error.status });
-    throw error;
-  };
-  app.post('/dz/settings/chatgpt/connect', async (req, reply) => {
-    const { url } = chatgpt.startConnect(req.user, { fresh: req.body?.fresh === '1' });
-    return reply.redirect(url);
-  });
-  app.post('/dz/settings/chatgpt/finish', async (req, reply) => {
-    try {
-      const r = await chatgpt.finishConnect(req.user, req.body?.callback);
-      llm.dropUnusableDefaults();
-      return renderSettings(req, reply, { notice: `ChatGPT connected${r.email ? `: ${r.email}` : ''}.` });
-    } catch (error) { return chatgptError(req, reply, error); }
-  });
-  // Your own connection, or (admin) someone else's: revoke at OpenAI, then forget.
-  app.post('/dz/settings/chatgpt/disconnect', async (req, reply) => {
-    const target = req.body?.userId ? Number(req.body.userId) : req.user.id;
-    if (target !== req.user.id && req.user.role !== 'admin') return reply.code(403).send({ error: 'Not allowed' });
-    const r = await chatgpt.disconnect(target);
-    llm.dropUnusableDefaults();
-    return renderSettings(req, reply, { notice: r.revoked ? 'ChatGPT disconnected and revoked at OpenAI.' : 'ChatGPT disconnected here; OpenAI did not confirm the revocation — you can also remove the app in ChatGPT → Settings.' });
-  });
-  // An admin shares their own plan with everyone here (people without one), or stops.
-  app.post('/dz/settings/chatgpt/sharing', async (req, reply) => {
-    try {
-      chatgpt.setShared(req.user, req.body?.sharing === 'all');
-      llm.dropUnusableDefaults();
-      return reply.redirect('/settings?notice=llm#llm');
-    } catch (error) { return chatgptError(req, reply, error); }
-  });
   // From the studio (JSON): make a text model my default.
   app.post('/dz/api/llm/my-default', async (req, reply) => {
     try { llm.setUserDefault(req.user, req.body?.model); return { ok: true }; } catch (error) { return llmError(reply, error); }
-  });
-  // Everyone: their own default text model.
-  app.post('/dz/settings/llm/my-default', async (req, reply) => {
-    try { llm.setUserDefault(req.user, req.body?.model); return reply.redirect('/settings?notice=llm#llm'); } catch (error) { return renderSettings(req, reply, { error: error.message, code: 400 }); }
-  });
-  app.post('/dz/settings/llm/try', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const started = Date.now();
-    try {
-      const r = await llm.chat(req.user, { model: req.body?.model, prompt: req.body?.prompt, purpose: 'settings-test', maxTokens: 1500 });
-      return renderSettings(req, reply, { llmTry: { ok: true, model: r.model, text: r.text, costUsd: r.costUsd, ms: r.ms, usage: r.usage, prompt: req.body?.prompt } });
-    } catch (error) {
-      return renderSettings(req, reply, { llmTry: { ok: false, model: req.body?.model, text: error.message, ms: Date.now() - started, prompt: req.body?.prompt } });
-    }
   });
 
   // ── Provider changes (admin) ────────────────────────────────────────────
@@ -600,64 +506,197 @@ export async function buildApp(config, { logger = true } = {}) {
     if (req.user.role !== 'admin') return { unseen: 0 };
     return changes.summary();
   });
-  app.post('/dz/settings/changes/check', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    // Takes a minute or two (every schema and docs page) — runs in the background.
-    catalog.refreshAll({ force: true, docs: true }).catch((error) => app.log.warn(`changes check: ${error.message}`));
-    return reply.redirect('/settings?notice=checked#changes');
-  });
+  // ── Settings (handoff 21) ───────────────────────────────────────────────
+  // The pages live in the studio (/settings/<section>); this is their JSON. Admin parts answer
+  // 403 to everyone else. Keys and passwords never leave the server: a key shows its last 4.
+  const fail = (reply, error, code = 400) => reply.code(code).send({ error: typeof error === 'string' ? error : error.message });
+  const userFail = (reply, error) => {
+    if (error instanceof UserError) return fail(reply, error);
+    throw error;
+  };
+  const noStore = (reply) => reply.header('cache-control', 'private, no-store');
 
-  app.post('/dz/settings/password', async (req, reply) => {
+  // You · Account
+  app.get('/dz/api/settings/account', async (req, reply) => {
+    noStore(reply);
+    const u = req.user;
+    return { user: { id: u.id, name: u.display_name, username: u.username, role: u.role, owner: u.id === auth.ownerId() }, spent: generations.spentThisMonth(u), limit: u.monthly_limit_usd ?? null };
+  });
+  app.post('/dz/api/settings/password', async (req, reply) => {
     const { currentPassword, newPassword } = req.body || {};
-    if (!(await auth.checkPassword(req.user.id, currentPassword))) {
-      return renderSettings(req, reply, { error: 'Current password is wrong.', code: 400 });
-    }
+    if (!(await auth.checkPassword(req.user.id, currentPassword))) return fail(reply, 'Current password is wrong.');
     try {
       const session = auth.changePassword(req.user.id, newPassword, { newSession: true, userAgent: req.headers['user-agent'] });
       setSessionCookie(req, reply, session.token);
-    } catch (error) {
-      if (error instanceof UserError) return renderSettings(req, reply, { error: error.message, code: 400 });
-      throw error;
-    }
-    return reply.redirect('/settings?notice=password');
+    } catch (error) { return userFail(reply, error); }
+    return { ok: true, notice: 'Password changed.' };
   });
 
-  app.post('/dz/settings/providers/:id', async (req, reply) => {
+  // You · Your text model (and, for an admin, Text models). Own default: POST /dz/api/llm/my-default.
+  app.get('/dz/api/settings/text', async (req, reply) => {
+    noStore(reply);
+    // Provider lists from memory (refreshed in the background) plus this person's ChatGPT models.
+    const lists = (await llm.quickList(req.user).catch(() => null)) || llm.cachedList(req.user);
+    const isAdmin = req.user.role === 'admin';
+    return {
+      models: lists.models || [], myDefault: lists.myDefault || '', globalDefault: lists.globalDefault || '', default: lists.default || '',
+      chatgpt: chatgpt.status(req.user), username: req.user.username, isAdmin,
+      ...(isAdmin ? { sources: lists.sources || [], accounts: chatgpt.accounts(), recent: llm.recent(10) } : {}),
+    };
+  });
+  // ChatGPT, each person their own. Connect (POST /dz/settings/chatgpt/connect, a form opened in
+  // a new tab) makes the sign-in link; finish takes the address the browser landed on.
+  const chatgptFail = (reply, error) => {
+    if (error?.status && error.message) return fail(reply, error, error.status >= 500 ? 424 : error.status);
+    throw error;
+  };
+  app.post('/dz/settings/chatgpt/connect', async (req, reply) => {
+    const { url } = chatgpt.startConnect(req.user, { fresh: req.body?.fresh === '1' });
+    return reply.redirect(url);
+  });
+  app.post('/dz/api/settings/chatgpt/finish', async (req, reply) => {
+    try {
+      const r = await chatgpt.finishConnect(req.user, req.body?.callback);
+      llm.dropUnusableDefaults();
+      return { ok: true, notice: `ChatGPT connected${r.email ? `: ${r.email}` : ''}.` };
+    } catch (error) { return chatgptFail(reply, error); }
+  });
+  // Your own connection, or (admin) someone else's: revoke at OpenAI, then forget.
+  app.post('/dz/api/settings/chatgpt/disconnect', async (req, reply) => {
+    const target = req.body?.userId ? Number(req.body.userId) : req.user.id;
+    if (target !== req.user.id && req.user.role !== 'admin') return fail(reply, 'Not allowed', 403);
+    const r = await chatgpt.disconnect(target);
+    llm.dropUnusableDefaults();
+    return { ok: true, notice: r.revoked ? 'ChatGPT disconnected and revoked at OpenAI.' : 'ChatGPT disconnected here; OpenAI did not confirm the revocation — you can also remove the app in ChatGPT → Settings.' };
+  });
+  // An admin shares their own plan with everyone here (people without one), or stops.
+  app.post('/dz/api/settings/chatgpt/sharing', async (req, reply) => {
+    try {
+      chatgpt.setShared(req.user, req.body?.sharing === 'all');
+      llm.dropUnusableDefaults();
+      return { ok: true, notice: req.body?.sharing === 'all' ? 'Your ChatGPT plan is shared with everyone here without their own.' : 'Your ChatGPT plan is yours only now.' };
+    } catch (error) { return chatgptFail(reply, error); }
+  });
+
+  // Admin · Text models
+  app.post('/dz/api/settings/text/default', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    try { llm.setDefault(req.body?.model); return { ok: true, notice: 'Default text model for everyone saved.' }; } catch (error) { return fail(reply, error); }
+  });
+  app.post('/dz/api/settings/text/try', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const started = Date.now();
+    try {
+      const r = await llm.chat(req.user, { model: req.body?.model, prompt: req.body?.prompt, purpose: 'settings-test', maxTokens: 1500 });
+      return { ok: true, model: r.model, text: r.text, costUsd: r.costUsd, ms: r.ms, usage: r.usage };
+    } catch (error) {
+      return { ok: false, model: req.body?.model, text: error.message, ms: Date.now() - started };
+    }
+  });
+
+  // Admin · Providers
+  const TEST_MODELS = {
+    apimart: { model: 'z-image-turbo', label: 'Z-Image Turbo', price: 'about $0.01', body: (prompt) => ({ prompt, size: '1:1' }) },
+    atlas: { model: 'black-forest-labs/flux-schnell', label: 'FLUX.1 schnell', price: 'about $0.003', body: (prompt) => ({ prompt, size: '1024*1024' }) },
+  };
+  const TEST_PROMPT = 'A red paper boat on a calm lake at sunrise, photo';
+  const providerRow = (id, b) => {
+    const t = TEST_MODELS[id];
+    return {
+      ...providers.publicView(id),
+      balance: b ? { ok: b.ok, amount: b.amount ?? null, currency: b.currency || null, note: b.note || null, error: b.error || null } : null,
+      test: t ? { model: t.label, price: t.price } : null,
+    };
+  };
+  const balanceWords = (name, b) => (!b?.ok ? `${name}: saved.` : b.amount == null ? `${name}: saved, key works.`
+    : b.currency === 'CREDITS' ? `${name}: saved, key works — ${Math.round(b.amount).toLocaleString('en-US')} credits left.` : `${name}: saved, key works — balance $${Number(b.amount).toFixed(2)}.`);
+  app.get('/dz/api/settings/providers', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    noStore(reply);
+    const balances = await fetchBalances(providers);
+    return { providers: PROVIDERS.map((p) => providerRow(p.id, balances.find((b) => b.id === p.id))) };
+  });
+  // Save and check: a new key (or balance key, or proxy) is checked first and saved only if it
+  // works — a failed check keeps the old key (screen 06).
+  app.post('/dz/api/settings/providers/:id', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     const provider = providerById(req.params.id);
-    if (!provider) return reply.code(404).send({ error: 'Unknown provider' });
+    if (!provider) return fail(reply, 'Unknown provider', 404);
     const { apiKey, proxy, enabled, clearKey, billingKey, clearBillingKey } = req.body || {};
-    const proxyError = validateProxyUrl(String(proxy || '').trim());
-    if (proxyError) return renderSettings(req, reply, { error: `${provider.name}: ${proxyError}`, code: 400 });
-    providers.save(provider.id, {
-      apiKey: String(apiKey || '').trim(),
-      clearKey: Boolean(clearKey),
-      proxy: String(proxy || '').trim(),
-      enabled: Boolean(enabled),
-      billingKey: String(billingKey || '').trim(),
-      clearBillingKey: Boolean(clearBillingKey),
-    });
+    const newKey = String(apiKey || '').trim();
+    const newBilling = String(billingKey || '').trim();
+    const proxyIn = String(proxy ?? '').trim();
+    const proxyError = validateProxyUrl(proxyIn);
+    if (proxyError) return fail(reply, `${provider.name}: ${proxyError}`);
+    const current = providers.resolve(provider.id);
+    const nextProxy = proxyIn.includes('••••') ? current.proxy : proxyIn;
+    const changed = !clearKey && Boolean(newKey || newBilling || nextProxy !== current.proxy);
+    const candidate = { ...current, apiKey: newKey || current.apiKey, proxy: nextProxy, billingKey: clearBillingKey ? '' : (newBilling || current.billingKey) };
+    if (changed && candidate.apiKey) {
+      try { await provider.balance(candidate); } catch (error) {
+        const what = newKey ? 'this key' : newBilling ? 'this balance key' : 'the key through this proxy';
+        return reply.code(400).send({ error: `${provider.name} did not accept ${what}`, answer: error.message, kept: true });
+      }
+    }
+    providers.save(provider.id, { apiKey: newKey, clearKey: Boolean(clearKey), proxy: proxyIn, enabled: Boolean(enabled), billingKey: newBilling, clearBillingKey: Boolean(clearBillingKey) });
     balanceCache = { at: 0, data: null }; // the header shows the new balance at once
     catalog.refreshAll({ force: true }).catch(() => {}); // keys changed → rebuild the model list
-    const [balance] = (await fetchBalances(providers)).filter((b) => b.id === provider.id);
-    if (balance?.hasKey && balance.enabled && !balance.ok) {
-      return renderSettings(req, reply, { error: `${provider.name}: saved, but the check failed — ${balance.error}` });
+    const b = await balanceOf(providers, provider);
+    return { ok: true, provider: providerRow(provider.id, b), notice: clearKey ? `${provider.name}: saved key removed.` : balanceWords(provider.name, b) };
+  });
+  // Enabled on its own (the switch in the list): key and proxy stay as they are.
+  app.post('/dz/api/settings/providers/:id/enabled', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const provider = providerById(req.params.id);
+    if (!provider) return fail(reply, 'Unknown provider', 404);
+    const on = Boolean(req.body?.enabled);
+    providers.save(provider.id, { enabled: on });
+    balanceCache = { at: 0, data: null };
+    catalog.refreshAll({ force: true }).catch(() => {});
+    const b = await balanceOf(providers, provider);
+    return { ok: true, provider: providerRow(provider.id, b), notice: `${provider.name}: ${on ? 'on — its models are shown in the studio' : 'off — its models are hidden in the studio'}.` };
+  });
+  // Test generation: one cheap picture, request → wait → file saved on this server. Paid.
+  app.post('/dz/api/settings/test', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const t = TEST_MODELS[req.body?.provider];
+    if (!t) return fail(reply, 'This provider has no test.');
+    try {
+      if (!catalog.model(req.body.provider, t.model)) await catalog.refreshAll({ force: true });
+      const { id } = await generations.submit(req.user, {
+        providerId: req.body.provider, modelId: t.model, endpoint: `p/${req.body.provider}/${t.model}`, body: t.body(TEST_PROMPT),
+      });
+      return { ok: true, id };
+    } catch (error) {
+      if (error instanceof GenerationError) return fail(reply, error, error.status);
+      throw error;
     }
-    return renderSettings(req, reply, {
-      notice: !balance?.ok ? `${provider.name}: saved.` : balance.amount == null ? `${provider.name}: saved, key works.` : balance.currency === 'CREDITS' ? `${provider.name}: saved, key works — ${Math.round(balance.amount).toLocaleString('en-US')} credits left${balance.note ? ` (${balance.note})` : ''}.` : `${provider.name}: saved, key works — balance $${balance.amount.toFixed(2)}.`,
-    });
+  });
+  app.get('/dz/api/settings/test/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    noStore(reply);
+    try { return generations.result(req.user, req.params.id); } catch (error) {
+      if (error instanceof GenerationError) return fail(reply, error, error.status);
+      throw error;
+    }
   });
 
-  // Recommended models: shown first in every model picker, in this order.
-  app.post('/dz/settings/recommended', async (req, reply) => {
+  // Admin · Models: these families come first in every model picker, in this order.
+  const MAX_RECOMMENDED = 24;
+  const modelsView = () => ({ recommended: getRecommended(), families: catalog.families().map((f) => ({ key: f.key, name: f.name, kind: f.kind })), max: MAX_RECOMMENDED });
+  app.get('/dz/api/settings/models', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    noStore(reply);
+    return modelsView();
+  });
+  app.post('/dz/api/settings/models', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     const { action, key } = req.body || {};
     let list = [...getRecommended()];
-    const known = new Set(catalog.families().map((f) => f.key));
     if (action === 'add') {
-      if (!known.has(key)) return renderSettings(req, reply, { error: 'Unknown model family.', code: 400 });
+      if (!catalog.families().some((f) => f.key === key)) return fail(reply, 'Unknown model family.');
+      if (list.length >= MAX_RECOMMENDED) return fail(reply, `At most ${MAX_RECOMMENDED} families.`);
       if (!list.includes(key)) list.push(key);
-      list = list.slice(0, 24);
     } else if (action === 'remove') {
       list = list.filter((k) => k !== key);
     } else if (action === 'up') {
@@ -666,73 +705,92 @@ export async function buildApp(config, { logger = true } = {}) {
     } else if (action === 'reset') {
       list = [...DEFAULT_RECOMMENDED];
     } else {
-      return reply.code(400).send({ error: 'Unknown action' });
+      return fail(reply, 'Unknown action');
     }
     appSettings.set('recommended', list);
     catalog.requestRebuild();
-    return reply.redirect('/settings?notice=recommended#recommended');
+    return { ok: true, ...modelsView(), notice: 'Saved. The studio shows the new order after a reload.' };
   });
 
-  const TEST_MODELS = {
-    apimart: { model: 'z-image-turbo', body: (prompt) => ({ prompt, size: '1:1' }) },
-    atlas: { model: 'black-forest-labs/flux-schnell', body: (prompt) => ({ prompt, size: '1024*1024' }) },
-  };
-  app.post('/dz/settings/test-generation', async (req, reply) => {
+  // Admin · Provider changes. The first page marks everything seen (opening this section).
+  app.get('/dz/api/settings/changes', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
-    const t = TEST_MODELS[req.body?.provider];
-    if (!t) return reply.code(400).send({ error: 'Unknown provider' });
-    try {
-      if (!catalog.model(req.body.provider, t.model)) await catalog.refreshAll({ force: true });
-      const { id } = await generations.submit(req.user, {
-        providerId: req.body.provider, modelId: t.model, endpoint: `p/${req.body.provider}/${t.model}`,
-        body: t.body(String(req.body.prompt || 'A red paper boat on a calm lake').slice(0, 500)),
-      });
-      return reply.redirect(`/dz/settings/test-generation/${id}`);
-    } catch (error) {
-      if (error instanceof GenerationError) return renderSettings(req, reply, { error: error.message, code: error.status });
-      throw error;
-    }
+    noStore(reply);
+    const offset = Math.max(0, Number(req.query?.offset) || 0);
+    const limit = Math.min(100, Math.max(1, Number(req.query?.limit) || 50));
+    const entries = changes.list({ offset, limit });
+    const out = { entries, total: changes.count(), summary: changes.summary(), telegram: Boolean(config.telegram?.botToken && config.telegram?.chatId) };
+    if (offset === 0) changes.markSeen();
+    return out;
   });
-  app.get('/dz/settings/test-generation/:id', async (req, reply) => {
-    try {
-      const result = generations.result(req.user, req.params.id);
-      const row = db.prepare('SELECT provider, provider_model FROM generations WHERE id = ?').get(req.params.id);
-      return html(reply, testResultPage({ result, provider: row.provider, model: row.provider_model }));
-    } catch (error) {
-      if (error instanceof GenerationError) return reply.code(error.status).send({ error: error.message });
-      throw error;
-    }
+  app.post('/dz/api/settings/changes/check', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    // Takes a minute or two (every schema and docs page) — runs in the background.
+    catalog.refreshAll({ force: true, docs: true }).catch((error) => app.log.warn(`changes check: ${error.message}`));
+    return { ok: true, notice: 'Check started. It takes a minute or two; new changes show up here after it.' };
   });
 
+  // Admin · People
   const parseLimit = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : Math.max(0, Number(v)));
-
-  app.post('/dz/settings/users', async (req, reply) => {
+  const personView = (u, owner) => ({ id: u.id, name: u.display_name, username: u.username, role: u.role, limit: u.monthly_limit_usd ?? null, blocked: Boolean(u.disabled), owner: u.id === owner, created_at: u.created_at });
+  app.get('/dz/api/settings/people', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
-    const { username, displayName, password, role, monthlyLimitUsd } = req.body || {};
-    try {
-      auth.createUser({ username, displayName, password, role: role === 'admin' ? 'admin' : 'user', monthlyLimitUsd: parseLimit(monthlyLimitUsd) });
-    } catch (error) {
-      if (error instanceof UserError) return renderSettings(req, reply, { error: error.message, code: 400 });
-      throw error;
-    }
-    return reply.redirect('/settings?notice=user');
+    noStore(reply);
+    const owner = auth.ownerId();
+    return { people: auth.listUsers().map((u) => personView(u, owner)), me: req.user.id };
   });
-
-  app.post('/dz/settings/users/:id', async (req, reply) => {
+  app.post('/dz/api/settings/people', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const { username, name, password, role, limit } = req.body || {};
+    try {
+      auth.createUser({ username: String(username || '').trim(), displayName: name, password, role: role === 'admin' ? 'admin' : 'user', monthlyLimitUsd: parseLimit(limit) });
+    } catch (error) { return userFail(reply, error); }
+    return { ok: true, notice: `Account ${String(username || '').trim()} created.` };
+  });
+  const personOr404 = (reply, id) => {
+    const u = auth.listUsers().find((x) => x.id === id);
+    if (!u) fail(reply, 'User not found.', 404);
+    return u;
+  };
+  // Edit: name, role, monthly limit and (optional) a new password. Blocking has its own button.
+  app.post('/dz/api/settings/people/:id', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     const id = Number(req.params.id);
-    const { role, monthlyLimitUsd, disabled, newPassword, displayName } = req.body || {};
+    const u = personOr404(reply, id);
+    if (!u) return;
+    const { name, role, limit, newPassword } = req.body || {};
+    if (newPassword && id === auth.ownerId() && req.user.id !== id) return fail(reply, 'Only the owner can change the owner’s password.', 403);
     try {
-      auth.updateUser(id, { displayName, role, monthlyLimitUsd: parseLimit(monthlyLimitUsd), disabled: Boolean(disabled) });
+      auth.updateUser(id, { displayName: name, role, monthlyLimitUsd: parseLimit(limit), disabled: Boolean(u.disabled) });
       if (newPassword) {
         const session = auth.changePassword(id, newPassword, { newSession: id === req.user.id, userAgent: req.headers['user-agent'] });
         if (session) setSessionCookie(req, reply, session.token);
       }
-    } catch (error) {
-      if (error instanceof UserError) return renderSettings(req, reply, { error: error.message, code: 400 });
-      throw error;
-    }
-    return reply.redirect('/settings?notice=user');
+    } catch (error) { return userFail(reply, error); }
+    return { ok: true, notice: newPassword ? `${u.display_name}: saved, new password set.` : `${u.display_name}: saved.` };
+  });
+  app.post('/dz/api/settings/people/:id/block', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = Number(req.params.id);
+    const u = personOr404(reply, id);
+    if (!u) return;
+    if (id === req.user.id) return fail(reply, 'You cannot block yourself.');
+    const blocked = Boolean(req.body?.blocked);
+    try {
+      auth.updateUser(id, { displayName: u.display_name, role: u.role, monthlyLimitUsd: u.monthly_limit_usd, disabled: blocked });
+    } catch (error) { return userFail(reply, error); }
+    return { ok: true, notice: blocked ? `${u.display_name} is blocked and signed out.` : `${u.display_name} can sign in again.` };
+  });
+  // Delete (soft): cannot sign in, gone from the lists, ChatGPT revoked; their work stays.
+  app.delete('/dz/api/settings/people/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = Number(req.params.id);
+    const u = personOr404(reply, id);
+    if (!u) return;
+    if (id === req.user.id) return fail(reply, 'You cannot delete your own account.');
+    try { auth.deleteUser(id); } catch (error) { return userFail(reply, error); }
+    try { await chatgpt.disconnect(id); llm.dropUnusableDefaults(); } catch (error) { app.log.warn(`delete account: ChatGPT: ${error.message}`); }
+    return { ok: true, notice: `${u.display_name}’s account is deleted. Their pictures and videos stay on the server.` };
   });
 
   // ── JSON for the studio shell ───────────────────────────────────────────

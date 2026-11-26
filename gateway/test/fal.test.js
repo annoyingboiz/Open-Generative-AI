@@ -48,7 +48,7 @@ before(async () => {
   const setupCode = fs.readFileSync(path.join(dataDir, 'setup-code'), 'utf8').trim();
   let res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'admin', displayName: 'Admin', password: 'admin-pass-1', setupCode } });
   adminCookie = cookieOf(res);
-  await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie }, payload: { username: 'wife', displayName: 'Wife', password: 'wife-pass-12' } });
+  await app.inject({ method: 'POST', url: '/dz/api/settings/people', headers: { cookie: adminCookie }, payload: { username: 'wife', name: 'Wife', password: 'wife-pass-12' } });
   res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'wife', password: 'wife-pass-12' } });
   otherCookie = cookieOf(res);
   const mp = multipart('file', 'in.png', 'image/png', pngHeader(2000, 1000));
@@ -170,7 +170,7 @@ test('AVIF size comes from the ispe box', () => {
 });
 
 test('a user with a spending limit cannot run a model without a published price', async () => {
-  await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie }, payload: { username: 'kid', displayName: 'Kid', password: 'kid-pass-123', monthlyLimitUsd: '5' } });
+  await app.inject({ method: 'POST', url: '/dz/api/settings/people', headers: { cookie: adminCookie }, payload: { username: 'kid', name: 'Kid', password: 'kid-pass-123', limit: '5' } });
   const login = await app.inject({ method: 'POST', url: '/login', payload: { username: 'kid', password: 'kid-pass-123' } });
   const kid = cookieOf(login);
   const mp = multipart('file', 'k.png', 'image/png', pngHeader(1000, 1000));

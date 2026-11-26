@@ -31,3 +31,5 @@ export { DzElementsPage, ElementPicker, ElementEditor, ToElementDialog, VideoEle
 export { default as DzChatPanel, DzChatPage, dzAssistants } from './components/DzChat'; // DZ
 export { dzGetStudioState, DZ_INSERT_EVENT } from './dzStudioState'; // DZ
 export { useDzTasks, DzTasksPanel } from './components/DzTasks'; // DZ (package 14, A4)
+export { default as DzSettings } from './components/DzSettings';
+export { dzSettingsRoute, dzLlmGroups } from './dzSettings'; // DZ (handoff 21)

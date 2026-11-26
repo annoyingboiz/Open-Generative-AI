@@ -10,7 +10,10 @@ export function createAuth({ db, sessionDays }) {
     countUsers: db.prepare('SELECT COUNT(*) AS n FROM users'),
     byUsername: db.prepare('SELECT * FROM users WHERE username = ?'),
     byId: db.prepare('SELECT * FROM users WHERE id = ?'),
-    list: db.prepare('SELECT id, username, display_name, role, monthly_limit_usd, disabled, created_at FROM users ORDER BY id'),
+    list: db.prepare('SELECT id, username, display_name, role, monthly_limit_usd, disabled, created_at FROM users WHERE deleted_at IS NULL ORDER BY id'),
+    // The owner: the first account, made at setup. It cannot be deleted, blocked or lose admin.
+    owner: db.prepare('SELECT MIN(id) AS id FROM users'),
+    softDelete: db.prepare('UPDATE users SET username = ?, disabled = 1, deleted_at = ? WHERE id = ?'),
     insert: db.prepare('INSERT INTO users (username, display_name, pw_hash, role, monthly_limit_usd, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
     setPassword: db.prepare('UPDATE users SET pw_hash = ? WHERE id = ?'),
     update: db.prepare('UPDATE users SET display_name = ?, role = ?, monthly_limit_usd = ?, disabled = ? WHERE id = ?'),
@@ -87,11 +90,14 @@ export function createAuth({ db, sessionDays }) {
     return Boolean(user && await verifyPasswordAsync(String(password || ''), user.pw_hash));
   }
 
+  const ownerId = () => q.owner.get()?.id ?? null;
+
   function updateUser(id, { displayName, role, monthlyLimitUsd, disabled }) {
     const user = q.byId.get(id);
-    if (!user) throw new UserError('User not found.');
+    if (!user || user.deleted_at) throw new UserError('User not found.');
     const nextRole = role === 'admin' ? 'admin' : 'user';
     const nextDisabled = disabled ? 1 : 0;
+    if (id === ownerId() && (nextRole !== 'admin' || nextDisabled)) throw new UserError('The owner of this server stays an active admin.');
     const losesAdmin = user.role === 'admin' && !user.disabled && (nextRole !== 'admin' || nextDisabled);
     if (losesAdmin && q.countActiveAdmins.get().n <= 1) {
       throw new UserError('At least one active admin must remain.');
@@ -100,8 +106,19 @@ export function createAuth({ db, sessionDays }) {
     if (nextDisabled) q.deleteUserSessions.run(id);
   }
 
+  // Soft delete: signed out everywhere, cannot sign in, gone from the lists; the login is freed
+  // (renamed) so it can be used again. Their work and spending stay.
+  function deleteUser(id) {
+    const user = q.byId.get(id);
+    if (!user || user.deleted_at) throw new UserError('User not found.');
+    if (id === ownerId()) throw new UserError('The owner of this server cannot be deleted.');
+    if (user.role === 'admin' && !user.disabled && q.countActiveAdmins.get().n <= 1) throw new UserError('At least one active admin must remain.');
+    q.softDelete.run(`${user.username}~deleted-${id}`, now(), id);
+    q.deleteUserSessions.run(id);
+  }
+
   return {
-    hasUsers, createUser, login, logout, startSession, userFromToken, changePassword, checkPassword, updateUser,
+    hasUsers, createUser, login, logout, startSession, userFromToken, changePassword, checkPassword, updateUser, deleteUser, ownerId,
     listUsers: () => q.list.all(),
     getUser: (id) => q.byId.get(id),
   };

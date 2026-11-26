@@ -226,6 +226,9 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
     return { limit: user.monthly_limit_usd, spent: round(spent), left: Math.max(0, user.monthly_limit_usd - spent) };
   }
 
+  // Spent this month by one person (pictures, video, text models), with or without a limit.
+  const spentThisMonth = (user) => round(q.spentThisMonth.get(user.id, monthStart()).usd);
+
   function monthStart() {
     const d = new Date();
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
@@ -913,7 +916,7 @@ export function createGenerations({ db, storage, providers, catalog, log, media 
   }
 
   return {
-    budget,
+    budget, spentThisMonth,
     uploadBytes: (userId) => q.uploadBytes.get(userId).b,
     setOnCompleted(fn) { onCompleted = fn; },
     // The texture filter's re-render (app.js): the row's files, replaced as a whole.

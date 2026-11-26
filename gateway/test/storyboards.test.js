@@ -54,7 +54,7 @@ before(async () => {
   let res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'admin', displayName: 'Admin', password: 'admin-pass-1', setupCode } });
   cookies.admin = cookieOf(res);
   for (const u of ['wife', 'kid']) {
-    await as('admin', 'POST', '/dz/settings/users', { username: u, displayName: u, password: `${u}-pass-123` });
+    await as('admin', 'POST', '/dz/api/settings/people', { username: u, name: u, password: `${u}-pass-123` });
     res = await app.inject({ method: 'POST', url: '/login', payload: { username: u, password: `${u}-pass-123` } });
     cookies[u] = cookieOf(res);
   }

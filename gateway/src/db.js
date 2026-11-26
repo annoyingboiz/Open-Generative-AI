@@ -290,6 +290,11 @@ const MIGRATIONS = [
   `
   CREATE INDEX generations_recent_images ON generations(created_at DESC) WHERE kind = 'image' AND status = 'completed' AND purged_at IS NULL;
   `,
+  // 21: deleting an account (Settings → People) is soft: the person cannot sign in and leaves the
+  // lists; their pictures, videos and spending stay (a hard delete would cascade into their work).
+  `
+  ALTER TABLE users ADD COLUMN deleted_at INTEGER;
+  `,
 ];
 
 export function openDatabase(dataDir) {

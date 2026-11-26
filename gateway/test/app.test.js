@@ -98,52 +98,132 @@ test('login flow and wrong password', async () => {
   assert.equal(res.headers.location, '/library/studio');
 });
 
-test('admin creates a user; user cannot see keys or admin pages', async () => {
-  let res = await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie },
-    payload: { username: 'daughter', displayName: 'Daughter', password: 'kid-password-1', role: 'user', monthlyLimitUsd: '5' } });
-  assert.equal(res.statusCode, 302);
+test('admin creates a user; user cannot see keys or admin settings', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/api/settings/people', headers: { cookie: adminCookie },
+    payload: { username: 'daughter', name: 'Daughter', password: 'kid-password-1', role: 'user', limit: '5' } });
+  assert.equal(res.statusCode, 200);
   res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'daughter', password: 'kid-password-1' } });
   const userCookie = cookieOf(res);
   res = await app.inject({ url: '/dz/api/me', headers: { cookie: userCookie } });
   assert.deepEqual(res.json().user, { id: 2, username: 'daughter', displayName: 'Daughter', role: 'user', monthlyLimitUsd: 5, budget: { limit: 5, spent: 0, left: 5 } });
-  res = await app.inject({ url: '/settings', headers: { cookie: userCookie } });
-  assert.equal(res.statusCode, 200);
-  assert.ok(!res.body.includes('Providers'), 'no provider section for users');
-  res = await app.inject({ method: 'POST', url: '/dz/settings/providers/atlas', headers: { cookie: userCookie }, payload: { apiKey: 'x' } });
+  res = await app.inject({ url: '/dz/api/settings/account', headers: { cookie: userCookie } });
+  assert.deepEqual(res.json(), { user: { id: 2, name: 'Daughter', username: 'daughter', role: 'user', owner: false }, spent: 0, limit: 5 });
+  // The "This server" pages send a non-admin to their account; the JSON refuses.
+  res = await app.inject({ url: '/settings/providers', headers: { cookie: userCookie } });
+  assert.equal(res.headers.location, '/settings/account');
+  res = await app.inject({ url: '/settings/account', headers: { cookie: userCookie } });
+  assert.equal(res.json().upstream, true);
+  for (const url of ['/dz/api/settings/providers', '/dz/api/settings/models', '/dz/api/settings/changes', '/dz/api/settings/people']) {
+    res = await app.inject({ url, headers: { cookie: userCookie } });
+    assert.equal(res.statusCode, 403, url);
+  }
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/providers/atlas', headers: { cookie: userCookie }, payload: { apiKey: 'x' } });
   assert.equal(res.statusCode, 403);
+  res = await app.inject({ url: '/dz/api/settings/text', headers: { cookie: userCookie } });
+  assert.equal(res.json().sources, undefined);
   res = await app.inject({ url: '/dz/api/balances', headers: { cookie: userCookie } });
   assert.deepEqual(res.json(), { balances: [] });
 });
 
-test('settings page never prints a full key', async () => {
-  const res = await app.inject({ url: '/settings', headers: { cookie: adminCookie } });
+test('settings never send a full key; a key that fails the check is not saved', async () => {
+  let res = await app.inject({ url: '/dz/api/settings/providers', headers: { cookie: adminCookie } });
   assert.equal(res.statusCode, 200);
   assert.ok(!res.body.includes('env-key-1234'));
-  assert.ok(res.body.includes('••••1234'));
+  const atlas = res.json().providers.find((p) => p.id === 'atlas');
+  assert.equal(atlas.keyMask, '••••1234');
+  assert.equal(atlas.keySource, 'env');
+  assert.deepEqual(atlas.test, { model: 'FLUX.1 schnell', price: 'about $0.003' });
+  // The check cannot pass here (no provider): the old key stays.
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/providers/atlas', headers: { cookie: adminCookie }, payload: { apiKey: 'new-key-9999', enabled: true } });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.json().kept, true);
+  assert.match(res.json().error, /Atlas Cloud did not accept this key/);
+  res = await app.inject({ url: '/dz/api/settings/providers', headers: { cookie: adminCookie } });
+  assert.equal(res.json().providers.find((p) => p.id === 'atlas').keyMask, '••••1234');
 });
 
-test('settings moved to /settings/<section>; the old address redirects', async () => {
-  let res = await app.inject({ url: '/dz/settings?notice=llm', headers: { cookie: adminCookie } });
-  assert.equal(res.statusCode, 302);
-  assert.equal(res.headers.location, '/settings?notice=llm');
-  res = await app.inject({ url: '/settings/providers', headers: { cookie: adminCookie } });
+test('Enabled alone keeps the proxy and the key', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/api/settings/providers/apimart', headers: { cookie: adminCookie }, payload: { proxy: 'socks5h://127.0.0.1:1080', enabled: true } });
+  assert.equal(res.statusCode, 200); // no key: nothing to check
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/providers/apimart/enabled', headers: { cookie: adminCookie }, payload: { enabled: false } });
   assert.equal(res.statusCode, 200);
-  assert.ok(res.body.includes('getElementById("providers")'));
-  res = await app.inject({ url: '/settings/nope', headers: { cookie: adminCookie } });
-  assert.equal(res.headers.location, '/settings');
+  assert.equal(res.json().provider.enabled, false);
+  assert.equal(res.json().provider.proxy, 'socks5h://127.0.0.1:1080');
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/providers/apimart', headers: { cookie: adminCookie }, payload: { proxy: '', enabled: true } });
+  assert.equal(res.json().provider.proxy, '');
+});
+
+test('the old settings address goes to the account section', async () => {
+  const res = await app.inject({ url: '/dz/settings?notice=llm', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/settings/account');
 });
 
 test('bad proxy is rejected; cross-origin POST is blocked', async () => {
-  let res = await app.inject({ method: 'POST', url: '/dz/settings/providers/atlas', headers: { cookie: adminCookie }, payload: { proxy: 'ftp://x', enabled: '1' } });
+  let res = await app.inject({ method: 'POST', url: '/dz/api/settings/providers/atlas', headers: { cookie: adminCookie }, payload: { proxy: 'ftp://x', enabled: true } });
   assert.equal(res.statusCode, 400);
-  res = await app.inject({ method: 'POST', url: '/dz/settings/users', headers: { cookie: adminCookie, origin: 'https://evil.com', host: 'director.zabelin.design' }, payload: {} });
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/people', headers: { cookie: adminCookie, origin: 'https://evil.com', host: 'director.zabelin.design' }, payload: {} });
   assert.equal(res.statusCode, 403);
 });
 
-test('last admin cannot be demoted', async () => {
-  const res = await app.inject({ method: 'POST', url: '/dz/settings/users/1', headers: { cookie: adminCookie }, payload: { role: 'user' } });
+test('the owner stays an active admin and cannot be deleted', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/api/settings/people/1', headers: { cookie: adminCookie }, payload: { name: 'Denis', role: 'user' } });
   assert.equal(res.statusCode, 400);
-  assert.ok(res.body.includes('At least one active admin'));
+  assert.match(res.json().error, /owner/);
+  res = await app.inject({ url: '/dz/api/settings/people', headers: { cookie: adminCookie } });
+  assert.equal(res.json().people.find((p) => p.id === 1).owner, true);
+  res = await app.inject({ method: 'DELETE', url: '/dz/api/settings/people/1', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 400);
+});
+
+test('people: edit, block, delete (soft) — the deleted person cannot sign in and the login is free again', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/api/settings/people', headers: { cookie: adminCookie }, payload: { username: 'temp', name: 'Temp', password: 'temp-pass-123', role: 'admin' } });
+  assert.equal(res.statusCode, 200);
+  const id = (await app.inject({ url: '/dz/api/settings/people', headers: { cookie: adminCookie } })).json().people.find((p) => p.username === 'temp').id;
+  res = await app.inject({ method: 'POST', url: `/dz/api/settings/people/${id}`, headers: { cookie: adminCookie }, payload: { name: 'Temp Two', role: 'user', limit: '7' } });
+  assert.equal(res.statusCode, 200);
+  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'temp', password: 'temp-pass-123' } });
+  const tempCookie = cookieOf(res);
+  res = await app.inject({ method: 'POST', url: `/dz/api/settings/people/${id}/block`, headers: { cookie: adminCookie }, payload: { blocked: true } });
+  assert.equal(res.statusCode, 200);
+  res = await app.inject({ url: '/dz/api/me', headers: { cookie: tempCookie } });
+  assert.equal(res.statusCode, 401, 'blocking signs them out');
+  let person = (await app.inject({ url: '/dz/api/settings/people', headers: { cookie: adminCookie } })).json().people.find((p) => p.id === id);
+  assert.deepEqual([person.name, person.role, person.limit, person.blocked], ['Temp Two', 'user', 7, true]);
+  res = await app.inject({ method: 'DELETE', url: `/dz/api/settings/people/${id}`, headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200);
+  person = (await app.inject({ url: '/dz/api/settings/people', headers: { cookie: adminCookie } })).json().people.find((p) => p.id === id);
+  assert.equal(person, undefined);
+  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'temp', password: 'temp-pass-123' } });
+  assert.equal(res.statusCode, 401);
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/people', headers: { cookie: adminCookie }, payload: { username: 'temp', name: 'Temp again', password: 'temp-pass-456' } });
+  assert.equal(res.statusCode, 200, 'the login is free again');
+  res = await app.inject({ method: 'DELETE', url: '/dz/api/settings/people/1', headers: { cookie: adminCookie } });
+  assert.match(res.json().error, /your own|owner/);
+});
+
+test('provider changes: pages of entries; the first page marks them seen', async () => {
+  const res = await app.inject({ url: '/dz/api/settings/changes?offset=0&limit=50', headers: { cookie: adminCookie } });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.ok(Array.isArray(body.entries));
+  assert.equal(typeof body.total, 'number');
+  assert.equal(typeof body.summary.unseen, 'number');
+  assert.equal(body.telegram, false);
+});
+
+test('recommended models: admin edits the list, users cannot', async () => {
+  let res = await app.inject({ method: 'POST', url: '/dz/api/settings/models', headers: { cookie: adminCookie }, payload: { action: 'remove', key: 'dz-kling-4' } });
+  assert.equal(res.statusCode, 200);
+  assert.ok(!res.json().recommended.includes('dz-kling-4'));
+  assert.ok(res.json().recommended.includes('dz-nano-banana-pro'));
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/models', headers: { cookie: adminCookie }, payload: { action: 'add', key: 'dz-not-a-model' } });
+  assert.equal(res.statusCode, 400);
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/models', headers: { cookie: adminCookie }, payload: { action: 'reset' } });
+  assert.ok(res.json().recommended.includes('dz-kling-4'));
+  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'daughter', password: 'kid-password-1' } });
+  res = await app.inject({ method: 'POST', url: '/dz/api/settings/models', headers: { cookie: cookieOf(res) }, payload: { action: 'reset' } });
+  assert.equal(res.statusCode, 403);
 });
 
 test('security headers: strict CSP on pages, sandbox on media', async () => {
@@ -164,24 +244,6 @@ test('login throttle cannot be bypassed with a forged X-Forwarded-For', async ()
 
 test('cross-site sign-in is refused (login CSRF)', async () => {
   const res = await app.inject({ method: 'POST', url: '/login', headers: { origin: 'https://evil.example', host: 'director.zabelin.design' }, payload: { username: 'denis', password: 'long-enough-1' } });
-  assert.equal(res.statusCode, 403);
-});
-
-test('recommended models: admin edits the list, users cannot', async () => {
-  let res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: adminCookie }, payload: { action: 'remove', key: 'dz-kling-4' } });
-  assert.equal(res.statusCode, 302);
-  res = await app.inject({ url: '/settings', headers: { cookie: adminCookie } });
-  assert.ok(res.body.includes('Recommended models'));
-  assert.ok(!res.body.includes('>dz-kling-4<'));
-  assert.ok(res.body.includes('dz-nano-banana-pro'));
-  res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: adminCookie }, payload: { action: 'add', key: 'dz-not-a-model' } });
-  assert.equal(res.statusCode, 400);
-  res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: adminCookie }, payload: { action: 'reset' } });
-  assert.equal(res.statusCode, 302);
-  res = await app.inject({ url: '/settings', headers: { cookie: adminCookie } });
-  assert.ok(res.body.includes('dz-kling-4'));
-  res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'daughter', password: 'kid-password-1' } });
-  res = await app.inject({ method: 'POST', url: '/dz/settings/recommended', headers: { cookie: cookieOf(res) }, payload: { action: 'reset' } });
   assert.equal(res.statusCode, 403);
 });
 

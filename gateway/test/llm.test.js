@@ -53,7 +53,7 @@ before(async () => {
   const setupCode = fs.readFileSync(path.join(dataDir, 'setup-code'), 'utf8').trim();
   let res = await app.inject({ method: 'POST', url: '/setup', payload: { username: 'admin', displayName: 'Admin', password: 'admin-pass-1', setupCode } });
   cookies.admin = cookieOf(res);
-  await as('admin', 'POST', '/dz/settings/users', { username: 'kid', displayName: 'kid', password: 'kid-pass-123', monthlyLimitUsd: '0' });
+  await as('admin', 'POST', '/dz/api/settings/people', { username: 'kid', name: 'kid', password: 'kid-pass-123', limit: '0' });
   res = await app.inject({ method: 'POST', url: '/login', payload: { username: 'kid', password: 'kid-pass-123' } });
   cookies.kid = cookieOf(res);
 });
@@ -143,14 +143,15 @@ test('a large picture goes to a text model as a 2048 px JPEG, not refused', asyn
 });
 
 test('settings: default model and a test call', async () => {
-  let res = await as('admin', 'POST', '/dz/settings/llm/default', { model: 'local:qwen3.5:9b' });
-  assert.equal(res.statusCode, 302);
+  let res = await as('admin', 'POST', '/dz/api/settings/text/default', { model: 'local:qwen3.5:9b' });
+  assert.equal(res.statusCode, 200);
   res = await as('admin', 'GET', '/dz/api/llm/models');
   assert.equal(res.json().default, 'local:qwen3.5:9b');
-  res = await as('admin', 'POST', '/dz/settings/llm/try', { model: 'local:qwen3.5:9b', prompt: 'hello' });
+  res = await as('admin', 'POST', '/dz/api/settings/text/try', { model: 'local:qwen3.5:9b', prompt: 'hello' });
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /A bartender pours a cocktail/);
-  res = await as('kid', 'POST', '/dz/settings/llm/default', { model: 'local:qwen3.5:9b' });
+  assert.equal(res.json().ok, true);
+  assert.match(res.json().text, /A bartender pours a cocktail/);
+  res = await as('kid', 'POST', '/dz/api/settings/text/default', { model: 'local:qwen3.5:9b' });
   assert.equal(res.statusCode, 403);
   // Offline: nothing answers.
   ollama.close();
@@ -179,46 +180,33 @@ test('ChatGPT plans: one per person, stored encrypted; an admin may share theirs
   let res = await as('kid', 'POST', '/dz/api/llm/chat', { model: 'chatgpt:gpt-6.1-sol', prompt: 'hi' });
   assert.equal(res.statusCode, 409);
   assert.match(res.json().error, /Connect your ChatGPT/);
-  res = await as('admin', 'GET', '/settings');
-  assert.match(res.body, /me@example\.com/);
+  res = await as('admin', 'GET', '/dz/api/settings/text');
+  assert.equal(res.json().chatgpt.email, 'me@example.com');
   assert.equal(res.body.includes('secret-'), false);
-  res = await as('kid', 'GET', '/settings');
-  assert.match(res.body, /Connect ChatGPT/);
+  res = await as('kid', 'GET', '/dz/api/settings/text');
+  assert.equal(res.json().chatgpt.connected, false);
   assert.equal(res.body.includes('me@example.com'), false, 'others don’t see the admin’s plan');
-  res = await as('kid', 'POST', '/dz/settings/chatgpt/disconnect', { userId: String(id('admin')) });
+  res = await as('kid', 'POST', '/dz/api/settings/chatgpt/disconnect', { userId: String(id('admin')) });
   assert.equal(res.statusCode, 403);
   // Not shared: ChatGPT can be the admin's own default, not everyone's.
   assert.throws(() => app.ctx.llm.setDefault('chatgpt:gpt-6.1-sol'), /share it with everyone/);
   assert.throws(() => app.ctx.llm.setUserDefault({ id: id('kid') }, 'chatgpt:gpt-6.1-sol'), /Connect your ChatGPT/);
   app.ctx.llm.setUserDefault({ id: id('admin') }, 'chatgpt:gpt-6.1-sol');
   // Shared: the kid may use it; it can be everyone's default.
-  res = await as('kid', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'all' });
+  res = await as('kid', 'POST', '/dz/api/settings/chatgpt/sharing', { sharing: 'all' });
   assert.equal(res.statusCode, 403, 'only an admin shares their plan');
-  res = await as('admin', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'all' });
-  assert.equal(res.statusCode, 302);
+  res = await as('admin', 'POST', '/dz/api/settings/chatgpt/sharing', { sharing: 'all' });
+  assert.equal(res.statusCode, 200);
   assert.equal(cg.canUse({ id: id('kid') }), true);
-  res = await as('kid', 'GET', '/settings');
-  assert.match(res.body, /admin<\/b>’s plan, shared/);
+  res = await as('kid', 'GET', '/dz/api/settings/text');
+  assert.equal(res.json().chatgpt.shared.owner, 'admin');
   app.ctx.llm.setDefault('chatgpt:gpt-6.1-sol');
   assert.equal(app.ctx.llm.defaultId(), 'chatgpt:gpt-6.1-sol');
   // Back to "only me": everyone's default is dropped, the admin's own stays.
-  res = await as('admin', 'POST', '/dz/settings/chatgpt/sharing', { sharing: 'owner' });
+  res = await as('admin', 'POST', '/dz/api/settings/chatgpt/sharing', { sharing: 'owner' });
   assert.equal(app.ctx.llm.defaultId(), '');
   assert.equal(cg.canUse({ id: id('kid') }), false);
   assert.equal(db.prepare('SELECT value FROM meta WHERE key = ?').get(`llm_default:${id('admin')}`).value, 'chatgpt:gpt-6.1-sol');
 });
 
-test('Settings: your ChatGPT models can be picked as your default; a saved choice that is offline is kept', async () => {
-  const { settingsPage } = await import('../src/pages.js');
-  const models = [
-    { id: 'chatgpt:gpt-6.2-sol', source: 'chatgpt', name: 'GPT-6.2 Sol', price: { in: 0, out: 0 }, free: true },
-    { id: 'apimart:deepseek-v4-flash', source: 'apimart', name: 'DeepSeek V4 Flash', recommended: true, price: { in: 0.1, out: 0.5 } },
-  ];
-  const user = { id: 1, role: 'user', username: 'denis', display_name: 'Denis' };
-  let html = settingsPage({ user, llm: { models, myDefault: 'chatgpt:gpt-6.2-sol', globalDefault: 'apimart:deepseek-v4-flash', chatgpt: { connected: true } } });
-  const mine = html.slice(html.indexOf('My default text model'));
-  assert.match(mine, /<optgroup label="Your ChatGPT plan"><option value="chatgpt:gpt-6.2-sol" selected>/);
-  html = settingsPage({ user, llm: { models: models.slice(1), myDefault: 'chatgpt:gpt-6.2-sol', globalDefault: '', chatgpt: { connected: true } } });
-  assert.match(html.slice(html.indexOf('My default text model')), /<option value="chatgpt:gpt-6.2-sol" selected>gpt-6.2-sol — not available right now/);
-});
 

@@ -246,7 +246,8 @@ export function createCatalog({ dataDir, providers, log, getRecommended = () => 
         if (JSON.stringify(changes.liveOverrides()) !== before && !refreshing) rebuild();
       } catch (error) {
         log?.warn(`changes: APIMart docs check failed — ${error.message}`);
-        try { changes.apimartDocsFailed(error.message); } catch { /* meta write: best effort */ }
+        // Retried daily like a check that ran (the hourly refresh must not retry it every hour); "Check now" retries at once.
+        try { changes.apimartDocsFailed(error.message); changes.setLastDocsCheck(Date.now()); } catch { /* meta write: best effort */ }
       } finally {
         docsRunning = null;
       }

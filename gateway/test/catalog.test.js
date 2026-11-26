@@ -311,6 +311,17 @@ test('APIMart docs: a sentence about one model on a shared page refuses nothing 
   const index = 'https://docs.apimart.ai/en/api-reference/videos/veo3/generation.md';
   const r = await fetchApimartDocs({ fetchFn: async (url) => ({ ok: true, text: async () => (url.endsWith('api-manual.txt') ? index : cut) }) });
   assert.equal(r.invalid, 1);
+  assert.equal(r.docs.length, 0); // left out: the model keeps the spec it has
   const whole = await fetchApimartDocs({ fetchFn: async (url) => ({ ok: true, text: async () => (url.endsWith('api-manual.txt') ? index : text) }) });
   assert.equal(whole.invalid, 0);
+});
+
+test('APIMart docs: other per-model wording still refuses a value', async () => {
+  const { buildApimartOverrides } = await import('../src/catalog/apimart-docs.js');
+  const page = ['# Demo', '```json', '{ "model": "demo-video" }', '```', '## Request parameters', '',
+    '**model** `string` *required*', '', '`demo-video`', '',
+    '**resolution** `string`', '', 'Values: `720p`, `1080p`, `4k`. `4k` is not supported by the `demo-video` model.', '',
+    '## Response', ''].join('\n');
+  const o = buildApimartOverrides([{ url: 'https://docs.apimart.ai/en/api-reference/videos/demo/generation.md', text: page }])['demo-video'];
+  assert.deepEqual(o.common.inputs.resolution.enum, ['720p', '1080p']);
 });
